@@ -36,10 +36,27 @@ struct SourceBody {
   TopoDS_Shape shape;
 };
 
+/// A section cut applied to THIS view: the sources are cut with a
+/// half-space on the normal side of the cutting plane (cut_away),
+/// and the cut face's boundary becomes the hatch region.
+struct SectionTrace {
+  /// A section whose cutting-plane LINE is drawn on this view (the
+  /// view sees the plane edge-on).  Traces come from the OTHER views
+  /// of the same drawing — sections reference the MODEL, never
+  /// another view.
+  SectionDefinition section;
+};
+
 struct ProjectionInput {
   std::vector<SourceBody> sources;
   DrawingViewFrame frame;
   bool show_hidden = false;
+  /// When set, this view IS a section view: sources are cut, the
+  /// hatch region is computed, and hidden edges are suppressed
+  /// (ISO 128-3 §7: hidden edges are not drawn on sectioned parts).
+  std::optional<SectionDefinition> section;
+  /// Cutting-plane traces from sibling section views (chain lines).
+  std::vector<SectionTrace> section_traces;
   /// Document revision the source shapes were compiled at — stamped
   /// onto the result by the refresh pass.
   int source_revision = -1;
@@ -67,6 +84,16 @@ int match_body_edge(const TopoDS_Shape& body_shape,
 std::optional<SourceEdgeWitness> build_source_edge_witness(
     const std::string& body_id, const TopoDS_Shape& body_shape,
     int edge_index);
+
+/// Clips hatch scanlines at `angle_deg` / `spacing_mm` (model mm at
+/// 1:1 — callers scale the result with the view) to a hatch region:
+/// rotate the loops by -angle so the scanlines are horizontal, clip
+/// against the polygon with the even-odd rule across outer loop +
+/// holes, rotate the segments back.  Pure geometry, no OCCT — the
+/// flatten (P5) and every export backend reuse this one function so
+/// hatching is identical everywhere.
+std::vector<std::array<std::array<double, 2>, 2>> compute_hatch_segments(
+    const HatchRegion& region, double angle_deg, double spacing_mm);
 
 /// Resolves an ISO standard view name to a frame.  Convention
 /// (documented, pinned by the projection test):

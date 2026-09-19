@@ -130,5 +130,7 @@ polysmith::core::DrawingDocumentData drawing_document_data_from_payload(
 polysmith::core::Drawing drawing_from_payload(const json& payload);
 polysmith::core::DrawingSheet drawing_sheet_from_payload(const json& payload);
 polysmith::core::DrawingView drawing_view_from_payload(const json& payload);
+polysmith::core::SectionDefinition section_definition_from_payload(
+    const json& payload);
 
 }  // namespace polysmith::protocol

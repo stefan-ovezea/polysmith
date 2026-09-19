@@ -22,7 +22,9 @@ struct ViewportDrawingCurve {
   std::string kind = "line";
   /// "visible" | "hidden"
   std::string line_class = "visible";
-  /// "sharp" | "smooth" | "seam" | "outline"
+  /// "sharp" | "smooth" | "seam" | "outline" | "cutting_plane" |
+  /// "hatch" (the last two land in P4: type-H chain line traces from
+  /// sibling sections, and scanline hatching on section views)
   std::string curve_class = "sharp";
   /// Endpoints (sheet-mm) — always populated.
   std::array<double, 2> p0 = {0.0, 0.0};

@@ -117,6 +117,7 @@
         "drawing_view_create",
         "drawing_view_delete",
         "drawing_view_move",
+        "drawing_section_update",
         "drawing_view_update",
         "export_body_step",
         "export_body_stl",

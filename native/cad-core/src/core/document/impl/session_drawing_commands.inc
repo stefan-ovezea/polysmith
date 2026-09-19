@@ -48,29 +48,43 @@ polysmith::core::DrawingView* find_view(Drawing& drawing,
 // (the canonical mutator shape).  Kind/frame rules:
 //   - "projection": standard_view or custom_frame required.
 //   - "axonometric": custom_frame required.
-//   - "section": rejected until P4 (sections cut the model — never
-//     silently project the uncut body).
+//   - "section": a section definition required — the frame derives
+//     from the cutting plane (never a standard view or custom frame,
+//     never the uncut body).
 void validate_view_definition(const DrawingView& view) {
-  if (view.kind == "section") {
-    throw std::runtime_error(
-        "Section views are not supported yet (P4)");
-  }
-  if (view.kind != "projection" && view.kind != "axonometric") {
+  if (view.kind != "projection" && view.kind != "axonometric" &&
+      view.kind != "section") {
     throw std::runtime_error("Unknown view kind: " + view.kind);
   }
-  if (!view.standard_view.empty() &&
-      !polysmith::core::standard_view_frame(view.standard_view)
-           .has_value()) {
-    throw std::runtime_error("Unknown standard view: " +
-                             view.standard_view);
-  }
-  if (view.kind == "axonometric" && !view.custom_frame.has_value()) {
-    throw std::runtime_error(
-        "Axonometric views need a custom frame");
-  }
-  if (view.standard_view.empty() && !view.custom_frame.has_value()) {
-    throw std::runtime_error(
-        "The view needs a standard view or a custom frame");
+  if (view.kind == "section") {
+    if (!view.section.has_value()) {
+      throw std::runtime_error("Section views need a section definition");
+    }
+    const auto& normal = view.section->cutting_plane_normal;
+    const double length = std::sqrt(normal[0] * normal[0] +
+                                    normal[1] * normal[1] +
+                                    normal[2] * normal[2]);
+    if (length < 1e-9) {
+      throw std::runtime_error("The cutting plane normal is degenerate");
+    }
+    if (!(view.section->hatch_spacing_mm > 0.0)) {
+      throw std::runtime_error("The hatch spacing must be positive");
+    }
+  } else {
+    if (!view.standard_view.empty() &&
+        !polysmith::core::standard_view_frame(view.standard_view)
+             .has_value()) {
+      throw std::runtime_error("Unknown standard view: " +
+                               view.standard_view);
+    }
+    if (view.kind == "axonometric" && !view.custom_frame.has_value()) {
+      throw std::runtime_error(
+          "Axonometric views need a custom frame");
+    }
+    if (view.standard_view.empty() && !view.custom_frame.has_value()) {
+      throw std::runtime_error(
+          "The view needs a standard view or a custom frame");
+    }
   }
   if (view.source_body_ids.empty()) {
     throw std::runtime_error("The view needs at least one source body");
@@ -390,6 +404,33 @@ DocumentState DocumentManager::drawing_view_move(
   view->sheet_position = sheet_position;
   // Cosmetic move only — the projection itself does not change, but
   // the document state does, so the bump keeps the payload honest.
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_section_update(
+    const std::string& drawing_id, const std::string& view_id,
+    const SectionDefinition& section) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  DrawingView* view = find_view(*drawing, view_id);
+  if (view == nullptr) {
+    throw std::runtime_error("Unknown view: " + view_id);
+  }
+  if (view->kind != "section") {
+    throw std::runtime_error("drawing_section_update needs a section view");
+  }
+  // Validate the patched view BEFORE the undo push (canonical shape).
+  DrawingView patched = *view;
+  patched.section = section;
+  validate_view_definition(patched);
+
+  push_undo_state();
+  clear_redo_stack();
+  view->section = section;
   bump_geometry_revision();
   return document_.value();
 }

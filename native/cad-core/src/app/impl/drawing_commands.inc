@@ -126,3 +126,19 @@
             command.id, polysmith::protocol::to_payload(document)));
     return;
   }
+
+  if (command.type == "drawing_section_update") {
+    const auto drawing_id = read_string(
+        command.payload, "drawing_id");
+    const auto view_id = read_string(
+        command.payload, "view_id");
+    const auto section =
+        polysmith::protocol::section_definition_from_payload(
+            command.payload.at("section"));
+    const auto document = document_manager().drawing_section_update(
+        drawing_id, view_id, section);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }

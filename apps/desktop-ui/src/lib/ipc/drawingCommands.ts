@@ -1,4 +1,10 @@
-import type { CoreCommand, Drawing, DrawingSheet, DrawingView } from "@/types";
+import type {
+  CoreCommand,
+  Drawing,
+  DrawingSheet,
+  DrawingView,
+  SectionDefinition,
+} from "@/types";
 
 // Drawing command factories — every command replies with a
 // `document_state` event (errors reply with an `error` event).
@@ -98,5 +104,17 @@ export function makeDrawingViewMoveCommand(
       view_id: viewId,
       sheet_position: sheetPosition,
     },
+  };
+}
+
+export function makeDrawingSectionUpdateCommand(
+  drawingId: string,
+  viewId: string,
+  section: SectionDefinition,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_section_update",
+    payload: { drawing_id: drawingId, view_id: viewId, section },
   };
 }

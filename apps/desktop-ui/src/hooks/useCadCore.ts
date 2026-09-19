@@ -7,6 +7,7 @@ import {
   makeDrawingDeleteCommand,
   makeDrawingViewCreateCommand,
   makeDrawingViewDeleteCommand,
+  makeDrawingSectionUpdateCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
   makeCamSetupDeleteCommand,
@@ -232,6 +233,7 @@ import type {
   CoreCommand,
   Drawing,
   DrawingView,
+  SectionDefinition,
   ExtrudeAdvancedParameters,
   EdgeAttestation,
   FaceAttestation,
@@ -1725,6 +1727,15 @@ export function useCadCore() {
     drawingViewDelete: async (drawingId: string, viewId: string) => {
       await sendAndRefreshSessionViewport(
         makeDrawingViewDeleteCommand(drawingId, viewId),
+      );
+    },
+    drawingSectionUpdate: async (
+      drawingId: string,
+      viewId: string,
+      section: SectionDefinition,
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingSectionUpdateCommand(drawingId, viewId, section),
       );
     },
     camSetupUpdate: async (camSetup: CamSetup) => {

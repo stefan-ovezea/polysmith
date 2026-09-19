@@ -102,7 +102,7 @@ import {
   createHoleParameterHandlers,
 } from "./app/bodyModifierActions";
 import { CamFloatingPanels } from "./app/CamFloatingPanels";
-import { InsertViewPanel } from "./app/DrawingFloatingPanels";
+import { InsertViewPanel, SectionPanel } from "./app/DrawingFloatingPanels";
 import { ConstructionPendingPanels } from "./app/ConstructionPendingPanels";
 import { PrimitiveFeatureEditPanel } from "./app/PrimitiveFeatureEditPanel";
 import {
@@ -610,6 +610,11 @@ function App() {
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
   const [isDrawingInsertPanelOpen, setIsDrawingInsertPanelOpen] =
     useState(false);
+  // The section view bound to the SectionPanel after insertion (P4) —
+  // stays open so label / cut-away / hatch edits commit live.
+  const [sectionPanelViewId, setSectionPanelViewId] = useState<string | null>(
+    null,
+  );
   // Tool library manager (opened from the CAM sidebar tree).
   const [isToolLibraryOpen, setIsToolLibraryOpen] = useState(false);
   // Shell-side GRBL streaming panel (serial transport, gcode_sender.rs).
@@ -752,6 +757,25 @@ function App() {
     return bodyIds;
   }, [viewport, document?.selected_feature_id]);
 
+  // Union center of the referenced bodies — the default cutting plane
+  // of a section view passes through it (P4).
+  const drawingBodyCenter = useMemo(() => {
+    const bodies =
+      viewport?.bodies.filter((body) => drawingBodyIds.includes(body.id)) ?? [];
+    if (bodies.length === 0) {
+      return { x: 0, y: 0, z: 0 };
+    }
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (const body of bodies) {
+      x += body.center.x;
+      y += body.center.y;
+      z += body.center.z;
+    }
+    return { x: x / bodies.length, y: y / bodies.length, z: z / bodies.length };
+  }, [viewport, drawingBodyIds]);
+
   // Suggested sheet position for the next view: a simple grid (P5
   // replaces this with first-angle placement).
   const nextDrawingSheetPosition = useMemo<[number, number]>(() => {
@@ -824,6 +848,14 @@ function App() {
     sheet_position: [number, number];
     show_hidden: boolean;
     warning: string;
+    section?: {
+      cutting_plane_point: [number, number, number];
+      cutting_plane_normal: [number, number, number];
+      cut_away: boolean;
+      label: string;
+      hatch_angle_deg: number;
+      hatch_spacing_mm: number;
+    };
   }) => {
     setIsDrawingInsertPanelOpen(false);
     await runAction(async () => {
@@ -833,6 +865,7 @@ function App() {
       if (!drawing || drawing.sheets.length === 0) {
         return;
       }
+      const previousCount = drawing.views.length;
       await drawingViewCreate(drawing.drawing_id, drawing.sheets[0].sheet_id, {
         view_id: "",
         kind: view.kind,
@@ -842,7 +875,25 @@ function App() {
         sheet_position: view.sheet_position,
         show_hidden: view.show_hidden,
         warning: view.warning,
+        section: view.section,
       });
+      // A committed section view keeps its panel open, bound to the
+      // freshly minted view id, for label / cut-away / hatch edits.
+      if (view.kind === "section") {
+        const updated = await awaitDocumentChange(
+          (next) =>
+            (next.drawing.drawings.find(
+              (d) => d.drawing_id === next.drawing.active_drawing_id,
+            )?.views.length ?? 0) > previousCount,
+        );
+        const updatedDrawing = updated.drawing.drawings.find(
+          (d) => d.drawing_id === updated.drawing.active_drawing_id,
+        );
+        const createdView = updatedDrawing?.views[updatedDrawing.views.length - 1];
+        if (createdView?.view_id) {
+          setSectionPanelViewId(createdView.view_id);
+        }
+      }
     });
   };
 
@@ -1181,6 +1232,7 @@ function App() {
     drawingDelete,
     drawingViewCreate,
     drawingViewDelete,
+    drawingSectionUpdate,
   } = useCadCore();
 
   // Completes an armed "Pick a face…" sketch-plane redefinition: the
@@ -5017,6 +5069,7 @@ function App() {
                   disabled={status !== "connected"}
                   nextSheetPosition={nextDrawingSheetPosition}
                   bodyIds={drawingBodyIds}
+                  sectionPlaneCenter={drawingBodyCenter}
                   onCommit={(view) => {
                     void drawingInsertViewAction(view);
                   }}
@@ -5025,6 +5078,32 @@ function App() {
                   }}
                 />
               ) : null}
+              {sectionPanelViewId != null && activeDrawing != null
+                ? (() => {
+                    const sectionView = activeDrawing.views.find(
+                      (v) => v.view_id === sectionPanelViewId,
+                    );
+                    if (!sectionView?.section) {
+                      return null;
+                    }
+                    return (
+                      <SectionPanel
+                        disabled={status !== "connected"}
+                        section={sectionView.section}
+                        onCommit={(section) => {
+                          void drawingSectionUpdate(
+                            activeDrawing.drawing_id,
+                            sectionView.view_id,
+                            section,
+                          );
+                        }}
+                        onClose={() => {
+                          setSectionPanelViewId(null);
+                        }}
+                      />
+                    );
+                  })()
+                : null}
               {pendingSketchDeleteConfirmation ? (
                 <SketchDeleteConfirmationPanel
                   confirmation={pendingSketchDeleteConfirmation}

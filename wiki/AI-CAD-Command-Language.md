@@ -3506,16 +3506,35 @@ cache, the toolpath contract) — they never appear in document payloads.
   sheet, its views, and annotations attached to those views.
 - `drawing_view_create` — payload `{drawing_id, sheet_id, view}`.
   View kinds: `"projection"` (needs `standard_view` `"front" | "right"
-  | "left" | "top" | "bottom" | "back"` or a `custom_frame`) or
-  `"axonometric"` (needs `custom_frame`). Sections are rejected until
-  P4. The bump re-projects the view (HLR, cached in `drawing_runtime`
-  — memory-only).
+  | "left" | "top" | "bottom" | "back"` or a `custom_frame`),
+  `"axonometric"` (needs `custom_frame`), or `"section"` (needs
+  `view.section` — the frame derives from the cutting plane; a
+  standard view or custom frame must NOT override it). The bump
+  re-projects the view (HLR, cached in `drawing_runtime` —
+  memory-only).
 - `drawing_view_update` — payload `{drawing_id, view}`. Same
   validation; annotations keep their attachments.
 - `drawing_view_delete` — payload `{drawing_id, view_id}`. Removes the
   view, its annotations, and its id from every sheet's `view_ids`.
 - `drawing_view_move` — payload `{drawing_id, view_id, sheet_position:
   [x, y]}`. Cosmetic only — never re-projects.
+- `drawing_section_update` — payload `{drawing_id, view_id, section}`.
+  Replaces a section view's `SectionDefinition` (cutting plane
+  point/normal, `cut_away`, label, hatch angle/spacing). The view must
+  be kind `"section"`; a degenerate normal or non-positive hatch
+  spacing is rejected before the undo push.
+
+Section views (P4): the refresh cuts every source body with a
+half-space when `section.cut_away` is true (material on the normal
+side is removed; the ref point marks the REMOVED side — pinned by the
+section test) and suppresses hidden edges entirely (ISO 128-3 §7).
+The hatch boundary is the cut face's wires at the cutting plane
+(`cut_away = false` uses the uncut body's cross-section); scanline
+hatching (thin lines, `hatch_angle_deg`/`hatch_spacing_mm`) comes from
+the shared `compute_hatch_segments` engine function. Every other view
+of the drawing that sees a sibling section's cutting plane edge-on
+carries the cutting-plane trace (`curve_class: "cutting_plane"`, a
+type-H chain line) in its projection.
 
 A view whose source body disappears degrades with `broken_ref` +
 `warning` and holds its last-known projection (marked `stale`) — never

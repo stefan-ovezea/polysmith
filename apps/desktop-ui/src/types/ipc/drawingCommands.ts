@@ -3,7 +3,12 @@
 // Every mutator replies with a `document_state` event; errors reply
 // with an `error` event `{code, message}`.
 
-import type { Drawing, DrawingSheet, DrawingView } from "../geometry/drawing";
+import type {
+  Drawing,
+  DrawingSheet,
+  DrawingView,
+  SectionDefinition,
+} from "../geometry/drawing";
 
 export interface DrawingCreateCommand {
   id: string;
@@ -60,5 +65,15 @@ export interface DrawingViewMoveCommand {
     drawing_id: string;
     view_id: string;
     sheet_position: [number, number];
+  };
+}
+
+export interface DrawingSectionUpdateCommand {
+  id: string;
+  type: "drawing_section_update";
+  payload: {
+    drawing_id: string;
+    view_id: string;
+    section: SectionDefinition;
   };
 }

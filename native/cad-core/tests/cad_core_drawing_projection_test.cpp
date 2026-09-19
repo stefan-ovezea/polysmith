@@ -507,8 +507,8 @@ bool test_view_mutators() {
   const std::string drawing_id = document.drawing.drawings[0].drawing_id;
   const std::string sheet_id = document.drawing.drawings[0].sheets[0].sheet_id;
 
-  // Validation rejects BEFORE the undo push: section kind (P4),
-  // unknown standard view, empty source bodies.
+  // Validation rejects BEFORE the undo push: a section view without a
+  // definition, unknown standard view, empty source bodies.
   const auto rejects = [&](const DrawingView& bad) {
     bool threw = false;
     try {
@@ -521,7 +521,8 @@ bool test_view_mutators() {
   DrawingView section_view;
   section_view.kind = "section";
   section_view.source_body_ids = {body_id};
-  if (!expect(rejects(section_view), "section views rejected until P4")) {
+  if (!expect(rejects(section_view),
+              "section view without a definition rejected")) {
     return false;
   }
   DrawingView bad_standard;
@@ -577,9 +578,26 @@ bool test_view_mutators() {
 
   // Delete removes the view and its sheet reference.
   document = manager.drawing_view_delete(drawing_id, view_id);
-  return expect(document.drawing.drawings[0].views.empty() &&
-                    document.drawing.drawings[0].sheets[0].view_ids.empty(),
-                "view_delete removes the view and the sheet reference");
+  if (!expect(document.drawing.drawings[0].views.empty() &&
+                  document.drawing.drawings[0].sheets[0].view_ids.empty(),
+              "view_delete removes the view and the sheet reference")) {
+    return false;
+  }
+
+  // P4: a section view WITH a valid definition is accepted now (the
+  // frame derives from the cutting plane — no standard view needed).
+  DrawingView accepted_section;
+  accepted_section.kind = "section";
+  accepted_section.source_body_ids = {body_id};
+  polysmith::core::SectionDefinition section;
+  section.cutting_plane_point = {10.0, 0.0, 0.0};
+  section.cutting_plane_normal = {1.0, 0.0, 0.0};
+  accepted_section.section = section;
+  document = manager.drawing_view_create(drawing_id, sheet_id,
+                                         accepted_section);
+  return expect(document.drawing.drawings[0].views.size() == 1 &&
+                    document.drawing.drawings[0].views[0].kind == "section",
+                "section views with a definition are accepted (P4)");
 }
 
 // ── Test 7b: viewport sheet emission ──────────────────────────────

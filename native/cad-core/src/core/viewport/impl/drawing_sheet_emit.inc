@@ -108,6 +108,30 @@
           out_view.max[0] = std::max(out_view.max[0], curve.p1[0]);
           out_view.max[1] = std::max(out_view.max[1], curve.p1[1]);
         }
+
+        // ── Section hatching (ISO 128-3 §7) ────────────────────
+        // Continuous thin lines at the section's angle and spacing,
+        // clipped to the hatch region polygon (outer loop minus
+        // holes) in view space, transformed to sheet-mm like every
+        // projection curve.  The scanline hatcher is the shared
+        // engine function — the P5 flatten and the export backends
+        // produce identical hatching.
+        if (view->section.has_value()) {
+          const auto& section = view->section.value();
+          for (const auto& region : projection->hatch_regions) {
+            const auto segments = compute_hatch_segments(
+                region, section.hatch_angle_deg, section.hatch_spacing_mm);
+            for (const auto& segment : segments) {
+              ViewportDrawingCurve curve;
+              curve.kind = "line";
+              curve.line_class = "visible";
+              curve.curve_class = "hatch";
+              curve.p0 = {segment[0][0] * s + ox, segment[0][1] * s + oy};
+              curve.p1 = {segment[1][0] * s + ox, segment[1][1] * s + oy};
+              out_sheet.curves.push_back(std::move(curve));
+            }
+          }
+        }
         out_sheet.views.push_back(std::move(out_view));
       }
       drawing_sheets.push_back(std::move(out_sheet));

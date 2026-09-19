@@ -745,10 +745,11 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
 - `drawing_view_create { drawing_id, sheet_id, view }` — creates a view
   on the sheet (mints the view id, appends it to the sheet's ordering).
   `view.kind` is `"projection"` (with `standard_view` — front/right/
-  left/top/bottom/back — or a `custom_frame`) or `"axonometric"`
-  (requires `custom_frame`).  Section views land in P4 and are
-  rejected for now.  The bump inside the command re-projects the view
-  through the drawing refresh pass.
+  left/top/bottom/back — or a `custom_frame`), `"axonometric"`
+  (requires `custom_frame`), or `"section"` (requires `view.section` —
+  the frame derives from the cutting plane; a standard view or custom
+  frame must NOT override it).  The bump inside the command
+  re-projects the view through the drawing refresh pass.
 - `drawing_view_update { drawing_id, view }` — replaces the view's
   definition (same id, same sheet); annotations keep their
   attachments and re-resolve on the next refresh.
@@ -757,6 +758,22 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
 - `drawing_view_move { drawing_id, view_id, sheet_position: [x, y] }`
   — moves the view origin on its sheet (sheet-mm).  Purely cosmetic —
   never re-projects.
+- `drawing_section_update { drawing_id, view_id, section }` — replaces
+  a section view's `SectionDefinition` (cutting plane point/normal,
+  `cut_away`, label, hatch angle/spacing).  The view must be kind
+  `"section"`; a degenerate normal or non-positive hatch spacing is
+  rejected before the undo push.  The bump re-cuts and re-projects.
+
+Section views (P4): the refresh cuts every source body with a
+half-space when `section.cut_away` is true (material on the normal
+side is removed) and suppresses hidden edges entirely (ISO 128-3 §7).
+The hatch boundary is the cut face's wires at the cutting plane
+(`cut_away = false` uses the uncut body's cross-section instead); the
+scanline hatching (thin lines, `hatch_angle_deg`/`hatch_spacing_mm`)
+is computed by the shared `compute_hatch_segments` engine function.
+Every OTHER view of the drawing that sees a sibling section's cutting
+plane edge-on carries the cutting-plane trace (a type-H chain line,
+`curve_class: "cutting_plane"`) in its projection.
 
 Every mutator replies with a `document_state` event; validation errors
 reply with an `error` event.  Views are re-projected inside the single

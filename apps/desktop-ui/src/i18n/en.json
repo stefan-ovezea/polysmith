@@ -232,6 +232,14 @@
       "title": "Insert View",
       "noBody": "Select a body in the CAD workspace first — the view projects the selected body.",
       "bodySelected": "{{count}} body selected",
+      "viewKind": "View type",
+      "projectionKind": "Projection",
+      "sectionKind": "Section",
+      "cuttingPlane": "Cutting plane",
+      "cutAway": "Cut away",
+      "sectionLabel": "Label",
+      "hatchAngle": "Hatch angle",
+      "hatchSpacing": "Hatch spacing",
       "scale": "Scale",
       "showHidden": "Hidden edges",
       "front": "Front",
@@ -240,6 +248,14 @@
       "top": "Top",
       "bottom": "Bottom",
       "back": "Back"
+    },
+    "sectionPanel": {
+      "title": "Section {{label}}",
+      "cutAway": "Cut away material",
+      "reverse": "Reverse direction",
+      "hatchAngle": "Hatch angle",
+      "hatchSpacing": "Hatch spacing",
+      "hint": "Enter applies, Escape closes."
     }
   },
   "grbl": {

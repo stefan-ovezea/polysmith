@@ -114,6 +114,59 @@ function buildRibbon(points: Array<[number, number]>, widthMm: number,
   return mesh;
 }
 
+/// Builds a dashed ribbon: the polyline is walked by arc length and
+/// emitted in dash/gap phases, starting with a dash (the ISO 128-2
+/// rule).  The type-H cutting-plane line uses this as a light
+/// approximation (long dash / short gap); the full chain pattern with
+/// dots and thick ends lands with the P5 line-style vocabulary.
+function buildDashedRibbon(points: Array<[number, number]>, widthMm: number,
+                           color: number, dashMm: number,
+                           gapMm: number): THREE.Group | null {
+  if (points.length < 2) {
+    return null;
+  }
+  const lengths: number[] = [0];
+  let total = 0;
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    total += Math.hypot(
+      points[i + 1][0] - points[i][0],
+      points[i + 1][1] - points[i][1],
+    );
+    lengths.push(total);
+  }
+  const pointAt = (d: number): [number, number] => {
+    for (let i = 0; i + 1 < lengths.length; i += 1) {
+      if (d <= lengths[i + 1] + 1e-9) {
+        const seg = lengths[i + 1] - lengths[i] || 1e-9;
+        const t = Math.min(1, Math.max(0, (d - lengths[i]) / seg));
+        return [
+          points[i][0] + (points[i + 1][0] - points[i][0]) * t,
+          points[i][1] + (points[i + 1][1] - points[i][1]) * t,
+        ];
+      }
+    }
+    return points[points.length - 1];
+  };
+  const group = new THREE.Group();
+  const phaseLength = dashMm + gapMm;
+  for (let pos = 0; pos < total - 1e-6; pos += phaseLength) {
+    const a = pos;
+    const b = Math.min(pos + dashMm, total);
+    const dash: Array<[number, number]> = [pointAt(a)];
+    for (let i = 0; i < lengths.length; i += 1) {
+      if (lengths[i] > a + 1e-9 && lengths[i] < b - 1e-9) {
+        dash.push(points[i]);
+      }
+    }
+    dash.push(pointAt(b));
+    const ribbon = buildRibbon(dash, widthMm, color);
+    if (ribbon) {
+      group.add(ribbon);
+    }
+  }
+  return group;
+}
+
 /** Adds one sheet (paper, border, projection curves, view frames). */
 function addSheetGroup(
   group: THREE.Group,
@@ -155,7 +208,19 @@ function addSheetGroup(
     const isHidden = curve.line_class === "hidden";
     const color = isHidden ? hiddenColor : visibleColor;
     const widthMm = isHidden ? ISO_THIN_LINE_MM : ISO_THICK_LINE_MM;
-    const ribbon = buildRibbon(points, widthMm, color);
+    let ribbon: THREE.Mesh | THREE.Group | null;
+    if (curve.curve_class === "hatch") {
+      // ISO 128-3 §7: hatching is continuous THIN, in the visible
+      // color.
+      ribbon = buildRibbon(points, ISO_THIN_LINE_MM, visibleColor);
+    } else if (curve.curve_class === "cutting_plane") {
+      // Type-H chain line: thin, long dash / short gap.
+      ribbon = buildDashedRibbon(
+        points, ISO_THIN_LINE_MM, visibleColor, 6, 0.75,
+      );
+    } else {
+      ribbon = buildRibbon(points, widthMm, color);
+    }
     if (ribbon) {
       group.add(ribbon);
     }

@@ -269,14 +269,95 @@ sheet; Insert View (top/right, scale 0.5, hidden edges) → sheet
 updates; edit the model → views update; Delete → sheet clears;
 undo/redo.  Commit C3 after the user confirms.
 
-## NEXT: P4 — sections + hatching (C4)
-`BRepAlgoAPI_Cut` + `BRepPrimAPI_MakeHalfSpace` cut-away;
-`BRepAlgoAPI_Section` hatch boundaries; own scanline hatcher in sheet
-space (ISO 128-3: thin 45°, 0.7–3 mm spacing, adjacent-part
-mirroring, thin sections solid black); hidden edges filtered on
-hatched faces; cutting-plane line (type H) on the parent view; A–A
-labels; command drawing_section_update; test
-cad_core_drawing_section_test (golden).
+## P4 — sections + hatching (C4) — DONE, gates green
+
+**Engine (`drawing_projection.cpp`):**
+- `ProjectionInput` += `section` (this view IS a section view) +
+  `section_traces` (sibling sections whose cutting plane this view
+  sees edge-on).  Section pre-pass: per-source `BRepAlgoAPI_Cut` with
+  a `BRepPrimAPI_MakeHalfSpace` halfspace; hidden edges suppressed
+  entirely (ISO 128-3 §7).  `cut_away = false` → uncut body + hatch
+  from `BRepAlgoAPI_Section` wires.
+- **Two OCCT behaviors pinned empirically (in-test probes, now
+  production rules):** (1) this OCCT build's
+  `MakeHalfSpace(face, ref)` treats the ref as OUTSIDE the material —
+  the halfspace keeps the side OPPOSITE the ref, so the engine's ref
+  = cutting_plane_point + normal (cut removes the normal side); (2)
+  boolean output repeats edges inside a face wire (both directions) —
+  hatch loops are built by TShape-dedupe + geometric endpoint
+  chaining (`chain_into_loops`), never by wire-walk order.
+- Hatch regions: the cut face's planar faces lying ON the cutting
+  plane (outer wire = largest |area|, the rest = holes), tessellated
+  48-seg curved edges + projected via `HLRAlgo_Projector::Project`.
+- Cutting-plane traces: `BRepAlgoAPI_Section(body, plane face)` per
+  source, projected extremes → one `curve_class "cutting_plane"`
+  record per body (dedupe collapses overlaps).
+- `compute_hatch_segments(region, angle, spacing)` — the shared
+  scanline hatcher (even-odd across outer + holes, half-open crossing
+  test), reused by the emit now, the P5 flatten and the export
+  backends later.
+- **Two HLR blind spots fixed:** (a) the cut face sits exactly AT the
+  projection plane (depth 0) → HLR drops part of it (a rim circle +
+  one edge vanished in the hole-box test) — the frame origin is
+  shifted 1e-3 mm along the normal (projected x/y unchanged, depth
+  becomes ε); (b) FULL circles have start == end → the depth-edge
+  degenerate filter dropped them — closed circle/ellipse loops are
+  now exempt.  `record_key` += circle center/radius + ellipse
+  geometry (full-circle start==end under-identifies otherwise).
+
+**Refresh:** section frames derive from the cutting plane (origin =
+  plane point, normal = plane normal, view-X = world +X projected
+  onto the plane); sibling sections collect into `section_traces`.
+**Mutators:** `drawing_section_update` (P4 command #10); kind
+  "section" accepted by `validate_view_definition` (requires a
+  section definition, non-degenerate normal, positive hatch spacing;
+  standard/custom frames must NOT override).
+**Emission:** hatch scanlines as `curve_class "hatch"` thin visible
+  curves; UI renders hatch thin + cutting-plane as a light
+  chain-dash (`buildDashedRibbon`; the full ISO 128-2 pattern with
+  dots + thick ends lands in P5).
+**UI:** InsertViewPanel gains a Section mode (cutting-plane axis
+  buttons, cut-away, label, hatch angle 30/45/60, spacing 0.7–3) +
+  the SectionPanel stays open bound to the committed section view
+  (label/cut-away/reverse/hatch, drawing_section_update, Enter/Escape).
+  Cutting plane passes through the referenced bodies' center.
+**Tests:** new `cad_core_drawing_section_test` (7 tests): box hatch
+  (area 200, hidden suppressed, show_hidden ignored), through-hole
+  donut hatch (outer 200 + π·9 hole, rim circle record), cut
+  direction via a boss (max view-Y 10 vs 14), traces on every
+  edge-on view + none on parallel views, mutators/update/undo,
+  scanline hatcher (determinism, hole reduces length), emission
+  (hatch + trace curves).  4 new goldens.
+**Gates:** `pnpm core:build` clean + **58/58 suites pass** (existing
+  goldens unchanged) + `tsc --noEmit` clean.
+
+**Known P4 carry-overs (documented, not silent):** the A–A label +
+  arrows on the parent view wait for the P7 text engine
+  (`SectionDefinition.label` exists from day one — no migration);
+  the cutting-plane trace appears on EVERY edge-on view of the
+  drawing, not only the parent (no parent link in the data model —
+  sections reference the MODEL); multi-part hatching
+  (adjacent-part mirroring, thin-section black fill) is P5+.
+
+**NEEDS IN-APP VERIFICATION (C3+C4 together):** `pnpm dev` → drawing
+  workspace → Insert View → Section → +X cut of a box → hatched view
+  on the sheet + chain line on the front view; Section panel: label /
+  reverse / hatch angle+spacing update live; edit the model → section
+  re-cuts; undo/redo.  Commit C4 after the user confirms.
+
+## NEXT: P5 — ISO 5457 sheets + flattened stream (C5)
+Exact A0–A4 dims, frame 0.7 mm, left 20/others 10 mm margins, 4
+centring marks, grid refs (24/16/12/8/6 × 16/12/8/6/4), flat
+`flatten_sheet() → SheetPrimitiveStream` (view transform by
+scale+position, ISO 128-2 line styles with Annex-A dash
+recalculation at corners, coincidence priority), first/third-angle
+placement per sheet, projection symbol (h=10d, H=20d, frustum +
+concentric circles) bottom-right; commands
+`drawing_sheet_update{sheet_id, paper_size, orientation,
+projection_angle, name}`; test `cad_core_drawing_sheet_test`
+(exact dims, centring-mark geometry, grid counts, flatten
+determinism golden, angle-placement sign, dash pattern segment
+counts + corner restart, coincidence-priority full-set assertion).
 
 ---
 

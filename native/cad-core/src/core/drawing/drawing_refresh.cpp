@@ -67,7 +67,57 @@ void refresh_drawing_dependencies(DocumentState& document,
 
       // ── Frame resolution ────────────────────────────────────
       std::optional<DrawingViewFrame> frame;
-      if (!view.standard_view.empty()) {
+      if (view.kind == "section") {
+        // Section frames derive from the cutting plane (P4): the view
+        // plane IS the cutting plane; view-X is the orthogonal
+        // projection of world +X onto the plane (fallbacks +Y, +Z —
+        // with a unit normal the last fallback always resolves).
+        if (!view.section.has_value()) {
+          store_broken_result(
+              document, view,
+              "The section view has no section definition — the view "
+              "holds its last-known projection.",
+              std::nullopt, target_revision);
+          continue;
+        }
+        DrawingViewFrame section_frame;
+        section_frame.origin = view.section->cutting_plane_point;
+        section_frame.normal = view.section->cutting_plane_normal;
+        const auto project_onto_plane = [&](const std::array<double, 3>& axis) {
+          const double dot = axis[0] * section_frame.normal[0] +
+                             axis[1] * section_frame.normal[1] +
+                             axis[2] * section_frame.normal[2];
+          return std::array<double, 3>{
+              axis[0] - dot * section_frame.normal[0],
+              axis[1] - dot * section_frame.normal[1],
+              axis[2] - dot * section_frame.normal[2]};
+        };
+        std::array<double, 3> x_axis = project_onto_plane({1.0, 0.0, 0.0});
+        double x_length = std::sqrt(x_axis[0] * x_axis[0] +
+                                    x_axis[1] * x_axis[1] +
+                                    x_axis[2] * x_axis[2]);
+        if (x_length < 1e-9) {
+          x_axis = project_onto_plane({0.0, 1.0, 0.0});
+          x_length = std::sqrt(x_axis[0] * x_axis[0] + x_axis[1] * x_axis[1] +
+                               x_axis[2] * x_axis[2]);
+        }
+        if (x_length < 1e-9) {
+          x_axis = project_onto_plane({0.0, 0.0, 1.0});
+          x_length = std::sqrt(x_axis[0] * x_axis[0] + x_axis[1] * x_axis[1] +
+                               x_axis[2] * x_axis[2]);
+        }
+        if (x_length < 1e-9) {
+          store_broken_result(
+              document, view,
+              "The cutting plane normal is degenerate — the view holds "
+              "its last-known projection.",
+              std::nullopt, target_revision);
+          continue;
+        }
+        section_frame.x_direction = {x_axis[0] / x_length, x_axis[1] / x_length,
+                                     x_axis[2] / x_length};
+        frame = section_frame;
+      } else if (!view.standard_view.empty()) {
         frame = standard_view_frame(view.standard_view);
         if (!frame.has_value()) {
           polysmith::core::log_warn(
@@ -77,15 +127,6 @@ void refresh_drawing_dependencies(DocumentState& document,
         }
       } else if (view.custom_frame.has_value()) {
         frame = view.custom_frame;
-      } else if (view.section.has_value()) {
-        // Sections land in P4 — hold the last-known state with an
-        // explicit warning, never silently project the uncut body.
-        store_broken_result(
-            document, view,
-            "Section views are not supported yet — the view holds its "
-            "last-known projection.",
-            std::nullopt, target_revision);
-        continue;
       }
 
       // ── Source body resolution ─────────────────────────────
@@ -131,6 +172,14 @@ void refresh_drawing_dependencies(DocumentState& document,
       input.sources = std::move(sources);
       input.frame = frame.value();
       input.show_hidden = view.show_hidden;
+      input.section = view.kind == "section" ? view.section : std::nullopt;
+      // Sibling sections trace their cutting planes onto this view
+      // (every edge-on view of the drawing shows the chain line).
+      for (const auto& other : drawing.views) {
+        if (other.view_id != view.view_id && other.section.has_value()) {
+          input.section_traces.push_back({other.section.value()});
+        }
+      }
       input.source_revision = target_revision;
       drawing_runtime::store_projection_at(
           document, view.view_id, project(input), target_revision);

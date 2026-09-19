@@ -209,6 +209,7 @@ import type {
   DrawingViewUpdateCommand,
   DrawingViewDeleteCommand,
   DrawingViewMoveCommand,
+  DrawingSectionUpdateCommand,
 } from "./ipc/drawingCommands";
 import type {
   FeatureEntry,
@@ -1046,6 +1047,7 @@ export type CoreCommand =
   | DrawingViewUpdateCommand
   | DrawingViewDeleteCommand
   | DrawingViewMoveCommand
+  | DrawingSectionUpdateCommand
   | RemoveSketchProjectionsCommand
   | RedefineSketchPlaneCommand
   | ProjectFaceIntoSketchCommand

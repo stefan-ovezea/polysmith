@@ -42,3 +42,9 @@
   DocumentState drawing_view_move(const std::string& drawing_id,
                                   const std::string& view_id,
                                   const std::array<double, 2>& sheet_position);
+  // Replaces a section view's SectionDefinition (label, cut direction,
+  // hatch angle/spacing).  The view must be kind "section"; the bump
+  // re-cuts and re-projects through the refresh pass.
+  DocumentState drawing_section_update(const std::string& drawing_id,
+                                       const std::string& view_id,
+                                       const SectionDefinition& section);
