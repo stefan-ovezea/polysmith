@@ -3523,6 +3523,12 @@ cache, the toolpath contract) — they never appear in document payloads.
   point/normal, `cut_away`, label, hatch angle/spacing). The view must
   be kind `"section"`; a degenerate normal or non-positive hatch
   spacing is rejected before the undo push.
+- `drawing_sheet_update` — payload `{drawing_id, sheet_id, paper_size,
+  orientation, projection_angle, name}`. `paper_size` A0–A4,
+  `orientation` portrait/landscape (landscape swaps the trimmed ISO
+  5457 dimensions), `projection_angle` `"first_angle"` (default) or
+  `"third_angle"`, `name` display-only. Values outside the enums are
+  rejected before the undo push; the bump re-flattens the sheet.
 
 Section views (P4): the refresh cuts every source body with a
 half-space when `section.cut_away` is true (material on the normal
@@ -3535,6 +3541,20 @@ the shared `compute_hatch_segments` engine function. Every other view
 of the drawing that sees a sibling section's cutting plane edge-on
 carries the cutting-plane trace (`curve_class: "cutting_plane"`, a
 type-H chain line) in its projection.
+
+Sheets (P5): `flatten_sheet(document, drawing_id, sheet_id)` produces
+the `SheetPrimitiveStream` the viewport draws — the sheet furniture
+(0.7 mm frame at 20/10 mm margins, centring marks, grid-reference
+ticks, the ISO 5456-2 projection symbol honoring the per-sheet angle)
+plus every view's geometry transformed into sheet-mm with the ISO
+128-2 line styles ALREADY applied (dash patterns recalculated at
+corners per Annex A — every dash sequence starts and ends with a dash;
+hidden = dashed thin, cutting-plane = chain thin, hatching = continuous
+thin emitted last).  Coincident geometry is de-duplicated by the
+priority visible > hidden > cutting_plane > hatch on the undashed
+records, and cutting-plane traces lying on a visible/hidden line are
+dropped (the support-overlap rule).  The stream is deterministic and
+memory-only (golden-file pinned).
 
 A view whose source body disappears degrades with `broken_ref` +
 `warning` and holds its last-known projection (marked `stale`) — never

@@ -8,6 +8,8 @@ export interface DrawingToolbarActions {
   onNewDrawing: () => void;
   onInsertView: () => void;
   onDeleteDrawing: () => void;
+  /** Opens the sheet settings panel (paper, orientation, angle). */
+  onSheetSettings: () => void;
 }
 
 export interface DrawingToolbarProps extends Partial<DrawingToolbarActions> {
@@ -15,7 +17,7 @@ export interface DrawingToolbarProps extends Partial<DrawingToolbarActions> {
 }
 
 /** Toolbar for the ISO Drawing workspace: drawing lifecycle + view
- *  insertion.  Dimension tools and sheet controls land with P6/P7. */
+ *  insertion + sheet settings.  Dimension tools land with P6. */
 export function DrawingToolbar({
   disabled,
   drawingCount = 0,
@@ -23,6 +25,7 @@ export function DrawingToolbar({
   onNewDrawing,
   onInsertView,
   onDeleteDrawing,
+  onSheetSettings,
 }: DrawingToolbarProps) {
   const { t } = useTranslation();
 
@@ -54,6 +57,15 @@ export function DrawingToolbar({
         onClick={onDeleteDrawing}
       >
         {t("drawing.toolbar.deleteDrawing")}
+      </button>
+      <button
+        type="button"
+        className="cad-ribbon-action"
+        disabled={disabled || drawingCount === 0}
+        title={t("drawing.toolbar.sheetSettingsTitle")}
+        onClick={onSheetSettings}
+      >
+        {t("drawing.toolbar.sheetSettings")}
       </button>
       <span className="text-xs text-[var(--cad-muted)]">
         {drawingCount > 0

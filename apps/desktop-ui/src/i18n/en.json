@@ -224,6 +224,8 @@
       "insertViewTitle": "Add a projected view to the active drawing",
       "deleteDrawing": "Delete",
       "deleteDrawingTitle": "Delete the active drawing",
+      "sheetSettings": "Sheet…",
+      "sheetSettingsTitle": "Sheet settings: paper, orientation, projection angle",
       "viewCount": "{{count}} view(s)",
       "noDrawing": "No drawing yet",
       "exists": "A drawing already exists in this document."
@@ -248,6 +250,17 @@
       "top": "Top",
       "bottom": "Bottom",
       "back": "Back"
+    },
+    "sheetPanel": {
+      "title": "Sheet settings",
+      "name": "Name",
+      "paperSize": "Paper size",
+      "orientation": "Orientation",
+      "portrait": "Portrait",
+      "landscape": "Landscape",
+      "projectionAngle": "Projection angle",
+      "firstAngle": "First angle",
+      "thirdAngle": "Third angle"
     },
     "sectionPanel": {
       "title": "Section {{label}}",

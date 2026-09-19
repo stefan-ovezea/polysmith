@@ -180,8 +180,18 @@ export interface ViewportDrawingCurve {
   kind: string;
   /** "visible" | "hidden" */
   line_class: string;
-  /** "sharp" | "smooth" | "seam" | "outline" */
+  /** The P5 flattened stream's purpose ("sharp" | "hatch" |
+   *  "cutting_plane" | "frame" | "centring_mark" | "grid_ref" |
+   *  "projection_symbol" | ...). */
   curve_class: string;
+  /** "view_geometry" | "hatch" | "cutting_plane" | "frame" |
+   *  "centring_mark" | "grid_ref" | "projection_symbol" — furniture
+   *  purposes render in the border color. */
+  purpose: string;
+  /** ISO line-group width in mm — the core flatten has already
+   *  applied dash patterns, so the renderer draws continuous ribbons
+   *  of this width only. */
+  width_mm: number;
   /** Endpoints in sheet-mm. */
   p0: [number, number];
   p1: [number, number];

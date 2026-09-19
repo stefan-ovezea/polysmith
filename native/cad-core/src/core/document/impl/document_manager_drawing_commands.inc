@@ -19,6 +19,15 @@
   // views die with them).
   DocumentState drawing_sheet_delete(const std::string& drawing_id,
                                      const std::string& sheet_id);
+  // Replaces the sheet's furniture settings: paper size (A0–A4),
+  // orientation, per-sheet projection angle, and name.  Values are
+  // validated before the undo push.
+  DocumentState drawing_sheet_update(const std::string& drawing_id,
+                                     const std::string& sheet_id,
+                                     const std::string& paper_size,
+                                     const std::string& orientation,
+                                     const std::string& projection_angle,
+                                     const std::string& name);
 
   // Creates a view on the sheet.  Validates the view kind (sections
   // land in P4), the standard view name (resolved through

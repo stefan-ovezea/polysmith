@@ -102,7 +102,11 @@ import {
   createHoleParameterHandlers,
 } from "./app/bodyModifierActions";
 import { CamFloatingPanels } from "./app/CamFloatingPanels";
-import { InsertViewPanel, SectionPanel } from "./app/DrawingFloatingPanels";
+import {
+  InsertViewPanel,
+  SectionPanel,
+  SheetPanel,
+} from "./app/DrawingFloatingPanels";
 import { ConstructionPendingPanels } from "./app/ConstructionPendingPanels";
 import { PrimitiveFeatureEditPanel } from "./app/PrimitiveFeatureEditPanel";
 import {
@@ -610,6 +614,9 @@ function App() {
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
   const [isDrawingInsertPanelOpen, setIsDrawingInsertPanelOpen] =
     useState(false);
+  // Sheet settings panel (P5: paper, orientation, projection angle).
+  const [isDrawingSheetPanelOpen, setIsDrawingSheetPanelOpen] =
+    useState(false);
   // The section view bound to the SectionPanel after insertion (P4) —
   // stays open so label / cut-away / hatch edits commit live.
   const [sectionPanelViewId, setSectionPanelViewId] = useState<string | null>(
@@ -776,8 +783,26 @@ function App() {
     return { x: x / bodies.length, y: y / bodies.length, z: z / bodies.length };
   }, [viewport, drawingBodyIds]);
 
-  // Suggested sheet position for the next view: a simple grid (P5
-  // replaces this with first-angle placement).
+  // Bounds (sheet-mm) of the front projection view on the active
+  // sheet — the anchor for first/third-angle placement (P5).
+  const drawingBaseViewBounds = useMemo(() => {
+    const sheet = viewport?.drawing_sheets?.find(
+      (candidate) =>
+        candidate.drawing_id === activeDrawing?.drawing_id &&
+        candidate.sheet_id === activeDrawing.sheets[0]?.sheet_id,
+    );
+    const base = activeDrawing?.views.find(
+      (v) => v.kind === "projection" && v.standard_view === "front",
+    );
+    const bounds = sheet?.views.find((v) => v.view_id === base?.view_id);
+    if (!bounds) {
+      return null;
+    }
+    return { min: bounds.min, max: bounds.max };
+  }, [viewport, activeDrawing]);
+
+  // Grid fallback for views that don't slot around the front view
+  // (front itself, sections, or no base view on the sheet yet).
   const nextDrawingSheetPosition = useMemo<[number, number]>(() => {
     const count = activeDrawing?.views.length ?? 0;
     return [30 + (count % 3) * 80, 40 + Math.floor(count / 3) * 90];
@@ -904,6 +929,29 @@ function App() {
         return;
       }
       await drawingDelete(id);
+    });
+  };
+
+  // Sheet settings (P5): paper size / orientation / projection angle /
+  // name on the active drawing's first sheet, committed live.
+  const drawingSheetSettingsAction = async (settings: {
+    paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
+    orientation: "portrait" | "landscape";
+    projection_angle: "first_angle" | "third_angle";
+    name: string;
+  }) => {
+    await runAction(async () => {
+      const drawing = document?.drawing.drawings.find(
+        (d) => d.drawing_id === document?.drawing.active_drawing_id,
+      );
+      if (!drawing || drawing.sheets.length === 0) {
+        return;
+      }
+      await drawingSheetUpdate(
+        drawing.drawing_id,
+        drawing.sheets[0].sheet_id,
+        settings,
+      );
     });
   };
 
@@ -1233,6 +1281,7 @@ function App() {
     drawingViewCreate,
     drawingViewDelete,
     drawingSectionUpdate,
+    drawingSheetUpdate,
   } = useCadCore();
 
   // Completes an armed "Pick a face…" sketch-plane redefinition: the
@@ -2854,6 +2903,9 @@ function App() {
             },
             onDeleteDrawing: () => {
               void drawingDeleteAction();
+            },
+            onSheetSettings: () => {
+              setIsDrawingSheetPanelOpen(true);
             },
           }}
           canUndo={document?.can_undo ?? false}
@@ -5068,6 +5120,10 @@ function App() {
                 <InsertViewPanel
                   disabled={status !== "connected"}
                   nextSheetPosition={nextDrawingSheetPosition}
+                  baseViewBounds={drawingBaseViewBounds}
+                  projectionAngle={
+                    activeDrawing?.sheets[0]?.projection_angle ?? "first_angle"
+                  }
                   bodyIds={drawingBodyIds}
                   sectionPlaneCenter={drawingBodyCenter}
                   onCommit={(view) => {
@@ -5078,6 +5134,26 @@ function App() {
                   }}
                 />
               ) : null}
+              {isDrawingSheetPanelOpen && activeDrawing != null
+                ? (() => {
+                    const sheet = activeDrawing.sheets[0];
+                    if (!sheet) {
+                      return null;
+                    }
+                    return (
+                      <SheetPanel
+                        disabled={status !== "connected"}
+                        sheet={sheet}
+                        onCommit={(settings) => {
+                          void drawingSheetSettingsAction(settings);
+                        }}
+                        onClose={() => {
+                          setIsDrawingSheetPanelOpen(false);
+                        }}
+                      />
+                    );
+                  })()
+                : null}
               {sectionPanelViewId != null && activeDrawing != null
                 ? (() => {
                     const sectionView = activeDrawing.views.find(

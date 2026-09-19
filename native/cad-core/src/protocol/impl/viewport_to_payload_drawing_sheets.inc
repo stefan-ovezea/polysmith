@@ -13,6 +13,8 @@ json to_payload(const polysmith::core::ViewportDrawingCurve& curve) {
       {"kind", curve.kind},
       {"line_class", curve.line_class},
       {"curve_class", curve.curve_class},
+      {"purpose", curve.purpose},
+      {"width_mm", curve.width_mm},
       {"p0", drawing_vec2(curve.p0)},
       {"p1", drawing_vec2(curve.p1)},
       {"start_angle", curve.start_angle},

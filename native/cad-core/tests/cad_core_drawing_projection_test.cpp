@@ -639,10 +639,13 @@ bool test_viewport_sheet_emission() {
     return false;
   }
   // Front view at scale 0.5 from (30, 40): the visible face bounds
-  // are [30, 40] x [40, 45] in sheet-mm (20x10 at half scale).
+  // are [30, 40] x [40, 45] in sheet-mm (20x10 at half scale).  The
+  // P5 payload also carries the ISO 5457 furniture — count the VIEW
+  // geometry only.
   int visible = 0;
   for (const auto& curve : emitted.curves) {
-    if (curve.line_class != "visible") {
+    if (curve.purpose != "view_geometry" ||
+        curve.line_class != "visible") {
       continue;
     }
     ++visible;
@@ -669,12 +672,19 @@ bool test_viewport_sheet_emission() {
       return false;
     }
   }
-  // A curve's sheet-space coordinates: view (0,0) maps to (30, 40).
-  const auto& first = emitted.curves[0];
-  const bool at_origin = (near(first.p0[0], 30.0, 1e-4) &&
-                          near(first.p0[1], 40.0, 1e-4)) ||
-                         (near(first.p1[0], 30.0, 1e-4) &&
-                          near(first.p1[1], 40.0, 1e-4));
+  // A view curve's sheet-space coordinates: view (0,0) maps to
+  // (30, 40).
+  const auto first = std::find_if(
+      emitted.curves.begin(), emitted.curves.end(),
+      [](const auto& curve) { return curve.purpose == "view_geometry"; });
+  if (!expect(first != emitted.curves.end(),
+              "the payload carries view geometry")) {
+    return false;
+  }
+  const bool at_origin = (near(first->p0[0], 30.0, 1e-4) &&
+                          near(first->p0[1], 40.0, 1e-4)) ||
+                         (near(first->p1[0], 30.0, 1e-4) &&
+                          near(first->p1[1], 40.0, 1e-4));
   return expect(at_origin,
                 "curves are transformed to sheet-mm by scale + position");
 }

@@ -624,6 +624,8 @@ export const viewportStateSchema = z.object({
               kind: z.string(),
               line_class: z.string(),
               curve_class: z.string(),
+              purpose: z.string().default("view_geometry"),
+              width_mm: z.number().default(0.5),
               p0: z.tuple([z.number(), z.number()]),
               p1: z.tuple([z.number(), z.number()]),
               center: z.tuple([z.number(), z.number()]).optional(),

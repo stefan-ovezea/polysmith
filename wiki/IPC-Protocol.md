@@ -763,6 +763,14 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
   `cut_away`, label, hatch angle/spacing).  The view must be kind
   `"section"`; a degenerate normal or non-positive hatch spacing is
   rejected before the undo push.  The bump re-cuts and re-projects.
+- `drawing_sheet_update { drawing_id, sheet_id, paper_size, orientation,
+  projection_angle, name }` — edits the sheet: `paper_size` A0–A4,
+  `orientation` portrait/landscape, `projection_angle` `"first_angle"`
+  (default) or `"third_angle"`, and the display `name`.  Values outside
+  the four sizes / two orientations / two angles are rejected before
+  the undo push; `paper_size_mm` resolves the trimmed ISO 5457
+  dimensions for the combination (portrait = width×height as listed,
+  landscape swaps).  The bump re-flattens the sheet.
 
 Section views (P4): the refresh cuts every source body with a
 half-space when `section.cut_away` is true (material on the normal
@@ -774,6 +782,21 @@ is computed by the shared `compute_hatch_segments` engine function.
 Every OTHER view of the drawing that sees a sibling section's cutting
 plane edge-on carries the cutting-plane trace (a type-H chain line,
 `curve_class: "cutting_plane"`) in its projection.
+
+Sheets (P5): `flatten_sheet(document, drawing_id, sheet_id)` produces
+the `SheetPrimitiveStream` that the viewport emission (`drawing_sheets`
+in the viewport payload) consumes — the sheet furniture (0.7 mm frame
+at 20/10 mm margins, centring marks, grid-reference ticks, the
+ISO 5456-2 projection symbol honoring the per-sheet angle) plus every
+view's geometry transformed into sheet-mm with the ISO 128-2 line
+styles ALREADY applied (dash patterns recalculated at corners per
+Annex A — every dash sequence starts and ends with a dash; hidden =
+dashed thin, cutting-plane = chain thin, hatching = continuous thin
+emitted last).  Coincident geometry is de-duplicated by the priority
+visible > hidden > cutting_plane > hatch on the undashed records, and
+cutting-plane traces lying on a visible/hidden line are dropped (the
+support-overlap rule).  The stream is deterministic and memory-only
+(golden-file pinned).
 
 Every mutator replies with a `document_state` event; validation errors
 reply with an `error` event.  Views are re-projected inside the single

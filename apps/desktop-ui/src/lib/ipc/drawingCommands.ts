@@ -57,6 +57,23 @@ export function makeDrawingSheetDeleteCommand(
   };
 }
 
+export function makeDrawingSheetUpdateCommand(
+  drawingId: string,
+  sheetId: string,
+  settings: {
+    paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
+    orientation: "portrait" | "landscape";
+    projection_angle: "first_angle" | "third_angle";
+    name: string;
+  },
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_sheet_update",
+    payload: { drawing_id: drawingId, sheet_id: sheetId, ...settings },
+  };
+}
+
 export function makeDrawingViewCreateCommand(
   drawingId: string,
   sheetId: string,

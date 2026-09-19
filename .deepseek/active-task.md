@@ -345,19 +345,107 @@ undo/redo.  Commit C3 after the user confirms.
   reverse / hatch angle+spacing update live; edit the model → section
   re-cuts; undo/redo.  Commit C4 after the user confirms.
 
-## NEXT: P5 — ISO 5457 sheets + flattened stream (C5)
-Exact A0–A4 dims, frame 0.7 mm, left 20/others 10 mm margins, 4
-centring marks, grid refs (24/16/12/8/6 × 16/12/8/6/4), flat
-`flatten_sheet() → SheetPrimitiveStream` (view transform by
-scale+position, ISO 128-2 line styles with Annex-A dash
-recalculation at corners, coincidence priority), first/third-angle
-placement per sheet, projection symbol (h=10d, H=20d, frustum +
-concentric circles) bottom-right; commands
-`drawing_sheet_update{sheet_id, paper_size, orientation,
-projection_angle, name}`; test `cad_core_drawing_sheet_test`
-(exact dims, centring-mark geometry, grid counts, flatten
-determinism golden, angle-placement sign, dash pattern segment
-counts + corner restart, coincidence-priority full-set assertion).
+## P5 — ISO 5457 sheets + flattened stream (C5) — DONE, gates green
+
+**Core (`core/drawing/drawing_sheet.h/.cpp`, new):**
+- `SheetPrimitive{kind line|circle|ellipse, p0/p1, center/radius,
+  major_dir/radii, start/end angle, style, purpose, line_class}` +
+  `SheetViewBounds` + `SheetPrimitiveStream{sheet_id, drawing_id,
+  width_mm, height_mm, primitives, views}`; `paper_size_mm()`
+  (exact trimmed ISO 5457 dims; landscape swaps).
+- Furniture: frame 0.7 mm at (20,10)–(w−10,h−10); 4 centring marks
+  (5 mm outward, 0.5 wide); grid-reference ticks (long counts
+  24/16/12/8/6 A0→A4 on the longer side, short 16/12/8/6/4; 5 mm
+  inside the frame); ISO 5456-2 projection symbol (frustum + two
+  concentric circles, H=10/hh=5, first-angle = near base high, far
+  low; centered over the P7 title-block reservation above
+  bottom-right).
+- ISO 128-2 line styles APPLIED IN CORE: `dash_spans` Annex-A corner
+  rule — every dash sequence starts with a dash and the final dash
+  extends to the corner (12d/3d dashed, 24d/3d/dot d/3d chain);
+  `emit_dashed_line/arc` re-derive sub-arc endpoints; hidden → dashed
+  thin, cutting_plane → chain thin, seam → continuous thin, else
+  thick (group 0.5).
+- `flatten_sheet`: furniture first, then views collect UNDASHED
+  primitives (smooth transitions dropped per ISO 128-24) →
+  coincidence de-dupe by exact geometry key with priority visible >
+  hidden > cutting_plane > hatch → support-overlap check drops
+  cutting-plane traces lying on visible/hidden lines → THEN dashing;
+  hatches emitted last.  Deterministic (golden-pinned).
+- **Fix (mid-phase):** the coincidence dedupe had run on DASHED
+  pieces, so a dashed hidden edge never collapsed against its solid
+  visible twin and the y=0 trace's dashes escaped — restructured to
+  collect undashed first (see above).
+
+**Mutator:** `drawing_sheet_update{drawing_id, sheet_id, paper_size,
+orientation, projection_angle, name}` — enum validation (A0–A4 /
+portrait|landscape / first_angle|third_angle) BEFORE the undo push;
+the bump re-flattens.  Schema + TS payload/factory/hook wrapper +
+wiki both files.
+
+**Emission:** `drawing_sheet_emit.inc` rewritten to consume
+`flatten_sheet` (SheetPrimitive → ViewportDrawingCurve with
+`purpose` + `width_mm`; SheetViewBounds → ViewportDrawingView);
+viewport payload + zod + TS types carry the new fields.
+**UI:** drawingSceneObjects drops `buildDashedRibbon` (the core
+flatten applies dashes) and draws continuous ribbons at the
+stream's width; furniture purposes render in the border color;
+`SheetPanel` (name / paper size / orientation / projection angle,
+selects commit live, Enter/Escape) + toolbar "Sheet…" button;
+InsertViewPanel places projection views around the front view per
+the sheet's projection angle (first: top below, right left;
+third: mirrored; grid fallback otherwise).
+
+**Tests:** new `cad_core_drawing_sheet_test` (7 tests): paper
+sizes, furniture (frame/centring/grid 16 ticks A4/symbol), view
+flatten + dash spans (hidden 10 mm edge → 3 segments with the
+Annex-A corner rule), chain + priority (chain spans; y=0 trace
+dropped by support overlap), symbol orientation (near base height
+10 vs 5), sheet_update mutator (A3 landscape 420×297, 24 ticks),
+determinism + golden (drawing_sheet_a4_full.txt).  Section test 7
+updated (trace now dashes into 3 chain segments).  Projection test
+6/8 updated for the flattened payload.
+**Gates:** `pnpm core:build` clean + **59/59 suites pass** +
+`tsc --noEmit` clean.
+
+**Known P5 carry-overs (documented, not silent):** the title-block
+reservation is empty furniture space (P7 fills it); A–A labels /
+arrows on the parent view wait for the P7 text engine; first/third-
+angle flip re-flattens the sheet but existing views keep their
+stored positions (the Insert panel places NEW views by angle).
+
+**NEEDS IN-APP VERIFICATION (C3+C4+C5 together):** `pnpm dev` →
+drawing workspace → sheet shows the 0.7 mm frame, centring marks,
+grid ticks and the first-angle symbol; Insert View right/top land
+per first angle, toggle third angle in Sheet… → symbol flips + new
+views mirror; hidden edges dashed, section trace chain; Sheet…
+paper A3 landscape resizes the sheet; section panel + hatch live
+updates; edit the model → everything updates; undo/redo.  Commit C5
+after the user confirms.
+
+## NEXT: P6 — ISO 129-1 dimensions (C6)
+`core/drawing/drawing_resolution.cpp` — the witness resolution
+ladder (exact source re-resolve → projected-edge re-resolve →
+ambiguous → not found; dependency_broken + warning + last-known,
+never silently substitute; ambiguity margin; user-initiated
+undoable `drawing_annotation_repair`); cosmetic fields (text
+offset, arrow flip) never re-project.
+`core/drawing/drawing_dimension_geometry.cpp` — extension lines
+(8×d gap/overshoot), closed filled arrowheads (one style per
+drawing), unbroken dimension line, text above, unidirectional,
+⌀/R prefixes (⌀ omittable if unambiguous), diameter for arcs
+>180° / radius <180°, ° for angles, decimal separator from
+`decimal_separator` — reuse the wiki/Dimension-Rendering-Design.md
+rules, factored not duplicated.  Commands:
+`drawing_dimension_create{view_id, record_id, dim_type}` (core
+mints the witness from pick — cam_capture_edge_reference
+precedent), `drawing_dimension_update/delete/preview` → Enter/
+Escape.  UI: Dimension tool activates the reserved
+DimensionToolMode drawing-sheet modes.  Test
+`cad_core_drawing_dimension_test` — value == model dim × scale;
+**fail-before: edit upstream feature → value updates**; delete body
+→ broken + last value kept; ambiguity → no substitution; save/load;
+decimal comma ("12,5").
 
 ---
 

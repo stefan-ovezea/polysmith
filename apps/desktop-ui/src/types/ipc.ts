@@ -205,6 +205,7 @@ import type {
   DrawingSetActiveCommand,
   DrawingSheetCreateCommand,
   DrawingSheetDeleteCommand,
+  DrawingSheetUpdateCommand,
   DrawingViewCreateCommand,
   DrawingViewUpdateCommand,
   DrawingViewDeleteCommand,
@@ -1043,6 +1044,7 @@ export type CoreCommand =
   | DrawingSetActiveCommand
   | DrawingSheetCreateCommand
   | DrawingSheetDeleteCommand
+  | DrawingSheetUpdateCommand
   | DrawingViewCreateCommand
   | DrawingViewUpdateCommand
   | DrawingViewDeleteCommand

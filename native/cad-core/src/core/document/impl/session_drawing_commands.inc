@@ -297,6 +297,47 @@ DocumentState DocumentManager::drawing_sheet_delete(
   return document_.value();
 }
 
+DocumentState DocumentManager::drawing_sheet_update(
+    const std::string& drawing_id, const std::string& sheet_id,
+    const std::string& paper_size, const std::string& orientation,
+    const std::string& projection_angle, const std::string& name) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  DrawingSheet* sheet = find_sheet(*drawing, sheet_id);
+  if (sheet == nullptr) {
+    throw std::runtime_error("Unknown sheet: " + sheet_id);
+  }
+  // Validate BEFORE the undo push (canonical mutator shape).
+  static const std::vector<std::string> kPaperSizes = {
+      "A0", "A1", "A2", "A3", "A4"};
+  if (std::find(kPaperSizes.begin(), kPaperSizes.end(), paper_size) ==
+      kPaperSizes.end()) {
+    throw std::runtime_error("Unknown paper size: " + paper_size);
+  }
+  if (orientation != "portrait" && orientation != "landscape") {
+    throw std::runtime_error("Unknown orientation: " + orientation);
+  }
+  if (projection_angle != "first_angle" &&
+      projection_angle != "third_angle") {
+    throw std::runtime_error("Unknown projection angle: " +
+                             projection_angle);
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  sheet->paper_size = paper_size;
+  sheet->orientation = orientation;
+  sheet->projection_angle = projection_angle;
+  sheet->name = name;
+  // The sheet definition changed (not any view's projection) — the
+  // bump keeps the payload honest.
+  bump_geometry_revision();
+  return document_.value();
+}
+
 DocumentState DocumentManager::drawing_view_create(
     const std::string& drawing_id, const std::string& sheet_id,
     const DrawingView& view) {

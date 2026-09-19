@@ -23,9 +23,18 @@ struct ViewportDrawingCurve {
   /// "visible" | "hidden"
   std::string line_class = "visible";
   /// "sharp" | "smooth" | "seam" | "outline" | "cutting_plane" |
-  /// "hatch" (the last two land in P4: type-H chain line traces from
-  /// sibling sections, and scanline hatching on section views)
+  /// "hatch" (P4: type-H chain line traces from sibling sections,
+  /// and scanline hatching on section views)
   std::string curve_class = "sharp";
+  /// "view_geometry" | "hatch" | "cutting_plane" | "frame" |
+  /// "centring_mark" | "grid_ref" | "projection_symbol" — from the
+  /// P5 flattened stream (the furniture purposes render in the
+  /// border color).
+  std::string purpose = "view_geometry";
+  /// ISO line-group width in mm (P5: dash patterns are already
+  /// applied by the core flatten — the renderer draws continuous
+  /// ribbons of this width only).
+  double width_mm = 0.5;
   /// Endpoints (sheet-mm) — always populated.
   std::array<double, 2> p0 = {0.0, 0.0};
   std::array<double, 2> p1 = {0.0, 0.0};

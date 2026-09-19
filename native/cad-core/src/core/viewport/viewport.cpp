@@ -1,8 +1,7 @@
 #include "core/viewport/viewport.h"
 #include "core/diagnostics/logger.h"
 #include "core/cam/cam_resolution.h"
-#include "core/drawing/drawing_projection.h"
-#include "core/drawing/drawing_runtime.h"
+#include "core/drawing/drawing_sheet.h"
 
 #include <algorithm>
 #include <array>

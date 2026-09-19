@@ -63,6 +63,28 @@
     return;
   }
 
+  if (command.type == "drawing_sheet_update") {
+    const auto drawing_id = read_string(
+        command.payload, "drawing_id");
+    const auto sheet_id = read_string(
+        command.payload, "sheet_id");
+    const auto paper_size = read_string(
+        command.payload, "paper_size");
+    const auto orientation = read_string(
+        command.payload, "orientation");
+    const auto projection_angle = read_string(
+        command.payload, "projection_angle");
+    const auto name = read_string(
+        command.payload, "name");
+    const auto document = document_manager().drawing_sheet_update(
+        drawing_id, sheet_id, paper_size, orientation, projection_angle,
+        name);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   if (command.type == "drawing_view_create") {
     const auto drawing_id = read_string(
         command.payload, "drawing_id");

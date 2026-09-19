@@ -40,6 +40,19 @@ export interface DrawingSheetDeleteCommand {
   payload: { drawing_id: string; sheet_id: string };
 }
 
+export interface DrawingSheetUpdateCommand {
+  id: string;
+  type: "drawing_sheet_update";
+  payload: {
+    drawing_id: string;
+    sheet_id: string;
+    paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
+    orientation: "portrait" | "landscape";
+    projection_angle: "first_angle" | "third_angle";
+    name: string;
+  };
+}
+
 export interface DrawingViewCreateCommand {
   id: string;
   type: "drawing_view_create";

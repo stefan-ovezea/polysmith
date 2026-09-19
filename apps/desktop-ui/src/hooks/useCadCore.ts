@@ -5,6 +5,7 @@ import {
   makeCreateDocumentCommand,
   makeDrawingCreateCommand,
   makeDrawingDeleteCommand,
+  makeDrawingSheetUpdateCommand,
   makeDrawingViewCreateCommand,
   makeDrawingViewDeleteCommand,
   makeDrawingSectionUpdateCommand,
@@ -1727,6 +1728,20 @@ export function useCadCore() {
     drawingViewDelete: async (drawingId: string, viewId: string) => {
       await sendAndRefreshSessionViewport(
         makeDrawingViewDeleteCommand(drawingId, viewId),
+      );
+    },
+    drawingSheetUpdate: async (
+      drawingId: string,
+      sheetId: string,
+      settings: {
+        paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
+        orientation: "portrait" | "landscape";
+        projection_angle: "first_angle" | "third_angle";
+        name: string;
+      },
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingSheetUpdateCommand(drawingId, sheetId, settings),
       );
     },
     drawingSectionUpdate: async (

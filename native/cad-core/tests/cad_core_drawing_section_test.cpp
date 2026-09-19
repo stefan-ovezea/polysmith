@@ -729,15 +729,16 @@ bool test_section_emission() {
   }
 
   // The front view emits the sibling section's cutting-plane chain
-  // line.
+  // line — the P5 flatten dashes it into 3 segments (dash 6 / dot /
+  // final dash).
   int trace_count = 0;
   for (const auto& curve : emitted.curves) {
     if (curve.curve_class == "cutting_plane") {
       ++trace_count;
     }
   }
-  return expect(trace_count == 1,
-                "the front view emits the cutting-plane trace");
+  return expect(trace_count == 3,
+                "the front view emits the dashed cutting-plane trace");
 }
 
 }  // namespace
