@@ -93,6 +93,25 @@ void drop_stale(const DocumentState& document, int target_revision) {
   per_doc.last_revision = target_revision;
 }
 
+const ProjectionResult* cached_preview_projection(const DocumentState& document,
+                                                  const std::string& key) {
+  const auto found = registry().find(document.id);
+  if (found == registry().end()) {
+    return nullptr;
+  }
+  const auto& entry = found->second.preview_projection;
+  if (entry.revision != document.revision || entry.key != key) {
+    return nullptr;
+  }
+  return &entry.projection;
+}
+
+void store_preview_projection(const DocumentState& document,
+                              const std::string& key, ProjectionResult result) {
+  PerDocument& per_doc = registry()[document.id];
+  per_doc.preview_projection = {document.revision, key, std::move(result)};
+}
+
 const ProjectionResult* last_known_projection(const DocumentState& document,
                                               const std::string& view_id) {
   const auto found = registry().find(document.id);
@@ -119,6 +138,9 @@ void invalidate(const std::string& document_id) {
   // truth.
   per_doc.last_known.clear();
   per_doc.last_known_dimensions.clear();
+  // Same for the uncommitted preview cache — a restored branch's
+  // geometry is not the abandoned branch's projection.
+  per_doc.preview_projection = {};
   per_doc.last_revision = -1;
 }
 

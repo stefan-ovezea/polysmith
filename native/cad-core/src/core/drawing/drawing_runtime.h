@@ -51,6 +51,19 @@ struct PerDocument {
   // last-known retention for broken annotations.
   std::unordered_map<std::string, DimensionEntry> dimensions;
   std::unordered_map<std::string, DimensionEntry> last_known_dimensions;
+  // The last UNCOMMITTED preview's projection, keyed by every input
+  // that affects project() EXCEPT the sheet position (a flatten
+  // offset) and the scale (applied by the flatten) — a cursor-follow
+  // preview re-flattens the cached projection instead of re-running
+  // HLR per pointer move.  Revision-stamped + invalidate()/clear()
+  // discipline identical to the view projections: a hit is only
+  // valid at the exact revision the projection was built for.
+  struct PreviewProjectionEntry {
+    int revision = -1;
+    std::string key;
+    ProjectionResult projection;
+  };
+  PreviewProjectionEntry preview_projection;
 };
 
 PerDocument& document_state(const std::string& document_id);
@@ -87,6 +100,14 @@ void store_projection_at(const DocumentState& document,
 // Drops cached projections whose revision no longer matches (called
 // by the drawing dependency refresh pass after a geometry bump).
 void drop_stale(const DocumentState& document, int target_revision);
+
+// The uncommitted preview's projection cache (see PerDocument): a hit
+// means the caller may skip compile+project and re-flatten the result
+// at a new sheet position / scale.
+const ProjectionResult* cached_preview_projection(const DocumentState& document,
+                                                  const std::string& key);
+void store_preview_projection(const DocumentState& document,
+                              const std::string& key, ProjectionResult result);
 
 // Erases every cached projection for the document.  Undo/redo call
 // this BEFORE the restore's refresh pass: a revision stamp alone

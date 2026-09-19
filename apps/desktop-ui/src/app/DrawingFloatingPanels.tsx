@@ -8,75 +8,28 @@ import type {
   SectionDefinition,
   TitleBlock,
 } from "@/types";
+import {
+  bodyCenterForChoice,
+  clampSheetPosition,
+  HATCH_ANGLES,
+  ISO_SCALES,
+  SECTION_NORMALS,
+} from "@/lib/drawingViewMath";
 
-// ── Insert View panel (contextual workflow, P3/P4/P5) ─────────────
+// ── Section view creation panel (R1, the old InsertViewPanel's
+// section mode) ──────────────────────────────────────────────────────
 //
-// Select a body → Insert View → this panel: pick a projected view
-// direction — placed around the front view per the sheet's projection
-// angle (ISO 128-3: first angle top-below/right-left, third angle
-// mirrored), an ISO 5455 scale, hidden edges, OR a section view (P4):
-// a cutting plane through the referenced bodies' center, normal along
-// a picked axis, with the ISO 128-3 hatching defaults.  Enter commits
-// the drawing_view_create, Escape cancels — the contextual modeling
-// workflow pattern.  The live core-computed projection preview lands
-// with the dimension preview plumbing (P6).
+// VIEWS → Section arms the section tool; this panel carries the
+// cutting-plane settings (axis, cut-away, label, ISO 128-3 hatch)
+// while the ghost follows the cursor over the sheet.  Enter or a
+// click commits drawing_view_create; Escape cancels — the contextual
+// modeling workflow pattern.  The committed SectionPanel (below)
+// takes over for label / cut-away / hatch edits.
 
-const ISO_SCALES = ["0.1", "0.2", "0.5", "1", "2", "5"];
-
-const STANDARD_VIEWS = [
-  "front",
-  "right",
-  "left",
-  "top",
-  "bottom",
-  "back",
-] as const;
-
-// Cutting-plane directions: the plane normal points along the picked
-// axis, through the referenced bodies' center.
-const SECTION_NORMALS: Array<{ key: string; vector: [number, number, number] }> = [
-  { key: "+X", vector: [1, 0, 0] },
-  { key: "−X", vector: [-1, 0, 0] },
-  { key: "+Y", vector: [0, 1, 0] },
-  { key: "−Y", vector: [0, -1, 0] },
-  { key: "+Z", vector: [0, 0, 1] },
-  { key: "−Z", vector: [0, 0, -1] },
-];
-
-const HATCH_ANGLES = ["30", "45", "60"];
-
-// View-direction slots around the front view's bounds, as (column,
-// row) multipliers of the base view's size + gap: first angle puts
-// the top view BELOW and the right view LEFT of the front view
-// (ISO 128-3); third angle mirrors both.
-const FIRST_ANGLE_SLOT: Record<string, [number, number]> = {
-  top: [0, -1],
-  bottom: [0, 1],
-  right: [-1, 0],
-  left: [1, 0],
-};
-const THIRD_ANGLE_SLOT: Record<string, [number, number]> = {
-  top: [0, 1],
-  bottom: [0, -1],
-  right: [1, 0],
-  left: [-1, 0],
-};
-
-export interface InsertViewPanelProps {
+export interface SectionViewPanelProps {
   disabled: boolean;
-  /** Bumped after each committed projection view (the panel stays
-   *  open) — clears the manual position override for the next view. */
-  resetToken: number;
-  /** Grid fallback position (front itself, sections, no base view). */
+  /** Grid fallback position (no cursor over the sheet yet). */
   nextSheetPosition: [number, number];
-  /** Bounds (sheet-mm) + scale of the front view already on the sheet
-   *  — the anchor for first/third-angle placement of further views
-   *  and the size reference for the on-sheet clamp. */
-  baseViewBounds:
-    | { min: [number, number]; max: [number, number]; scale: number }
-    | null;
-  /** The active sheet's projection angle (placement mirrors on it). */
-  projectionAngle: "first_angle" | "third_angle";
   /** Body ids the view may reference (the no-bodies gate). */
   bodyIds: string[];
   /** The compiled bodies with user labels — the Fusion-style body
@@ -89,49 +42,21 @@ export interface InsertViewPanelProps {
   /** The active sheet's trimmed size (the on-sheet clamp). */
   sheetSize: { width_mm: number; height_mm: number };
   /** Mouse-first placement: the cursor's current sheet-mm position
-   *  (null = off the sheet) — the ghost follows it until the user
-   *  types a manual override. */
+   *  (null = off the sheet) — the ghost follows it. */
   cursorPosition: [number, number] | null;
   /** A click on the sheet commits the view at this point — the token
    *  bumps per click so repeated clicks at the same spot still fire. */
   commitPoint: { token: number; point: [number, number] } | null;
   /** Live ghost: called (debounced) with the uncommitted view
-   *  definition on every change, null when the panel closes — the
-   *  host sends drawing_view_preview and renders the reply. */
+   *  definition on every change, null when the panel closes. */
   onPreviewChange: (view: DrawingView | null) => void;
   onCommit: (view: DrawingView) => void;
   onCancel: () => void;
 }
 
-/** Clamps a view position so its (estimated) content stays inside the
- *  sheet's 10 mm drawing margin — the first/third-angle slots can
- *  otherwise push views off the paper when the base view sits near an
- *  edge. */
-export function clampSheetPosition(
-  position: [number, number],
-  viewWidthMm: number,
-  viewHeightMm: number,
-  sheetWidthMm: number,
-  sheetHeightMm: number,
-): [number, number] {
-  const margin = 10;
-  const x = Math.min(
-    Math.max(position[0], margin),
-    Math.max(margin, sheetWidthMm - margin - viewWidthMm),
-  );
-  const y = Math.min(
-    Math.max(position[1], margin),
-    Math.max(margin, sheetHeightMm - margin - viewHeightMm),
-  );
-  return [x, y];
-}
-
-export function InsertViewPanel({
+export function SectionViewPanel({
   disabled,
-  resetToken,
   nextSheetPosition,
-  baseViewBounds,
-  projectionAngle,
   bodyIds,
   availableBodies,
   sheetSize,
@@ -140,12 +65,9 @@ export function InsertViewPanel({
   onPreviewChange,
   onCommit,
   onCancel,
-}: InsertViewPanelProps) {
+}: SectionViewPanelProps) {
   const { t } = useTranslation();
-  const [kind, setKind] = useState<"projection" | "section">("projection");
-  const [standardView, setStandardView] = useState<string>("front");
   const [scale, setScale] = useState<string>("1");
-  const [showHidden, setShowHidden] = useState(false);
   const [sectionNormal, setSectionNormal] = useState<string>("+X");
   const [cutAway, setCutAway] = useState(true);
   const [sectionLabel, setSectionLabel] = useState("A");
@@ -155,72 +77,21 @@ export function InsertViewPanel({
   const [bodyChoice, setBodyChoice] = useState<string>(() =>
     bodyIds.length === 1 ? bodyIds[0] : "__all__",
   );
-  // Manual position override (mm) — null follows the auto slotting.
-  const [positionX, setPositionX] = useState<string | null>(null);
-  const [positionY, setPositionY] = useState<string | null>(null);
   const commitRef = useRef(onCommit);
   commitRef.current = onCommit;
 
-  // Re-slot automatically when the view choice changes or a view was
-  // just committed (the panel stays open); a typed override belongs
-  // to the previous slot and must not leak.
-  useEffect(() => {
-    setPositionX(null);
-    setPositionY(null);
-  }, [kind, standardView, resetToken]);
-
-  // Projection views slot around the front view per the sheet's
-  // projection angle; front/back, sections and the no-base-view case
-  // fall back to the side-by-side grid.  The result is clamped into
-  // the sheet's drawing area — slots near the sheet edge must not
-  // push the view off the paper.
+  // The cursor position when over the sheet, else the grid fallback
+  // (sections never slot around a base view).
   const sheetPosition = useMemo<[number, number]>(() => {
-    const slots =
-      projectionAngle === "third_angle" ? THIRD_ANGLE_SLOT : FIRST_ANGLE_SLOT;
-    const slot = slots[standardView];
-    let position = nextSheetPosition;
-    if (kind === "projection" && baseViewBounds && slot) {
-      const gap = 20;
-      const sx = baseViewBounds.max[0] - baseViewBounds.min[0] + gap;
-      const sy = baseViewBounds.max[1] - baseViewBounds.min[1] + gap;
-      position = [
-        baseViewBounds.min[0] + slot[0] * sx,
-        baseViewBounds.min[1] + slot[1] * sy,
-      ];
-    }
-    // The new view's estimated content size: the base view's bounds
-    // (the same body) at the chosen scale.
-    const scaleRatio = (Number(scale) || 1) / (baseViewBounds?.scale ?? 1);
-    const viewW = baseViewBounds
-      ? (baseViewBounds.max[0] - baseViewBounds.min[0]) * scaleRatio
-      : 0;
-    const viewH = baseViewBounds
-      ? (baseViewBounds.max[1] - baseViewBounds.min[1]) * scaleRatio
-      : 0;
-    return clampSheetPosition(position, viewW, viewH, sheetSize.width_mm,
-                              sheetSize.height_mm);
-  }, [kind, standardView, projectionAngle, baseViewBounds,
-      nextSheetPosition, scale, sheetSize]);
-
-  // Position priority: a typed override wins; otherwise the CURSOR
-  // (mouse-first placement — the ghost follows the pointer over the
-  // sheet); otherwise the auto-slot.
-  const finalPosition = useMemo<[number, number]>(() => {
-    if (positionX === null && positionY === null && cursorPosition) {
-      return cursorPosition;
-    }
-    if (positionX === null && positionY === null) {
-      return sheetPosition;
-    }
-    return [
-      positionX !== null && positionX.trim() !== ""
-        ? Number(positionX) || 0
-        : cursorPosition?.[0] ?? sheetPosition[0],
-      positionY !== null && positionY.trim() !== ""
-        ? Number(positionY) || 0
-        : cursorPosition?.[1] ?? sheetPosition[1],
-    ];
-  }, [sheetPosition, positionX, positionY, cursorPosition]);
+    const position = cursorPosition ?? nextSheetPosition;
+    return clampSheetPosition(
+      position,
+      0,
+      0,
+      sheetSize.width_mm,
+      sheetSize.height_mm,
+    );
+  }, [cursorPosition, nextSheetPosition, sheetSize]);
 
   // A body chosen earlier may disappear while the panel is open
   // (deleted upstream) — fall back to the assembly view instead of
@@ -240,63 +111,45 @@ export function InsertViewPanel({
 
   // The default cutting plane passes through the CHOSEN bodies'
   // union center (a moveable plane point is P5+).
-  const chosenBodyCenter = useMemo(() => {
-    const chosen = availableBodies.filter((body) =>
-      chosenBodyIds.includes(body.id),
-    );
-    if (chosen.length === 0) {
-      return { x: 0, y: 0, z: 0 };
-    }
-    return {
-      x: chosen.reduce((sum, body) => sum + body.center.x, 0) / chosen.length,
-      y: chosen.reduce((sum, body) => sum + body.center.y, 0) / chosen.length,
-      z: chosen.reduce((sum, body) => sum + body.center.z, 0) / chosen.length,
-    };
-  }, [availableBodies, chosenBodyIds]);
+  const chosenBodyCenter = bodyCenterForChoice(
+    effectiveBodyChoice,
+    availableBodies,
+  );
 
   const view = useMemo<DrawingView>(() => {
-    const base = {
+    const normal = SECTION_NORMALS.find((entry) => entry.key === sectionNormal);
+    return {
       view_id: "",
+      kind: "section",
+      standard_view: "",
       source_body_ids: chosenBodyIds,
       scale: Number(scale) || 1,
-      sheet_position: finalPosition,
+      sheet_position: sheetPosition,
       // ISO 128-3 §7: hidden edges are not drawn on sectioned parts.
-      show_hidden: kind === "projection" && showHidden,
+      show_hidden: false,
+      section: {
+        cutting_plane_point: [
+          chosenBodyCenter[0],
+          chosenBodyCenter[1],
+          chosenBodyCenter[2],
+        ],
+        cutting_plane_normal: normal?.vector ?? [1, 0, 0],
+        cut_away: cutAway,
+        label: sectionLabel.trim() || "A",
+        hatch_angle_deg: Number(hatchAngle) || 45,
+        hatch_spacing_mm: Number(hatchSpacing) || 3,
+      },
       warning: "",
     };
-    if (kind === "section") {
-      const normal = SECTION_NORMALS.find((entry) => entry.key === sectionNormal);
-      return {
-        ...base,
-        kind: "section",
-        standard_view: "",
-        section: {
-          cutting_plane_point: [
-            chosenBodyCenter.x,
-            chosenBodyCenter.y,
-            chosenBodyCenter.z,
-          ],
-          cutting_plane_normal: normal?.vector ?? [1, 0, 0],
-          cut_away: cutAway,
-          label: sectionLabel.trim() || "A",
-          hatch_angle_deg: Number(hatchAngle) || 45,
-          hatch_spacing_mm: Number(hatchSpacing) || 3,
-        },
-      };
-    }
-    return { ...base, kind: "projection", standard_view: standardView };
   }, [
-    kind,
-    standardView,
     scale,
-    showHidden,
     sectionNormal,
     cutAway,
     sectionLabel,
     hatchAngle,
     hatchSpacing,
     chosenBodyIds,
-    finalPosition,
+    sheetPosition,
     chosenBodyCenter,
   ]);
 
@@ -355,7 +208,7 @@ export function InsertViewPanel({
     <section className="pointer-events-auto cad-floating-panel px-5 py-5">
       <div className="space-y-4">
         <div>
-          <p className="cad-kicker">{t("drawing.insertPanel.title")}</p>
+          <p className="cad-kicker">{t("drawing.sectionCreatePanel.title")}</p>
           {bodyIds.length === 0 ? (
             <p className="mt-3 text-sm text-[color:var(--cad-muted)]">
               {t("drawing.insertPanel.noBody")}
@@ -388,144 +241,84 @@ export function InsertViewPanel({
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <label className="text-xs text-[var(--cad-muted)]">
-            {t("drawing.insertPanel.viewKind")}
-          </label>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className={
-                kind === "projection"
-                  ? "cad-ribbon-action cad-ribbon-action-primary"
-                  : "cad-ribbon-action"
-              }
-              disabled={disabled}
-              onClick={() => {
-                setKind("projection");
-              }}
-            >
-              {t("drawing.insertPanel.projectionKind")}
-            </button>
-            <button
-              type="button"
-              className={
-                kind === "section"
-                  ? "cad-ribbon-action cad-ribbon-action-primary"
-                  : "cad-ribbon-action"
-              }
-              disabled={disabled}
-              onClick={() => {
-                setKind("section");
-              }}
-            >
-              {t("drawing.insertPanel.sectionKind")}
-            </button>
-          </div>
-        </div>
-
-        {kind === "projection" ? (
+        <div>
+          <p className="mb-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.insertPanel.cuttingPlane")}
+          </p>
           <div className="flex flex-wrap gap-2">
-            {STANDARD_VIEWS.map((name) => (
+            {SECTION_NORMALS.map((entry) => (
               <button
-                key={name}
+                key={entry.key}
                 type="button"
                 className={
-                  standardView === name
+                  sectionNormal === entry.key
                     ? "cad-ribbon-action cad-ribbon-action-primary"
                     : "cad-ribbon-action"
                 }
                 disabled={disabled}
                 onClick={() => {
-                  setStandardView(name);
+                  setSectionNormal(entry.key);
                 }}
               >
-                {t(`drawing.insertPanel.${name}`)}
+                {entry.key}
               </button>
             ))}
           </div>
-        ) : (
-          <>
-            <div>
-              <p className="mb-2 text-xs text-[var(--cad-muted)]">
-                {t("drawing.insertPanel.cuttingPlane")}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {SECTION_NORMALS.map((entry) => (
-                  <button
-                    key={entry.key}
-                    type="button"
-                    className={
-                      sectionNormal === entry.key
-                        ? "cad-ribbon-action cad-ribbon-action-primary"
-                        : "cad-ribbon-action"
-                    }
-                    disabled={disabled}
-                    onClick={() => {
-                      setSectionNormal(entry.key);
-                    }}
-                  >
-                    {entry.key}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-                <input
-                  type="checkbox"
-                  checked={cutAway}
-                  onChange={(event) => {
-                    setCutAway(event.target.checked);
-                  }}
-                />
-                {t("drawing.insertPanel.cutAway")}
-              </label>
-              <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-                {t("drawing.insertPanel.sectionLabel")}
-                <input
-                  className="cad-input w-14"
-                  value={sectionLabel}
-                  maxLength={2}
-                  onChange={(event) => {
-                    setSectionLabel(event.target.value);
-                  }}
-                />
-              </label>
-              <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-                {t("drawing.insertPanel.hatchAngle")}
-                <select
-                  className="cad-input"
-                  value={hatchAngle}
-                  onChange={(event) => {
-                    setHatchAngle(event.target.value);
-                  }}
-                >
-                  {HATCH_ANGLES.map((value) => (
-                    <option key={value} value={value}>
-                      {value}°
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-                {t("drawing.insertPanel.hatchSpacing")}
-                <input
-                  className="cad-input w-16"
-                  type="number"
-                  min="0.7"
-                  max="3"
-                  step="0.1"
-                  value={hatchSpacing}
-                  onChange={(event) => {
-                    setHatchSpacing(event.target.value);
-                  }}
-                />
-                <span>mm</span>
-              </label>
-            </div>
-          </>
-        )}
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            <input
+              type="checkbox"
+              checked={cutAway}
+              onChange={(event) => {
+                setCutAway(event.target.checked);
+              }}
+            />
+            {t("drawing.insertPanel.cutAway")}
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.insertPanel.sectionLabel")}
+            <input
+              className="cad-input w-14"
+              value={sectionLabel}
+              maxLength={2}
+              onChange={(event) => {
+                setSectionLabel(event.target.value);
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.insertPanel.hatchAngle")}
+            <select
+              className="cad-input"
+              value={hatchAngle}
+              onChange={(event) => {
+                setHatchAngle(event.target.value);
+              }}
+            >
+              {HATCH_ANGLES.map((value) => (
+                <option key={value} value={value}>
+                  {value}°
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.insertPanel.hatchSpacing")}
+            <input
+              className="cad-input w-16"
+              type="number"
+              min="0.7"
+              max="3"
+              step="0.1"
+              value={hatchSpacing}
+              onChange={(event) => {
+                setHatchSpacing(event.target.value);
+              }}
+            />
+            <span>mm</span>
+          </label>
+        </div>
 
         <div className="flex items-center gap-3">
           <label className="text-xs text-[var(--cad-muted)]">
@@ -544,59 +337,6 @@ export function InsertViewPanel({
               </option>
             ))}
           </select>
-          {kind === "projection" ? (
-            <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-              <input
-                type="checkbox"
-                checked={showHidden}
-                onChange={(event) => {
-                  setShowHidden(event.target.checked);
-                }}
-              />
-              {t("drawing.insertPanel.showHidden")}
-            </label>
-          ) : null}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <label className="text-xs text-[var(--cad-muted)]">
-            {t("drawing.insertPanel.position")}
-          </label>
-          {/* X/Y sheet-mm, auto-filled from the slotting; typing one
-              value overrides it (cleared on view change). */}
-          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-            {t("drawing.insertPanel.positionX")}
-            <input
-              className="cad-input w-16"
-              type="number"
-              step="1"
-              value={
-                positionX !== null
-                  ? positionX
-                  : String(Math.round(finalPosition[0] * 10) / 10)
-              }
-              onChange={(event) => {
-                setPositionX(event.target.value);
-              }}
-            />
-          </label>
-          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-            {t("drawing.insertPanel.positionY")}
-            <input
-              className="cad-input w-16"
-              type="number"
-              step="1"
-              value={
-                positionY !== null
-                  ? positionY
-                  : String(Math.round(finalPosition[1] * 10) / 10)
-              }
-              onChange={(event) => {
-                setPositionY(event.target.value);
-              }}
-            />
-          </label>
-          <span className="text-xs text-[var(--cad-muted)]">mm</span>
         </div>
 
         <p className="text-xs text-[var(--cad-muted)]">

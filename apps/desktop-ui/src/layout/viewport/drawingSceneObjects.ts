@@ -8,7 +8,7 @@ import type {
   ViewportDrawingText,
   ViewportState,
 } from "@/types";
-import { themeColor } from "@/utils";
+import { disposeGroup, themeColor } from "@/utils";
 
 import { ORTHO_FRUSTUM_HEIGHT } from "./viewportPanelTypes";
 
@@ -137,10 +137,13 @@ const FURNITURE_PURPOSES = new Set([
   "title_block",
 ]);
 
-/** Adds one sheet (paper, border, projection curves, view frames). */
+/** Adds one sheet (paper, border, projection curves, view frames).
+ *  selectedViewId (the R1 delete tool's pick) draws its frame ribbon
+ *  doubled in the preview accent color. */
 function addSheetGroup(
   group: THREE.Group,
   sheet: NonNullable<ViewportState["drawing_sheets"]>[number],
+  selectedViewId: string | null,
 ) {
   const paper = new THREE.Mesh(
     new THREE.PlaneGeometry(sheet.width_mm, sheet.height_mm),
@@ -220,8 +223,12 @@ function addSheetGroup(
         [view.max[0], view.max[1]], [view.min[0], view.max[1]],
         [view.min[0], view.min[1]],
       ],
-      ISO_THIN_LINE_MM,
-      labelColor,
+      view.view_id === selectedViewId
+        ? ISO_THIN_LINE_MM * 2
+        : ISO_THIN_LINE_MM,
+      view.view_id === selectedViewId
+        ? sheetColor("--cad-drawing-preview", "#7c3aed")
+        : labelColor,
     );
     if (frame) {
       frame.name = `view-frame:${view.view_id}`;
@@ -404,10 +411,14 @@ function scaleLabel(scale: number): string {
  *  uncommitted view's projected curves, translucent, plus a dashed
  *  placement frame around its content bounds and a label with the
  *  view name + scale — so position/orientation/scale are all visible
- *  BEFORE the commit.  A degraded preview shows its warning instead. */
+ *  BEFORE the commit.  A degraded preview shows its warning instead.
+ *  withFrame=false draws ONLY the curves (+ the degraded warning):
+ *  the anchored tools supply their own local frame group, and the
+ *  curves ride the ghost via a group translation. */
 function addViewPreviewObjects(
   group: THREE.Group,
   preview: DrawingViewPreviewPayload,
+  withFrame = true,
 ) {
   const color = sheetColor("--cad-drawing-preview", "#7c3aed");
   const staleColor = sheetColor("--cad-drawing-stale", "#e08a3c");
@@ -432,7 +443,7 @@ function addViewPreviewObjects(
     }
   }
 
-  if (hasGeometry) {
+  if (hasGeometry && withFrame) {
     // Dashed placement frame around the content bounds.
     const frame = buildDashedRibbon(
       [
@@ -459,7 +470,7 @@ function addViewPreviewObjects(
     if (label) {
       group.add(label);
     }
-  } else {
+  } else if (!hasGeometry) {
     const label = makeLabelSprite(
       view.warning || "No preview",
       staleColor,
@@ -470,6 +481,45 @@ function addViewPreviewObjects(
     if (label) {
       group.add(label);
     }
+  }
+}
+
+/** The LOCAL placement frame (the hook's ghostFrame): a dashed
+ *  rectangle drawn at LOCAL coordinates (min at 0,0 — the group's
+ *  position carries it to the ghost's min on every cursor move) plus
+ *  the view label.  No core round-trip: the frame rides the mouse at
+ *  cursor speed. */
+function addGhostFrameObjects(
+  group: THREE.Group,
+  ghost: { min: [number, number]; max: [number, number]; label: string; scale: number },
+) {
+  const color = sheetColor("--cad-drawing-preview", "#7c3aed");
+  const width = ghost.max[0] - ghost.min[0];
+  const height = ghost.max[1] - ghost.min[1];
+  const frame = buildDashedRibbon(
+    [
+      [0, 0], [width, 0],
+      [width, height], [0, height],
+      [0, 0],
+    ],
+    ISO_THIN_LINE_MM,
+    color,
+    4,
+    3,
+    0.8,
+  );
+  if (frame) {
+    group.add(frame);
+  }
+  const label = makeLabelSprite(
+    `${ghost.label} · ${scaleLabel(ghost.scale)}`,
+    color,
+    0,
+    height + 6,
+    3.5,
+  );
+  if (label) {
+    group.add(label);
   }
 }
 
@@ -515,37 +565,200 @@ function addViewDragGhost(
 export function addDrawingSheetObjects({
   viewport,
   drawingGroup,
-  preview,
-  viewPreview,
-  viewDrag,
+  overlayGroups,
+  selectedViewId,
 }: {
   viewport: ViewportState | null;
   drawingGroup: THREE.Group;
-  preview?: DrawingDimensionPreviewPayload | null;
-  viewPreview?: DrawingViewPreviewPayload | null;
-  viewDrag?: { min: [number, number]; max: [number, number]; label: string } | null;
+  /** Dedicated groups for the cursor-driven ghosts — created empty
+   *  here and repainted in place by syncDrawingOverlays on every
+   *  preview reply (never rebuilt with the sheet itself). */
+  overlayGroups: {
+    preview: { current: THREE.Group | null };
+    drag: { current: THREE.Group | null };
+  };
+  selectedViewId?: string | null;
 }) {
+  overlayGroups.preview.current = null;
+  overlayGroups.drag.current = null;
   const sheets = viewport?.drawing_sheets ?? [];
   let offsetX = 0;
   for (const sheet of sheets) {
     const sheetGroup = new THREE.Group();
     sheetGroup.name = `drawing-sheet-${sheet.sheet_id}`;
     sheetGroup.position.set(offsetX, 0, 0);
-    addSheetGroup(sheetGroup, sheet);
+    addSheetGroup(sheetGroup, sheet, selectedViewId ?? null);
     drawingGroup.add(sheetGroup);
-    // The previews + drag ghost belong to the FIRST sheet (the active one).
+    // The overlays belong to the FIRST sheet (the active one).
     if (offsetX === 0) {
-      if (preview && !preview.error) {
-        addPreviewObjects(sheetGroup, preview);
-      }
-      if (viewPreview) {
-        addViewPreviewObjects(sheetGroup, viewPreview);
-      }
-      if (viewDrag) {
-        addViewDragGhost(sheetGroup, viewDrag);
-      }
+      const previewGroup = new THREE.Group();
+      previewGroup.name = "drawing-overlay-preview";
+      sheetGroup.add(previewGroup);
+      overlayGroups.preview.current = previewGroup;
+      const dragGroup = new THREE.Group();
+      dragGroup.name = "drawing-overlay-drag";
+      sheetGroup.add(dragGroup);
+      overlayGroups.drag.current = dragGroup;
     }
     offsetX += sheet.width_mm + 24;
+  }
+}
+
+/** A lazily created named sub-group of a parent overlay group. */
+function subGroup(parent: THREE.Group, name: string): THREE.Group {
+  const existing = parent.children.find((child) => child.name === name);
+  if (existing instanceof THREE.Group) {
+    return existing;
+  }
+  const group = new THREE.Group();
+  group.name = name;
+  parent.add(group);
+  return group;
+}
+
+/** Repaints the drawing overlay groups in place.  Each sub-group
+ *  carries its last input signature in userData.signature — a no-op
+ *  when the payloads did not change, so cursor moves that produce the
+ *  same ghost cost nothing and changed payloads rebuild only the
+ *  ghost's few ribbons instead of the whole sheet scene.
+ *
+ *  The view ghost is split into TWO pieces so its POSITION can move
+ *  with the cursor without any core round-trip:
+ *  - the content curves (position-independent signature — rebuilt
+ *    only when the orientation's geometry changes), translated onto
+ *    the local ghost frame's min by a group position;
+ *  - the local placement frame (dashed rect + label), rebuilt when
+ *    its size/label changes and repositioned every sync. */
+export function syncDrawingOverlays({
+  overlayGroups,
+  preview,
+  viewPreview,
+  viewDrag,
+  ghostFrame,
+  ghostAnchored,
+}: {
+  overlayGroups: {
+    preview: { current: THREE.Group | null };
+    drag: { current: THREE.Group | null };
+  };
+  preview?: DrawingDimensionPreviewPayload | null;
+  viewPreview?: DrawingViewPreviewPayload | null;
+  viewDrag?: { min: [number, number]; max: [number, number]; label: string } | null;
+  ghostFrame?: { min: [number, number]; max: [number, number]; label: string; scale: number } | null;
+  ghostAnchored?: boolean;
+}) {
+  const previewGroup = overlayGroups.preview.current;
+  if (previewGroup) {
+    // Dimension preview (unchanged semantics) — its own sub-group so
+    // the view-ghost sub-groups survive its rebuilds.
+    const dimGroup = subGroup(previewGroup, "drawing-overlay-dim");
+    const dimSignature = preview && !preview.error
+      ? [
+          preview.view_id,
+          preview.dim_type,
+          preview.pick?.join(",") ?? "",
+          preview.pick_2?.join(",") ?? "",
+          preview.error ?? "",
+          preview.text_value ?? "",
+          preview.curves?.length ?? 0,
+        ].join("|")
+      : "none";
+    if (dimGroup.userData.signature !== dimSignature) {
+      disposeGroup(dimGroup);
+      dimGroup.userData.signature = dimSignature;
+      if (preview && !preview.error) {
+        addPreviewObjects(dimGroup, preview);
+      }
+    }
+
+    // View ghost content — the signature is POSITION-INDEPENDENT
+    // (label, warning, curve count, content size): moving the ghost
+    // rebuilds nothing, the group translation below does the work.
+    const contentGroup = subGroup(previewGroup, "drawing-overlay-viewcontent");
+    const viewSignature = viewPreview
+      ? [
+          viewPreview.view.label,
+          viewPreview.view.warning,
+          viewPreview.curves.length,
+          viewPreview.view.max[0] - viewPreview.view.min[0],
+          viewPreview.view.max[1] - viewPreview.view.min[1],
+        ].join("|")
+      : "none";
+    if (contentGroup.userData.signature !== viewSignature) {
+      disposeGroup(contentGroup);
+      contentGroup.userData.signature = viewSignature;
+      if (viewPreview) {
+        // Anchored tools (base/projected) draw only the curves — the
+        // local frame group below carries the placement frame; the
+        // section-panel flow keeps the reply-drawn frame + label.
+        addViewPreviewObjects(contentGroup, viewPreview, !ghostAnchored);
+      }
+    }
+    if (viewPreview && ghostAnchored) {
+      if (ghostFrame) {
+        // The reply's curves are exact for ANY position (the flatten
+        // is a pure offset) — translate them onto the local frame so
+        // the whole ghost rides the cursor while the reply is in
+        // flight.  A reply for a DIFFERENT orientation than the
+        // current frame must not show through (its curves are the
+        // wrong projection).
+        contentGroup.position.set(
+          ghostFrame.min[0] - viewPreview.view.min[0],
+          ghostFrame.min[1] - viewPreview.view.min[1],
+          0,
+        );
+        contentGroup.visible = ghostFrame.label === viewPreview.view.label;
+      } else {
+        // Dead zone / cursor off-sheet: the ghost is hidden — its
+        // content hides with it.
+        contentGroup.visible = false;
+      }
+    } else if (viewPreview) {
+      contentGroup.position.set(0, 0, 0);
+      contentGroup.visible = true;
+    } else {
+      contentGroup.visible = false;
+    }
+
+    // The local placement frame — built at LOCAL coords, positioned
+    // every sync, hidden while no ghost exists (dead zone / cancel).
+    const frameGroup = subGroup(previewGroup, "drawing-overlay-viewframe");
+    const frameSignature = ghostFrame
+      ? [
+          ghostFrame.label,
+          ghostFrame.max[0] - ghostFrame.min[0],
+          ghostFrame.max[1] - ghostFrame.min[1],
+          ghostFrame.scale,
+        ].join("|")
+      : "none";
+    if (frameGroup.userData.signature !== frameSignature) {
+      disposeGroup(frameGroup);
+      frameGroup.userData.signature = frameSignature;
+      if (ghostFrame) {
+        addGhostFrameObjects(frameGroup, ghostFrame);
+      }
+    }
+    if (ghostFrame) {
+      frameGroup.position.set(ghostFrame.min[0], ghostFrame.min[1], 0);
+    }
+    frameGroup.visible = ghostFrame != null;
+  }
+  const dragGroup = overlayGroups.drag.current;
+  if (dragGroup) {
+    const signature = viewDrag
+      ? [
+          viewDrag.min.join(","),
+          viewDrag.max.join(","),
+          viewDrag.label,
+        ].join("|")
+      : "none";
+    if (dragGroup.userData.signature !== signature) {
+      disposeGroup(dragGroup);
+      dragGroup.userData.signature = signature;
+      if (viewDrag) {
+        addViewDragGhost(dragGroup, viewDrag);
+      }
+    }
   }
 }
 

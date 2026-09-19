@@ -8,6 +8,8 @@ import {
 import { useToastStore } from "./state/toastStore";
 import { useCadCore } from "./hooks";
 import { useAppConfig } from "./lib";
+import { useDrawingTool } from "./app/drawing/useDrawingTool";
+import { bodyCenterForChoice, viewBasisOf } from "./lib/drawingViewMath";
 import {
   AiAssistantPanel,
   CamGenerationResultPopup,
@@ -104,9 +106,9 @@ import {
 import { CamFloatingPanels } from "./app/CamFloatingPanels";
 import {
   DimensionPanel,
-  InsertViewPanel,
   NewDrawingPanel,
   SectionPanel,
+  SectionViewPanel,
   SheetPanel,
   TitleBlockPanel,
 } from "./app/DrawingFloatingPanels";
@@ -620,16 +622,23 @@ function App() {
     string | null
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
-  const [isDrawingInsertPanelOpen, setIsDrawingInsertPanelOpen] =
-    useState(false);
-  // Bumped after every projection insert so the still-open panel clears
-  // its manual position override for the next view.
-  const [insertPanelResetToken, setInsertPanelResetToken] = useState(0);
   // New Drawing setup dialog (name + paper + orientation + angle) —
-  // the "new drawing" toolbar button opens it instead of creating a
-  // silent default.
+  // the "new drawing" ribbon button opens it instead of creating a
+  // silent default.  After it commits, the Base View tool auto-arms.
   const [isNewDrawingPanelOpen, setIsNewDrawingPanelOpen] =
     useState(false);
+  // R1 "Current 3D view" capture: ViewportPanel populates this ref
+  // with a function returning the LAST CAD-viewport camera frame
+  // vectors (never the drawing workspace's sheet camera).
+  const drawingCameraCaptureRef = useRef<
+    (() => import("@/layout/viewport/viewportPanelTypes").CameraFrameVectors) | null
+  >(null);
+  // The R1 drawing tool state machine's API — declared here (before
+  // the drawing actions, which dispatch through it); the hook that
+  // populates it runs after the action definitions.
+  const drawingToolApiRef = useRef<
+    import("@/app/drawing/useDrawingTool").DrawingToolApi | null
+  >(null);
   // The Insert View ghost (drawing_view_preview_result) — the core's
   // projection of the uncommitted view definition, rendered on the
   // sheet until Enter commits.
@@ -637,6 +646,16 @@ function App() {
     import("@/types").DrawingViewPreviewPayload | null
   >(null);
   const drawingViewPreviewRequestRef = useRef(0);
+  // Preview coalescing: at most ONE drawing_view_preview round-trip
+  // in flight.  Cursor moves stream definitions faster than HLR
+  // replies; without coalescing every move queued a round-trip and
+  // the ghost crawled the backlog (jerky, seconds late).  A newer
+  // definition replaces the trailing slot and re-sends once the
+  // in-flight reply lands.
+  const drawingPreviewInFlightRef = useRef(false);
+  const drawingPreviewTrailingRef = useRef<
+    import("@/types").DrawingView | null
+  >(null);
   // Mouse-first Insert View: the ghost follows the cursor over the
   // sheet; a click commits at the clicked point (commitPoint carries
   // the token so the panel reacts even to repeated clicks).
@@ -835,29 +854,6 @@ function App() {
     [viewport?.bodies],
   );
 
-  // Bounds (sheet-mm) + scale of the front projection view on the
-  // active sheet — the anchor for first/third-angle placement and
-  // the size reference for the on-sheet clamp (P5).
-  const drawingBaseViewBounds = useMemo(() => {
-    const sheet = viewport?.drawing_sheets?.find(
-      (candidate) =>
-        candidate.drawing_id === activeDrawing?.drawing_id &&
-        candidate.sheet_id === activeDrawing.sheets[0]?.sheet_id,
-    );
-    const base = activeDrawing?.views.find(
-      (v) => v.kind === "projection" && v.standard_view === "front",
-    );
-    const bounds = sheet?.views.find((v) => v.view_id === base?.view_id);
-    if (!bounds) {
-      return null;
-    }
-    return {
-      min: bounds.min,
-      max: bounds.max,
-      scale: base?.scale ?? 1,
-    };
-  }, [viewport, activeDrawing]);
-
   // The active sheet's trimmed size (sheet-mm) — view positions are
   // clamped into it so they never land off the paper.
   const drawingSheetSize = useMemo(() => {
@@ -922,49 +918,98 @@ function App() {
       if (!drawing || drawing.sheets.length === 0) {
         return;
       }
-      // A new drawing starts with the front view of the part — the
-      // "drawing from solid" milestone, one click from nothing.
+      // Fusion-style: the setup dialog finishes and the Base View
+      // tool arms with a front-view ghost following the cursor —
+      // the first view is placed by a click, not auto-created.
       if (drawingBodyIds.length > 0) {
-        await drawingViewCreate(drawing.drawing_id, drawing.sheets[0].sheet_id, {
-          view_id: "",
-          kind: "projection",
-          standard_view: "front",
-          source_body_ids: drawingBodyIds,
-          scale: 1,
-          sheet_position: [30, 40],
-          show_hidden: false,
-          warning: "",
-        });
+        drawingToolApiRef.current?.armBaseView();
       }
     });
   };
 
-  const drawingInsertViewAction = async (view: {
-    view_id: string;
-    kind: "projection" | "section" | "axonometric";
-    standard_view: string;
-    source_body_ids: string[];
-    scale: number;
-    sheet_position: [number, number];
-    show_hidden: boolean;
-    warning: string;
-    section?: {
-      cutting_plane_point: [number, number, number];
-      cutting_plane_normal: [number, number, number];
-      cut_away: boolean;
-      label: string;
-      hatch_angle_deg: number;
-      hatch_spacing_mm: number;
-    };
-  }) => {
-    // A projection insert keeps the panel open (Fusion's Apply
-    // semantics) so further views can be added without losing the
-    // floating window; Escape/Cancel closes it.  A section insert
-    // closes the panel — the section panel takes over.
-    if (view.kind === "section") {
-      setIsDrawingInsertPanelOpen(false);
-      setInsertCursorPoint(null);
+  // R1 tool commits.  Every create is awaited through the document
+  // change so the follow-up state (auto-projected parent, section
+  // panel binding) reads the freshly minted view.
+
+  // Base View commit: place the view, then auto-arm the projected
+  // tool bound to it (Fusion's base → cursor-directed projections).
+  const drawingBaseViewCommitAction = async (
+    def: import("@/types").DrawingView,
+  ) => {
+    if (!activeDrawing || activeDrawing.sheets.length === 0) {
+      return;
     }
+    const previousCount = activeDrawing.views.length;
+    await runAction(async () => {
+      await drawingViewCreate(
+        activeDrawing.drawing_id,
+        activeDrawing.sheets[0].sheet_id,
+        def,
+      );
+    });
+    // The committed view now draws as real sheet geometry — drop the
+    // ghost so it never double-draws.
+    drawingViewPreviewRequestRef.current += 1;
+    setDrawingViewPreviewPayload(null);
+    // Auto-arm the projected tool on the freshly minted view.  Read
+    // the FRESH store state — the props have not re-rendered yet.
+    const updated = await awaitDocumentChange(
+      (next) =>
+        (next.drawing.drawings.find(
+          (d) => d.drawing_id === next.drawing.active_drawing_id,
+        )?.views.length ?? 0) > previousCount,
+    );
+    const updatedDrawing = updated.drawing.drawings.find(
+      (d) => d.drawing_id === updated.drawing.active_drawing_id,
+    );
+    const createdView =
+      updatedDrawing?.views[updatedDrawing.views.length - 1];
+    const sheet = useCadCoreStore
+      .getState()
+      .viewport?.drawing_sheets?.find(
+        (candidate) =>
+          candidate.sheet_id === updatedDrawing?.sheets[0]?.sheet_id,
+      );
+    const bounds = sheet?.views.find(
+      (entry) => entry.view_id === createdView?.view_id,
+    );
+    const basis = createdView ? viewBasisOf(createdView) : null;
+    if (createdView?.view_id && bounds && basis) {
+      drawingToolApiRef.current?.armProjectedFrom({
+        viewId: createdView.view_id,
+        bounds: { min: bounds.min, max: bounds.max, origin: bounds.origin },
+        basis,
+        scale: createdView.scale,
+        showHidden: createdView.show_hidden,
+        sourceBodyIds: createdView.source_body_ids,
+      });
+    }
+  };
+
+  // Projected commit: the tool stays armed on the same parent —
+  // repeated placements until Esc ends the mode.
+  const drawingProjectedViewCommitAction = async (
+    def: import("@/types").DrawingView,
+  ) => {
+    if (!activeDrawing || activeDrawing.sheets.length === 0) {
+      return;
+    }
+    await runAction(async () => {
+      await drawingViewCreate(
+        activeDrawing.drawing_id,
+        activeDrawing.sheets[0].sheet_id,
+        def,
+      );
+    });
+    drawingViewPreviewRequestRef.current += 1;
+    setDrawingViewPreviewPayload(null);
+  };
+
+  // Section commit (the old InsertViewPanel's section branch): create,
+  // bind the committed-view SectionPanel to the new id, end the tool.
+  const drawingSectionInsertAction = async (
+    view: import("@/types").DrawingView,
+  ) => {
     await runAction(async () => {
       const drawing = document?.drawing.drawings.find(
         (d) => d.drawing_id === document?.drawing.active_drawing_id,
@@ -977,6 +1022,7 @@ function App() {
         view_id: "",
         kind: view.kind,
         standard_view: view.standard_view,
+        custom_frame: view.custom_frame,
         source_body_ids: view.source_body_ids,
         scale: view.scale,
         sheet_position: view.sheet_position,
@@ -984,33 +1030,90 @@ function App() {
         warning: view.warning,
         section: view.section,
       });
-      // A committed section view keeps its panel open, bound to the
-      // freshly minted view id, for label / cut-away / hatch edits.
-      if (view.kind === "section") {
-        const updated = await awaitDocumentChange(
-          (next) =>
-            (next.drawing.drawings.find(
-              (d) => d.drawing_id === next.drawing.active_drawing_id,
-            )?.views.length ?? 0) > previousCount,
-        );
-        const updatedDrawing = updated.drawing.drawings.find(
-          (d) => d.drawing_id === updated.drawing.active_drawing_id,
-        );
-        const createdView = updatedDrawing?.views[updatedDrawing.views.length - 1];
-        if (createdView?.view_id) {
-          setSectionPanelViewId(createdView.view_id);
-        }
+      const updated = await awaitDocumentChange(
+        (next) =>
+          (next.drawing.drawings.find(
+            (d) => d.drawing_id === next.drawing.active_drawing_id,
+          )?.views.length ?? 0) > previousCount,
+      );
+      const updatedDrawing = updated.drawing.drawings.find(
+        (d) => d.drawing_id === updated.drawing.active_drawing_id,
+      );
+      const createdView =
+        updatedDrawing?.views[updatedDrawing.views.length - 1];
+      if (createdView?.view_id) {
+        setSectionPanelViewId(createdView.view_id);
       }
     });
-    if (view.kind === "projection") {
-      // The panel stays open — clear its manual position override so
-      // the next view auto-slots instead of stacking on the same X/Y.
-      setInsertPanelResetToken((token) => token + 1);
-    }
-    // The committed view now draws as real sheet geometry — drop the
-    // ghost so it never double-draws.
+    drawingToolApiRef.current?.cancel();
+    setInsertCursorPoint(null);
     drawingViewPreviewRequestRef.current += 1;
     setDrawingViewPreviewPayload(null);
+  };
+
+  // Delete View (MODIFY/VIEWS ribbon): the frame click selected it,
+  // the Delete key fired — drop it from the drawing.
+  const drawingViewDeleteAction = async (viewId: string) => {
+    if (!activeDrawing) {
+      return;
+    }
+    await drawingViewDelete(activeDrawing.drawing_id, viewId);
+  };
+
+  // R1 tool dispatch on a committed view's frame press: projected
+  // mode picks the parent; delete mode selects the victim.
+  const drawingFramePickAction = (
+    viewId: string,
+    bounds: { min: [number, number]; max: [number, number] },
+  ) => {
+    const api = drawingToolApiRef.current;
+    if (!api) {
+      return;
+    }
+    if (api.tool === "projected_view") {
+      const view = activeDrawing?.views.find((v) => v.view_id === viewId);
+      const viewportEntry = viewport?.drawing_sheets?.[0]?.views.find(
+        (v) => v.view_id === viewId,
+      );
+      const basis = view ? viewBasisOf(view) : null;
+      if (view && viewportEntry && basis) {
+        api.pickProjectedParent({
+          viewId,
+          bounds: {
+            min: bounds.min,
+            max: bounds.max,
+            origin: viewportEntry.origin,
+          },
+          basis,
+          scale: view.scale,
+          showHidden: view.show_hidden,
+          sourceBodyIds: view.source_body_ids,
+        });
+      }
+    } else if (api.tool === "delete_view") {
+      api.selectViewForDelete(viewId);
+    }
+  };
+
+  // "Current 3D view": capture the last CAD camera frame (the
+  // drawing workspace shows the sheet top-down, so the snapshot is
+  // what the user last left in the CAD workspace) + the chosen
+  // bodies' center as the frame origin.
+  const drawingCaptureCurrent3dAction = () => {
+    const vectors = drawingCameraCaptureRef.current?.();
+    const api = drawingToolApiRef.current;
+    if (!vectors || !api) {
+      return;
+    }
+    const origin = bodyCenterForChoice(
+      api.base.bodyChoice,
+      drawingAvailableBodies,
+    );
+    api.setCurrent3dFrame({
+      origin,
+      normal: vectors.normal,
+      x_direction: vectors.x_direction,
+    });
   };
 
   // The Insert View ghost: the panel sends its uncommitted definition
@@ -1021,20 +1124,46 @@ function App() {
     view: import("@/types").DrawingView | null,
   ) => {
     if (!view || !activeDrawing || activeDrawing.sheets.length === 0) {
+      // Nothing to preview: bump the request id so any in-flight
+      // reply is dropped and the loop below re-sends nothing.
       drawingViewPreviewRequestRef.current += 1;
       setDrawingViewPreviewPayload(null);
       return;
     }
-    const requestId = ++drawingViewPreviewRequestRef.current;
-    const payload = await drawingViewPreview({
-      drawingId: activeDrawing.drawing_id,
-      sheetId: activeDrawing.sheets[0].sheet_id,
-      view,
-    });
-    if (requestId !== drawingViewPreviewRequestRef.current) {
-      return;  // a newer definition superseded this reply
+    if (drawingPreviewInFlightRef.current) {
+      // Coalesce: keep only the newest definition; the loop re-sends
+      // it the moment the current round-trip resolves.
+      drawingPreviewTrailingRef.current = view;
+      return;
     }
-    setDrawingViewPreviewPayload(payload);
+    drawingPreviewInFlightRef.current = true;
+    try {
+      let definition: import("@/types").DrawingView | null = view;
+      while (definition) {
+        const requestId = ++drawingViewPreviewRequestRef.current;
+        const payload = await drawingViewPreview({
+          drawingId: activeDrawing.drawing_id,
+          sheetId: activeDrawing.sheets[0].sheet_id,
+          view: definition,
+        });
+        const trailing = drawingPreviewTrailingRef.current;
+        drawingPreviewTrailingRef.current = null;
+        if (requestId !== drawingViewPreviewRequestRef.current) {
+          return;  // canceled while in flight — drop reply + trailing
+        }
+        if (trailing) {
+          // A newer definition queued while this round-trip ran:
+          // drop the stale reply (no flash of an old ghost position)
+          // and re-send the newest one.
+          definition = trailing;
+          continue;
+        }
+        setDrawingViewPreviewPayload(payload);
+        definition = null;
+      }
+    } finally {
+      drawingPreviewInFlightRef.current = false;
+    }
   };
 
   // ── Mouse-first interactions ─────────────────────────────────────
@@ -1044,13 +1173,15 @@ function App() {
     setInsertCursorPoint(point);
   };
 
-  // A click on the sheet commits the view at the clicked point — the
-  // panel reacts to the token bump and builds the view around it.
+  // A click on the sheet commits at the clicked point: the armed
+  // tool dispatches it (base/projected), and the section panel
+  // reacts to the token bump with the same point.
   const drawingInsertCommitAction = (point: [number, number]) => {
     setInsertCommitPoint((previous) => ({
       token: (previous?.token ?? 0) + 1,
       point,
     }));
+    drawingToolApiRef.current?.handleCommit(point);
   };
 
   // View-frame drag: press starts it, the ghost follows, the drop
@@ -1311,6 +1442,69 @@ function App() {
     setDrawingDimPreview(null);
     drawingDimPreviewRequestRef.current += 1;  // drop in-flight replies
   };
+
+  // ── R1 drawing tool state machine ────────────────────────────────
+  // The UI-side armed-tool state (Core-UI: interaction state stays in
+  // the UI; the core knows nothing about the armed tool).  The hook
+  // sits at the section's end — it consumes the actions above as its
+  // callbacks; the actions dispatch back through drawingToolApiRef.
+
+  const drawingToolApi = useDrawingTool({
+    activeDrawing,
+    activeSheet: viewport?.drawing_sheets?.find(
+      (candidate) =>
+        candidate.sheet_id === activeDrawing?.sheets[0]?.sheet_id,
+    ),
+    sheetSize: drawingSheetSize,
+    projectionAngle:
+      activeDrawing?.sheets[0]?.projection_angle ?? "first_angle",
+    availableBodies: drawingAvailableBodies,
+    defaultBodyIds: drawingBodyIds,
+    defaultGhostPosition: nextDrawingSheetPosition,
+    cursorPoint: insertCursorPoint,
+    previewReply: drawingViewPreviewPayload,
+    callbacks: {
+      onCreateBase: drawingBaseViewCommitAction,
+      onCreateProjected: drawingProjectedViewCommitAction,
+      onDeleteView: drawingViewDeleteAction,
+    },
+  });
+  drawingToolApiRef.current = drawingToolApi;
+
+  // The ghost preview: the tool's uncommitted definition is debounced
+  // into drawing_view_preview — but ONLY once per orientation/sector
+  // (previewNeeded): the projection is position-independent, so a
+  // cursor move renders locally (the hook's ghostFrame + the overlay
+  // content translation) with NO round-trip at all.  While a
+  // ghost-anchored tool is armed, a null definition means the ghost
+  // merely hides (dead zone, cursor off-sheet) — the last content is
+  // kept so it returns instantly; a real cancel clears it.
+  useEffect(() => {
+    const definition = drawingToolApi.previewDefinition;
+    const anchored =
+      drawingToolApi.tool === "base_view" ||
+      drawingToolApi.tool === "projected_view";
+    if (!definition) {
+      if (!anchored) {
+        drawingViewPreviewRequestRef.current += 1;
+        setDrawingViewPreviewPayload(null);
+      }
+      return;
+    }
+    if (!drawingToolApi.previewNeeded) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      void drawingViewPreviewAction(definition);
+    }, 80);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [
+    drawingToolApi.previewDefinition,
+    drawingToolApi.previewNeeded,
+    drawingToolApi.tool,
+  ]);
 
   const camDeleteSetupAction = async (setupId: string) => {
     // The selected operation panel closes when its operation dies with
@@ -2000,7 +2194,10 @@ function App() {
   async function cancelActiveTool() {
     // Central Escape/Cancel path for app-level tools. Sketch mode is
     // deliberately excluded here; sketch drafting Escape stays owned by
-    // ViewportPanel so Esc never exits an active sketch.
+    // ViewportPanel so Esc never exits an active sketch.  The R1
+    // drawing tools cancel first — an armed Base/Projected tool must
+    // not survive an Escape.
+    drawingToolApiRef.current?.cancel();
     return cancelActiveToolFromContext({
       actions: {
         extrudeAction,
@@ -2024,6 +2221,7 @@ function App() {
         editingFeatureId,
         materialsPanelOpen,
         sketchTextAction,
+        drawingToolArmed: drawingToolApi.tool !== "idle",
       },
       setters: {
         setExtrudeAction,
@@ -2173,6 +2371,7 @@ function App() {
       editingFeatureId,
       materialsPanelOpen,
       sketchTextAction,
+      drawingToolArmed: drawingToolApi.tool !== "idle",
     },
     state: {
       activeSketchPlaneId,
@@ -2940,17 +3139,28 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView]);
 
-  // Leaving the drawing workspace closes the dimension tool (the
-  // workspace-leak discipline: an armed sheet pick must not survive
-  // the switch).
+  // Leaving the drawing workspace cancels the armed tool and closes
+  // the dimension tool (the workspace-leak discipline: armed sheet
+  // interactions must not survive the switch).
   useEffect(() => {
     if (workspaceView === "drawing") {
       return;
     }
+    drawingToolApiRef.current?.reset();
     closeDimensionTool();
     setIsTitleBlockPanelOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView]);
+
+  // The armed tool must not outlive its drawing: deleting the drawing
+  // (or undoing its creation) cancels the tool — the ghost dies with
+  // its sheet.
+  useEffect(() => {
+    if (workspaceView === "drawing" && !activeDrawing) {
+      drawingToolApiRef.current?.reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceView, activeDrawing]);
 
   // Post-processor management: the list refreshes when entering the CAM
   // workspace; importing copies a definition into the user's posts
@@ -3246,6 +3456,19 @@ function App() {
         }) ?? null
     : null;
 
+  // The projected tool's parent label for the ribbon strip ("From
+  // front", "From View 2" for axonometric parents).
+  const projectedParentLabel = useMemo(() => {
+    const parent = drawingToolApi.projectedParent;
+    if (!parent) {
+      return null;
+    }
+    const view = activeDrawing?.views.find(
+      (v) => v.view_id === parent.viewId,
+    );
+    return view ? view.standard_view || view.kind : null;
+  }, [drawingToolApi.projectedParent, activeDrawing]);
+
   return (
     <main className="cad-shell h-screen overflow-x-hidden">
       {/* grid-cols-1 constrains the implicit column to the window width:
@@ -3267,39 +3490,58 @@ function App() {
           showSlicerView={showSlicerView}
           showGrblView={showGrblView}
           status={status}
-          drawingToolbar={{
+          drawingRibbon={{
             drawingCount: document?.drawing.drawings.length ?? 0,
             viewCount: activeDrawing?.views.length ?? 0,
+            bodyCount: viewport?.bodies.length ?? 0,
+            tool: drawingToolApi.tool,
+            base: drawingToolApi.base,
+            projectedParentLabel,
+            projectionAngle:
+              activeDrawing?.sheets[0]?.projection_angle ?? "first_angle",
+            dimensionPanelOpen: isDimensionPanelOpen,
+            cameraAvailable: drawingCameraCaptureRef.current !== null,
+            availableBodies: drawingAvailableBodies.map(({ id, label }) => ({
+              id,
+              label,
+            })),
             onNewDrawing: () => {
               // The setup dialog, not a silent default: name + paper +
               // orientation + projection angle (the "New Drawing"
               // button is the drawing's creation entry point).
               setIsNewDrawingPanelOpen(true);
             },
-            onInsertView: () => {
-              // Insert placement and dimension picking share the
-              // sheet pointer — opening one disarms the other.
-              setIsDimensionPanelOpen(false);
-              setDrawingDimPicks([]);
-              setDrawingDimPreview(null);
-              setIsDrawingInsertPanelOpen(true);
+            onBaseView: () => {
+              drawingToolApi.armBaseView();
             },
-            onDeleteDrawing: () => {
-              void drawingDeleteAction();
+            onProjectedView: () => {
+              drawingToolApi.armProjectedView();
             },
-            onSheetSettings: () => {
-              setIsDrawingSheetPanelOpen(true);
+            onSection: () => {
+              drawingToolApi.armSection();
+            },
+            onDeleteView: () => {
+              drawingToolApi.armDeleteView();
             },
             onDimension: () => {
-              // Insert placement and dimension picking share the
-              // sheet pointer — opening one disarms the other.
-              setIsDrawingInsertPanelOpen(false);
+              // Placement and dimension picking share the sheet
+              // pointer — opening one disarms the other.
+              drawingToolApi.cancel();
               setInsertCursorPoint(null);
               drawingViewPreviewRequestRef.current += 1;
               setDrawingViewPreviewPayload(null);
               setDrawingDimPicks([]);
               setDrawingDimPreview(null);
               setIsDimensionPanelOpen(true);
+            },
+            onMove: () => {
+              drawingToolApi.armMove();
+            },
+            onSheetSettings: () => {
+              setIsDrawingSheetPanelOpen(true);
+            },
+            onDeleteDrawing: () => {
+              void drawingDeleteAction();
             },
             onExportSvg: () => {
               void drawingExportAction("svg");
@@ -3312,6 +3554,19 @@ function App() {
             },
             onExportPdf: () => {
               void drawingExportAction("pdf");
+            },
+            onSetOrientation: (orientation) => {
+              drawingToolApi.setOrientation(orientation);
+            },
+            onCaptureCurrent3d: drawingCaptureCurrent3dAction,
+            onSetScale: (scale) => {
+              drawingToolApi.setScale(scale);
+            },
+            onSetShowHidden: (showHidden) => {
+              drawingToolApi.setShowHidden(showHidden);
+            },
+            onSetBodyChoice: (bodyChoice) => {
+              drawingToolApi.setBodyChoice(bodyChoice);
             },
           }}
           canUndo={document?.can_undo ?? false}
@@ -3605,6 +3860,17 @@ function App() {
               drawingViewPreview={
                 workspaceView === "drawing" ? drawingViewPreviewPayload : null
               }
+              // R1 local ghost frame: the dashed placement frame +
+              // label derived from the cursor (no core round-trip),
+              // with the preview content translated onto its min.
+              drawingGhostFrame={
+                workspaceView === "drawing" ? drawingToolApi.ghostFrame : null
+              }
+              drawingGhostAnchored={
+                workspaceView === "drawing" &&
+                (drawingToolApi.tool === "base_view" ||
+                  drawingToolApi.tool === "projected_view")
+              }
               // Mouse-first view reposition: the in-progress drag
               // ghost (dashed frame following the cursor).
               drawingViewDrag={
@@ -3624,23 +3890,42 @@ function App() {
                     }
                   : null
               }
-              // Mouse-first Insert View: hover feeds the ghost, a
-              // click commits the view at the clicked point.
+              drawingSelectedViewId={
+                workspaceView === "drawing"
+                  ? drawingToolApi.selectedViewId
+                  : null
+              }
+              // R1 armed-tool gating: hover feeds the ghost + a click
+              // commits while a placement tool is armed (base,
+              // projected or section); view frames are draggable in
+              // idle/move; frame presses dispatch to the tool in
+              // projected/delete modes (the interactions share the
+              // pointer, so the modes are mutually exclusive).
               drawingInsertArmed={
-                workspaceView === "drawing" && isDrawingInsertPanelOpen
+                workspaceView === "drawing" &&
+                (drawingToolApi.tool === "base_view" ||
+                  drawingToolApi.tool === "projected_view" ||
+                  drawingToolApi.tool === "section")
               }
               onDrawingInsertMove={drawingInsertMoveAction}
               onDrawingInsertCommit={drawingInsertCommitAction}
-              // View frames are draggable when NOT inserting (the two
-              // interactions share the pointer).
-              drawingViewDragArmed={
-                workspaceView === "drawing" && !isDrawingInsertPanelOpen
-              }
+              // View frames are draggable in EVERY drawing mode: a
+              // press + movement drags; a stationary press in the
+              // frame-pick modes (projected/delete) dispatches the
+              // pick instead (ViewportPanel's click-vs-drag press).
+              drawingViewDragArmed={workspaceView === "drawing"}
               onDrawingViewDragStart={drawingViewDragStartAction}
               onDrawingViewDragMove={drawingViewDragMoveAction}
               onDrawingViewDrop={(point) => {
                 void drawingViewDropAction(point);
               }}
+              drawingFramePickArmed={
+                workspaceView === "drawing" &&
+                (drawingToolApi.tool === "projected_view" ||
+                  drawingToolApi.tool === "delete_view")
+              }
+              onDrawingFramePick={drawingFramePickAction}
+              cameraFrameCaptureRef={drawingCameraCaptureRef}
               drawingPickArmed={
                 workspaceView === "drawing" && isDimensionPanelOpen
               }
@@ -5587,15 +5872,10 @@ function App() {
                   }}
                 />
               ) : null}
-              {isDrawingInsertPanelOpen ? (
-                <InsertViewPanel
+              {drawingToolApi.tool === "section" ? (
+                <SectionViewPanel
                   disabled={status !== "connected"}
-                  resetToken={insertPanelResetToken}
                   nextSheetPosition={nextDrawingSheetPosition}
-                  baseViewBounds={drawingBaseViewBounds}
-                  projectionAngle={
-                    activeDrawing?.sheets[0]?.projection_angle ?? "first_angle"
-                  }
                   bodyIds={drawingBodyIds}
                   availableBodies={drawingAvailableBodies}
                   sheetSize={drawingSheetSize}
@@ -5605,10 +5885,10 @@ function App() {
                     void drawingViewPreviewAction(view);
                   }}
                   onCommit={(view) => {
-                    void drawingInsertViewAction(view);
+                    void drawingSectionInsertAction(view);
                   }}
                   onCancel={() => {
-                    setIsDrawingInsertPanelOpen(false);
+                    drawingToolApi.cancel();
                     setInsertCursorPoint(null);
                     drawingViewPreviewRequestRef.current += 1;
                     setDrawingViewPreviewPayload(null);

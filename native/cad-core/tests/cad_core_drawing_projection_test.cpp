@@ -743,6 +743,93 @@ bool test_view_preview_geometry() {
                 "unknown drawing returns nullopt");
 }
 
+// ── Test 9b: preview projection cache (R1 cursor-follow perf) ──────
+//
+// A cursor-follow preview re-flattens one cached projection per
+// orientation instead of re-running HLR per pointer move.  Pins:
+//   - the same orientation at a different sheet position reuses the
+//     projection (identical geometry, translated by the delta)
+//   - a model edit bumps the revision and the cache must not leak the
+//     stale projection (the bounds follow the resized box)
+
+bool test_preview_projection_cache() {
+  DocumentManager manager;
+  const std::string body_id =
+      make_box_document(manager, {.width = 20.0, .height = 20.0,
+                                  .depth = 10.0});
+  Drawing drawing;
+  drawing.name = "Test Drawing";
+  DrawingSheet sheet;
+  sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";
+  drawing.sheets.push_back(sheet);
+  DocumentState document = manager.drawing_create(drawing);
+  const std::string drawing_id = document.drawing.drawings[0].drawing_id;
+
+  DrawingView def;
+  def.kind = "projection";
+  def.standard_view = "front";
+  def.source_body_ids = {body_id};
+  def.scale = 1.0;
+  def.sheet_position = {30.0, 40.0};
+  const auto first = polysmith::core::preview_view_geometry(
+      document, drawing_id, def);
+  if (!expect(first.has_value() && first->min.has_value(),
+              "first preview projects")) {
+    return false;
+  }
+  // Front view of the corner-at-origin box: view X = world Y (height,
+  // 20), view Y = world Z (depth, 10) — bounds (30,40)–(50,50).
+  if (!expect(near(first->min.value()[0], 30.0, 1e-4) &&
+                  near(first->min.value()[1], 40.0, 1e-4) &&
+                  near(first->max.value()[0], 50.0, 1e-4) &&
+                  near(first->max.value()[1], 50.0, 1e-4),
+              "front bounds at the first position")) {
+    return false;
+  }
+
+  // Same orientation, different position: the projection is reused
+  // and only the flatten offset changes — geometry identical,
+  // translated by the delta, bounds following the new position.
+  DrawingView moved = def;
+  moved.sheet_position = {80.0, 95.0};
+  const auto second = polysmith::core::preview_view_geometry(
+      document, drawing_id, moved);
+  if (!expect(second.has_value() && second->min.has_value() &&
+                  second->primitives.size() == first->primitives.size(),
+              "second preview reuses the projection (same geometry)")) {
+    return false;
+  }
+  if (!expect(near(second->min.value()[0], 80.0, 1e-4) &&
+                  near(second->min.value()[1], 95.0, 1e-4) &&
+                  near(second->max.value()[0], 100.0, 1e-4) &&
+                  near(second->max.value()[1], 105.0, 1e-4),
+              "moved preview bounds follow the new position")) {
+    return false;
+  }
+
+  // A model edit bumps the revision — the cache must NOT leak the
+  // stale projection: the same definition at the ORIGINAL position
+  // now reflects the resized geometry (front view X extent 20 → 40).
+  const std::string feature_id = document.feature_history.back().id;
+  document = manager.update_box_feature(
+      feature_id, {.width = 20.0, .height = 40.0, .depth = 10.0});
+  const auto after_edit = polysmith::core::preview_view_geometry(
+      document, drawing_id, def);
+  if (!expect(after_edit.has_value() && after_edit->min.has_value(),
+              "preview after the edit still projects")) {
+    return false;
+  }
+  if (!expect(near(after_edit->min.value()[0], 30.0, 1e-4) &&
+                  near(after_edit->min.value()[1], 40.0, 1e-4) &&
+                  near(after_edit->max.value()[0], 70.0, 1e-4) &&
+                  near(after_edit->max.value()[1], 50.0, 1e-4),
+              "post-edit bounds reflect the resized box, not the cache")) {
+    return false;
+  }
+  return true;
+}
+
 // ── Test 7b: viewport sheet emission ──────────────────────────────
 
 bool test_viewport_sheet_emission() {
@@ -953,6 +1040,14 @@ int main() {
 
   std::cout << "  Test 9: live view preview geometry... ";
   if (test_view_preview_geometry()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 10: preview projection cache... ";
+  if (test_preview_projection_cache()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

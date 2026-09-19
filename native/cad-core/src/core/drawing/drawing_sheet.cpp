@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <sstream>
 #include <unordered_map>
 
@@ -757,7 +758,7 @@ std::optional<ViewPreviewGeometry> preview_view_geometry(
 
   ViewPreviewGeometry preview;
 
-  // ── Frame + sources (the refresh pass's rules, un-cached) ───────
+  // ── Frame + sources (the refresh pass's rules) ───────────────────
   const auto frame = resolve_view_frame(def);
   if (!frame.has_value()) {
     preview.warning = def.kind == "section"
@@ -765,42 +766,93 @@ std::optional<ViewPreviewGeometry> preview_view_geometry(
                           : "The view direction could not be resolved.";
     return preview;
   }
-  const auto bodies = compile_bodies(document, /*include_meshes=*/false);
-  std::vector<SourceBody> sources;
-  for (const auto& body_id : def.source_body_ids) {
-    const auto found =
-        std::find_if(bodies.bodies.begin(), bodies.bodies.end(),
-                     [&](const CompiledBody& b) { return b.id == body_id; });
-    if (found == bodies.bodies.end()) {
-      preview.warning = "The source body '" + body_id +
-                        "' no longer exists.";
-      return preview;
-    }
-    sources.push_back({body_id, found->shape});
-  }
 
-  ProjectionInput input;
-  input.sources = std::move(sources);
-  input.frame = frame.value();
-  input.show_hidden = def.show_hidden;
-  input.section = def.kind == "section" ? def.section : std::nullopt;
+  // The projection is a pure function of everything EXCEPT the sheet
+  // position (a flatten offset) and the scale (applied by the
+  // flatten) — a cursor-follow preview re-flattens one cached
+  // projection per orientation instead of re-running HLR per pointer
+  // move.  The key serializes every projection input; a hit is only
+  // valid at the exact document revision (any mutator bumps it).
+  std::ostringstream key_stream;
+  key_stream << std::setprecision(12);
+  key_stream << drawing_id << "|";
+  const auto& f = frame.value();
+  key_stream << f.origin[0] << "," << f.origin[1] << "," << f.origin[2]
+             << "|" << f.normal[0] << "," << f.normal[1] << ","
+             << f.normal[2] << "|" << f.x_direction[0] << ","
+             << f.x_direction[1] << "," << f.x_direction[2] << "|";
+  key_stream << (def.show_hidden ? "h" : "-") << "|";
+  if (def.section.has_value()) {
+    const auto& s = def.section.value();
+    key_stream << "s:" << s.cutting_plane_point[0] << ","
+               << s.cutting_plane_point[1] << ","
+               << s.cutting_plane_point[2] << ","
+               << s.cutting_plane_normal[0] << ","
+               << s.cutting_plane_normal[1] << ","
+               << s.cutting_plane_normal[2] << ","
+               << (s.cut_away ? "c" : "-") << "|";
+  }
+  for (const auto& id : def.source_body_ids) {
+    key_stream << id << ";";
+  }
+  key_stream << "|";
   // Sibling sections trace their cutting planes onto the preview —
-  // the preview's own (uncommitted) section is not among them.
+  // a change in any committed section changes the projection.
   for (const auto& other : drawing->views) {
     if (other.section.has_value()) {
-      input.section_traces.push_back({other.section.value()});
+      const auto& s = other.section.value();
+      key_stream << "t:" << s.cutting_plane_point[0] << ","
+                 << s.cutting_plane_point[1] << ","
+                 << s.cutting_plane_point[2] << ","
+                 << s.cutting_plane_normal[0] << ","
+                 << s.cutting_plane_normal[1] << ","
+                 << s.cutting_plane_normal[2] << ";";
     }
   }
-  input.source_revision = document.revision;
+  const std::string projection_key = key_stream.str();
 
-  const ProjectionResult projection = project(input);
+  const ProjectionResult* cached_projection =
+      drawing_runtime::cached_preview_projection(document, projection_key);
+  ProjectionResult local_projection;
+  if (cached_projection == nullptr) {
+    const auto bodies = compile_bodies(document, /*include_meshes=*/false);
+    std::vector<SourceBody> sources;
+    for (const auto& body_id : def.source_body_ids) {
+      const auto found =
+          std::find_if(bodies.bodies.begin(), bodies.bodies.end(),
+                       [&](const CompiledBody& b) { return b.id == body_id; });
+      if (found == bodies.bodies.end()) {
+        preview.warning = "The source body '" + body_id +
+                          "' no longer exists.";
+        return preview;
+      }
+      sources.push_back({body_id, found->shape});
+    }
+
+    ProjectionInput input;
+    input.sources = std::move(sources);
+    input.frame = frame.value();
+    input.show_hidden = def.show_hidden;
+    input.section = def.kind == "section" ? def.section : std::nullopt;
+    for (const auto& other : drawing->views) {
+      if (other.section.has_value()) {
+        input.section_traces.push_back({other.section.value()});
+      }
+    }
+    input.source_revision = document.revision;
+
+    local_projection = project(input);
+    drawing_runtime::store_preview_projection(document, projection_key,
+                                              local_projection);
+    cached_projection = &local_projection;
+  }
 
   // ── Flatten exactly like a committed view ────────────────────────
   std::vector<SheetPrimitive> view_primitives;
   std::vector<SheetPrimitive> hatch_primitives;
   std::vector<SheetHatchRegion> hatch_regions;
   flatten_view(view_primitives, hatch_primitives, hatch_regions, def,
-               projection);
+               *cached_projection);
 
   // Content bounds from the view geometry (pre-dash, the flatten_sheet
   // rule) — the UI draws the placement frame from these.

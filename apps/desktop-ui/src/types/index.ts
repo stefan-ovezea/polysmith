@@ -8,3 +8,4 @@ export * from "./geometry/primitives";
 export * from "./geometry/contraints";
 export * from "./geometry/cam";
 export * from "./geometry/drawing";
+export * from "./drawingTool";

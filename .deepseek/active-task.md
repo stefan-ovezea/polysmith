@@ -1,13 +1,233 @@
 # Active task: ISO DRAWING WORKBENCH — full implementation (2026-09-19)
 
-## NEXT SESSION (2026-09-19, end-of-session handover): Fusion-style drawing UI
+## CURRENT SESSION (2026-09-19): R1 IMPLEMENTED (uncommitted) — AWAITING USER IN-APP VERIFICATION
 
-> Committed as 567fcb5 (43 files): live view preview + mouse-first UX
-> pass — core `drawing_view_preview`, ghost following the cursor,
-> click-to-place, view-frame drag, New Drawing setup dialog, landscape
-> default, camera straighten, Confirm-close, body selector, X/Y
-> override, regression tests (Test 9 in the projection suite),
-> schemas + docs. 63/63 suites, tsc clean, user verified in-app.
+> **R1 of the Fusion-style drawing workspace rework** (per the user-
+> approved plan `C:\Users\ThinkPad\.claude\plans\serialized-stirring-frog.md`
+> and `wiki/Drawing-Workspace-UI-Study.md`) — UI-only, NO core changes
+> (custom_frame/axonometric were already core-ready end-to-end).
+
+**What landed:**
+- **Six-tab ribbon** (`layout/header/DrawingRibbon.tsx`, replaces the
+  deleted DrawingToolbar; tabs render in AppHeader's existing nav with
+  `drawingWorkspaces` = views|geometry|dimension|symbols|annotate|modify).
+  GEOMETRY/SYMBOLS/ANNOTATE show their planned tools DISABLED with a
+  "next phase" hint (user decision); VIEWS = New Drawing (setup dialog
+  KEPT) / Base View / Projected View / Section / Delete View; DIMENSION
+  opens the existing panel; MODIFY = Move / Delete / Sheet… / Delete
+  Drawing…; exports (SVG/DXF/DXF annotated/PDF) on the row's right.
+- **`drawingTool` state machine** — `app/drawing/useDrawingTool.ts`
+  (hook, UI-side interaction state): idle | base_view | projected_view |
+  section | move | delete_view. Types in `types/drawingTool.ts`, pure
+  math in `lib/drawingViewMath.ts` (standard-view table mirror, iso
+  frames current-orientation-relative, 8-sector classification,
+  projected-child derivation with first/third-angle sign flip,
+  `horizontalXFor` x_direction rule, slot math, clamp). IPC stays in
+  App (callbacks); App dispatches through `drawingToolApiRef`.
+- **Base View tool**: strip (6 standard + NE/NW/SE/SW + "Current 3D
+  view" | scale | hidden | body) inline in the ribbon; ghost follows
+  the cursor; click places (6 px guard) → auto-arms projected mode on
+  the new view (Fusion base→projected flow). New Drawing now AUTO-ARMS
+  the tool (user decision — no auto-created front view).
+- **Projected mode**: 8 cursor sectors from the parent center (dead
+  zone = parent bounds +10 mm); ortho = adjacent standard view per the
+  sheet's angle, diagonal = iso custom frame; child inherits
+  scale/hidden/bodies; slot = parent bounds + 20 mm gap, center-aligned
+  on the fixed axis; EXACT slotting via one-time origin→min offset
+  learning (cache per parent+sector+scale+hidden+angle, corrected flag
+  prevents loops; the same learning clamps the base ghost). Standalone
+  Projected View tool = frame click picks the parent (auto-parents the
+  first view when none picked).
+- **"Current 3D view"** = LAST CAD-viewport camera snapshot
+  (`cameraFrameCaptureRef` — ViewportPanel records controls change
+  while the model shows, never the sheet camera; normal =
+  target−position, x = camera-right projected onto the view plane;
+  origin = chosen bodies' center). Button disabled + hint until the
+  user has oriented the 3D viewport at least once.
+- **BUG FIXED (found by plan review):** view-frame drag drop never
+  fired — the drag press returned before `setPointerDown`, so
+  finishClickPointerUp bailed (null pointerDown) AND its 4 px pan guard
+  would swallow a real drag. The drop now fires in an early pointer-up
+  branch in ViewportPanel before `handleViewportPointerUp`; the dead
+  viewDragActive/drawingViewDrop params are removed from
+  viewportPointerUp.ts.
+- **InsertViewPanel deleted**; its section mode is the new
+  `SectionViewPanel` (cutting plane/hatch/label + cursor-follow +
+  click-to-place; the committed-view SectionPanel stays). Dimension/
+  Sheet/TitleBlock panels unchanged. Escape cancels the armed tool
+  (cancelActiveTool prepend + `drawingToolArmed` in the hotkey
+  actions); workspace-leave and drawing-delete reset the tool; an
+  undone parent cancels projected mode (fresh-store check).
+- **Delete View** (included, not dropped): VIEWS/MODIFY button arms
+  delete_view; a frame click selects (highlight = 2×-width
+  `--cad-drawing-preview` frame ribbon via `drawingSelectedViewId`
+  through sceneSync); Delete/Backspace deletes (`drawing_view_delete`);
+  Esc cancels.
+- i18n: new `drawing.ribbon.*`/`drawing.strip.*`/`drawing.sectionCreatePanel.*`
+  keys; dead insertPanel/category/toolbar keys pruned. No core/schema/
+  IPC-doc changes (payloads unchanged).
+
+**Gates:** `tsc --noEmit` clean (every step) + **63/63 core suites**
+(`pnpm test:core`, regression safety) + en.json validated. NOT
+committed — user verifies in-app first (no untested commits).
+
+**In-app verification script (user, `pnpm dev`):** see the R1 section
+of the session message; essentials: ribbon tabs + disabled
+placeholders → New Drawing arms Base View (front ghost) → strip
+orientation/scale/hidden/body update the ghost live → click places →
+auto-projected ortho + diagonal iso ghosts snap to slots → click
+places, Esc ends → iso + "Current 3D view" (orient in CAD first) →
+view drag now moves on drop → Section panel flow → Dimension/Sheet/
+TitleBlock/exports unchanged → workspace switch mid-tool resets.
+
+## ROUND 2b — user re-report (2026-09-19): still very slow + the projected view is STILL pinned at the parent's level ("the base view can be anywhere in the page but the projected view still stays clamped on top")
+
+> **USER-VERIFIED IN-APP 2026-09-19: "well it is working now".**
+> Smooth ghost (local frame + content translation), projected views
+> follow the cursor downward, all R1 flows re-verified.  The whole
+> R1 + rounds 1/2/2b work is still uncommitted on feature/iso-drawing.
+
+Root causes found in re-analysis:
+1. **The projected ghost was slot-PINNED by design**: `pending` used
+   `projectedSlotMin` (parent-adjacent slot) — the ghost never
+   followed the cursor at all, so it could never be lowered.  And
+   every visible ghost update waited on a core round-trip (80 ms
+   debounce → HLR/cache → flatten → JSON → overlay rebuild), so the
+   ghost could only crawl at reply frequency — the "very very slow".
+2. Fixes (all UI, core cache kept as the per-orientation fast path):
+   - **Local ghost frame (`GhostFrame` in types/drawingTool.ts)**:
+     the hook derives the placement frame (min/max/label/scale) from
+     the cursor + the learned content size — NO round-trip.  The
+     scene renders it in a dedicated `drawing-overlay-viewframe`
+     group positioned every sync (dashed rect at local coords +
+     label).
+   - **Content translation**: the preview CURVES are exact for any
+     position (the flatten is a pure offset) — the overlay translates
+     the last reply's curves onto the ghost frame's min via a group
+     position, so the whole ghost (frame + content) rides the mouse
+     at cursor speed.  The content signature is position-independent
+     (label | warning | curve count | size) — position changes never
+     rebuild ribbons.
+   - **Projected follow-cursor placement**: the child center rides
+     the sector's alignment line through the parent center
+     (Fusion-like), distance = max(slot floor = supports + 20 mm gap,
+     cursor projection) — the ghost travels down/up/sideways with the
+     mouse; the clamp's direction-preserving fallback handles
+     near-page-size children.  `projectedSlotMin` deleted.
+   - **One preview per orientation/sector**: the hook exposes
+     `previewNeeded` (placement-cache miss); the App sends
+     `drawing_view_preview` ONLY then.  The offset learning matches
+     by SENT KEY (lastSentKeyRef) instead of position, and learns
+     from the reply's own min−origin (position-independent).
+     `cancel()` clears the placement cache so re-arming always
+     refreshes content.
+   - **Dead-zone keep**: with a ghost-anchored tool, a null pending
+     (dead zone / off-sheet) hides the overlay but KEEPS the payload;
+     real cancels clear it.
+   - **rAF coalescing** for the insert-move dispatch in
+     ViewportPanel (one App update per frame with the latest point,
+     not per pointermove event).
+   - Section-panel flow unchanged (ghostAnchored=false → content +
+     reply-drawn frame at the replied position).
+
+Gates: `tsc --noEmit` green; core untouched this round (the 63/63 +
+Test 10 from round 2 still stand).
+
+Re-test script (user, `pnpm dev`): New Drawing (A3) → base ghost
+tracks the mouse smoothly with frame + content following instantly →
+place → move BELOW the parent: the projected ghost follows the cursor
+downward (alignment-locked under the parent) → place → drag a view →
+Section panel unchanged.
+
+## ROUND 2 — user report: "very very slow and jercky moving" + projected view "cannot be lowered on the page" (FIXED, awaiting re-verification)
+
+Root causes:
+1. **Preview request backlog**: every cursor move debounced into a
+   `drawing_view_preview` round-trip (full HLR), and every reply
+   REBUILT THE WHOLE SHEET SCENE — replies arrived seconds late and
+   the ghost crawled the queue (jerky).  Fixes:
+   - **Core preview cache** (`drawing_runtime.h/.cpp` +
+     `drawing_sheet.cpp::preview_view_geometry`): the projection is a
+     pure function of everything EXCEPT sheet_position (flatten
+     offset) and scale (applied by the flatten) — it is now keyed by
+     a serialized projection key (frame, hidden, section, bodies,
+     sibling cutting planes) + revision-stamped in
+     `PerDocument::preview_projection`; a cursor move re-flattens the
+     cached projection instead of re-running HLR.  `invalidate()`
+     clears it.  NEW regression test: **Test 10
+     `test_preview_projection_cache`** in the projection suite —
+     same def at a new position translates the bounds; a box resize
+     bumps the revision and the bounds follow the new size (fails if
+     the cache leaks a stale projection).
+   - **Preview coalescing (App.tsx `drawingViewPreviewAction`)**: at
+     most ONE round-trip in flight (`drawingPreviewInFlightRef`); a
+     newer definition replaces `drawingPreviewTrailingRef` and
+     re-sends once the reply lands; stale replies are dropped (no
+     ghost flash); the null path kills in-flight + trailing.
+   - **Scene overlay split** (`drawingSceneObjects.ts` +
+     `sceneSync.ts`): dedicated `drawing-overlay-preview` /
+     `drawing-overlay-drag` groups under the first sheet, registered
+     via new refs (`drawingPreviewGroupRef`/`drawingDragGroupRef`) and
+     repainted IN PLACE by the new exported `syncDrawingOverlays`
+     (signature compare on `group.userData.signature`).  The
+     `preview:`/`viewpreview:`/`viewdrag:` entries are REMOVED from
+     `viewportSceneBuildKey` — a preview reply no longer rebuilds the
+     sheet scene at all.
+2. **Direction loss in the clamp**: with an A3 sheet + near-page-size
+   part the child cannot fit inside the margins, and the round-1
+   edge-to-edge fallback pinned it to the paper's top strip — the
+   projected view could never be lowered below the parent.  Fix:
+   `clampAxis`'s fallback is now DIRECTION PRESERVING —
+   `clamp(value, margin − viewSize, sheetSize − margin)` keeps at
+   least 10 mm on-sheet on the side the cursor pushes toward and lets
+   the opposite side bleed.  The hook's `childFits` raw-slot escape
+   was REMOVED (always clamp — the fixed clamp already follows the
+   cursor).
+
+Gates: `pnpm core:rebuild` — compile+link OK (exe fresh 2026-09-19
+21:50); the applocal.ps1 vcpkg-DLL post-build step fails on this
+machine (known env issue, wrapper `/tmp/vsbuild.sh` exists) — the
+MSB3073 tail does NOT mean a compile error.  `pnpm test:core` must
+stay 63/63 with the new Test 10; `tsc --noEmit` green.
+
+Re-test script (user, `pnpm dev`): New Drawing (A3) → move the base
+ghost fast — it tracks the cursor smoothly, no crawl → place → move
+the cursor BELOW the parent — the projected ghost follows all the way
+down (top bleed is fine) → place → redo at the same level → drag a
+view, undo → Section panel still previews.
+
+## ROUND 1 — user report: A3 + near-page-size part — "view has a mind of its own, does not like to be dragged" (FIXED, awaiting re-verification)
+
+Root causes:
+1. **Corner teleport**: `clampSheetPosition`'s margin range is EMPTY
+   for near-page-size content; the old `Math.max(margin, …)` fallback
+   collapsed it to the single point (10,10) — the ghost/commit pinned
+   to the corner regardless of the cursor, and projected slots from
+   all 8 sectors stacked onto the same spot.  Fix: the clamp now
+   degrades edge-to-edge when the content can't fit within the
+   margins (`clampAxis` in `lib/drawingViewMath.ts`); the BASE ghost
+   follows the cursor UNCLAMPED (only the commit clamps); projected
+   slots keep their RAW directional slot when the child can't fit
+   (partially off-sheet, Fusion-like) instead of collapsing.
+2. **Drag vs tool-armed conflict**: frames were draggable only in
+   idle/move — after a base placement the auto-armed projected tool
+   turned frame presses into parent picks, and in base_view a frame
+   press even committed a view on top (the insert-commit path).
+   Fix: a unified press gesture in ViewportPanel — `framePressRef`
+   click-vs-drag: press + ≥4 px movement = drag (available in EVERY
+   drawing mode), stationary release = the mode's frame pick
+   (projected parent / delete selection).  App: `drawingViewDragArmed
+   = workspaceView === "drawing"` (no tool restriction).
+
+Gates re-run: tsc clean. User re-verifies: drag a view in every mode
+(idle, projected armed, base armed); place/commit a near-page-size
+view — it lands at the cursor, not the corner; projected ghosts for a
+page-sized child go off-sheet in the sector direction instead of
+piling on the parent.  (If the part truly fills the sheet, scale it
+down with the strip's Scale dropdown — the ghost is honest about
+where it is.)
+
+
 >
 > **User's new mandate (verbatim):** "I think the scaffolding is good.
 > However the UI is very rudimentary... I want 2026 feel of the UI.

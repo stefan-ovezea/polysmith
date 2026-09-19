@@ -5,6 +5,7 @@ import type {
   DocumentState,
   DrawingDimensionPreviewPayload,
   DrawingViewPreviewPayload,
+  GhostFrame,
   PrimitiveInteractionState,
   PrimitiveVisual,
   ReferencePlaneInteractionState,
@@ -60,7 +61,7 @@ interface ReadyViewportSceneGroups {
   drawingGroup: THREE.Group;
 }
 
-import { addDrawingSheetObjects } from "./drawingSceneObjects";
+import { addDrawingSheetObjects, syncDrawingOverlays } from "./drawingSceneObjects";
 
 interface ViewportSceneSyncRefs {
   pendingEndpointCommit: MutableRef<boolean>;
@@ -83,6 +84,11 @@ interface ViewportSceneSyncRefs {
   dragCursor: MutableRef<{ x: number; y: number } | null>;
   lastGeometryKey: MutableRef<string>;
   lastSceneBuildKey: MutableRef<string>;
+  /** Dedicated drawing overlay groups (registered by
+   *  addDrawingSheetObjects, repainted in place by
+   *  syncDrawingOverlays) — preview replies never rebuild the sheet. */
+  drawingPreviewGroupRef: MutableRef<THREE.Group | null>;
+  drawingDragGroupRef: MutableRef<THREE.Group | null>;
   hoveredEdgeId: MutableRef<string | null>;
   hoveredVertexId: MutableRef<string | null>;
   hoveredSketchEntityId: MutableRef<string | null>;
@@ -147,6 +153,16 @@ interface SyncViewportSceneParams {
   /** In-progress mouse drag of a committed view — a dashed frame
    *  ghost following the cursor until the drop commits the move. */
   drawingViewDrag: { min: [number, number]; max: [number, number]; label: string } | null;
+  /** R1 delete tool's selection — the frame renders highlighted. */
+  drawingSelectedViewId: string | null;
+  /** R1 local ghost frame (cursor-derived, no core round-trip): the
+   *  dashed placement frame + label drawn at cursor speed, with the
+   *  view preview content translated onto its min. */
+  drawingGhostFrame: GhostFrame | null;
+  /** True while a ghost-anchored tool (base/projected) is armed —
+   *  the local frame owns the placement frame, and the content hides
+   *  when the ghost hides (dead zone, cursor off-sheet). */
+  drawingGhostAnchored: boolean;
   wcsOrientation: string;
   activeCamSetupId?: string | null;
   /** True while the CAM origin pick is armed — draws the snap-target
@@ -197,6 +213,21 @@ export function syncViewportScene(params: SyncViewportSceneParams) {
   }
 
   rebuildViewportScene(params, groups);
+
+  // The cursor-driven overlays repaint on EVERY sync (in place, cheap)
+  // — they are deliberately absent from the build key so a preview
+  // reply never rebuilds the sheet scene.
+  syncDrawingOverlays({
+    overlayGroups: {
+      preview: params.refs.drawingPreviewGroupRef,
+      drag: params.refs.drawingDragGroupRef,
+    },
+    preview: params.drawingDimensionPreview,
+    viewPreview: params.drawingViewPreview,
+    viewDrag: params.drawingViewDrag,
+    ghostFrame: params.drawingGhostFrame,
+    ghostAnchored: params.drawingGhostAnchored,
+  });
 
   releaseEndpointDragPreview({
     refs: params.refs,
@@ -315,9 +346,11 @@ function rebuildViewportScene(
     addDrawingSheetObjects({
       viewport: params.viewport,
       drawingGroup: groups.drawingGroup,
-      preview: params.drawingDimensionPreview,
-      viewPreview: params.drawingViewPreview,
-      viewDrag: params.drawingViewDrag,
+      overlayGroups: {
+        preview: params.refs.drawingPreviewGroupRef,
+        drag: params.refs.drawingDragGroupRef,
+      },
+      selectedViewId: params.drawingSelectedViewId,
     });
     params.refs.lastSceneBuildKey.current = sceneBuildKey;
     return;
@@ -343,9 +376,7 @@ function viewportSceneBuildKey({
   showReferencePlanes,
   showStock,
   showDrawingSheet,
-  drawingDimensionPreview,
-  drawingViewPreview,
-  drawingViewDrag,
+  drawingSelectedViewId,
   wcsOrientation,
   activeCamSetupId,
   originPickArmed,
@@ -397,38 +428,10 @@ function viewportSceneBuildKey({
       ].join(":"),
     )
     .join(";") ?? "nosheets";
-  // The dimension preview repaints per reply — its picks, error and
-  // computed value all feed the rebuild key.
-  const previewSignature = drawingDimensionPreview
-    ? [
-        drawingDimensionPreview.view_id,
-        drawingDimensionPreview.dim_type,
-        drawingDimensionPreview.pick?.join(",") ?? "",
-        drawingDimensionPreview.pick_2?.join(",") ?? "",
-        drawingDimensionPreview.error ?? "",
-        drawingDimensionPreview.text_value ?? "",
-        drawingDimensionPreview.curves?.length ?? 0,
-      ].join("|")
-    : "nopreview";
-  // The Insert View ghost repaints per reply — its origin, bounds and
-  // curve count all feed the rebuild key.
-  const viewPreviewSignature = drawingViewPreview
-    ? [
-        drawingViewPreview.view.label,
-        drawingViewPreview.view.origin.join(","),
-        drawingViewPreview.view.min.join(","),
-        drawingViewPreview.view.max.join(","),
-        drawingViewPreview.view.warning,
-        drawingViewPreview.curves.length,
-      ].join("|")
-    : "noviewpreview";
-  const viewDragSignature = drawingViewDrag
-    ? [
-        drawingViewDrag.min.join(","),
-        drawingViewDrag.max.join(","),
-        drawingViewDrag.label,
-      ].join("|")
-    : "noviewdrag";
+  // The cursor-driven overlays (dimension preview, Insert View ghost,
+  // view-drag ghost) are deliberately NOT part of the build key —
+  // syncDrawingOverlays repaints them in place on every sync, so a
+  // preview reply must not rebuild the whole sheet scene.
   return [
     sceneData.geometryKey,
     displayUnits,
@@ -437,9 +440,7 @@ function viewportSceneBuildKey({
     showStock ? "stock:on" : "stock:off",
     showDrawingSheet ? "drawing:on" : "drawing:off",
     "drawing:" + drawingSignature,
-    "preview:" + previewSignature,
-    "viewpreview:" + viewPreviewSignature,
-    "viewdrag:" + viewDragSignature,
+    "viewselected:" + (drawingSelectedViewId ?? ""),
     "cam:" + camSignature,
     // The origin-pick markers are added/removed on arm/disarm, so
     // the arm state must be part of the rebuild key.  The drill flag
