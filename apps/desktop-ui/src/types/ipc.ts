@@ -200,6 +200,27 @@ import type {
   CamExportGcodeTextCommand,
 } from "./ipc/camCommands";
 import type {
+  DrawingCreateCommand,
+  DrawingDeleteCommand,
+  DrawingSetActiveCommand,
+  DrawingSheetCreateCommand,
+  DrawingSheetDeleteCommand,
+  DrawingSheetUpdateCommand,
+  DrawingViewCreateCommand,
+  DrawingViewUpdateCommand,
+  DrawingViewDeleteCommand,
+  DrawingViewMoveCommand,
+  DrawingViewPreviewCommand,
+  DrawingSectionUpdateCommand,
+  DrawingTitleBlockUpdateCommand,
+  DrawingExportCommand,
+  DrawingDimensionCreateCommand,
+  DrawingDimensionUpdateCommand,
+  DrawingDimensionDeleteCommand,
+  DrawingDimensionPreviewCommand,
+  DrawingDimensionPreviewPayload,
+} from "./ipc/drawingCommands";
+import type {
   FeatureEntry,
   SketchTool,
 } from "./geometry/sketch";
@@ -210,6 +231,11 @@ import type {
   MachineDefinition,
   PointAttestation,
 } from "./geometry/cam";
+import type {
+  DrawingDocumentData,
+  DrawingViewPreviewPayload,
+  ViewportDrawingSheet,
+} from "./geometry/drawing";
 import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
 import type {
   ViewportBoxPrimitive,
@@ -238,10 +264,16 @@ export * from "./ipc/bodyFeatureCommands";
 export * from "./ipc/profileFeatureCommands";
 export * from "./ipc/sketchCommands";
 export * from "./ipc/camCommands";
+export * from "./ipc/drawingCommands";
 
 // CAM data — mirrors polysmith::core::CamDocumentData (cam_types.h).
 // Detailed CAM types live in types/geometry/cam.ts.
 export { type CamDocumentData } from "./geometry/cam";
+
+// Drawing data — mirrors polysmith::core::DrawingDocumentData
+// (drawing_types.h).  Detailed drawing types live in
+// types/geometry/drawing.ts.
+export { type DrawingDocumentData } from "./geometry/drawing";
 
 export interface DocumentState {
   document_id: string;
@@ -279,6 +311,7 @@ export interface DocumentState {
   parameters: ParameterEntry[];
   appearance: DocumentAppearance;
   cam: CamDocumentData;
+  drawing: DrawingDocumentData;
 }
 
 export interface DocumentAppearance {
@@ -352,6 +385,7 @@ export interface ViewportState {
   edges: ViewportEdgePrimitive[];
   vertices: ViewportVertexPrimitive[];
   toolpaths: ViewportToolpathPrimitive[];
+  drawing_sheets: ViewportDrawingSheet[];
   scene_width: number;
   scene_height: number;
   scene_depth: number;
@@ -674,6 +708,18 @@ export interface LogEntry {
   timestamp: string;
 }
 
+export interface DrawingDimensionPreviewEvent {
+  id: string;
+  type: "drawing_dimension_preview";
+  payload: DrawingDimensionPreviewPayload;
+}
+
+export interface DrawingViewPreviewResultEvent {
+  id: string;
+  type: "drawing_view_preview_result";
+  payload: DrawingViewPreviewPayload;
+}
+
 export type CoreMessage =
   | HelloEvent
   | PongEvent
@@ -686,6 +732,8 @@ export type CoreMessage =
   | LogEvent
   | TrimPreviewResultEvent
   | CornerTrimPreviewResultEvent
+  | DrawingDimensionPreviewEvent
+  | DrawingViewPreviewResultEvent
   | CamGenerationProgressEvent
   | CamGenerationResultEvent
   | CamPostListResultEvent
@@ -1014,6 +1062,24 @@ export type CoreCommand =
   | CamExportGcodeCommand
   | CamExportGcodeTextCommand
   | DetachBodyProjectionsCommand
+  | DrawingCreateCommand
+  | DrawingDeleteCommand
+  | DrawingSetActiveCommand
+  | DrawingSheetCreateCommand
+  | DrawingSheetDeleteCommand
+  | DrawingSheetUpdateCommand
+  | DrawingViewCreateCommand
+  | DrawingViewUpdateCommand
+  | DrawingViewDeleteCommand
+  | DrawingViewMoveCommand
+  | DrawingViewPreviewCommand
+  | DrawingSectionUpdateCommand
+  | DrawingTitleBlockUpdateCommand
+  | DrawingExportCommand
+  | DrawingDimensionCreateCommand
+  | DrawingDimensionUpdateCommand
+  | DrawingDimensionDeleteCommand
+  | DrawingDimensionPreviewCommand
   | RemoveSketchProjectionsCommand
   | RedefineSketchPlaneCommand
   | ProjectFaceIntoSketchCommand

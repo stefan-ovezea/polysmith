@@ -39,4 +39,7 @@ export interface ActiveToolActions {
   editingFeatureId: string | null;
   materialsPanelOpen: boolean;
   sketchTextAction: SketchTextAction | null;
+  /** R1: an armed drawing tool (base/projected/section/delete) —
+   *  Escape cancels it through cancelActiveTool. */
+  drawingToolArmed: boolean;
 }

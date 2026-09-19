@@ -277,4 +277,22 @@ json make_cam_tool_export_file_result_event(const std::string& id,
   };
 }
 
+json make_drawing_dimension_preview_event(const std::string& id,
+                                          const json& payload) {
+  return {
+      {"id", id},
+      {"type", "drawing_dimension_preview"},
+      {"payload", payload},
+  };
+}
+
+json make_drawing_view_preview_event(const std::string& id,
+                                     const json& payload) {
+  return {
+      {"id", id},
+      {"type", "drawing_view_preview_result"},
+      {"payload", payload},
+  };
+}
+
 }  // namespace polysmith::protocol

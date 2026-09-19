@@ -3481,6 +3481,155 @@ Payload:
 }
 ```
 
+### Drawing commands
+
+Drawing state lives in `document_state.drawing` (drawings → sheets →
+views → annotations), parallel to `cam`. Views carry `source_body_ids`
++ `standard_view` (`"front" | "top" | "right" | "bottom" | "left" |
+"back"`, first-angle default) or a `custom_frame`; sections carry a
+`SectionDefinition` referencing the MODEL (never another view).
+Annotations attach to edges through a `SourceEdgeWitness` (never sheet
+coordinates). Generated projections are memory-only (a `drawing_runtime`
+cache, the toolpath contract) — they never appear in document payloads.
+
+- `drawing_create` — payload = serialized `Drawing` (name, sheets[],
+  views[], annotations[]). A drawing always has ≥ 1 sheet. The core
+  mints `drawing_id`/`sheet_id`/`view_id`/`annotation_id` when empty and
+  sets the drawing active.
+- `drawing_delete` — payload `{drawing_id}`. Removes the drawing and its
+  content; active/selection ids pointing inside it are cleared.
+- `drawing_set_active` — payload `{drawing_id}`.
+- `drawing_sheet_create` — payload `{drawing_id, sheet}`. The sheet's
+  `view_ids` must reference existing views (rejected before the undo
+  push).
+- `drawing_sheet_delete` — payload `{drawing_id, sheet_id}`. Deletes the
+  sheet, its views, and annotations attached to those views.
+- `drawing_view_create` — payload `{drawing_id, sheet_id, view}`.
+  View kinds: `"projection"` (needs `standard_view` `"front" | "right"
+  | "left" | "top" | "bottom" | "back"` or a `custom_frame`),
+  `"axonometric"` (needs `custom_frame`), or `"section"` (needs
+  `view.section` — the frame derives from the cutting plane; a
+  standard view or custom frame must NOT override it). The bump
+  re-projects the view (HLR, cached in `drawing_runtime` —
+  memory-only).
+- `drawing_view_update` — payload `{drawing_id, view}`. Same
+  validation; annotations keep their attachments.
+- `drawing_view_delete` — payload `{drawing_id, view_id}`. Removes the
+  view, its annotations, and its id from every sheet's `view_ids`.
+- `drawing_view_move` — payload `{drawing_id, view_id, sheet_position:
+  [x, y]}`. Cosmetic only — never re-projects.
+- `drawing_view_preview` — payload `{drawing_id, sheet_id, view}`.
+  NON-mutating: projects + flattens an uncommitted view definition and
+  replies with `drawing_view_preview_result` `{drawing_id, sheet_id,
+  curves[], texts[], view}` (the `view` record has an empty `view_id`
+  — the ghost marker; `warning` non-empty = degraded projection).
+- `drawing_section_update` — payload `{drawing_id, view_id, section}`.
+  Replaces a section view's `SectionDefinition` (cutting plane
+  point/normal, `cut_away`, label, hatch angle/spacing). The view must
+  be kind `"section"`; a degenerate normal or non-positive hatch
+  spacing is rejected before the undo push.
+- `drawing_title_block_update` — payload `{drawing_id, sheet_id,
+  title_block}`. Replaces the sheet's ISO 7200 title block data: the
+  eight mandatory fields (`legal_owner`, `identification`, `date`,
+  `title`, `approver`, `creator`, `document_type`, segment/sheet
+  number auto-filled) plus `revision_rows` (each `[zone, rev,
+  description, date, approved]`). Purely cosmetic — the bump
+  re-flattens only. The scale auto-fills from the sheet's FIRST view
+  at flatten time.
+- `drawing_export` — payload `{drawing_id, sheet_id, format,
+  file_path, dxf_mode?}`. `format` `"svg" | "dxf" | "pdf"`;
+  `dxf_mode` `"geometry"` (default) | `"annotated"`. NON-mutating:
+  flattens the sheet from the current runtime projections (never
+  re-projects, never pushes undo, never bumps the revision) and
+  replies with `document_exported`. The SVG backend emits an mm
+  viewBox (y flipped to SVG's screen convention, math-CCW arcs =
+  sweep 0, ellipses tessellated, glyph primitives render the text);
+  the DXF backend emits ASCII R2013 with named ISO layers, real
+  DRW_Text for the text records (glyphs skipped), and the title block
+  as a BLOCK + INSERT.  The PDF backend (libharu, vendored with zlib)
+  writes the sheet 1:1 in mm with real selectable text from the
+  bundled subset-embedded OSIFONT (⌀/±/° round-trip as UTF-16BE hex
+  in the content stream; glyph-primitive fallback when the font
+  cannot load).  `dxf_mode: "annotated"` replaces the exploded
+  dimension graphics and hatch scanlines with real DIMENSION entities
+  (DIMSTYLE `POLYSMITH_ISO`: closed filled arrows, text above the
+  line) and HATCH entities (ANSI31 at the section's angle/spacing,
+  boundary loops as LINE edges).  Errors (unknown
+  drawing/sheet/format/mode, I/O) throw structured errors.
+- `drawing_sheet_update` — payload `{drawing_id, sheet_id, paper_size,
+  orientation, projection_angle, name}`. `paper_size` A0–A4,
+  `orientation` portrait/landscape (landscape swaps the trimmed ISO
+  5457 dimensions), `projection_angle` `"first_angle"` (default) or
+  `"third_angle"`, `name` display-only. Values outside the enums are
+  rejected before the undo push; the bump re-flattens the sheet.
+- `drawing_dimension_create` — payload `{drawing_id, view_id,
+  dim_type, pick, pick_2?, annotation_id?}`. `dim_type`
+  `"linear" | "angular" | "radius" | "diameter"`; `pick`/`pick_2` are
+  SHEET-mm points resolved against the view's CURRENT projection —
+  the core mints the witness from the nearest record's provenance and
+  the persistent edge reference id (`drawing-edge-N`).  A pick is
+  never a stored ordinal.  With `annotation_id` the command REPAIRS
+  that annotation (witness + kind re-captured, cosmetics kept).
+  Kind-vs-geometry validation throws before the undo push.
+- `drawing_dimension_update` — payload `{drawing_id, annotation_id,
+  text_override?, prefix?, arrow_flip?, text_offset?}` — cosmetic
+  only: never re-projects, never re-resolves (the bump re-flattens).
+- `drawing_dimension_delete` — payload `{drawing_id, annotation_id}`.
+- `drawing_dimension_preview` — payload `{drawing_id, view_id,
+  dim_type, pick, pick_2?}` — NON-mutating; replies with a
+  `drawing_dimension_preview` event `{value, text_value, curves[],
+  text, error?}` (value + sheet-mm graphics for the live preview).
+
+Section views (P4): the refresh cuts every source body with a
+half-space when `section.cut_away` is true (material on the normal
+side is removed; the ref point marks the REMOVED side — pinned by the
+section test) and suppresses hidden edges entirely (ISO 128-3 §7).
+The hatch boundary is the cut face's wires at the cutting plane
+(`cut_away = false` uses the uncut body's cross-section); scanline
+hatching (thin lines, `hatch_angle_deg`/`hatch_spacing_mm`) comes from
+the shared `compute_hatch_segments` engine function. Every other view
+of the drawing that sees a sibling section's cutting plane edge-on
+carries the cutting-plane trace (`curve_class: "cutting_plane"`, a
+type-H chain line) in its projection.
+
+Sheets (P5): `flatten_sheet(document, drawing_id, sheet_id)` produces
+the `SheetPrimitiveStream` the viewport draws — the sheet furniture
+(0.7 mm frame at 20/10 mm margins, centring marks, grid-reference
+ticks, the ISO 5456-2 projection symbol honoring the per-sheet angle)
+plus every view's geometry transformed into sheet-mm with the ISO
+128-2 line styles ALREADY applied (dash patterns recalculated at
+corners per Annex A — every dash sequence starts and ends with a dash;
+hidden = dashed thin, cutting-plane = chain thin, hatching = continuous
+thin emitted last).  Coincident geometry is de-duplicated by the
+priority visible > hidden > cutting_plane > hatch on the undashed
+records, and cutting-plane traces lying on a visible/hidden line are
+dropped (the support-overlap rule).  The stream is deterministic and
+memory-only (golden-file pinned).
+
+Dimensions (P6): the refresh pass resolves each annotation against its
+view's fresh projection through the witness ladder — identity (body +
+edge index + kind — the topology-stable fast path that follows
+parametric edits, e.g. a resized box) → strict body+geometry
+(0.01 mm) → relaxed geometry (0.1 mm, re-created features) →
+ambiguous (distinct sources both match → refuse) → not found
+(`dependency_broken` + warning + the last-known value kept, marked
+stale — never blank, never silently substituted).  Measured values and
+attachment geometry live in the runtime cache (memory-only, the
+projection contract — they never enter undo snapshots or saves).  The
+flatten emits the ISO 129-1 graphics: extension lines (8×d gap +
+overshoot), closed filled arrowheads (sheet-mm `filled_poly`
+primitives), the unbroken dimension line, and a `texts[]` record
+(3.5 mm lettering, unidirectional, ⌀/R prefixes, the decimal
+separator, ° on angles).  Cosmetic updates never re-project — they
+only re-flatten.
+
+A view whose source body disappears degrades with `broken_ref` +
+`warning` and holds its last-known projection (marked `stale`) — never
+a crash, never a silent substitute.
+
+All drawing commands return `document_state`; unknown ids reply with an
+`error` event.
+
 ## State Shapes an Agent Should Remember
 
 ### Feature Entries

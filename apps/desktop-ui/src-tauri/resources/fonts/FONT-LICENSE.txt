@@ -1,0 +1,36 @@
+OSIFONT — ISO 3098 single-stroke font
+====================================
+
+Source: https://github.com/hikikomori82/osifont
+File:   osifont-lgpl3fe.ttf (LGPL v3 variant with the font-embedding
+        exception)
+
+Copyright (c) 2015-2018, Christian Schramm <osifont@familie-schramm.de>
+and contributors.
+
+License: GNU Lesser General Public License, version 3, with the
+font-embedding exception added to the license text:
+
+    As a special exception, if you create a document which uses this
+    font, and embed this font or unaltered portions of this font into
+    the document, this font does not by itself cause the resulting
+    document to be covered by the GNU Lesser General Public License.
+    This exception does not however invalidate any other reasons why
+    the document might be covered by the GNU Lesser General Public
+    License. If you modify this font, you may extend this exception to
+    your version of the font, but you are not obligated to do so. If
+    you do not wish to do so, delete this exception statement from
+    your version.
+
+The font is bundled with PolySmith for drawing-sheet lettering
+(ISO 3098 Type B style). It is used to rasterize/vectorize text at
+runtime; the unmodified font file is embedded into exported PDFs
+under the exception above.
+
+The OSIFONT project also publishes GPL v3 and GPL v2 variants of the
+same font. We ship the LGPL v3 + exception variant. The upstream
+README notes that only contributors of 10% or more of the glyphs may
+discuss license changes — no modifications to the font are made here.
+
+The full LGPL v3 text is available at:
+https://www.gnu.org/licenses/lgpl-3.0.html

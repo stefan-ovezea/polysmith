@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { camDocumentDataSchema } from "./camSchema";
 import { planeFrameSchema } from "./common";
+import { drawingDocumentDataSchema } from "./drawingSchema";
 
 export const documentStateSchema = z.object({
   document_id: z.string(),
@@ -964,5 +965,15 @@ export const documentStateSchema = z.object({
     operations: [],
     post_processor: null,
     machine_settings: null,
+  }),
+  // ISO drawing workspace data — mirrors DrawingDocumentData in
+  // drawing_types.h.  Generated projections are memory-only and never
+  // appear here.
+  drawing: drawingDocumentDataSchema.default({
+    drawings: [],
+    active_drawing_id: null,
+    selected_view_id: null,
+    selected_annotation_id: null,
+    decimal_separator: ",",
   }),
 }).passthrough();

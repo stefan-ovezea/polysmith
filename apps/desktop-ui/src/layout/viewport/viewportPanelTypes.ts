@@ -1,8 +1,13 @@
+import type { MutableRefObject } from "react";
+
 import type { CrosshairMode } from "@/config";
 import type {
   ArmedSketchConstraint,
   ConstraintType,
   DocumentState,
+  DrawingDimensionPreviewPayload,
+  DrawingViewPreviewPayload,
+  GhostFrame,
   MoveFeatureParameters,
   SelectionFilter,
   SlicerExportFormat,
@@ -38,6 +43,15 @@ export type DrillPickTarget =
 
 export type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
 
+/** The frame vectors of the "Current 3D view" capture (R1 drawing
+ *  ribbon): normal = the CAD camera's view direction, x_direction =
+ *  the camera right projected onto the view plane.  The origin (the
+ *  chosen bodies' center) is composed by the caller. */
+export type CameraFrameVectors = {
+  normal: [number, number, number];
+  x_direction: [number, number, number];
+} | null;
+
 export interface SketchSelection {
   entityIds: string[];
   vertexIds: string[];
@@ -52,6 +66,65 @@ export interface ViewportPanelProps {
   // Only the CAM workspace draws the generated toolpath — leaving CAM
   // must not leave the cut path over the CAD model.
   showCamToolpath?: boolean;
+  // Drawing workspace: renders ONLY the drawing sheets (no model,
+  // stock, toolpath or sketch objects) and fits the camera to the
+  // sheet — the workspace-leak discipline.
+  showDrawingSheet?: boolean;
+  // P6: the non-mutating dimension preview drawn on the sheet (the
+  // core computes value + graphics per pick).
+  drawingDimensionPreview?: DrawingDimensionPreviewPayload | null;
+  // Insert View ghost (drawing_view_preview_result) — translucent
+  // geometry + placement frame on the active sheet.
+  drawingViewPreview?: DrawingViewPreviewPayload | null;
+  // In-progress mouse drag of a committed view (dashed frame ghost).
+  drawingViewDrag?: { min: [number, number]; max: [number, number]; label: string } | null;
+  // R1 local ghost frame (cursor-derived, no core round-trip): the
+  // dashed placement frame + label drawn at cursor speed; the view
+  // preview content is translated onto its min every sync.
+  drawingGhostFrame?: GhostFrame | null;
+  // True while a ghost-anchored tool (base/projected) is armed — the
+  // local frame owns the placement frame and the preview content
+  // hides whenever the ghost hides (dead zone, cursor off-sheet).
+  drawingGhostAnchored?: boolean;
+  // Mouse-first insert: while armed, the sheet tracks the cursor
+  // (hover feeds the ghost position) and a click commits the view at
+  // that point — no coordinate typing.
+  drawingInsertArmed?: boolean;
+  onDrawingInsertMove?: (point: [number, number] | null) => void;
+  onDrawingInsertCommit?: (point: [number, number]) => void;
+  // Mouse-first reposition: grabbing a view frame drags it;
+  // pointer-up commits drawing_view_move.
+  drawingViewDragArmed?: boolean;
+  onDrawingViewDragStart?: (
+    viewId: string,
+    point: [number, number],
+    grabOffset: [number, number],
+  ) => void;
+  onDrawingViewDragMove?: (point: [number, number]) => void;
+  onDrawingViewDrop?: (point: [number, number]) => void;
+  /** R1 delete tool's selection — the view's frame renders in the
+   *  preview accent color at double width. */
+  drawingSelectedViewId?: string | null;
+  // R1 tool dispatch: while armed (projected-view parent picking or
+  // delete-view selection), a press on a committed view's frame
+  // delivers the frame instead of starting a drag (the drag branch
+  // stays disarmed in these modes — see App.tsx gating).  The
+  // caller resolves the view's origin from the viewport payload.
+  drawingFramePickArmed?: boolean;
+  onDrawingFramePick?: (
+    viewId: string,
+    bounds: { min: [number, number]; max: [number, number] },
+  ) => void;
+  // R1 "Current 3D view" capture: the ViewportPanel populates this
+  // ref with a function returning the LAST CAD-viewport camera frame
+  // vectors (recorded while the model was shown — the drawing
+  // workspace's top-down sheet camera is never captured).  null
+  // until the user has oriented the 3D viewport at least once.
+  cameraFrameCaptureRef?: MutableRefObject<(() => CameraFrameVectors) | null>;
+  // P6 dimension tool: while armed, every pointer-up in the drawing
+  // workspace delivers the clicked sheet-mm point.
+  drawingPickArmed?: boolean;
+  onDrawingPick?: (point: [number, number]) => void;
   wcsOrientation?: string;
   // CAM setup the viewport renders (WCS marker, stock box, origin
   // snap candidates) — falls back to the first setup.

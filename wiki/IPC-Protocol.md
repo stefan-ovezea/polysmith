@@ -720,6 +720,229 @@ The UI reads the filter from localStorage for instant snap gating
 (synchronous, no IPC latency), but also sends the full payload via IPC
 so the core stays consistent.
 
+### Drawing Workspace (ISO drawing)
+
+All drawing state lives in `document_state.drawing` (a
+`DrawingDocumentData`: drawings → sheets → views → annotations),
+serialized inside `.polysmith` files under the `drawing` key.  The data
+model mirrors the ISO 7200 title block, ISO 5456 per-sheet projection
+angle, ISO 5455 scales, and ISO 129-1 decimal separator.
+
+- `drawing_create { drawing_id?, name, sheets[], views[], annotations[] }`
+  — creates a drawing (always with at least one sheet) and makes it the
+  active drawing.  Empty `drawing_id` / `sheet_id` / `view_id` /
+  `annotation_id` fields are minted by the core (`drawing-N`,
+  `drawing-sheet-N`, `drawing-view-N`, `drawing-annotation-N`).
+- `drawing_delete { drawing_id }` — removes the drawing and its
+  sheets/views/annotations; active/selection ids pointing inside it are
+  cleared.
+- `drawing_set_active { drawing_id }` — switches the active drawing.
+- `drawing_sheet_create { drawing_id, sheet }` — appends a sheet.
+  Referenced `view_ids` must already exist in the drawing (rejected
+  before the undo push).
+- `drawing_sheet_delete { drawing_id, sheet_id }` — removes the sheet,
+  its views, and the annotations attached to those views.
+- `drawing_view_create { drawing_id, sheet_id, view }` — creates a view
+  on the sheet (mints the view id, appends it to the sheet's ordering).
+  `view.kind` is `"projection"` (with `standard_view` — front/right/
+  left/top/bottom/back — or a `custom_frame`), `"axonometric"`
+  (requires `custom_frame`), or `"section"` (requires `view.section` —
+  the frame derives from the cutting plane; a standard view or custom
+  frame must NOT override it).  The bump inside the command
+  re-projects the view through the drawing refresh pass.
+- `drawing_view_update { drawing_id, view }` — replaces the view's
+  definition (same id, same sheet); annotations keep their
+  attachments and re-resolve on the next refresh.
+- `drawing_view_delete { drawing_id, view_id }` — removes the view,
+  its annotations, and its id from every sheet's ordering list.
+- `drawing_view_move { drawing_id, view_id, sheet_position: [x, y] }`
+  — moves the view origin on its sheet (sheet-mm).  Purely cosmetic —
+  never re-projects.
+- `drawing_view_preview { drawing_id, sheet_id, view }` — NON-mutating
+  Insert View ghost: the core projects + flattens an UNCOMMITTED view
+  definition (the same engine, coincidence and dash passes as a
+  committed view) and replies with `drawing_view_preview_result`
+  `{drawing_id, sheet_id, curves[], texts[], view}` where `view` is a
+  committed-view-shaped record with an EMPTY `view_id` (the ghost
+  marker) plus `label`, `scale`, `origin`, content `min`/`max`, and a
+  `warning` (non-empty = degraded projection — no geometry).  Sibling
+  sections trace their cutting planes onto the preview; the preview's
+  own uncommitted section does not.  Never mutates, never caches.
+- `drawing_section_update { drawing_id, view_id, section }` — replaces
+  a section view's `SectionDefinition` (cutting plane point/normal,
+  `cut_away`, label, hatch angle/spacing).  The view must be kind
+  `"section"`; a degenerate normal or non-positive hatch spacing is
+  rejected before the undo push.  The bump re-cuts and re-projects.
+- `drawing_title_block_update { drawing_id, sheet_id, title_block }`
+  — replaces the sheet's ISO 7200 title block data: the eight
+  mandatory fields (legal owner, identification number, date of
+  issue, title, approval person, creator, document type, segment/
+  sheet number) plus `revision_rows` (each `[zone, rev, description,
+  date, approved]`).  Purely cosmetic — the bump re-flattens only.
+  The scale auto-fills from the sheet's FIRST view at flatten time;
+  nothing is re-projected.
+- `drawing_export { drawing_id, sheet_id, format, file_path,
+  dxf_mode? }` — NON-mutating sheet export (see the P8/P9 paragraphs
+  below); replies with `document_exported` `{file_path, format,
+  exported_feature_count}`.  `dxf_mode` is `"geometry"` (default) or
+  `"annotated"`.
+- `drawing_sheet_update { drawing_id, sheet_id, paper_size, orientation,
+  projection_angle, name }` — edits the sheet: `paper_size` A0–A4,
+  `orientation` portrait/landscape, `projection_angle` `"first_angle"`
+  (default) or `"third_angle"`, and the display `name`.  Values outside
+  the four sizes / two orientations / two angles are rejected before
+  the undo push; `paper_size_mm` resolves the trimmed ISO 5457
+  dimensions for the combination (portrait = width×height as listed,
+  landscape swaps).  The bump re-flattens the sheet.
+- `drawing_dimension_create { drawing_id, view_id, dim_type, pick,
+  pick_2?, annotation_id? }` — creates (or, with `annotation_id`,
+  repairs) a dimension: `dim_type` linear/angular/radius/diameter,
+  `pick`/`pick_2` are SHEET-mm points resolved against the view's
+  CURRENT projection — the core mints the `SourceEdgeWitness` from the
+  nearest record's provenance and the persistent edge reference id
+  (`drawing-edge-N`).  A pick is never a stored ordinal (the TNP
+  mantra).  Kind-vs-geometry rules (linear needs a straight edge,
+  diameter only for arcs > 180°, angular needs two non-parallel
+  lines, coincident edges from different sources refuse) throw BEFORE
+  the undo push.
+- `drawing_dimension_update { drawing_id, annotation_id,
+  text_override?, prefix?, arrow_flip?, text_offset? }` — cosmetic
+  edits only (never re-projects, never re-resolves); the bump
+  re-flattens.
+- `drawing_dimension_delete { drawing_id, annotation_id }` — removes
+  the annotation and its cached value.
+- `drawing_dimension_preview { drawing_id, view_id, dim_type, pick,
+  pick_2? }` — NON-mutating: replies with a
+  `drawing_dimension_preview` event `{value, text_value, curves[],
+  text, error?}` — the core-computed value plus the sheet-mm graphics
+  the UI renders until Enter commits the create.
+
+Section views (P4): the refresh cuts every source body with a
+half-space when `section.cut_away` is true (material on the normal
+side is removed) and suppresses hidden edges entirely (ISO 128-3 §7).
+The hatch boundary is the cut face's wires at the cutting plane
+(`cut_away = false` uses the uncut body's cross-section instead); the
+scanline hatching (thin lines, `hatch_angle_deg`/`hatch_spacing_mm`)
+is computed by the shared `compute_hatch_segments` engine function.
+Every OTHER view of the drawing that sees a sibling section's cutting
+plane edge-on carries the cutting-plane trace (a type-H chain line,
+`curve_class: "cutting_plane"`) in its projection.
+
+Sheets (P5): `flatten_sheet(document, drawing_id, sheet_id)` produces
+the `SheetPrimitiveStream` that the viewport emission (`drawing_sheets`
+in the viewport payload) consumes — the sheet furniture (0.7 mm frame
+at 20/10 mm margins, centring marks, grid-reference ticks, the
+ISO 7200 title block with the ISO 5456-2 projection symbol inside it
+honoring the per-sheet angle) plus every view's geometry transformed
+into sheet-mm with the ISO 128-2 line styles ALREADY applied (dash
+patterns recalculated at corners per Annex A — every dash sequence
+starts and ends with a dash; hidden = dashed thin, cutting-plane =
+chain thin, hatching = continuous thin emitted last).  Coincident
+geometry is de-duplicated by the priority visible > hidden >
+cutting_plane > hatch on the undashed records, and cutting-plane
+traces lying on a visible/hidden line are dropped (the support-overlap
+rule).  The stream is deterministic and memory-only (golden-file
+pinned).
+
+Dimensions (P6): the refresh pass resolves each annotation against
+its view's fresh projection through the witness ladder — identity
+(body + edge index + kind, the topology-stable fast path that follows
+parametric edits) → strict body+geometry (0.01 mm) → relaxed geometry
+(0.1 mm, re-created features) → ambiguous (multiple distinct sources
+match → refuse) → not found (dependency_broken + warning + the
+last-known value kept, marked stale — never blank, never silently
+substituted).  Measured values and attachment geometry live in the
+runtime cache (memory-only, the projection contract).  The flatten
+emits the ISO 129-1 graphics: extension lines (8×d gap/overshoot),
+closed filled arrowheads (sheet-mm `filled_poly` primitives), the
+unbroken dimension line, and a `texts[]` record (3.5 mm lettering,
+unidirectional, ⌀/R prefixes, decimal separator, ° on angles).  A
+cosmetic `drawing_dimension_update` never re-projects — it only
+re-flattens.
+
+Title block + drawing text (P7): the flatten fills the 180×63 mm
+ISO 7200 block bottom-right inside the frame — the eight mandatory
+fields as `texts[]` records (purpose `"title_block"`), the scale
+auto-filled from the sheet's FIRST view (ISO 5455 formatting with the
+drawing's decimal separator), `Sheet x/y` from the sheet index, the
+"Dimensions in millimetres" + ISO 8015 notes, the projection symbol
+in the top-right cell, and the revision table (zone/rev/description/
+date/approved) stacked above the block while rows exist.  Every
+surviving cutting-plane trace additionally emits its section label at
+both ends (purpose `"section_label"`: the label letter + a filled
+arrow pointing along the section's sight direction).  Every `texts[]`
+record ALSO emits vector glyph line primitives (purpose
+`"text_glyph"`, thin continuous) laid out by the core text engine
+with the bundled OSIFONT single-stroke font (LGPL v3 + font-embedding
+exception; `POLYSMITH_DRAWING_FONT_PATH` overrides the path) — the
+viewport and the PDF/SVG backends draw the glyphs, the DXF backend
+emits the DATA record as real text.  Glyph contours are sorted by a
+geometric key so the stream stays reproducible across runs (OCCT's
+glyph face order is hash-dependent).
+
+Export (P8): `drawing_export { drawing_id, sheet_id, format, file_path }`
+is NON-mutating — it flattens the sheet from the current runtime
+projections (never re-projects, never pushes undo, never bumps the
+revision) and replies with the `document_exported` event.  `format`
+is `"svg"` | `"dxf"` | `"pdf"`.  The SVG backend writes an mm
+`viewBox` at the sheet size with the y-axis flipped to SVG's screen
+convention; circle arcs become `A` path segments (sweep 0 — math-CCW
+appears counter-clockwise on screen after the flip), ellipse arcs are
+tessellated, filled arrowheads become `<polygon>` elements, and the
+vector glyph primitives render the text (the text records stay DATA).
+The DXF backend writes ASCII R2013 (AC1027): named layers (VISIBLE
+0.5, HIDDEN/CUTTING/HATCH/ANNOTATION/FURNITURE 0.25, FRAME 0.7, TEXT)
+with per-entity lineweights, the pre-dashed segments on CONTINUOUS
+layers (the ISO patterns are baked in by the core — the HIDDEN/CHAIN
+linetypes are still DEFINED for user reuse), text records as real
+DRW_Text entities (glyph primitives skipped — the drawing must not
+carry its text twice), filled polygons fanned into SOLID quads, and
+the title block as the registered `POLYSMITH_TITLE_BLOCK` block +
+INSERT (writeBlockRecord precedes writeBlock — the libdxfrw UB trap).
+Unknown ids/formats and I/O failures throw structured errors.
+
+Export (P9): the PDF backend (libharu 2.4.4, vendored with zlib
+1.3.1 in `third_party/`) writes the sheet at 1:1 sheet size in mm:
+lines/circles/arcs as PDF path operators (full circles via
+`HPDF_Page_Circle` — `HPDF_Page_Arc` rejects ≥360° sweeps; both only
+APPEND the path, so every primitive strokes explicitly), ellipse arcs
+tessellated like the SVG backend, filled polygons as filled paths.
+Drawing text is REAL selectable text from the bundled OSIFONT font
+(subset-embedded, `/FontFile2`, `HPDF_UseUTFEncodings` for UTF-8 —
+⌀/±/° round-trip as UTF-16BE in the content stream, compressed with
+`HPDF_COMP_ALL`); when the font cannot be loaded the stream's vector
+glyph primitives are drawn instead (libharu's raised load error is
+consumed by that fallback).  All drawing texts are horizontal today,
+so real-text mode requires every record horizontal — otherwise the
+glyphs carry the whole sheet.
+
+DXF `dxf_mode: "annotated"` replaces the exploded dimension graphics,
+dimension texts and hatch scanlines with real **DIMENSION** entities
+(DIMALIGNED/radial/diametric/2-line angular, formatted text, style
+reference) under a **DIMSTYLE** named `POLYSMITH_ISO` (closed filled
+arrows — empty dimblk + dimtsz 0, text above the line, 3.5 mm text,
+8×d extension offsets, dimdsep mirrored from the document's decimal
+separator) and **HATCH** entities (ANSI31 predefined pattern at the
+section's angle; the spacing becomes the pattern scale; boundary
+loops decomposed to LINE edges — libdxfrw's polyline hatch loops are
+unimplemented).  The semantic records ride the flattened stream
+(`SheetDimension`, `SheetHatchRegion`, populated by the dimension
+graphics builder and the section flatten — one computation, one
+source of truth); geometry-mode backends ignore them.
+
+Every mutator replies with a `document_state` event; validation errors
+reply with an `error` event.  Views are re-projected inside the single
+existing refresh pass (`bump_geometry_revision`): the refresh resolves
+the view frame (standard view or custom frame), compiles the source
+bodies, and stores the HLR projection in the runtime cache stamped
+with the upcoming revision.  A missing source body degrades the view
+with `broken_ref` + `warning` and holds its last-known projection
+marked stale — never a crash, never a silent substitute.  Generated
+projections (HLR output) are **memory-only** — they live in the
+core's `drawing_runtime` cache, keyed by document + view and
+validated against the document revision, and never enter the
+serialized document (the CAM toolpath contract).
+
 ## Philosophy
 
 The IPC protocol is the contract of the system.

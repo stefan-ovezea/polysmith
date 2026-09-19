@@ -3,6 +3,20 @@ import {
   sendCoreCommandAwaited,
   startCadCore,
   makeCreateDocumentCommand,
+  makeDrawingCreateCommand,
+  makeDrawingDeleteCommand,
+  makeDrawingSheetUpdateCommand,
+  makeDrawingViewCreateCommand,
+  makeDrawingViewDeleteCommand,
+  makeDrawingViewMoveCommand,
+  makeDrawingSectionUpdateCommand,
+  makeDrawingTitleBlockUpdateCommand,
+  makeDrawingExportCommand,
+  makeDrawingDimensionCreateCommand,
+  makeDrawingDimensionUpdateCommand,
+  makeDrawingDimensionDeleteCommand,
+  makeDrawingDimensionPreviewCommand,
+  makeDrawingViewPreviewCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
   makeCamSetupDeleteCommand,
@@ -226,6 +240,12 @@ import type {
   CamOperationPayload,
   CamSetup,
   CoreCommand,
+  Drawing,
+  DrawingDimensionPreviewPayload,
+  DrawingView,
+  DrawingViewPreviewPayload,
+  SectionDefinition,
+  TitleBlock,
   ExtrudeAdvancedParameters,
   EdgeAttestation,
   FaceAttestation,
@@ -247,6 +267,7 @@ import type {
 
 import { useCadCoreStore } from "@/state";
 import { SketchTool } from "@/types";
+import { drawingViewPreviewResultSchema } from "@/lib/schemas/ipc/drawingSchema";
 import {
   sendAndRefreshSessionViewport,
   sendAndRefreshViewport,
@@ -1700,6 +1721,153 @@ export function useCadCore() {
     },
     camSetupCreate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupCreateCommand(camSetup));
+    },
+    drawingCreate: async (drawing: Drawing) => {
+      await sendAndRefreshSessionViewport(makeDrawingCreateCommand(drawing));
+    },
+    drawingDelete: async (drawingId: string) => {
+      await sendAndRefreshSessionViewport(makeDrawingDeleteCommand(drawingId));
+    },
+    drawingViewCreate: async (
+      drawingId: string,
+      sheetId: string,
+      view: DrawingView,
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingViewCreateCommand(drawingId, sheetId, view),
+      );
+    },
+    drawingViewDelete: async (drawingId: string, viewId: string) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingViewDeleteCommand(drawingId, viewId),
+      );
+    },
+    drawingViewMove: async (
+      drawingId: string,
+      viewId: string,
+      sheetPosition: [number, number],
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingViewMoveCommand(drawingId, viewId, sheetPosition),
+      );
+    },
+    drawingSheetUpdate: async (
+      drawingId: string,
+      sheetId: string,
+      settings: {
+        paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
+        orientation: "portrait" | "landscape";
+        projection_angle: "first_angle" | "third_angle";
+        name: string;
+      },
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingSheetUpdateCommand(drawingId, sheetId, settings),
+      );
+    },
+    drawingSectionUpdate: async (
+      drawingId: string,
+      viewId: string,
+      section: SectionDefinition,
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingSectionUpdateCommand(drawingId, viewId, section),
+      );
+    },
+    drawingTitleBlockUpdate: async (
+      drawingId: string,
+      sheetId: string,
+      titleBlock: TitleBlock,
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingTitleBlockUpdateCommand(drawingId, sheetId, titleBlock),
+      );
+    },
+    drawingExport: async (
+      drawingId: string,
+      sheetId: string,
+      format: "svg" | "dxf" | "pdf",
+      filePath: string,
+      dxfMode?: "geometry" | "annotated",
+    ) => {
+      // Non-mutating: the reply is the document_exported event.
+      await sendCoreCommand(
+        makeDrawingExportCommand({ drawingId, sheetId, format, filePath, dxfMode }),
+      );
+    },
+    drawingDimensionCreate: async (params: {
+      drawingId: string;
+      viewId: string;
+      dimType: "linear" | "angular" | "radius" | "diameter";
+      pick: [number, number];
+      pick2?: [number, number];
+      annotationId?: string;
+    }) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingDimensionCreateCommand(params),
+      );
+    },
+    drawingDimensionUpdate: async (params: {
+      drawingId: string;
+      annotationId: string;
+      textOverride?: string;
+      prefix?: string;
+      arrowFlip?: boolean;
+      textOffset?: [number, number];
+    }) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingDimensionUpdateCommand(params),
+      );
+    },
+    drawingDimensionDelete: async (
+      drawingId: string,
+      annotationId: string,
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingDimensionDeleteCommand(drawingId, annotationId),
+      );
+    },
+    drawingDimensionPreview: async (params: {
+      drawingId: string;
+      viewId: string;
+      dimType: "linear" | "angular" | "radius" | "diameter";
+      pick: [number, number];
+      pick2?: [number, number];
+    }): Promise<DrawingDimensionPreviewPayload | null> => {
+      // Awaited: the reply is the drawing_dimension_preview event
+      // carrying the core-computed value + graphics (never mutates).
+      const response = await sendCoreCommandAwaited(
+        makeDrawingDimensionPreviewCommand(params) as CoreCommand & {
+          id: string;
+        },
+      );
+      const payload = (response as { payload?: DrawingDimensionPreviewPayload })
+        .payload;
+      return payload ?? null;
+    },
+    drawingViewPreview: async (params: {
+      drawingId: string;
+      sheetId: string;
+      view: DrawingView;
+    }): Promise<DrawingViewPreviewPayload | null> => {
+      // Awaited: the reply is the drawing_view_preview_result event
+      // carrying the ghost geometry (never mutates).  Zod-validated —
+      // a schema mismatch degrades to no preview rather than garbage.
+      const response = await sendCoreCommandAwaited(
+        makeDrawingViewPreviewCommand(
+          params.drawingId,
+          params.sheetId,
+          params.view,
+        ) as CoreCommand & { id: string },
+      );
+      const raw = (response as { payload?: unknown }).payload;
+      if (!raw) {
+        return null;
+      }
+      const parsed = drawingViewPreviewResultSchema.safeParse(raw);
+      return parsed.success
+        ? (parsed.data as DrawingViewPreviewPayload)
+        : null;
     },
     camSetupUpdate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupUpdateCommand(camSetup));

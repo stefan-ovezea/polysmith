@@ -38,6 +38,10 @@ interface AppTopBarProps {
   status: string;
   canUndo: boolean;
   canRedo: boolean;
+  drawingRibbon?: Omit<
+    import("../layout/header/DrawingRibbon").DrawingRibbonProps,
+    "activeTab"
+  >;
   activeSketchPlaneId: string | null;
   activeSketchTool: SketchTool | null;
   selectedReferenceId: string | null;
@@ -179,6 +183,7 @@ export function AppTopBar(props: AppTopBarProps) {
   return (
     <AppHeader
       workspaceView={props.workspaceView}
+      drawingRibbon={props.drawingRibbon}
       canOpenSlicerView={props.canOpenSlicerView}
       onSetWorkspaceView={(view) => {
         if (view === "cad") {

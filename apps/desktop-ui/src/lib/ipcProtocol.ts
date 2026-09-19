@@ -14,6 +14,7 @@ export * from "./ipc/sketchCommands";
 export * from "./ipc/profileFeatureCommands";
 export * from "./ipc/bodyFeatureCommands";
 export * from "./ipc/camCommands";
+export * from "./ipc/drawingCommands";
 
 export function parseCoreMessage(input: unknown): CoreMessage {
   return coreMessageSchema.parse(input) as CoreMessage;

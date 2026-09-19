@@ -171,6 +171,24 @@ pub fn start_cad_core_process(
         }
     }
 
+    // Bundled ISO 3098 drawing font (OSIFONT, LGPL v3 + font-embedding
+    // exception — see resources/fonts/FONT-LICENSE.txt).  The core
+    // resolves it through POLYSMITH_DRAWING_FONT_PATH so the packaged
+    // app works without a repo checkout next to it; on failure the
+    // core's repo-relative fallbacks take over.  Never let a missing
+    // font block the core spawn.
+    if let Ok(font_path) = match cad_core_build_config::CAD_CORE_PATH_KIND {
+        "workspace" => Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/osifont-lgpl3fe.ttf")),
+        _ => app
+            .path()
+            .resolve("fonts/osifont-lgpl3fe.ttf", BaseDirectory::Resource),
+    } {
+        if font_path.exists() {
+            cmd.env("POLYSMITH_DRAWING_FONT_PATH", font_path);
+        }
+    }
+
     let mut child = cmd.spawn()
         .map_err(|e| format!("failed to start cad_core at {}: {e}", core_path.display()))?;
 

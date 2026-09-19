@@ -5,6 +5,7 @@
 #include "core/sketch/sketch_types.h"
 #include "core/viewport/viewport_body_primitives.h"
 #include "core/viewport/viewport_cam_primitives.h"
+#include "core/viewport/viewport_drawing_primitives.h"
 #include "core/viewport/viewport_reference_primitives.h"
 #include "core/viewport/viewport_solid_primitives.h"
 #include "core/viewport/viewport_sketch_primitives.h"
@@ -58,6 +59,10 @@ struct ViewportState {
   // chamfer features (legacy primitive renderers don't emit vertices).
   std::vector<ViewportVertexPrimitive> vertices;
   std::vector<ViewportToolpathPrimitive> toolpaths;
+  // Drawing workspace: the active drawing's sheets with their
+  // projected curves in sheet-mm.  Emitted unconditionally — the UI
+  // gates visibility by workspace (the CAM toolpath pattern).
+  std::vector<ViewportDrawingSheet> drawing_sheets;
   double scene_width;
   double scene_height;
   double scene_depth;

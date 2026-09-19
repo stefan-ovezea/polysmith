@@ -3,6 +3,7 @@ DocumentState DocumentManager::create_document() {
   // toolpath cache (keyed by document id; it would otherwise leak).
   if (document_.has_value()) {
     cam_runtime::clear(document_->id);
+    drawing_runtime::clear(document_->id);
   }
 
   DocumentState document{

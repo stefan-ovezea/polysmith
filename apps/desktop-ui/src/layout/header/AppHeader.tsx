@@ -20,14 +20,21 @@ import { CamMillingToolbar } from "./CamMillingToolbar";
 import { CamTurningToolbar } from "./CamTurningToolbar";
 import { CamPrintingToolbar } from "./CamPrintingToolbar";
 import { CamCuttingToolbar } from "./CamCuttingToolbar";
-import { DrawingToolbar } from "./DrawingToolbar";
+import { DrawingRibbon } from "./DrawingRibbon";
 import { ParametersPanel } from "../ParametersPanel";
 import { SelectionFilterPanel } from "../SelectionFilterPanel";
 import { readStoredFilter, writeStoredFilter } from "../selectionFilterState";
 
 const workspaces = ["create", "modify", "construct", "sketch"] as const;
 const camWorkspaces = ["milling", "turning", "printing", "cutting"] as const;
-const drawingWorkspaces = ["sheet"] as const;
+const drawingWorkspaces = [
+  "views",
+  "geometry",
+  "dimension",
+  "symbols",
+  "annotate",
+  "modify",
+] as const;
 type CamWorkspace = (typeof camWorkspaces)[number];
 type WorkspaceView = "cad" | "slicer" | "cam" | "drawing" | "grbl";
 type AppHeaderCreateToolbarProps = Omit<
@@ -268,6 +275,11 @@ interface AppHeaderProps
   disabled: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  /** Drawing workspace ribbon (DrawingRibbonProps). */
+  drawingRibbon?: Omit<
+    import("./DrawingRibbon").DrawingRibbonProps,
+    "activeTab"
+  >;
   // History step names, most recent first (D8) — the Edit menu labels
   // the next step and lists the rest for the multi-undo dropdown.
   undoStepNames: string[];
@@ -386,6 +398,7 @@ export function AppHeader({
   disabled,
   canUndo,
   canRedo,
+  drawingRibbon,
   undoStepNames,
   redoStepNames,
   onUndoMany,
@@ -520,7 +533,7 @@ export function AppHeader({
   const [activeCamWorkspace, setActiveCamWorkspace] =
     useState<CamWorkspace>("milling");
   const [activeDrawingWorkspace, setActiveDrawingWorkspace] =
-    useState<(typeof drawingWorkspaces)[number]>("sheet");
+    useState<(typeof drawingWorkspaces)[number]>("views");
   const [openMenu, setOpenMenu] = useState<"box" | "cylinder" | null>(null);
 
   useEffect(() => {
@@ -648,7 +661,7 @@ export function AppHeader({
                     setActiveDrawingWorkspace(workspace);
                   }}
                 >
-                  {t(`drawing.category.${workspace}`)}
+                  {t(`drawing.ribbon.tabs.${workspace}`)}
                 </button>
               ))}
             </nav>
@@ -1060,7 +1073,11 @@ export function AppHeader({
           className="flex items-center justify-between gap-3 px-4 py-1"
           style={{ borderTop: "1px solid var(--cad-panel-soft-border)" }}
         >
-          <DrawingToolbar disabled={disabled} />
+          <DrawingRibbon
+            disabled={disabled}
+            activeTab={activeDrawingWorkspace}
+            {...drawingRibbon}
+          />
         </div>
       ) : null}
     </header>

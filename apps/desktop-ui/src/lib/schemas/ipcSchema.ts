@@ -1,7 +1,12 @@
 import { z } from "zod";
 
+import { drawingViewPreviewResultSchema } from "./ipc/drawingSchema";
 import { documentStateSchema } from "./ipc/documentStateSchema";
-import { viewportStateSchema } from "./ipc/viewportStateSchema";
+import {
+  viewportDrawingCurveShape,
+  viewportDrawingTextShape,
+  viewportStateSchema,
+} from "./ipc/viewportStateSchema";
 
 const sessionStateSchema = z.object({
   document_count: z.number(),
@@ -322,6 +327,35 @@ const cornerTrimPreviewResultEventSchema = z.object({
   ]),
 });
 
+// Non-mutating drawing dimension preview — the core resolves the pick
+// and replies with value + graphics until Enter commits.  Lenient:
+// an unresolved pick replies with only {error}.
+const drawingDimensionPreviewEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("drawing_dimension_preview"),
+  payload: z.object({
+    drawing_id: z.string(),
+    view_id: z.string(),
+    dim_type: z.string(),
+    pick: z.tuple([z.number(), z.number()]),
+    pick_2: z.tuple([z.number(), z.number()]).optional(),
+    error: z.string().optional(),
+    value: z.number().optional(),
+    text_value: z.string().optional(),
+    curves: z.array(viewportDrawingCurveShape).optional(),
+    text: viewportDrawingTextShape.optional(),
+  }),
+});
+
+// Non-mutating Insert View ghost — the core projects an uncommitted
+// view definition and replies with its geometry + a view-shaped
+// record (empty view_id marks the ghost; warning = degraded).
+const drawingViewPreviewResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("drawing_view_preview_result"),
+  payload: drawingViewPreviewResultSchema,
+});
+
 export const coreMessageSchema = z.union([
   helloEventSchema,
   pongEventSchema,
@@ -346,6 +380,8 @@ export const coreMessageSchema = z.union([
   camFaceAttestationResultEventSchema,
   camEdgeAttestationResultEventSchema,
   camAttestationResultEventSchema,
+  drawingDimensionPreviewEventSchema,
+  drawingViewPreviewResultEventSchema,
   errorEventSchema,
 ]);
 

@@ -297,6 +297,10 @@ function hasCancelableToolAction(actions: AppHotkeyContext["actions"]) {
       actions.helixAction,
       actions.pluginAction,
       actions.editingFeatureId,
+      // R1 drawing tools: an armed Base/Projected/Section/Delete tool
+      // cancels on Escape (the panels keep their own handlers — both
+      // converge on the same cancel, idempotent).
+      actions.drawingToolArmed,
     ],
     actions.materialsPanelOpen,
   );

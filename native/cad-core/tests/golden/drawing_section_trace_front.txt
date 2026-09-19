@@ -1,0 +1,5 @@
+visible|cutting_plane|line|10.000000,0.000000|10.000000,10.000000|unresolved
+visible|sharp|line|0.000000,0.000000|0.000000,10.000000|body-1#4
+visible|sharp|line|0.000000,0.000000|20.000000,0.000000|body-1#7
+visible|sharp|line|0.000000,10.000000|20.000000,10.000000|body-1#5
+visible|sharp|line|20.000000,0.000000|20.000000,10.000000|body-1#6

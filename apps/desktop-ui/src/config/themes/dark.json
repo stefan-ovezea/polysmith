@@ -31,6 +31,8 @@
     "--color-axis-x": "#ff6b7a",
     "--color-axis-y": "#2bd978",
     "--color-axis-z": "#6db4ff",
+    "--cad-muted": "#9b9b98",
+    "--cad-danger": "#ff6b7a",
     "--cad-toolpath-rapid": "#ff6b7a",
     "--cad-toolpath-feed": "#2bd978",
     "--cad-toolpath-executed": "#ffe784",
@@ -139,6 +141,13 @@
     "--cad-sketch-projected": "#a678d6",
     "--cad-dimension-editor-bg": "rgba(15, 23, 42, 0.86)",
     "--cad-dimension-editor-border": "rgba(207, 250, 254, 0.55)",
-    "--cad-dimension-editor-shadow": "rgba(0, 0, 0, 0.45)"
+    "--cad-dimension-editor-shadow": "rgba(0, 0, 0, 0.45)",
+    "--cad-drawing-sheet": "#faf9f6",
+    "--cad-drawing-sheet-border": "#3b494c",
+    "--cad-drawing-visible-line": "#1c1b1b",
+    "--cad-drawing-hidden-line": "#6d6d69",
+    "--cad-drawing-view-label": "#11505a",
+    "--cad-drawing-stale": "#e08a3c",
+    "--cad-drawing-preview": "#a78bfa"
   }
 }

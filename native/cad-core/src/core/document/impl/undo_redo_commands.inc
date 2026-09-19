@@ -24,6 +24,7 @@ DocumentState DocumentManager::undo() {
 
   const int pre_restore_revision = document_->revision;
   cam_runtime::invalidate(document_->id);
+  drawing_runtime::invalidate(document_->id);
   redo_stack_.push_back(document_.value());
   redo_names_.push_back(undo_names_.back());
   document_ = undo_stack_.back();
@@ -52,6 +53,7 @@ DocumentState DocumentManager::redo() {
 
   const int pre_restore_revision = document_->revision;
   cam_runtime::invalidate(document_->id);
+  drawing_runtime::invalidate(document_->id);
   undo_stack_.push_back(document_.value());
   undo_names_.push_back(redo_names_.back());
   document_ = redo_stack_.back();
@@ -79,6 +81,7 @@ DocumentState DocumentManager::undo_many(int count) {
     steps = std::min(steps, static_cast<int>(redo_stack_.size()));
     if (steps > 0) {
       cam_runtime::invalidate(document_->id);
+      drawing_runtime::invalidate(document_->id);
     }
     for (int i = 0; i < steps; ++i) {
       undo_stack_.push_back(document_.value());
@@ -96,6 +99,7 @@ DocumentState DocumentManager::undo_many(int count) {
     steps = std::min(steps, static_cast<int>(undo_stack_.size()));
     if (steps > 0) {
       cam_runtime::invalidate(document_->id);
+      drawing_runtime::invalidate(document_->id);
     }
     for (int i = 0; i < steps; ++i) {
       redo_stack_.push_back(document_.value());

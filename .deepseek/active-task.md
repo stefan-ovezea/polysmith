@@ -1,3 +1,974 @@
+# Active task: ISO DRAWING WORKBENCH — full implementation (2026-09-19)
+
+## CURRENT SESSION (2026-09-19): R1 IMPLEMENTED (uncommitted) — AWAITING USER IN-APP VERIFICATION
+
+> **R1 of the Fusion-style drawing workspace rework** (per the user-
+> approved plan `C:\Users\ThinkPad\.claude\plans\serialized-stirring-frog.md`
+> and `wiki/Drawing-Workspace-UI-Study.md`) — UI-only, NO core changes
+> (custom_frame/axonometric were already core-ready end-to-end).
+
+**What landed:**
+- **Six-tab ribbon** (`layout/header/DrawingRibbon.tsx`, replaces the
+  deleted DrawingToolbar; tabs render in AppHeader's existing nav with
+  `drawingWorkspaces` = views|geometry|dimension|symbols|annotate|modify).
+  GEOMETRY/SYMBOLS/ANNOTATE show their planned tools DISABLED with a
+  "next phase" hint (user decision); VIEWS = New Drawing (setup dialog
+  KEPT) / Base View / Projected View / Section / Delete View; DIMENSION
+  opens the existing panel; MODIFY = Move / Delete / Sheet… / Delete
+  Drawing…; exports (SVG/DXF/DXF annotated/PDF) on the row's right.
+- **`drawingTool` state machine** — `app/drawing/useDrawingTool.ts`
+  (hook, UI-side interaction state): idle | base_view | projected_view |
+  section | move | delete_view. Types in `types/drawingTool.ts`, pure
+  math in `lib/drawingViewMath.ts` (standard-view table mirror, iso
+  frames current-orientation-relative, 8-sector classification,
+  projected-child derivation with first/third-angle sign flip,
+  `horizontalXFor` x_direction rule, slot math, clamp). IPC stays in
+  App (callbacks); App dispatches through `drawingToolApiRef`.
+- **Base View tool**: strip (6 standard + NE/NW/SE/SW + "Current 3D
+  view" | scale | hidden | body) inline in the ribbon; ghost follows
+  the cursor; click places (6 px guard) → auto-arms projected mode on
+  the new view (Fusion base→projected flow). New Drawing now AUTO-ARMS
+  the tool (user decision — no auto-created front view).
+- **Projected mode**: 8 cursor sectors from the parent center (dead
+  zone = parent bounds +10 mm); ortho = adjacent standard view per the
+  sheet's angle, diagonal = iso custom frame; child inherits
+  scale/hidden/bodies; slot = parent bounds + 20 mm gap, center-aligned
+  on the fixed axis; EXACT slotting via one-time origin→min offset
+  learning (cache per parent+sector+scale+hidden+angle, corrected flag
+  prevents loops; the same learning clamps the base ghost). Standalone
+  Projected View tool = frame click picks the parent (auto-parents the
+  first view when none picked).
+- **"Current 3D view"** = LAST CAD-viewport camera snapshot
+  (`cameraFrameCaptureRef` — ViewportPanel records controls change
+  while the model shows, never the sheet camera; normal =
+  target−position, x = camera-right projected onto the view plane;
+  origin = chosen bodies' center). Button disabled + hint until the
+  user has oriented the 3D viewport at least once.
+- **BUG FIXED (found by plan review):** view-frame drag drop never
+  fired — the drag press returned before `setPointerDown`, so
+  finishClickPointerUp bailed (null pointerDown) AND its 4 px pan guard
+  would swallow a real drag. The drop now fires in an early pointer-up
+  branch in ViewportPanel before `handleViewportPointerUp`; the dead
+  viewDragActive/drawingViewDrop params are removed from
+  viewportPointerUp.ts.
+- **InsertViewPanel deleted**; its section mode is the new
+  `SectionViewPanel` (cutting plane/hatch/label + cursor-follow +
+  click-to-place; the committed-view SectionPanel stays). Dimension/
+  Sheet/TitleBlock panels unchanged. Escape cancels the armed tool
+  (cancelActiveTool prepend + `drawingToolArmed` in the hotkey
+  actions); workspace-leave and drawing-delete reset the tool; an
+  undone parent cancels projected mode (fresh-store check).
+- **Delete View** (included, not dropped): VIEWS/MODIFY button arms
+  delete_view; a frame click selects (highlight = 2×-width
+  `--cad-drawing-preview` frame ribbon via `drawingSelectedViewId`
+  through sceneSync); Delete/Backspace deletes (`drawing_view_delete`);
+  Esc cancels.
+- i18n: new `drawing.ribbon.*`/`drawing.strip.*`/`drawing.sectionCreatePanel.*`
+  keys; dead insertPanel/category/toolbar keys pruned. No core/schema/
+  IPC-doc changes (payloads unchanged).
+
+**Gates:** `tsc --noEmit` clean (every step) + **63/63 core suites**
+(`pnpm test:core`, regression safety) + en.json validated. NOT
+committed — user verifies in-app first (no untested commits).
+
+**In-app verification script (user, `pnpm dev`):** see the R1 section
+of the session message; essentials: ribbon tabs + disabled
+placeholders → New Drawing arms Base View (front ghost) → strip
+orientation/scale/hidden/body update the ghost live → click places →
+auto-projected ortho + diagonal iso ghosts snap to slots → click
+places, Esc ends → iso + "Current 3D view" (orient in CAD first) →
+view drag now moves on drop → Section panel flow → Dimension/Sheet/
+TitleBlock/exports unchanged → workspace switch mid-tool resets.
+
+## ROUND 2b — user re-report (2026-09-19): still very slow + the projected view is STILL pinned at the parent's level ("the base view can be anywhere in the page but the projected view still stays clamped on top")
+
+> **USER-VERIFIED IN-APP 2026-09-19: "well it is working now".**
+> Smooth ghost (local frame + content translation), projected views
+> follow the cursor downward, all R1 flows re-verified.  The whole
+> R1 + rounds 1/2/2b work is still uncommitted on feature/iso-drawing.
+
+Root causes found in re-analysis:
+1. **The projected ghost was slot-PINNED by design**: `pending` used
+   `projectedSlotMin` (parent-adjacent slot) — the ghost never
+   followed the cursor at all, so it could never be lowered.  And
+   every visible ghost update waited on a core round-trip (80 ms
+   debounce → HLR/cache → flatten → JSON → overlay rebuild), so the
+   ghost could only crawl at reply frequency — the "very very slow".
+2. Fixes (all UI, core cache kept as the per-orientation fast path):
+   - **Local ghost frame (`GhostFrame` in types/drawingTool.ts)**:
+     the hook derives the placement frame (min/max/label/scale) from
+     the cursor + the learned content size — NO round-trip.  The
+     scene renders it in a dedicated `drawing-overlay-viewframe`
+     group positioned every sync (dashed rect at local coords +
+     label).
+   - **Content translation**: the preview CURVES are exact for any
+     position (the flatten is a pure offset) — the overlay translates
+     the last reply's curves onto the ghost frame's min via a group
+     position, so the whole ghost (frame + content) rides the mouse
+     at cursor speed.  The content signature is position-independent
+     (label | warning | curve count | size) — position changes never
+     rebuild ribbons.
+   - **Projected follow-cursor placement**: the child center rides
+     the sector's alignment line through the parent center
+     (Fusion-like), distance = max(slot floor = supports + 20 mm gap,
+     cursor projection) — the ghost travels down/up/sideways with the
+     mouse; the clamp's direction-preserving fallback handles
+     near-page-size children.  `projectedSlotMin` deleted.
+   - **One preview per orientation/sector**: the hook exposes
+     `previewNeeded` (placement-cache miss); the App sends
+     `drawing_view_preview` ONLY then.  The offset learning matches
+     by SENT KEY (lastSentKeyRef) instead of position, and learns
+     from the reply's own min−origin (position-independent).
+     `cancel()` clears the placement cache so re-arming always
+     refreshes content.
+   - **Dead-zone keep**: with a ghost-anchored tool, a null pending
+     (dead zone / off-sheet) hides the overlay but KEEPS the payload;
+     real cancels clear it.
+   - **rAF coalescing** for the insert-move dispatch in
+     ViewportPanel (one App update per frame with the latest point,
+     not per pointermove event).
+   - Section-panel flow unchanged (ghostAnchored=false → content +
+     reply-drawn frame at the replied position).
+
+Gates: `tsc --noEmit` green; core untouched this round (the 63/63 +
+Test 10 from round 2 still stand).
+
+Re-test script (user, `pnpm dev`): New Drawing (A3) → base ghost
+tracks the mouse smoothly with frame + content following instantly →
+place → move BELOW the parent: the projected ghost follows the cursor
+downward (alignment-locked under the parent) → place → drag a view →
+Section panel unchanged.
+
+## ROUND 2 — user report: "very very slow and jercky moving" + projected view "cannot be lowered on the page" (FIXED, awaiting re-verification)
+
+Root causes:
+1. **Preview request backlog**: every cursor move debounced into a
+   `drawing_view_preview` round-trip (full HLR), and every reply
+   REBUILT THE WHOLE SHEET SCENE — replies arrived seconds late and
+   the ghost crawled the queue (jerky).  Fixes:
+   - **Core preview cache** (`drawing_runtime.h/.cpp` +
+     `drawing_sheet.cpp::preview_view_geometry`): the projection is a
+     pure function of everything EXCEPT sheet_position (flatten
+     offset) and scale (applied by the flatten) — it is now keyed by
+     a serialized projection key (frame, hidden, section, bodies,
+     sibling cutting planes) + revision-stamped in
+     `PerDocument::preview_projection`; a cursor move re-flattens the
+     cached projection instead of re-running HLR.  `invalidate()`
+     clears it.  NEW regression test: **Test 10
+     `test_preview_projection_cache`** in the projection suite —
+     same def at a new position translates the bounds; a box resize
+     bumps the revision and the bounds follow the new size (fails if
+     the cache leaks a stale projection).
+   - **Preview coalescing (App.tsx `drawingViewPreviewAction`)**: at
+     most ONE round-trip in flight (`drawingPreviewInFlightRef`); a
+     newer definition replaces `drawingPreviewTrailingRef` and
+     re-sends once the reply lands; stale replies are dropped (no
+     ghost flash); the null path kills in-flight + trailing.
+   - **Scene overlay split** (`drawingSceneObjects.ts` +
+     `sceneSync.ts`): dedicated `drawing-overlay-preview` /
+     `drawing-overlay-drag` groups under the first sheet, registered
+     via new refs (`drawingPreviewGroupRef`/`drawingDragGroupRef`) and
+     repainted IN PLACE by the new exported `syncDrawingOverlays`
+     (signature compare on `group.userData.signature`).  The
+     `preview:`/`viewpreview:`/`viewdrag:` entries are REMOVED from
+     `viewportSceneBuildKey` — a preview reply no longer rebuilds the
+     sheet scene at all.
+2. **Direction loss in the clamp**: with an A3 sheet + near-page-size
+   part the child cannot fit inside the margins, and the round-1
+   edge-to-edge fallback pinned it to the paper's top strip — the
+   projected view could never be lowered below the parent.  Fix:
+   `clampAxis`'s fallback is now DIRECTION PRESERVING —
+   `clamp(value, margin − viewSize, sheetSize − margin)` keeps at
+   least 10 mm on-sheet on the side the cursor pushes toward and lets
+   the opposite side bleed.  The hook's `childFits` raw-slot escape
+   was REMOVED (always clamp — the fixed clamp already follows the
+   cursor).
+
+Gates: `pnpm core:rebuild` — compile+link OK (exe fresh 2026-09-19
+21:50); the applocal.ps1 vcpkg-DLL post-build step fails on this
+machine (known env issue, wrapper `/tmp/vsbuild.sh` exists) — the
+MSB3073 tail does NOT mean a compile error.  `pnpm test:core` must
+stay 63/63 with the new Test 10; `tsc --noEmit` green.
+
+Re-test script (user, `pnpm dev`): New Drawing (A3) → move the base
+ghost fast — it tracks the cursor smoothly, no crawl → place → move
+the cursor BELOW the parent — the projected ghost follows all the way
+down (top bleed is fine) → place → redo at the same level → drag a
+view, undo → Section panel still previews.
+
+## ROUND 1 — user report: A3 + near-page-size part — "view has a mind of its own, does not like to be dragged" (FIXED, awaiting re-verification)
+
+Root causes:
+1. **Corner teleport**: `clampSheetPosition`'s margin range is EMPTY
+   for near-page-size content; the old `Math.max(margin, …)` fallback
+   collapsed it to the single point (10,10) — the ghost/commit pinned
+   to the corner regardless of the cursor, and projected slots from
+   all 8 sectors stacked onto the same spot.  Fix: the clamp now
+   degrades edge-to-edge when the content can't fit within the
+   margins (`clampAxis` in `lib/drawingViewMath.ts`); the BASE ghost
+   follows the cursor UNCLAMPED (only the commit clamps); projected
+   slots keep their RAW directional slot when the child can't fit
+   (partially off-sheet, Fusion-like) instead of collapsing.
+2. **Drag vs tool-armed conflict**: frames were draggable only in
+   idle/move — after a base placement the auto-armed projected tool
+   turned frame presses into parent picks, and in base_view a frame
+   press even committed a view on top (the insert-commit path).
+   Fix: a unified press gesture in ViewportPanel — `framePressRef`
+   click-vs-drag: press + ≥4 px movement = drag (available in EVERY
+   drawing mode), stationary release = the mode's frame pick
+   (projected parent / delete selection).  App: `drawingViewDragArmed
+   = workspaceView === "drawing"` (no tool restriction).
+
+Gates re-run: tsc clean. User re-verifies: drag a view in every mode
+(idle, projected armed, base armed); place/commit a near-page-size
+view — it lands at the cursor, not the corner; projected ghosts for a
+page-sized child go off-sheet in the sector direction instead of
+piling on the parent.  (If the part truly fills the sheet, scale it
+down with the strip's Scale dropdown — the ghost is honest about
+where it is.)
+
+
+>
+> **User's new mandate (verbatim):** "I think the scaffolding is good.
+> However the UI is very rudimentary... I want 2026 feel of the UI.
+> I want Fusion feeling with tools that I can call from the toolbar
+> instead of the stupid floating windows... keep the first one 'new
+> drawing' like a setup window and then should be same like a sketch
+> where I can add projections, dimensions etc... drag the body in the
+> 3 iso projection and in the 4th iso view... in the menu pick up
+> sections, annotations, symbols (welding, roughness, tolerance).
+> Make a study and let's do it."
+>
+> **The study is written:** `wiki/Drawing-Workspace-UI-Study.md` —
+> Fusion 360 drawing workspace distilled (ribbon tabs, base view +
+> orientation cube, projected-view drag incl. diagonal = isometric,
+> section/detail drag placement, dimension drag-and-place, symbols,
+> move/edit), PolySmith gap analysis (custom_frame/axonometric
+> CORE-READY, annotation extensions designed for symbols), and a
+> phased plan R1–R5.
+>
+> **Start R1** (ribbon + tool state machine + Base/Projected view
+> tools): `drawingTool` state like `activeSketchTool`; DrawingToolbar
+> stub → tabbed ribbon (VIEWS | GEOMETRY | DIMENSION | SYMBOLS |
+> ANNOTATE | MODIFY); toolbar strip replaces Insert View / Dimension /
+> Sheet floating panels (New Drawing dialog stays); Base View
+> orientation control incl. "Current 3D view" → capture CAD viewport
+> camera into `DrawingViewFrame.custom_frame`; auto-projected mode
+> after placement with ortho + diagonal-iso ghosts. Reuse the existing
+> ghost/cursor/click plumbing. Gates per plan; user verifies in-app.
+>
+> **Branch:** `feature/iso-drawing`, HEAD 567fcb5. Untracked user data
+> (NEVER stage): `projects/laser board/`,
+> `projects/part-stefan-new.polysmith`, `projects/untitled-part.polysmith`,
+> `tmp-camschema.cjs`.
+>
+> **Commit policy recap (binding):** no Co-Authored-By trailer; ask
+> before every commit/branch/rebase; never commit untested code; the
+> user verifies in-app first.
+
+## 2026-09-19: P0–P9 history (committed)
+
+> **Branch:** `feature/iso-drawing` (== `dev` at 0edb147, clean except
+> this tracker + untracked user data: `projects/laser board/`,
+> `projects/part-stefan-new.polysmith`, `tmp-camschema.cjs`).
+>
+> **User request (verbatim):** "I want to develop the ISO drawing
+> workbench for my cad program. This is very important issue for me as
+> I want to have a propper implementation according to the industry
+> standard... Drawing from solid is for me very important and many
+> other programs lack or do not have a strong implementation of this
+> feature. I do not want to end up like freecad where was to late for
+> a propper implementation. So far I am the only decision maker for
+> the project so let's take advantage to make a full implementation.
+> There are no drawings or projects to keep us to be back compliant
+> with other drawings or whatwhever. I want you to use as many agents
+> as you need and study the industry standard and the general
+> implementation in my program in general."
+>
+> **User decisions (AskUserQuestion, 2026-09-19):**
+> - Projection: first-angle default, per-sheet override (ISO 5456
+>   symbol always shown)
+> - V1 scope: EVERYTHING — views, hidden lines, sections + hatching,
+>   ISO 129-1 dimensions, ISO 5457 sheets, ISO 7200 title block,
+>   DXF + PDF + SVG export (AP242/PMI deferred, model must not preclude)
+> - Storage: drawings embedded in the .polysmith document
+>   (document_state.drawing, parallel to .cam)
+>
+> **Research (2026-09-19, 4 agents) — COMPLETE:**
+> 1. ISO standards: concrete normative values for ISO 128/129-1/3098/
+>    5455/5456-2/5457/7200/13715 + 30-item conformance checklist +
+>    annotation data model must anchor to persistent topology IDs.
+> 2. Codebase map: placeholder = 4 UI touch points, no core state, no
+>    App.tsx drawing branch; CAM workbench = the vertical slice to
+>    copy (camCommands.ts → useCadCore → cam_commands.inc →
+>    session_cam_commands.inc → cam_types.h → serialization →
+>    viewport emit → sceneSync); TKHLR ALREADY LINKED; libdxfrw
+>    ALREADY vendored (writer has TEXT/DIMENSION/HATCH/BLOCK paths).
+> 3. OCCT audit (OCCT 8.0.1): HLRBRep_Algo headless exact; TKDXF does
+>    not exist in 8.0 (commercial) — libdxfrw covers DXF; text via
+>    existing text_engine (Font_BRepFont vector glyphs); dimensions
+>    built on gp/Geom2d (no OCCT generator); zero OCCT build changes.
+> 4. Prior art: TechDraw's failure was discarding provenance at the
+>    HLR boundary (→ DrawProjectSplit heuristics + broken dims);
+>    Onshape detached/dangling states; SolidWorks detached drawings;
+>    PDF via libharu (vendored) behind ISheetPdfBackend; DXF AC1027
+>    two modes; shared flattened sheet primitive stream.
+>
+> **Plan:** approved via plan mode (file:
+> `C:\Users\ThinkPad\.claude\plans\vivid-sleeping-rainbow.md`).
+> Phases P0–P10, checkpoint commits C0–C10, gates per phase:
+> `pnpm core:build` + `pnpm test:core` + `tsc --noEmit`.
+
+## P0 — HLR provenance spike (C0) — DONE, gates green
+
+**Result: the design bet is PROVEN, with one architecture improvement
+discovered by the spike.** `tests/hlr_provenance_test.cpp`
+(`cad_core_hlr_provenance_test`, registered in CMakeLists) — 7 tests:
+
+1. Box front projection: 4 visible sharp (front face) + 8 hidden
+   (back + depth) records, each with its exact source edge.
+2. Cylinder off-axis: 9 edge records (rim arcs → ellipses with source
+   edges) + 2 silhouette curves (no source edge → the record schema's
+   FaceAttestation bucket).
+3. Partial occlusion: one visible record for the slab edge, status
+   interval maps exactly to x∈[40,100] (both via Status intervals and
+   emitted geometry).
+4. Parameter mapping round-trip + view projection consistency.
+5. Coincident bodies: 8 visible records → 4 unique signatures, merged
+   groups carry distinct source edges.
+6. Hidden lines: occluded box hidden, front box visible.
+7. Determinism: canonical sorted record stream byte-identical.
+
+**Key spike findings (binding for P2):**
+- **Architecture: iterate the EDataArray DIRECTLY** — each entry is
+  (source edge via EdgeMap, HLRAlgo_EdgeStatus visible intervals,
+  HLRBRep_Curve projected geometry). Build records with
+  `HLRBRep::MakeEdge(gc, s, e)` per visible part; hidden complement =
+  status bounds minus visible parts. Provenance is BORN with the
+  record — NO output↔entry matching heuristics (matching HLRToShape
+  compounds back was attempted and abandoned: output edges are
+  re-parametrized in 2D space via Parameter2d, and analytic vs
+  pointwise projections disagree ~0.002–0.016 mm).
+- Silhouettes come from `OutLineVCompound` (face-wire path, not edge
+  entries) — no source edge, FaceAttestation/bodily provenance.
+- Curve classes per entry flags: sharp | smooth (Rg1Line) | seam
+  (RgNLine) | outline — ISO filtering in P2/P5.
+- Depth edges (parallel to view) land hidden — filter in P2.
+- Multi-body coincident edges duplicate — signature de-dupe with
+  concatenated sources (test 5 pins it).
+- `BRepLib::SameParameter(compound, Precision::PConfusion(), false)`
+  on extracted compounds (canonical HLR post-processing).
+
+**Gates:** full `pnpm core:build` clean + **55/55 suites pass**
+(`pnpm test:core`; 55th = cad_core_hlr_provenance_test,
+auto-discovered). No TS changes.
+
+**Committed as C0** (`0999243`): test file + CMakeLists only.
+
+## P1 — data model + document plumbing (C1) — DONE, gates green
+
+**C++ (all new unless noted):**
+- `core/drawing/drawing_types.h` — full data model:
+  `DrawingDocumentData{drawings, active_drawing_id, selected_view_id,
+  selected_annotation_id, decimal_separator(",")}`,
+  `Drawing{drawing_id, name, sheets, views, annotations}` (flat lists,
+  sheets own view ordering — CAM setup/op precedent),
+  `DrawingSheet{paper_size, orientation, projection_angle,
+  view_ids, TitleBlock}` (8 ISO 7200 fields + revision_rows),
+  `DrawingView{kind projection|section|axonometric, standard_view,
+  custom_frame, source_body_ids, scale, sheet_position, show_hidden,
+  section, broken_ref, warning}`,
+  `SectionDefinition`, `SourceEdgeWitness` (TNP witness + param_range),
+  `Annotation` (ISO 129-1 kinds + extensions[] door for ISO 1101/5459/
+  1302/AP242), `ProjectionResult/ProjectedEdgeRecord/HatchRegion`
+  (runtime-only, variant source: witness | FaceAttestation).
+- `core/drawing/drawing_runtime.h/.cpp` — cam_runtime clone
+  (cached/at, store/at, drop_stale, invalidate, per-document registry).
+- `document_state.h` += `drawing` member; `document_manager.h` +=
+  `document_manager_drawing_commands.inc`; `document.cpp` +=
+  `session_drawing_commands.inc` + drawing_runtime include;
+  `app.cpp` += `app/impl/drawing_commands.inc`.
+- Id counters `next_drawing_{id,sheet_id,view_id,annotation_id,
+  edge_ref_id}_` in `document_manager_private_state.inc`, restored on
+  load via `trailing_integer` (session_cam_commands.inc).
+- Runtime invalidation wired at every branch-switch site: undo/redo/
+  undo_many (undo_redo_commands.inc), undo-group cancel/abort
+  (undo_group_commands.inc), create_document (document_create_commands.inc).
+- Mutators `session_drawing_commands.inc`: drawing_create (mints ids,
+  sets active), drawing_delete, drawing_set_active,
+  drawing_sheet_create (view-id validation BEFORE the undo push),
+  drawing_sheet_delete (cascades views + annotations, clears dead
+  selection ids). Canonical shape everywhere.
+- Serialization: `protocol/impl/drawing_payloads.inc` +
+  `drawing_from_payload.inc` (per-type lenient defaults), document-level
+  `"drawing"` key in document_session_to_payload.inc +
+  document_from_payload.inc, declarations in serialization.h.
+- Commands in `app/impl/drawing_commands.inc`: drawing_create/delete/
+  set_active/sheet_create/sheet_delete (+ names in commands.schema.json).
+
+**TS:**
+- `types/geometry/drawing.ts` (type mirrors), `types/ipc/drawingCommands.ts`
+  (payload contracts, added to the CoreCommand union),
+  `lib/schemas/ipc/drawingSchema.ts` (lenient zod, catch→empty —
+  camSchema convention), `lib/ipc/drawingCommands.ts` (factories),
+  documentStateSchema += drawing, types/ipc.ts += drawing member,
+  types/index.ts + ipcProtocol.ts re-exports.
+
+**Docs:** wiki/IPC-Protocol.md + wiki/AI-CAD-Command-Language.md —
+drawing command sections (schema+wiki in the same change, per plan).
+
+**Test:** `cad_core_drawing_save_load_test` — 5 tests: document
+round-trip deep-equality (incl. ⌀ prefix, section, revision rows,
+extensions) + payload-never-carries-projections, file round-trip +
+counter restore (drawing-2 / drawing-sheet-3 minted post-load),
+mutator shape (mint/cascade/validate-before-undo-push),
+undo/redo invalidate the runtime cache, missing-key defaults.
+
+**Gates:** `pnpm core:build` clean + **56/56 suites pass** +
+`tsc --noEmit` clean.
+
+**Deviation from plan (noted):** the `refresh_drawing_dependencies`
+call in bump_geometry_revision is deferred to P2 — the refresh pass
+itself (drawing_refresh.cpp) lands with the projection engine; an
+empty hook now would be dead code.
+
+**Committed as C1** (`0025cf9`): 35 files, P1 complete.
+
+## P2 — projection engine (C2) — DONE, gates green
+
+**Engine (`core/drawing/drawing_projection.h/.cpp`, promoted from P0):**
+- `project(ProjectionInput{SourceBody{body_id, shape}[], frame,
+  show_hidden, source_revision}) → ProjectionResult` — direct
+  EDataArray iteration (binding P0 finding), records per visible part
+  via HLRBRep::MakeEdge, hidden complement from status gaps,
+  silhouettes from OutLineVCompound with body-level FaceAttestation,
+  deterministic sort (class rank, curve class, geometry key, source
+  identity), exact-duplicate collapse.
+- **HLR splits source edges** (rim circles → silhouette-bounded arcs
+  with NEW TShapes) — IsSame matching fails on them.  Fixed with
+  `match_body_edge`: IsSame first, then curve-geometry equality
+  (line/circle/ellipse within 1e-7); BSpline copies stay honestly
+  "unresolved" (empty body_id witness).
+- **Depth edges filtered**: degenerate projections (NaN / zero
+  length) are un-drawable — dropped (the P0 "depth edges land hidden"
+  finding, production-fied).
+- `build_source_edge_witness(body_id, shape, edge_index)` — the
+  capture_edge_reference precedent; circle witness for circles AND
+  arcs; param_range = source curve range (status intervals live in
+  source-param space — P0 finding).
+- `standard_view_frame()`: pinned convention — front = +X face; side
+  views keep view-Y = +Z; top/bottom keep view-Y = -X (first-angle:
+  part's back up on the sheet); right view shows front pointing LEFT.
+
+**Refresh (`core/drawing/drawing_refresh.cpp`):**
+- `refresh_drawing_dependencies(document, target_revision)` called
+  from bump_geometry_revision right after refresh_cam_dependencies
+  (manager_state_helpers.inc).  drop_stale → per-view: skip if cached
+  at target revision; resolve frame (standard/custom); compile bodies
+  once (shape-only); missing body → `broken_ref` + `warning` +
+  **last-known result marked stale** (drawing_runtime gained a
+  `last_known` retention map — drop_stale moves pruned entries there,
+  invalidate clears it); sections hold last-known with a P4 warning.
+- Views valid: projection (standard_view or custom_frame) +
+  axonometric (custom_frame); `section` rejected until P4 (never
+  silently project the uncut body).
+
+**Commands:** drawing_view_create/update/delete/move (mutators in
+session_drawing_commands.inc, handlers in drawing_commands.inc,
+schema enum, TS payload contracts + factories, wiki both files).
+
+**Test `cad_core_drawing_projection_test` — 7 tests:** standard-view
+frame convention, box front exact record set (4 visible + 4 hidden,
+depth edges filtered) with full witness assertions, cylinder
+silhouette FaceAttestation + circle→ellipse witness, hidden toggle,
+refresh-on-edit (resize → view X extent follows) + broken body →
+stale last-known + undo/redo, view mutator shape, determinism +
+**golden files** (tests/golden/, POLYSMITH_UPDATE_GOLDEN=1
+regeneration — new infra).
+- P1 save/load test 4 updated for the new semantics: undo now
+  re-projects through the refresh; the invalidate contract is pinned
+  via abandoned-revision absence + empty last_known.
+
+**Gates:** `pnpm core:build` clean + **57/57 suites pass** +
+`tsc --noEmit` clean.
+
+**Committed as C2** (`4ac44f5`): 24 files, P2 complete.
+
+## P3 — drawing workspace UI (C3) — DONE, gates green, needs in-app verification
+
+**Core emission:**
+- `ProjectedEdgeRecord` += renderable curve geometry (circle
+  center/radius, ellipse center/major-dir/radii, angular params) —
+  exact arcs for the flattened stream, populated in the engine.
+- `viewport_drawing_primitives.h` (ViewportDrawingCurve/View/Sheet in
+  sheet-mm) + `drawing_sheet_emit.inc` — active drawing's sheets,
+  curves transformed by scale + sheet_position, view bounds +
+  stale/warning, A0–A4 dims; ViewportState.drawing_sheets +
+  serialization + TS mirrors + zod.
+- **New test 8** (viewport sheet emission): A4 dims, 4 visible
+  curves, bounds [30,40]x[40,45] at scale 0.5, no hidden curves.
+
+**UI:**
+- `drawingSceneObjects.ts` — sheet paper + border, ISO line groups as
+  RIBBON MESHES (0.5 mm thick / 0.25 thin — Windows ignores
+  linewidth), circle/ellipse arcs tessellated exactly, view frames +
+  canvas-sprite labels (stale views tinted), fitCameraToDrawingSheet.
+- sceneSync: drawingGroup + showDrawingSheet branch — drawing
+  workspace renders sheets ONLY (workspace-leak discipline), build
+  key carries the sheet signature.
+- ViewportPanel: drawingGroup + fit-to-sheet effect on workspace
+  entry.
+- DrawingToolbar (real): New Drawing (auto front view of the
+  selected/first body), Insert View, Delete + view count.
+- InsertViewPanel (contextual): 6 direction buttons, ISO 5455 scale
+  list, hidden-edge toggle, Enter/Escape.
+- App.tsx: drawingCreate/ViewCreate/Delete actions via useCadCore
+  wrappers, activeDrawing/bodyIds/nextSheetPosition memos, panel
+  state; AppTopBar/AppHeader pass-through.
+- en.json drawing.toolbar/insertPanel keys; 6 drawing tokens in every
+  theme JSON (paper stays white; border/label/stale per theme).
+
+**Gates:** `pnpm core:build` clean + **57/57 suites pass** +
+`tsc --noEmit` clean.
+
+**NEEDS IN-APP VERIFICATION (the C3 milestone):** `pnpm dev` → add a
+box → Drawing workspace → New Drawing → live front view on an A4
+sheet; Insert View (top/right, scale 0.5, hidden edges) → sheet
+updates; edit the model → views update; Delete → sheet clears;
+undo/redo.  Commit C3 after the user confirms.
+
+## P4 — sections + hatching (C4) — DONE, gates green
+
+**Engine (`drawing_projection.cpp`):**
+- `ProjectionInput` += `section` (this view IS a section view) +
+  `section_traces` (sibling sections whose cutting plane this view
+  sees edge-on).  Section pre-pass: per-source `BRepAlgoAPI_Cut` with
+  a `BRepPrimAPI_MakeHalfSpace` halfspace; hidden edges suppressed
+  entirely (ISO 128-3 §7).  `cut_away = false` → uncut body + hatch
+  from `BRepAlgoAPI_Section` wires.
+- **Two OCCT behaviors pinned empirically (in-test probes, now
+  production rules):** (1) this OCCT build's
+  `MakeHalfSpace(face, ref)` treats the ref as OUTSIDE the material —
+  the halfspace keeps the side OPPOSITE the ref, so the engine's ref
+  = cutting_plane_point + normal (cut removes the normal side); (2)
+  boolean output repeats edges inside a face wire (both directions) —
+  hatch loops are built by TShape-dedupe + geometric endpoint
+  chaining (`chain_into_loops`), never by wire-walk order.
+- Hatch regions: the cut face's planar faces lying ON the cutting
+  plane (outer wire = largest |area|, the rest = holes), tessellated
+  48-seg curved edges + projected via `HLRAlgo_Projector::Project`.
+- Cutting-plane traces: `BRepAlgoAPI_Section(body, plane face)` per
+  source, projected extremes → one `curve_class "cutting_plane"`
+  record per body (dedupe collapses overlaps).
+- `compute_hatch_segments(region, angle, spacing)` — the shared
+  scanline hatcher (even-odd across outer + holes, half-open crossing
+  test), reused by the emit now, the P5 flatten and the export
+  backends later.
+- **Two HLR blind spots fixed:** (a) the cut face sits exactly AT the
+  projection plane (depth 0) → HLR drops part of it (a rim circle +
+  one edge vanished in the hole-box test) — the frame origin is
+  shifted 1e-3 mm along the normal (projected x/y unchanged, depth
+  becomes ε); (b) FULL circles have start == end → the depth-edge
+  degenerate filter dropped them — closed circle/ellipse loops are
+  now exempt.  `record_key` += circle center/radius + ellipse
+  geometry (full-circle start==end under-identifies otherwise).
+
+**Refresh:** section frames derive from the cutting plane (origin =
+  plane point, normal = plane normal, view-X = world +X projected
+  onto the plane); sibling sections collect into `section_traces`.
+**Mutators:** `drawing_section_update` (P4 command #10); kind
+  "section" accepted by `validate_view_definition` (requires a
+  section definition, non-degenerate normal, positive hatch spacing;
+  standard/custom frames must NOT override).
+**Emission:** hatch scanlines as `curve_class "hatch"` thin visible
+  curves; UI renders hatch thin + cutting-plane as a light
+  chain-dash (`buildDashedRibbon`; the full ISO 128-2 pattern with
+  dots + thick ends lands in P5).
+**UI:** InsertViewPanel gains a Section mode (cutting-plane axis
+  buttons, cut-away, label, hatch angle 30/45/60, spacing 0.7–3) +
+  the SectionPanel stays open bound to the committed section view
+  (label/cut-away/reverse/hatch, drawing_section_update, Enter/Escape).
+  Cutting plane passes through the referenced bodies' center.
+**Tests:** new `cad_core_drawing_section_test` (7 tests): box hatch
+  (area 200, hidden suppressed, show_hidden ignored), through-hole
+  donut hatch (outer 200 + π·9 hole, rim circle record), cut
+  direction via a boss (max view-Y 10 vs 14), traces on every
+  edge-on view + none on parallel views, mutators/update/undo,
+  scanline hatcher (determinism, hole reduces length), emission
+  (hatch + trace curves).  4 new goldens.
+**Gates:** `pnpm core:build` clean + **58/58 suites pass** (existing
+  goldens unchanged) + `tsc --noEmit` clean.
+
+**Known P4 carry-overs (documented, not silent):** the A–A label +
+  arrows on the parent view wait for the P7 text engine
+  (`SectionDefinition.label` exists from day one — no migration);
+  the cutting-plane trace appears on EVERY edge-on view of the
+  drawing, not only the parent (no parent link in the data model —
+  sections reference the MODEL); multi-part hatching
+  (adjacent-part mirroring, thin-section black fill) is P5+.
+
+**NEEDS IN-APP VERIFICATION (C3+C4 together):** `pnpm dev` → drawing
+  workspace → Insert View → Section → +X cut of a box → hatched view
+  on the sheet + chain line on the front view; Section panel: label /
+  reverse / hatch angle+spacing update live; edit the model → section
+  re-cuts; undo/redo.  Commit C4 after the user confirms.
+
+## P5 — ISO 5457 sheets + flattened stream (C5) — DONE, gates green
+
+**Core (`core/drawing/drawing_sheet.h/.cpp`, new):**
+- `SheetPrimitive{kind line|circle|ellipse, p0/p1, center/radius,
+  major_dir/radii, start/end angle, style, purpose, line_class}` +
+  `SheetViewBounds` + `SheetPrimitiveStream{sheet_id, drawing_id,
+  width_mm, height_mm, primitives, views}`; `paper_size_mm()`
+  (exact trimmed ISO 5457 dims; landscape swaps).
+- Furniture: frame 0.7 mm at (20,10)–(w−10,h−10); 4 centring marks
+  (5 mm outward, 0.5 wide); grid-reference ticks (long counts
+  24/16/12/8/6 A0→A4 on the longer side, short 16/12/8/6/4; 5 mm
+  inside the frame); ISO 5456-2 projection symbol (frustum + two
+  concentric circles, H=10/hh=5, first-angle = near base high, far
+  low; centered over the P7 title-block reservation above
+  bottom-right).
+- ISO 128-2 line styles APPLIED IN CORE: `dash_spans` Annex-A corner
+  rule — every dash sequence starts with a dash and the final dash
+  extends to the corner (12d/3d dashed, 24d/3d/dot d/3d chain);
+  `emit_dashed_line/arc` re-derive sub-arc endpoints; hidden → dashed
+  thin, cutting_plane → chain thin, seam → continuous thin, else
+  thick (group 0.5).
+- `flatten_sheet`: furniture first, then views collect UNDASHED
+  primitives (smooth transitions dropped per ISO 128-24) →
+  coincidence de-dupe by exact geometry key with priority visible >
+  hidden > cutting_plane > hatch → support-overlap check drops
+  cutting-plane traces lying on visible/hidden lines → THEN dashing;
+  hatches emitted last.  Deterministic (golden-pinned).
+- **Fix (mid-phase):** the coincidence dedupe had run on DASHED
+  pieces, so a dashed hidden edge never collapsed against its solid
+  visible twin and the y=0 trace's dashes escaped — restructured to
+  collect undashed first (see above).
+
+**Mutator:** `drawing_sheet_update{drawing_id, sheet_id, paper_size,
+orientation, projection_angle, name}` — enum validation (A0–A4 /
+portrait|landscape / first_angle|third_angle) BEFORE the undo push;
+the bump re-flattens.  Schema + TS payload/factory/hook wrapper +
+wiki both files.
+
+**Emission:** `drawing_sheet_emit.inc` rewritten to consume
+`flatten_sheet` (SheetPrimitive → ViewportDrawingCurve with
+`purpose` + `width_mm`; SheetViewBounds → ViewportDrawingView);
+viewport payload + zod + TS types carry the new fields.
+**UI:** drawingSceneObjects drops `buildDashedRibbon` (the core
+flatten applies dashes) and draws continuous ribbons at the
+stream's width; furniture purposes render in the border color;
+`SheetPanel` (name / paper size / orientation / projection angle,
+selects commit live, Enter/Escape) + toolbar "Sheet…" button;
+InsertViewPanel places projection views around the front view per
+the sheet's projection angle (first: top below, right left;
+third: mirrored; grid fallback otherwise).
+
+**Tests:** new `cad_core_drawing_sheet_test` (7 tests): paper
+sizes, furniture (frame/centring/grid 16 ticks A4/symbol), view
+flatten + dash spans (hidden 10 mm edge → 3 segments with the
+Annex-A corner rule), chain + priority (chain spans; y=0 trace
+dropped by support overlap), symbol orientation (near base height
+10 vs 5), sheet_update mutator (A3 landscape 420×297, 24 ticks),
+determinism + golden (drawing_sheet_a4_full.txt).  Section test 7
+updated (trace now dashes into 3 chain segments).  Projection test
+6/8 updated for the flattened payload.
+**Gates:** `pnpm core:build` clean + **59/59 suites pass** +
+`tsc --noEmit` clean.
+
+**Known P5 carry-overs (documented, not silent):** the title-block
+reservation is empty furniture space (P7 fills it); A–A labels /
+arrows on the parent view wait for the P7 text engine; first/third-
+angle flip re-flattens the sheet but existing views keep their
+stored positions (the Insert panel places NEW views by angle).
+
+**NEEDS IN-APP VERIFICATION (C3+C4+C5 together):** `pnpm dev` →
+drawing workspace → sheet shows the 0.7 mm frame, centring marks,
+grid ticks and the first-angle symbol; Insert View right/top land
+per first angle, toggle third angle in Sheet… → symbol flips + new
+views mirror; hidden edges dashed, section trace chain; Sheet…
+paper A3 landscape resizes the sheet; section panel + hatch live
+updates; edit the model → everything updates; undo/redo.  Commit C5
+after the user confirms.
+
+## P6 — ISO 129-1 dimensions (C6) — DONE, gates green
+
+**Resolution (`core/drawing/drawing_resolution.h/.cpp`, new):**
+- `measure_from_picks()` — preview/create: picks (sheet-mm) resolve
+  to the nearest visible record (`resolve_pick` — point-to-line /
+  |dist−r| / sampled ellipse); a pick is never a stored ordinal.
+  Kind rules: linear = edge length / two-edge distance (parallel
+  lines perpendicular distance, circles center distance, line+circle
+  center distance); radius always; diameter arcs > 180° only (full
+  circles store start==end → sweep 2π); angular = two non-parallel
+  lines (smaller sector).  Coincident edges from different sources
+  refuse the pick (ambiguity — never silently substitute).
+- `resolve_annotation()` — the refresh ladder: **identity pass
+  (body + edge index + kind — the topology-stable fast path, minted
+  through the same deterministic compile pipeline so parametric
+  edits follow)** → strict body+geometry 0.01 mm → relaxed 0.1 mm
+  (re-created features) → ambiguous → not found.  Failure =
+  dependency_broken + warning + the last-known value kept, marked
+  stale (runtime cache, memory-only — the projection contract).
+  Split-edge records from the SAME source merge (longest span).
+- ISO 129-1 formatting: round 0.01, strip trailing zeros, decimal
+  separator, ° on angles; defaults ⌀ diameter / R radius.
+**Graphics (`core/drawing/drawing_dimension_geometry.h/.cpp`, new):**
+extension lines (2 mm gap + 2 mm overshoot = 8× the thin 0.25),
+closed filled 30° arrowheads as sheet-mm `filled_poly` primitives
+(new stream kind), unbroken dimension line, text record (3.5 mm
+lettering, unidirectional — always horizontal), radius/diameter
+leaders, angular arc (12 mm radius, tangential arrows).  All
+offsets SHEET-mm constants (annotation scale independent of view
+scale).  Cosmetic fields (text_offset, arrow_flip) steer placement
+only — never re-project.
+**Stream:** `SheetPrimitive.kind += "filled_poly"` (+points);
+`SheetText{text, position, height_mm, angle_deg, h_align, purpose,
+stale}`; `SheetPrimitiveStream.texts[]`; viewport payload + zod + TS
+carry both.
+**Runtime:** `drawing_runtime` += dimension entries
+(cached_dimension[_at]/store_dimension_at/last_known_dimension/
+erase_dimension; drop_stale prunes into last_known; invalidate
+clears; the cascade deletes erase).
+**Refresh:** `store_broken_result` degrades a broken view's
+annotations with it; `refresh_view_annotations` re-resolves each
+view's annotations against the fresh projection right after
+`project()`.
+**Commands:** `drawing_dimension_create` (picks + optional
+annotation_id = REPAIR — witness/kind re-captured, cosmetics kept;
+mints `drawing-edge-N` via the reserved counter), `_update`
+(cosmetic only), `_delete`, non-mutating `drawing_dimension_preview`
+→ `drawing_dimension_preview` event {value, text_value, curves[],
+text, error}.  Schema + TS payloads/factories/wrappers + wiki both
+files.
+**UI:** toolbar Dimension button → DimensionPanel (kind buttons,
+pick count, live value/error) + armed sheet pick (ViewportPanel
+ray→z=0 plane, `drawingPickArmed`/`onDrawingPick`); the preview
+payload renders on the sheet via sceneSync (rebuild-key carries
+the preview signature); filled_poly → THREE.Shape, texts → canvas
+sprites at the record's height; workspace-leak cleanup on leaving
+drawing.  **Fix: `--cad-muted`/`--cad-danger` theme aliases added
+to all 6 theme JSONs (the drawing panels' muted text was silently
+unresolved).**
+**Tests:** new `cad_core_drawing_dimension_test` (11 tests): create
+from pick (witness/edge-ref/value/text/5 dimension primitives +
+text record), **fail-before: box resize 20→30 → value follows
+through the identity pass**, delete body → broken + last-known
+value stale (still drawn), radius/diameter rules + the >180° gate +
+"R7,5"/"⌀15" texts, distance 10 + angular 45° + same-edge-twice
+refusal, ambiguity refuses, cosmetic update (⌀M40 override, flip,
+text offset) + no re-projection, save/load round-trip, undo/redo
+(cache cleared + re-resolved), formatting ("12,5", "40", "0",
+"45°"), golden (drawing_dimension_linear.txt).
+**Gates:** `pnpm core:build` clean + **60/60 suites pass** +
+`tsc --noEmit` clean.
+
+**Deviation from plan (noted):** the create command takes PICKS
+(sheet-mm), not a `record_id` — record identity is runtime-cache
+state and the TNP doctrine forbids trusting it across recomputes;
+the pick re-resolves at command time (same class of robustness as
+the CAM face pick).  `drawing_annotation_repair` is folded into
+`drawing_dimension_create` with an `annotation_id` (re-pick the
+edge; cosmetics survive).  Dimension text renders as canvas sprites
+until P7 vectorizes glyphs; the DXF backend will emit DRW_Text from
+the same `SheetText` records.
+
+**Known P6 carry-overs (documented, not silent):** baseline/chain
+and ordinate dimension chains; dims on ellipse/bspline edges;
+drag-to-move dimension text (text_offset is panel-set only);
+per-drawing arrow style picker (the closed-filled style is fixed,
+per ISO 129-1 one style per drawing).
+
+**NEEDS IN-APP VERIFICATION (C3+C4+C5+C6 together):** `pnpm dev` →
+drawing workspace → Dimension → click an edge → live value on the
+sheet; second edge → distance/angle; Enter commits → the dimension
+draws with arrowheads + 3.5 mm text; edit the model → the value
+updates; delete the body → dimension stays with the stale tint +
+warning; undo/redo; decimal comma on fractional values.  Commit C6
+after the user confirms.
+
+## P7 — ISO 7200 title block + drawing text (C7) — DONE, gates green
+- **Font**: OSIFONT vendored at
+  `apps/desktop-ui/src-tauri/resources/fonts/osifont-lgpl3fe.ttf`
+  (+ `FONT-LICENSE.txt` — LGPL v3 + font-embedding exception).
+  `TextEngine::bundled_iso3098_font_path()` (env
+  `POLYSMITH_DRAWING_FONT_PATH` — the Tauri shell sets it to the
+  packaged resource) + repo-relative fallbacks.
+- **Drawing text**: `core/drawing/drawing_text.{h,cpp}` —
+  `drawing_text_glyphs(SheetText)` lays out via the text engine and
+  emits "text_glyph" line primitives (thin continuous).  Layouts
+  cached per (font, text, height, angle, h_align); contours sorted by
+  a geometric key because OCCT's StdPrs_BRepFont face order is
+  hash-dependent (multi-part glyphs like "i" flip across runs — the
+  sort makes the stream/golden reproducible).
+- **Title block**: `core/drawing/drawing_title_block.{h,cpp}` —
+  `flatten_title_block` fills the 180×63 mm block bottom-right inside
+  the frame: 8 mandatory fields (segment/sheet number auto-filled
+  "x/y"), scale auto-filled from the sheet's FIRST view (ISO 5455,
+  decimal separator honored), "Dimensions in millimetres" + ISO 8015
+  note, revision table (zone/rev/description/date/approved) above the
+  block while rows exist, and the projection symbol MOVED inside the
+  top-right cell (P5's provisional above-block placement replaced —
+  the sheet/dimension goldens regenerated accordingly).
+- **Section labels (P4 carry-over)**: the trace pass populates
+  `ProjectedEdgeRecord.section_label` + `trace_sight_dir` (the sight
+  direction = −cutting-plane normal projected into the view plane);
+  the flatten emits the label letter + a filled arrow at BOTH ends of
+  every surviving cutting-plane trace (purpose "section_label").
+- **Command**: `drawing_title_block_update{drawing_id, sheet_id,
+  title_block}` — mutator (canonical shape), app handler, schema,
+  TS types/factory/hook.  UI: `TitleBlockPanel` (all 8 fields +
+  revision-row editor), opened from the SheetPanel "Title block…"
+  button; workspace-leak cleanup closes it.
+- **UI scene**: SheetText sprites removed — the sheet renders the
+  core's vector glyphs (purpose "text_glyph"); view-label sprites and
+  the dimension-preview sprite stay.
+- **Tests**: `cad_core_drawing_title_block_test` (8 tests: fields +
+  auto-fills render, scale auto-fill from the first view incl. "1:2,5"
+  decimal comma, sheet x/y, revision rows, glyph determinism golden,
+  section labels + arrows, save/load, undo/redo).  Golden
+  `drawing_title_block_glyphs.txt` pins the OSIFONT glyph stream
+  (verified stable across 4 runs).  Dimension/sheet tests updated for
+  the by-purpose text lookup + the symbol's new position; their
+  goldens filter "text_glyph" (pinned by the glyph golden).
+- Gates: `pnpm core:build` ✓ · `pnpm test:core` 61/61 ✓ (×2, no
+  update) · tsc ✓ · cargo check ✓.
+- **Deviations/notes**: the projection symbol moved from "centered
+  above the block" (P5 provisional) to "inside the top-right cell" —
+  ISO 7200 allows both, inside avoids the revision-table collision;
+  revision rows stack UPWARD from the block top (newest nearest the
+  header).  Glyph determinism needed a contour sort (OCCT upstream
+  nondeterminism — documented in IPC-Protocol.md).
+
+## P8 — SVG + DXF export (C8) — DONE, gates green
+- **`core/drawing/export/drawing_export.{h,cpp}`** —
+  `export_drawing_sheet(document, drawing_id, sheet_id, format,
+  file_path)` — NON-mutating: flattens from the current runtime
+  projections (no undo push, no bump; the revision stays untouched —
+  test-pinned).  Unknown format/drawing/sheet/empty path throw.
+- **SVG backend** (`drawing_svg_export.cpp`): mm `viewBox` at the
+  sheet size, y-axis flipped to SVG's screen convention, `A` path
+  segments for circle arcs (math-CCW = sweep **0** after the flip —
+  first golden caught the inverted flag), tessellated ellipse arcs
+  (48 segments), `<polygon>` arrowheads, glyph primitives render the
+  text (records stay DATA — no `<text>` elements), 3-decimal fixed
+  formatting.  Golden `drawing_svg_tiny.txt` pins a hand-built stream.
+- **DXF backend** (`drawing_dxf_export.cpp`, ASCII R2013 AC1027):
+  layers VISIBLE 0.5 / HIDDEN·CUTTING·HATCH·ANNOTATION·FURNITURE 0.25
+  / FRAME 0.7 / TEXT 0.25 with per-entity lineweights; pre-dashed
+  segments on CONTINUOUS layers (the ISO patterns are baked in by the
+  core flatten — HIDDEN/CHAIN linetypes are still DEFINED for reuse
+  and the P9 annotated mode); text records → real DRW_Text (VMiddle,
+  HLeft/HCenter/HRight); glyph primitives SKIPPED (no double text);
+  filled polys → fanned SOLID quads; the title block as the
+  registered `POLYSMITH_TITLE_BLOCK` block + INSERT (writeBlockRecord
+  before writeBlock — the libdxfrw UB trap).  Parse-back test reads
+  the file through the libdxfrw READER (a counting DRW_Interface) and
+  asserts per-layer entity counts, coordinates within 1e-4, the
+  INSERT, and block contents.
+- **Command**: `drawing_export{drawing_id, sheet_id, format,
+  file_path}` → `document_exported` (handler in drawing_commands.inc,
+  schema += drawing_export).  UI: DrawingToolbar "SVG…" / "DXF…"
+  buttons → pickDrawingSvgPath/pickDrawingDxfPath save dialogs →
+  `drawingExport` hook → export action with the addMessage pattern
+  (AppTopBar's export precedent).
+- **Tests**: `cad_core_drawing_export_test` (4 tests: SVG golden,
+  DXF parse-back, SVG end-to-end, error paths + non-mutation).
+- Gates: `pnpm core:build` ✓ · `pnpm test:core` 62/62 ✓ (×2, no
+  update) · tsc ✓.
+- **Deviations/notes**: no `ISheetStreamBackend` interface — the two
+  backends share the STREAM, not sink code, so an abstract sink was a
+  speculative abstraction (CLAUDE.md); the PDF backend (P9) gets its
+  own `ISheetPdfBackend` seam per the plan.  The plan's DXF LTYPE
+  assignment was adjusted: the core flatten pre-dashes (Annex-A), so
+  assigning the HIDDEN/CHAIN linetypes to stream layers would
+  double-dash — layers stay CONTINUOUS and the linetypes are defined
+  but unassigned (documented in IPC-Protocol.md).
+
+## P9 — PDF + annotated DXF (C9) — DONE, gates green
+
+- **Vendored deps**: libharu 2.4.4 + zlib 1.3.1 under `third_party/`
+  (codeload tarballs — github.com DNS fails on this machine,
+  codeload works).  The `hpdf` target is self-defined in CMakeLists
+  (the planegcs pattern): libharu's own CMakeLists defaults
+  `BUILD_SHARED_LIBS ON`, which would leak a shared-library default
+  into the cache.  zlib via `add_subdirectory` (EXCLUDE_FROM_ALL,
+  explicit binary dir — out-of-tree source).  `enable_language(C)`
+  added; `hpdf_config.h` generated from its .cmake template; PNG
+  support off (no image export).  zlib's CMake renamed its shipped
+  `zconf.h` → `zconf.h.included` (standard 1.3.1 in-tree behavior —
+  committed in that state so fresh checkouts stay clean).
+- **Build tooling fix**: a standalone CMake ≥ 4.4 on PATH (WinLibs
+  MinGW) generates a BROKEN C-language compiler-ID test with the VS
+  generator (writes the CXX id source into the C test →
+  `enable_language(C)` fails with "A C compiler has been selected
+  for C++").  `scripts/find-cmake.mjs` now prefers the VS-bundled
+  CMake on Windows (documented in the header comment) — the pairing
+  the generator is tested against.
+- **PDF backend** (`drawing_pdf_export.cpp`, libharu): 1:1 sheet-mm
+  (libharu's default unit is mm); error handler → std::runtime_error;
+  HPDF_COMP_ALL; lines/circles/arcs as path operators (full circles
+  via `HPDF_Page_Circle` — `HPDF_Page_Arc` rejects ≥360° sweeps;
+  BOTH only append the path, so every primitive strokes explicitly;
+  Arc goes CCW from ang1 when ang2>ang1, CW otherwise — sheet
+  convention maps directly); ellipse arcs tessellated (48 segments,
+  the SVG fidelity); filled polys as filled paths.  Text: the
+  bundled OSIFONT loads subset-embedded (HPDF_TRUE) +
+  `HPDF_UseUTFEncodings` → REAL selectable text (anchor is the text
+  CENTER, libharu places the BASELINE → y − 0.35×height; width from
+  `HPDF_Font_TextWidth` in 1/1000 em units ÷1000×height;
+  h_align via measured width).  **Two backend bugs fixed during
+  implementation**: (1) libharu raises a failed font load through
+  the error handler — the flag is cleared or the glyph fallback
+  would be dead code; (2) real-text mode requires EVERY record
+  horizontal (libharu can't rotate a run) — otherwise the glyph
+  primitives carry the whole sheet (nothing may vanish).
+- **Annotated DXF** (`dxf_mode: "annotated"`): the flattened stream
+  gained semantic records — `SheetDimension` (kind, def/text/def1/
+  def2/arc/dim points, leader length, formatted text, style) and
+  `SheetHatchRegion` (outer loop + holes in sheet-mm, angle,
+  spacing) + the document's `decimal_separator` — populated by the
+  SAME computations as the exploded graphics (the dimension graphics
+  builder emits the semantic record alongside the primitives; the
+  section flatten transforms the region loops).  The annotated
+  backend skips the exploded dimension graphics/texts and hatch
+  scanlines and writes: DIMENSION entities (linear → DIMALIGNED —
+  the dim line runs PARALLEL to the feature, a DIMLINEAR measures an
+  axis-aligned projection; radial/diametric with leader lengths;
+  2-line angular) under DIMSTYLE `POLYSMITH_ISO` (dimasz 3, dimtxt
+  3.5, dimexo/dimexe 2, dimtad 1 text-above, dimzin 8 no trailing
+  zeros, dimdsep from the document, ByLayer colors) + HATCH entities
+  (ANSI31 predefined at the section's angle; scale = spacing/3.175;
+  boundary loops decomposed to DRW_Line edges — libdxfrw's polyline
+  hatch loops are unimplemented, the plan's documented limit).
+- **IPC/UI**: `drawing_export` payload += optional `dxf_mode`;
+  format += "pdf"; TS types/factory/hook (DrawingExportFormat,
+  DrawingDxfMode); `pickDrawingPdfPath`; DrawingToolbar "DXF
+  Annotated…" + "PDF…" buttons; en.json labels; wiki IPC-Protocol +
+  AI-CAD-Command-Language updated.
+- **Tests**: P8 export suite extended (Tests 5-6: annotated DXF
+  parse-back through the libdxfrw READER — 1 DIMENSION + DIMSTYLE
+  POLYSMITH_ISO + 0 solids/0 stray texts; HATCH with 4 boundary
+  edges; the old unknown-format test now uses "step" — "pdf" is
+  valid).  New `cad_core_drawing_pdf_export_test` (3 tests): PDF
+  envelope + MediaBox 210×297 + /FontFile2 + the ⌀12,5 UTF-16BE hex
+  round-trip from the INFLATED content stream (zlib; binary-mode
+  reads — 0x1A is a text-mode EOF on Windows; the hex-escape
+  greediness trap), end-to-end + non-mutation, error path.  Both
+  suites green locally.
+
+**Gates:** `pnpm core:build` clean + **63/63 suites pass** + `tsc
+--noEmit` clean.
+
+**Committed as C9** (`495ad90`): 592 files (incl. the two vendored
+trees), P9 complete.
+
+NEXT: **P10 hardening** per the plan (TNP regression suite,
+decimal-comma end-to-end, theme audit, perf caps, docs) + the
+pending C3–C9 in-app verification.
+
+---
+
 # Active task: CAM TOOL TABLE — full implementation (2026-09-17)
 
 > **Branch:** `cam/tools`, created from `dev` @ `d10cd3f` and pushed.
@@ -3042,3 +4013,16 @@ AWAITING user in-app verification: type a radius larger than half
 the chord → instant reshape; type a smaller one → the arc clamps to
 a semicircle + a warn appears in the Logs panel; Enter commits the
 visible geometry.
+
+## MERGED as PR #89 → dev @ 0edb147 (2026-09-19, user-approved)
+
+User verified in-app ("it works now") after the round-5 clamp +
+warn. All temporary diagnostics removed before commit (radius change
+trace, arc commit trace, main.tsx localStorage crashlog block; the
+pre-existing DiagnosticErrorBoundary class stays — it was committed
+at HEAD). Committed ea26472 on sketch/dimmensions (16 files, no
+Co-Authored-By trailer), pushed, squash-merged as PR #89 → dev
+(0edb147). Remote + local-remote refs deleted. The LOCAL branch
+sketch/dimmensions still exists on disk (user is on it) — delete it
+after switching. Untracked user data left alone: projects/laser
+board/, projects/part-stefan-new.polysmith, tmp-camschema.cjs.
