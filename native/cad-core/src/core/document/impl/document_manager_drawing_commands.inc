@@ -57,3 +57,27 @@
   DocumentState drawing_section_update(const std::string& drawing_id,
                                        const std::string& view_id,
                                        const SectionDefinition& section);
+
+  // ── Dimensions (P6) ───────────────────────────────────────────
+  // The core mints the witness from the pick: picks are sheet-mm
+  // points resolved against the view's CURRENT projection (never
+  // stored ordinals — the TNP mantra).  With an annotation_id the
+  // command repairs that annotation (witness + kind re-captured,
+  // cosmetics kept).  Validation (pick resolution, witness minting,
+  // kind-vs-geometry) throws BEFORE the undo push.
+  DocumentState drawing_dimension_create(
+      const std::string& drawing_id, const std::string& view_id,
+      const std::string& dim_type, const std::array<double, 2>& pick,
+      const std::optional<std::array<double, 2>>& pick_2,
+      const std::optional<std::string>& annotation_id);
+  // Cosmetic edits only: text override, prefix, arrow flip, text
+  // offset.  Never re-projects, never re-resolves — the bump only
+  // re-flattens.
+  DocumentState drawing_dimension_update(
+      const std::string& drawing_id, const std::string& annotation_id,
+      const std::optional<std::string>& text_override,
+      const std::optional<std::string>& prefix,
+      const std::optional<bool>& arrow_flip,
+      const std::optional<std::array<double, 2>>& text_offset);
+  DocumentState drawing_dimension_delete(const std::string& drawing_id,
+                                         const std::string& annotation_id);

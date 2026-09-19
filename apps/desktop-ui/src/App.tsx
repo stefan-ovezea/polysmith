@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTranslation } from "react-i18next";
 import {
@@ -103,6 +103,7 @@ import {
 } from "./app/bodyModifierActions";
 import { CamFloatingPanels } from "./app/CamFloatingPanels";
 import {
+  DimensionPanel,
   InsertViewPanel,
   SectionPanel,
   SheetPanel,
@@ -617,6 +618,19 @@ function App() {
   // Sheet settings panel (P5: paper, orientation, projection angle).
   const [isDrawingSheetPanelOpen, setIsDrawingSheetPanelOpen] =
     useState(false);
+  // Dimension tool (P6): the panel arms the sheet pick; picks
+  // accumulate (max 2) and the core preview replies with value +
+  // graphics until Enter commits.
+  const [isDimensionPanelOpen, setIsDimensionPanelOpen] = useState(false);
+  const [drawingDimPicks, setDrawingDimPicks] = useState<
+    Array<[number, number]>
+  >([]);
+  const [drawingDimType, setDrawingDimType] = useState<
+    "linear" | "angular" | "radius" | "diameter"
+  >("linear");
+  const [drawingDimPreview, setDrawingDimPreview] = useState<
+    import("@/types").DrawingDimensionPreviewPayload | null
+  >(null);
   // The section view bound to the SectionPanel after insertion (P4) —
   // stays open so label / cut-away / hatch edits commit live.
   const [sectionPanelViewId, setSectionPanelViewId] = useState<string | null>(
@@ -955,6 +969,125 @@ function App() {
     });
   };
 
+  // ── Dimension tool (P6) ──────────────────────────────────────────
+
+  // Guards against out-of-order preview replies (rapid pick/type
+  // changes): only the newest request may land.
+  const drawingDimPreviewRequestRef = useRef(0);
+
+  // The view a pick targets: the view whose bounds contain the click
+  // (the flattened sheet knows the bounds); falls back to the first
+  // projection view.
+  const drawingPickTargetViewId = useCallback(
+    (point: [number, number]): string | null => {
+      const sheet = viewport?.drawing_sheets?.find(
+        (candidate) =>
+          candidate.drawing_id === activeDrawing?.drawing_id &&
+          candidate.sheet_id === activeDrawing?.sheets[0]?.sheet_id,
+      );
+      const margin = 10;
+      const bounds = sheet?.views.find((b) => {
+        return (
+          point[0] >= b.min[0] - margin &&
+          point[0] <= b.max[0] + margin &&
+          point[1] >= b.min[1] - margin &&
+          point[1] <= b.max[1] + margin
+        );
+      });
+      if (bounds) {
+        return bounds.view_id;
+      }
+      const firstProjection = activeDrawing?.views.find(
+        (v) => v.kind === "projection",
+      );
+      return firstProjection?.view_id ?? null;
+    },
+    [viewport, activeDrawing],
+  );
+
+  // A pick appends (max 2 — the second turns a linear into a
+  // distance/angle) and re-requests the non-mutating core preview.
+  const drawingDimensionPickAction = async (point: [number, number]) => {
+    if (!activeDrawing || drawingDimPicks.length >= 2) {
+      return;
+    }
+    const viewId = drawingPickTargetViewId(point);
+    if (!viewId) {
+      return;
+    }
+    const picks = [...drawingDimPicks, point];
+    setDrawingDimPicks(picks);
+    const requestId = ++drawingDimPreviewRequestRef.current;
+    const payload = await drawingDimensionPreview({
+      drawingId: activeDrawing.drawing_id,
+      viewId,
+      dimType: drawingDimType,
+      pick: point,
+      pick2: picks.length > 1 ? picks[0] : undefined,
+    });
+    if (requestId !== drawingDimPreviewRequestRef.current) {
+      return;  // a newer request superseded this reply
+    }
+    setDrawingDimPreview(payload);
+  };
+
+  // A kind change re-requests the preview for the picks on hand.
+  const drawingDimTypeChangeAction = async (
+    kind: "linear" | "angular" | "radius" | "diameter",
+  ) => {
+    setDrawingDimType(kind);
+    if (drawingDimPicks.length === 0 || !activeDrawing) {
+      return;
+    }
+    const viewId = drawingPickTargetViewId(drawingDimPicks[0]);
+    if (!viewId) {
+      return;
+    }
+    const requestId = ++drawingDimPreviewRequestRef.current;
+    const payload = await drawingDimensionPreview({
+      drawingId: activeDrawing.drawing_id,
+      viewId,
+      dimType: kind,
+      pick: drawingDimPicks[0],
+      pick2: drawingDimPicks.length > 1 ? drawingDimPicks[1] : undefined,
+    });
+    if (requestId !== drawingDimPreviewRequestRef.current) {
+      return;
+    }
+    setDrawingDimPreview(payload);
+  };
+
+  // Enter: commit the dimension (the core mints the witness from the
+  // picks) and stay armed for the next one.
+  const drawingDimensionCommitAction = async () => {
+    if (
+      drawingDimPicks.length === 0 ||
+      !activeDrawing ||
+      !drawingDimPreview ||
+      drawingDimPreview.error
+    ) {
+      return;
+    }
+    await runAction(async () => {
+      await drawingDimensionCreate({
+        drawingId: activeDrawing.drawing_id,
+        viewId: drawingDimPreview.view_id,
+        dimType: drawingDimType,
+        pick: drawingDimPicks[0],
+        pick2: drawingDimPicks.length > 1 ? drawingDimPicks[1] : undefined,
+      });
+    });
+    setDrawingDimPicks([]);
+    setDrawingDimPreview(null);
+  };
+
+  const closeDimensionTool = () => {
+    setIsDimensionPanelOpen(false);
+    setDrawingDimPicks([]);
+    setDrawingDimPreview(null);
+    drawingDimPreviewRequestRef.current += 1;  // drop in-flight replies
+  };
+
   const camDeleteSetupAction = async (setupId: string) => {
     // The selected operation panel closes when its operation dies with
     // the setup (legacy ops with an empty setup_id die with the FIRST
@@ -1282,6 +1415,8 @@ function App() {
     drawingViewDelete,
     drawingSectionUpdate,
     drawingSheetUpdate,
+    drawingDimensionCreate,
+    drawingDimensionPreview,
   } = useCadCore();
 
   // Completes an armed "Pick a face…" sketch-plane redefinition: the
@@ -2577,6 +2712,17 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView]);
 
+  // Leaving the drawing workspace closes the dimension tool (the
+  // workspace-leak discipline: an armed sheet pick must not survive
+  // the switch).
+  useEffect(() => {
+    if (workspaceView === "drawing") {
+      return;
+    }
+    closeDimensionTool();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceView]);
+
   // Post-processor management: the list refreshes when entering the CAM
   // workspace; importing copies a definition into the user's posts
   // directory; editing opens the file in the system editor.
@@ -2907,6 +3053,11 @@ function App() {
             onSheetSettings: () => {
               setIsDrawingSheetPanelOpen(true);
             },
+            onDimension: () => {
+              setDrawingDimPicks([]);
+              setDrawingDimPreview(null);
+              setIsDimensionPanelOpen(true);
+            },
           }}
           canUndo={document?.can_undo ?? false}
           canRedo={document?.can_redo ?? false}
@@ -3189,6 +3340,17 @@ function App() {
               // Drawing workspace: sheets only — leaving the drawing
               // workspace must not leave sheet geometry over the model.
               showDrawingSheet={workspaceView === "drawing"}
+              // P6 dimension tool: the live core preview on the sheet +
+              // the armed pick (a click delivers a sheet-mm point).
+              drawingDimensionPreview={
+                workspaceView === "drawing" ? drawingDimPreview : null
+              }
+              drawingPickArmed={
+                workspaceView === "drawing" && isDimensionPanelOpen
+              }
+              onDrawingPick={(point) => {
+                void drawingDimensionPickAction(point);
+              }}
               wcsOrientation={wcsOrientation}
               activeCamSetupId={activeCamSetupId}
               originPickPointEnabled={originPickArmed}
@@ -5154,6 +5316,26 @@ function App() {
                     );
                   })()
                 : null}
+              {isDimensionPanelOpen && activeDrawing != null ? (
+                <DimensionPanel
+                  disabled={status !== "connected"}
+                  picks={drawingDimPicks}
+                  dimType={drawingDimType}
+                  preview={drawingDimPreview}
+                  onDimTypeChange={(kind) => {
+                    void drawingDimTypeChangeAction(kind);
+                  }}
+                  onClearPicks={() => {
+                    setDrawingDimPicks([]);
+                    setDrawingDimPreview(null);
+                    drawingDimPreviewRequestRef.current += 1;
+                  }}
+                  onCommit={() => {
+                    void drawingDimensionCommitAction();
+                  }}
+                  onClose={closeDimensionTool}
+                />
+              ) : null}
               {sectionPanelViewId != null && activeDrawing != null
                 ? (() => {
                     const sectionView = activeDrawing.views.find(

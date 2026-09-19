@@ -57,6 +57,7 @@
         curve.minor_radius = p.minor_radius;
         curve.start_angle = p.start_angle;
         curve.end_angle = p.end_angle;
+        curve.points = p.points;
         out_sheet.curves.push_back(std::move(curve));
       }
       for (const auto& b : flat->views) {
@@ -70,6 +71,17 @@
         out_view.stale = b.stale;
         out_view.warning = b.warning;
         out_sheet.views.push_back(std::move(out_view));
+      }
+      for (const auto& t : flat->texts) {
+        ViewportDrawingText out_text;
+        out_text.text = t.text;
+        out_text.position = t.position;
+        out_text.height_mm = t.height_mm;
+        out_text.angle_deg = t.angle_deg;
+        out_text.h_align = t.h_align;
+        out_text.purpose = t.purpose;
+        out_text.stale = t.stale;
+        out_sheet.texts.push_back(std::move(out_text));
       }
       drawing_sheets.push_back(std::move(out_sheet));
     }

@@ -151,8 +151,10 @@ set(CAD_CORE_SOURCES
   src/core/cam/cam_runtime.cpp
   src/core/cam/cam_stock.cpp
   src/core/cam/contour_2d.cpp
+  src/core/drawing/drawing_dimension_geometry.cpp
   src/core/drawing/drawing_projection.cpp
   src/core/drawing/drawing_refresh.cpp
+  src/core/drawing/drawing_resolution.cpp
   src/core/drawing/drawing_runtime.cpp
   src/core/drawing/drawing_sheet.cpp
   src/core/cam/drilling_generator.cpp
@@ -499,3 +501,4 @@ polysmith_add_core_test(cad_core_drawing_save_load_test tests/cad_core_drawing_s
 polysmith_add_core_test(cad_core_drawing_projection_test tests/cad_core_drawing_projection_test.cpp)
 polysmith_add_core_test(cad_core_drawing_section_test tests/cad_core_drawing_section_test.cpp)
 polysmith_add_core_test(cad_core_drawing_sheet_test tests/cad_core_drawing_sheet_test.cpp)
+polysmith_add_core_test(cad_core_drawing_dimension_test tests/cad_core_drawing_dimension_test.cpp)

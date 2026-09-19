@@ -1,0 +1,41 @@
+sheet 210x297
+frame line 20,10 200,10
+frame line 200,10 200,287
+frame line 200,287 20,287
+frame line 20,287 20,10
+centring_mark line 110,10 110,5
+centring_mark line 110,287 110,292
+centring_mark line 20,148.5 15,148.5
+centring_mark line 200,148.5 205,148.5
+grid_ref line 65,10 65,15
+grid_ref line 65,287 65,282
+grid_ref line 110,10 110,15
+grid_ref line 110,287 110,282
+grid_ref line 155,10 155,15
+grid_ref line 155,287 155,282
+grid_ref line 20,56.1667 25,56.1667
+grid_ref line 200,56.1667 195,56.1667
+grid_ref line 20,102.333 25,102.333
+grid_ref line 200,102.333 195,102.333
+grid_ref line 20,148.5 25,148.5
+grid_ref line 200,148.5 195,148.5
+grid_ref line 20,194.667 25,194.667
+grid_ref line 200,194.667 195,194.667
+grid_ref line 20,240.833 25,240.833
+grid_ref line 200,240.833 195,240.833
+projection_symbol circle_arc 105,88 105,88 c100,88 r5
+projection_symbol circle_arc 102.5,88 102.5,88 c100,88 r2.5
+projection_symbol line 110,83 110,93
+projection_symbol line 125,85.5 125,90.5
+projection_symbol line 110,83 125,85.5
+projection_symbol line 110,93 125,90.5
+view_geometry line 30,40 30,50
+view_geometry line 30,40 50,40
+view_geometry line 30,50 50,50
+view_geometry line 50,40 50,50
+dimension line 30,52 30,60
+dimension line 50,52 50,60
+dimension line 30,58 50,58
+dimension filled_poly 0,0 0,0 pts 30,58 33,57.25 33,58.75
+dimension filled_poly 0,0 0,0 pts 50,58 47,58.75 47,57.25
+text dimension "20" 40,60.75 h3.5

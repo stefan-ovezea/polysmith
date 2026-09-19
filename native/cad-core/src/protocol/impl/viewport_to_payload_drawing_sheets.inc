@@ -25,6 +25,11 @@ json to_payload(const polysmith::core::ViewportDrawingCurve& curve) {
   if (curve.major_dir.has_value()) j["major_dir"] = drawing_vec2(curve.major_dir.value());
   if (curve.major_radius.has_value()) j["major_radius"] = curve.major_radius.value();
   if (curve.minor_radius.has_value()) j["minor_radius"] = curve.minor_radius.value();
+  if (!curve.points.empty()) {
+    json points = json::array();
+    for (const auto& p : curve.points) points.push_back(drawing_vec2(p));
+    j["points"] = points;
+  }
   return j;
 }
 
@@ -41,11 +46,25 @@ json to_payload(const polysmith::core::ViewportDrawingView& view) {
   };
 }
 
+json to_payload(const polysmith::core::ViewportDrawingText& text) {
+  return {
+      {"text", text.text},
+      {"position", drawing_vec2(text.position)},
+      {"height_mm", text.height_mm},
+      {"angle_deg", text.angle_deg},
+      {"h_align", text.h_align},
+      {"purpose", text.purpose},
+      {"stale", text.stale},
+  };
+}
+
 json to_payload(const polysmith::core::ViewportDrawingSheet& sheet) {
   json curves = json::array();
   for (const auto& curve : sheet.curves) curves.push_back(to_payload(curve));
   json views = json::array();
   for (const auto& view : sheet.views) views.push_back(to_payload(view));
+  json texts = json::array();
+  for (const auto& text : sheet.texts) texts.push_back(to_payload(text));
   return {
       {"sheet_id", sheet.sheet_id},
       {"drawing_id", sheet.drawing_id},
@@ -54,5 +73,6 @@ json to_payload(const polysmith::core::ViewportDrawingSheet& sheet) {
       {"height_mm", sheet.height_mm},
       {"curves", curves},
       {"views", views},
+      {"texts", texts},
   };
 }

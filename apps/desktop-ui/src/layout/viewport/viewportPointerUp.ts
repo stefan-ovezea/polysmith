@@ -77,6 +77,10 @@ interface ViewportPointerUpParams {
   // selection.
   drillPickPointEnabled: boolean;
   drillPickPoint: (event: PointerEvent) => void;
+  // Armed drawing-sheet pick (P6 dimension tool): every pointer-up
+  // delivers the clicked sheet-mm point instead of scene selection.
+  drawingPickArmed: boolean;
+  drawingPick: (event: PointerEvent) => void;
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   pointerDown: PointerDownPosition | null;
@@ -642,6 +646,10 @@ function finishScenePointerUp(params: ViewportPointerUpParams) {
   }
   if (params.drillPickPointEnabled) {
     params.drillPickPoint(params.event);
+    return;
+  }
+  if (params.drawingPickArmed) {
+    params.drawingPick(params.event);
     return;
   }
   handlePointerUpSceneSelection({

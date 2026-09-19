@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { DrawingSheet, DrawingView, SectionDefinition } from "@/types";
+import type {
+  DrawingDimensionPreviewPayload,
+  DrawingSheet,
+  DrawingView,
+  SectionDefinition,
+} from "@/types";
 
 // ── Insert View panel (contextual workflow, P3/P4/P5) ─────────────
 //
@@ -731,6 +736,149 @@ export function SheetPanel({
             }}
           >
             {t("common.confirm")}
+          </button>
+          <button
+            type="button"
+            className="cad-ribbon-action flex-1"
+            onClick={onClose}
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Dimension panel (P6) ──────────────────────────────────────────
+//
+// The Dimension tool arms a sheet pick: every click appends a pick
+// (max 2 — the second turns a linear into a distance/angle), the
+// core preview replies with the measured value + graphics (drawn
+// live on the sheet), Enter commits drawing_dimension_create with
+// the picks.  Escape closes — the contextual workflow pattern.
+
+const DIMENSION_KINDS = ["linear", "radius", "diameter", "angular"] as const;
+
+const DIMENSION_KIND_LABEL_KEYS: Record<(typeof DIMENSION_KINDS)[number], string> = {
+  linear: "drawing.dimensionPanel.kindLinear",
+  radius: "drawing.dimensionPanel.kindRadius",
+  diameter: "drawing.dimensionPanel.kindDiameter",
+  angular: "drawing.dimensionPanel.kindAngular",
+};
+
+export interface DimensionPanelProps {
+  disabled: boolean;
+  /** Picks accumulated in sheet-mm (the pick itself is just a point —
+   *  the core resolves the nearest edge). */
+  picks: Array<[number, number]>;
+  dimType: "linear" | "radius" | "diameter" | "angular";
+  /** The latest core preview (value + graphics + error). */
+  preview: DrawingDimensionPreviewPayload | null;
+  onDimTypeChange: (kind: "linear" | "radius" | "diameter" | "angular") => void;
+  onClearPicks: () => void;
+  onCommit: () => void;
+  onClose: () => void;
+}
+
+export function DimensionPanel({
+  disabled,
+  picks,
+  dimType,
+  preview,
+  onDimTypeChange,
+  onClearPicks,
+  onCommit,
+  onClose,
+}: DimensionPanelProps) {
+  const { t } = useTranslation();
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  const canCommit = picks.length > 0 && !preview?.error;
+
+  // Enter commits, Escape cancels.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && !disabled && canCommit) {
+        commitRef.current();
+      } else if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [disabled, canCommit, onClose]);
+
+  return (
+    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
+      <div className="space-y-4">
+        <div>
+          <p className="cad-kicker">{t("drawing.dimensionPanel.title")}</p>
+          <p className="mt-3 text-sm text-[color:var(--cad-muted)]">
+            {picks.length === 0
+              ? t("drawing.dimensionPanel.pickHint")
+              : t("drawing.dimensionPanel.pickCount", { count: picks.length })}
+          </p>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.dimensionPanel.kind")}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {DIMENSION_KINDS.map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                className={
+                  dimType === kind
+                    ? "cad-ribbon-action cad-ribbon-action-primary"
+                    : "cad-ribbon-action"
+                }
+                disabled={disabled}
+                onClick={() => {
+                  onDimTypeChange(kind);
+                }}
+              >
+                {t(DIMENSION_KIND_LABEL_KEYS[kind])}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {preview ? (
+          preview.error ? (
+            <p className="text-xs text-[color:var(--cad-danger)]">
+              {preview.error}
+            </p>
+          ) : (
+            <p className="text-2xl font-semibold tracking-wide">
+              {preview.text_value}
+            </p>
+          )
+        ) : null}
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            className="cad-ribbon-action cad-ribbon-action-primary flex-1"
+            disabled={disabled || !canCommit}
+            onClick={() => {
+              commitRef.current();
+            }}
+          >
+            {t("common.confirm")}
+          </button>
+          <button
+            type="button"
+            className="cad-ribbon-action flex-1"
+            disabled={picks.length === 0}
+            onClick={onClearPicks}
+          >
+            {t("drawing.dimensionPanel.clearPicks")}
           </button>
           <button
             type="button"

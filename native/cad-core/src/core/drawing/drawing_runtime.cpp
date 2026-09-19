@@ -82,6 +82,14 @@ void drop_stale(const DocumentState& document, int target_revision) {
       ++it;
     }
   }
+  for (auto it = per_doc.dimensions.begin(); it != per_doc.dimensions.end();) {
+    if (it->second.revision != target_revision) {
+      per_doc.last_known_dimensions[it->first] = std::move(it->second);
+      it = per_doc.dimensions.erase(it);
+    } else {
+      ++it;
+    }
+  }
   per_doc.last_revision = target_revision;
 }
 
@@ -105,11 +113,66 @@ void invalidate(const std::string& document_id) {
   }
   PerDocument& per_doc = found->second;
   per_doc.projections.clear();
+  per_doc.dimensions.clear();
   // A branch switch (undo/redo) invalidates last-known state too —
   // the abandoned branch's results are not the restored branch's
   // truth.
   per_doc.last_known.clear();
+  per_doc.last_known_dimensions.clear();
   per_doc.last_revision = -1;
+}
+
+const ResolvedDimension* cached_dimension_at(const DocumentState& document,
+                                             const std::string& annotation_id,
+                                             int revision) {
+  const auto found = registry().find(document.id);
+  if (found == registry().end()) {
+    return nullptr;
+  }
+  const auto entry = found->second.dimensions.find(annotation_id);
+  if (entry == found->second.dimensions.end()) {
+    return nullptr;
+  }
+  if (entry->second.revision != revision) {
+    return nullptr;
+  }
+  return &entry->second.dimension;
+}
+
+const ResolvedDimension* cached_dimension(const DocumentState& document,
+                                          const std::string& annotation_id) {
+  return cached_dimension_at(document, annotation_id, document.revision);
+}
+
+void store_dimension_at(const DocumentState& document,
+                        const std::string& annotation_id,
+                        ResolvedDimension dimension, int target_revision) {
+  PerDocument& per_doc = registry()[document.id];
+  per_doc.dimensions[annotation_id] =
+      DimensionEntry{target_revision, std::move(dimension)};
+}
+
+const ResolvedDimension* last_known_dimension(const DocumentState& document,
+                                              const std::string& annotation_id) {
+  const auto found = registry().find(document.id);
+  if (found == registry().end()) {
+    return nullptr;
+  }
+  const auto entry = found->second.last_known_dimensions.find(annotation_id);
+  if (entry == found->second.last_known_dimensions.end()) {
+    return nullptr;
+  }
+  return &entry->second.dimension;
+}
+
+void erase_dimension(const std::string& document_id,
+                     const std::string& annotation_id) {
+  const auto found = registry().find(document_id);
+  if (found == registry().end()) {
+    return;
+  }
+  found->second.dimensions.erase(annotation_id);
+  found->second.last_known_dimensions.erase(annotation_id);
 }
 
 }  // namespace polysmith::core::drawing_runtime

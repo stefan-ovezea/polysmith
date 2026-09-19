@@ -254,6 +254,9 @@ export function ViewportPanel({
   showStock = true,
   showCamToolpath = true,
   showDrawingSheet = false,
+  drawingDimensionPreview = null,
+  drawingPickArmed = false,
+  onDrawingPick,
   wcsOrientation = "z_up",
   activeCamSetupId = null,
   onSnapshotCaptureReady,
@@ -731,6 +734,13 @@ export function ViewportPanel({
   drillPickPointEnabledRef.current = drillPickPointEnabled;
   const drillPickPointRef = useRef(onDrillPickPoint);
   drillPickPointRef.current = onDrillPickPoint;
+  // P6 dimension tool: while armed, every pointer-up in the drawing
+  // workspace delivers the clicked sheet-mm point to the app (the
+  // core resolves the nearest edge — the pick itself is just a point).
+  const drawingPickArmedRef = useRef(drawingPickArmed);
+  drawingPickArmedRef.current = drawingPickArmed;
+  const drawingPickRef = useRef(onDrawingPick);
+  drawingPickRef.current = onDrawingPick;
   const selectEdgeRef = useRef(onSelectEdge);
   const selectVertexRef = useRef(onSelectVertex);
   const startSketchRef = useRef(onStartSketch);
@@ -4306,6 +4316,26 @@ export function ViewportPanel({
             point: { x: round(hit.x), y: round(hit.y), z: 0 },
           });
         },
+        // Armed drawing-sheet pick (P6 dimension tool): the click
+        // resolves to a sheet-mm point on the sheet plane (z = 0) —
+        // the core maps it to the nearest projected edge.
+        drawingPickArmed: drawingPickArmedRef.current,
+        drawingPick: (pickEvent) => {
+          setPointerNdcFromEvent(pointer, pickEvent, renderer);
+          raycaster.setFromCamera(pointer, camera);
+          const hit = new THREE.Vector3();
+          if (
+            raycaster.ray.intersectPlane(
+              new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+              hit,
+            )
+          ) {
+            drawingPickRef.current?.([
+              Math.round(hit.x * 1000) / 1000,
+              Math.round(hit.y * 1000) / 1000,
+            ]);
+          }
+        },
         activeSketchPlaneId,
         activeSketchPlaneFrame,
         pointerDown,
@@ -4992,6 +5022,7 @@ export function ViewportPanel({
       showStock,
       showCamToolpath,
       showDrawingSheet,
+      drawingDimensionPreview,
       wcsOrientation,
       activeCamSetupId,
       // All pick modes share the snap markers + hover suppression —
@@ -5020,7 +5051,7 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, showDrawingSheet, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, showDrawingSheet, drawingDimensionPreview, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   // Entering the drawing workspace fits the camera to the sheet — the
   // sheet is the workspace's whole content, so the default CAD framing

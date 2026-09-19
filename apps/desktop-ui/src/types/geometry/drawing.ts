@@ -176,7 +176,7 @@ export interface DrawingDocumentData {
 // ── Viewport emission (viewport_drawing_primitives.h) ─────────────
 
 export interface ViewportDrawingCurve {
-  /** "line" | "circle" | "ellipse" */
+  /** "line" | "circle" | "ellipse" | "filled_poly" */
   kind: string;
   /** "visible" | "hidden" */
   line_class: string;
@@ -185,8 +185,8 @@ export interface ViewportDrawingCurve {
    *  "projection_symbol" | ...). */
   curve_class: string;
   /** "view_geometry" | "hatch" | "cutting_plane" | "frame" |
-   *  "centring_mark" | "grid_ref" | "projection_symbol" — furniture
-   *  purposes render in the border color. */
+   *  "centring_mark" | "grid_ref" | "projection_symbol" |
+   *  "dimension" — furniture purposes render in the border color. */
   purpose: string;
   /** ISO line-group width in mm — the core flatten has already
    *  applied dash patterns, so the renderer draws continuous ribbons
@@ -203,6 +203,25 @@ export interface ViewportDrawingCurve {
   /** Angular parameters (radians) for circle/ellipse arcs. */
   start_angle: number;
   end_angle: number;
+  /** Polygon vertices (sheet-mm) for "filled_poly" — closed filled
+   *  paths (dimension arrowheads). */
+  points?: Array<[number, number]>;
+}
+
+/** One text record on the sheet (P6: dimension values) — the
+ *  renderer draws a canvas sprite; the DXF backend emits a real
+ *  DRW_Text from the same record. */
+export interface ViewportDrawingText {
+  text: string;
+  /** Anchor = text CENTER (sheet-mm). */
+  position: [number, number];
+  height_mm: number;
+  angle_deg: number;
+  /** "left" | "center" | "right" */
+  h_align: string;
+  purpose: string;
+  /** true when the dimension is degraded (last-known value shown). */
+  stale: boolean;
 }
 
 export interface ViewportDrawingView {
@@ -224,4 +243,5 @@ export interface ViewportDrawingSheet {
   height_mm: number;
   curves: ViewportDrawingCurve[];
   views: ViewportDrawingView[];
+  texts: ViewportDrawingText[];
 }

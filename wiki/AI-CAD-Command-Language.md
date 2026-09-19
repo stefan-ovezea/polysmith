@@ -3529,6 +3529,23 @@ cache, the toolpath contract) — they never appear in document payloads.
   5457 dimensions), `projection_angle` `"first_angle"` (default) or
   `"third_angle"`, `name` display-only. Values outside the enums are
   rejected before the undo push; the bump re-flattens the sheet.
+- `drawing_dimension_create` — payload `{drawing_id, view_id,
+  dim_type, pick, pick_2?, annotation_id?}`. `dim_type`
+  `"linear" | "angular" | "radius" | "diameter"`; `pick`/`pick_2` are
+  SHEET-mm points resolved against the view's CURRENT projection —
+  the core mints the witness from the nearest record's provenance and
+  the persistent edge reference id (`drawing-edge-N`).  A pick is
+  never a stored ordinal.  With `annotation_id` the command REPAIRS
+  that annotation (witness + kind re-captured, cosmetics kept).
+  Kind-vs-geometry validation throws before the undo push.
+- `drawing_dimension_update` — payload `{drawing_id, annotation_id,
+  text_override?, prefix?, arrow_flip?, text_offset?}` — cosmetic
+  only: never re-projects, never re-resolves (the bump re-flattens).
+- `drawing_dimension_delete` — payload `{drawing_id, annotation_id}`.
+- `drawing_dimension_preview` — payload `{drawing_id, view_id,
+  dim_type, pick, pick_2?}` — NON-mutating; replies with a
+  `drawing_dimension_preview` event `{value, text_value, curves[],
+  text, error?}` (value + sheet-mm graphics for the live preview).
 
 Section views (P4): the refresh cuts every source body with a
 half-space when `section.cut_away` is true (material on the normal
@@ -3555,6 +3572,23 @@ priority visible > hidden > cutting_plane > hatch on the undashed
 records, and cutting-plane traces lying on a visible/hidden line are
 dropped (the support-overlap rule).  The stream is deterministic and
 memory-only (golden-file pinned).
+
+Dimensions (P6): the refresh pass resolves each annotation against its
+view's fresh projection through the witness ladder — identity (body +
+edge index + kind — the topology-stable fast path that follows
+parametric edits, e.g. a resized box) → strict body+geometry
+(0.01 mm) → relaxed geometry (0.1 mm, re-created features) →
+ambiguous (distinct sources both match → refuse) → not found
+(`dependency_broken` + warning + the last-known value kept, marked
+stale — never blank, never silently substituted).  Measured values and
+attachment geometry live in the runtime cache (memory-only, the
+projection contract — they never enter undo snapshots or saves).  The
+flatten emits the ISO 129-1 graphics: extension lines (8×d gap +
+overshoot), closed filled arrowheads (sheet-mm `filled_poly`
+primitives), the unbroken dimension line, and a `texts[]` record
+(3.5 mm lettering, unidirectional, ⌀/R prefixes, the decimal
+separator, ° on angles).  Cosmetic updates never re-project — they
+only re-flatten.
 
 A view whose source body disappears degrades with `broken_ref` +
 `warning` and holds its last-known projection (marked `stale`) — never

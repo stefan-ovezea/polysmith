@@ -269,6 +269,13 @@ DocumentState DocumentManager::drawing_sheet_delete(
                        }),
         drawing->views.end());
   }
+  for (const auto& annotation : drawing->annotations) {
+    if (std::find(dying_view_ids.begin(), dying_view_ids.end(),
+                  annotation.view_id) != dying_view_ids.end()) {
+      drawing_runtime::erase_dimension(document_->id,
+                                       annotation.annotation_id);
+    }
+  }
   drawing->annotations.erase(
       std::remove_if(drawing->annotations.begin(), drawing->annotations.end(),
                      [&](const Annotation& a) {
@@ -408,6 +415,12 @@ DocumentState DocumentManager::drawing_view_delete(
                      }),
       drawing->views.end());
   // Annotations attached to the view die with it.
+  for (const auto& annotation : drawing->annotations) {
+    if (annotation.view_id == view_id) {
+      drawing_runtime::erase_dimension(document_->id,
+                                       annotation.annotation_id);
+    }
+  }
   drawing->annotations.erase(
       std::remove_if(drawing->annotations.begin(), drawing->annotations.end(),
                      [&](const Annotation& a) {
@@ -472,6 +485,183 @@ DocumentState DocumentManager::drawing_section_update(
   push_undo_state();
   clear_redo_stack();
   view->section = section;
+  bump_geometry_revision();
+  return document_.value();
+}
+
+// ── Dimensions (P6) ───────────────────────────────────────────────
+//
+// The core mints the witness from the pick: the pick (sheet-mm) is
+// resolved against the view's CURRENT projection, the record's
+// provenance becomes the annotation's SourceEdgeWitness, and the
+// persistent edge reference id follows the cam_capture_edge_reference
+// precedent.  A pick is never a stored ordinal — re-projection cannot
+// break it (the TNP mantra).
+
+DocumentState DocumentManager::drawing_dimension_create(
+    const std::string& drawing_id, const std::string& view_id,
+    const std::string& dim_type, const std::array<double, 2>& pick,
+    const std::optional<std::array<double, 2>>& pick_2,
+    const std::optional<std::string>& annotation_id) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  DrawingView* view = find_view(*drawing, view_id);
+  if (view == nullptr) {
+    throw std::runtime_error("Unknown view: " + view_id);
+  }
+  if (dim_type != "linear" && dim_type != "angular" &&
+      dim_type != "radius" && dim_type != "diameter") {
+    throw std::runtime_error("Unknown dimension kind: " + dim_type);
+  }
+  const ProjectionResult* projection =
+      drawing_runtime::cached_projection(document_.value(), view_id);
+  if (projection == nullptr) {
+    throw std::runtime_error(
+        "The view has no projection yet — create the view first.");
+  }
+
+  // Resolve the picks + measure BEFORE the undo push (canonical
+  // shape): witness minting and kind validation can throw.
+  Annotation built;
+  built.kind = dim_type;
+  built.view_id = view_id;
+  if (annotation_id.has_value()) {
+    // Repair: the annotation keeps its cosmetic fields; the witness
+    // and kind are re-captured from the fresh picks.
+    auto found = std::find_if(
+        drawing->annotations.begin(), drawing->annotations.end(),
+        [&](const Annotation& a) {
+          return a.annotation_id == annotation_id.value();
+        });
+    if (found == drawing->annotations.end()) {
+      throw std::runtime_error("Unknown annotation: " + annotation_id.value());
+    }
+    if (found->view_id != view_id) {
+      throw std::runtime_error(
+          "The annotation belongs to a different view.");
+    }
+    built = *found;
+    built.kind = dim_type;
+    built.witness_2.reset();
+    built.dependency_broken = false;
+    built.warning.clear();
+  } else if (dim_type == "diameter") {
+    built.prefix = "\xE2\x8C\x80";  // ⌀ — ISO 129-1
+  } else if (dim_type == "radius") {
+    built.prefix = "R";             // R is mandatory for radii
+  }
+
+  std::string error;
+  std::vector<const ProjectedEdgeRecord*> records;
+  const auto measured = measure_from_picks(
+      *projection, *view, dim_type, pick, pick_2,
+      /*pick_tolerance_sheetmm=*/5.0, document_->drawing.decimal_separator,
+      &built, &error, &records);
+  if (!measured.has_value()) {
+    throw std::runtime_error(error);
+  }
+  if (records.empty()) {
+    throw std::runtime_error("The pick resolved to no edge.");
+  }
+  if (!witness_from_record(*records[0], &built.witness, &error)) {
+    throw std::runtime_error(error);
+  }
+  if (records.size() > 1) {
+    SourceEdgeWitness second;
+    if (!witness_from_record(*records[1], &second, &error)) {
+      throw std::runtime_error(error);
+    }
+    built.witness_2 = second;
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  built.source_edge_id =
+      "drawing-edge-" + std::to_string(next_drawing_edge_ref_id_++);
+  if (annotation_id.has_value()) {
+    auto found = std::find_if(
+        drawing->annotations.begin(), drawing->annotations.end(),
+        [&](const Annotation& a) {
+          return a.annotation_id == annotation_id.value();
+        });
+    *found = std::move(built);
+    document_->drawing.selected_annotation_id = annotation_id;
+  } else {
+    built.annotation_id =
+        "drawing-annotation-" + std::to_string(next_drawing_annotation_id_++);
+    document_->drawing.selected_annotation_id = built.annotation_id;
+    drawing->annotations.push_back(std::move(built));
+  }
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_dimension_update(
+    const std::string& drawing_id, const std::string& annotation_id,
+    const std::optional<std::string>& text_override,
+    const std::optional<std::string>& prefix,
+    const std::optional<bool>& arrow_flip,
+    const std::optional<std::array<double, 2>>& text_offset) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  auto found = std::find_if(
+      drawing->annotations.begin(), drawing->annotations.end(),
+      [&](const Annotation& a) { return a.annotation_id == annotation_id; });
+  if (found == drawing->annotations.end()) {
+    throw std::runtime_error("Unknown annotation: " + annotation_id);
+  }
+
+  // Cosmetic-only: never re-projects, never re-resolves (the plan's
+  // projection-input vs cosmetic layer separation).  The bump
+  // re-flattens so the new text/placement shows.
+  push_undo_state();
+  clear_redo_stack();
+  if (text_override.has_value()) {
+    found->text_override = text_override.value().empty()
+                               ? std::optional<std::string>()
+                               : text_override;
+  }
+  if (prefix.has_value()) {
+    found->prefix = prefix.value();
+  }
+  if (arrow_flip.has_value()) {
+    found->arrow_flip = arrow_flip.value();
+  }
+  if (text_offset.has_value()) {
+    found->text_offset = text_offset;
+  }
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_dimension_delete(
+    const std::string& drawing_id, const std::string& annotation_id) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  auto found = std::find_if(
+      drawing->annotations.begin(), drawing->annotations.end(),
+      [&](const Annotation& a) { return a.annotation_id == annotation_id; });
+  if (found == drawing->annotations.end()) {
+    throw std::runtime_error("Unknown annotation: " + annotation_id);
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  // The cached value is derived state — drop it with the annotation.
+  drawing_runtime::erase_dimension(document_->id, annotation_id);
+  if (document_->drawing.selected_annotation_id == annotation_id) {
+    document_->drawing.selected_annotation_id.reset();
+  }
+  drawing->annotations.erase(found);
   bump_geometry_revision();
   return document_.value();
 }

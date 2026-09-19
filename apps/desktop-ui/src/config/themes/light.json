@@ -31,6 +31,8 @@
     "--color-axis-x": "#d84558",
     "--color-axis-y": "#178f50",
     "--color-axis-z": "#1976c9",
+    "--cad-muted": "#52646c",
+    "--cad-danger": "#c7354b",
     "--cad-toolpath-rapid": "#c7354b",
     "--cad-toolpath-feed": "#168a4e",
     "--cad-toolpath-executed": "#a8760a",

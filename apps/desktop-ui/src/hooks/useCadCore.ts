@@ -9,6 +9,10 @@ import {
   makeDrawingViewCreateCommand,
   makeDrawingViewDeleteCommand,
   makeDrawingSectionUpdateCommand,
+  makeDrawingDimensionCreateCommand,
+  makeDrawingDimensionUpdateCommand,
+  makeDrawingDimensionDeleteCommand,
+  makeDrawingDimensionPreviewCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
   makeCamSetupDeleteCommand,
@@ -233,6 +237,7 @@ import type {
   CamSetup,
   CoreCommand,
   Drawing,
+  DrawingDimensionPreviewPayload,
   DrawingView,
   SectionDefinition,
   ExtrudeAdvancedParameters,
@@ -1752,6 +1757,56 @@ export function useCadCore() {
       await sendAndRefreshSessionViewport(
         makeDrawingSectionUpdateCommand(drawingId, viewId, section),
       );
+    },
+    drawingDimensionCreate: async (params: {
+      drawingId: string;
+      viewId: string;
+      dimType: "linear" | "angular" | "radius" | "diameter";
+      pick: [number, number];
+      pick2?: [number, number];
+      annotationId?: string;
+    }) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingDimensionCreateCommand(params),
+      );
+    },
+    drawingDimensionUpdate: async (params: {
+      drawingId: string;
+      annotationId: string;
+      textOverride?: string;
+      prefix?: string;
+      arrowFlip?: boolean;
+      textOffset?: [number, number];
+    }) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingDimensionUpdateCommand(params),
+      );
+    },
+    drawingDimensionDelete: async (
+      drawingId: string,
+      annotationId: string,
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingDimensionDeleteCommand(drawingId, annotationId),
+      );
+    },
+    drawingDimensionPreview: async (params: {
+      drawingId: string;
+      viewId: string;
+      dimType: "linear" | "angular" | "radius" | "diameter";
+      pick: [number, number];
+      pick2?: [number, number];
+    }): Promise<DrawingDimensionPreviewPayload | null> => {
+      // Awaited: the reply is the drawing_dimension_preview event
+      // carrying the core-computed value + graphics (never mutates).
+      const response = await sendCoreCommandAwaited(
+        makeDrawingDimensionPreviewCommand(params) as CoreCommand & {
+          id: string;
+        },
+      );
+      const payload = (response as { payload?: DrawingDimensionPreviewPayload })
+        .payload;
+      return payload ?? null;
     },
     camSetupUpdate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupUpdateCommand(camSetup));

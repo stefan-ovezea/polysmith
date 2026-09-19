@@ -6,6 +6,7 @@
 
 #include "core/diagnostics/logger.h"
 #include "core/drawing/drawing_projection.h"
+#include "core/drawing/drawing_resolution.h"
 #include "core/drawing/drawing_runtime.h"
 #include "core/geometry/body_compiler.h"
 
@@ -16,8 +17,8 @@ namespace {
 // Stores a stale last-known result for a broken view so the sheet can
 // still draw it (visibly marked), and records the degradation on the
 // view itself.
-void store_broken_result(DocumentState& document, DrawingView& view,
-                         const std::string& warning,
+void store_broken_result(DocumentState& document, Drawing& drawing,
+                         DrawingView& view, const std::string& warning,
                          std::optional<std::string> broken_ref,
                          int target_revision) {
   view.broken_ref = std::move(broken_ref);
@@ -32,6 +33,68 @@ void store_broken_result(DocumentState& document, DrawingView& view,
   drawing_runtime::store_projection_at(document, view.view_id,
                                        std::move(stale_result),
                                        target_revision);
+  // A broken view degrades its annotations with it — they keep their
+  // last-known values marked stale (never blank, never substituted).
+  for (auto& annotation : drawing.annotations) {
+    if (annotation.view_id != view.view_id) {
+      continue;
+    }
+    annotation.dependency_broken = true;
+    annotation.warning = warning;
+    if (const ResolvedDimension* last = drawing_runtime::last_known_dimension(
+            document, annotation.annotation_id)) {
+      ResolvedDimension stale_copy = *last;
+      stale_copy.stale = true;
+      stale_copy.warning = warning;
+      drawing_runtime::store_dimension_at(document, annotation.annotation_id,
+                                          std::move(stale_copy),
+                                          target_revision);
+    }
+  }
+}
+
+// Re-resolves one view's annotations against its fresh projection —
+// the TNP ladder (exact witness → relaxed geometry → ambiguous →
+// not found).  Values and attachment geometry are memory-only; the
+// persisted dependency_broken/warning mirror the degradation.
+void refresh_view_annotations(DocumentState& document, Drawing& drawing,
+                              DrawingView& view,
+                              const ProjectionResult& fresh,
+                              int target_revision) {
+  for (auto& annotation : drawing.annotations) {
+    if (annotation.view_id != view.view_id) {
+      continue;
+    }
+    ResolvedDimension resolved = resolve_annotation(
+        fresh, annotation, document.drawing.decimal_separator);
+    const std::string warning = resolved.warning;
+    if (resolved.broken) {
+      if (const ResolvedDimension* last = drawing_runtime::last_known_dimension(
+              document, annotation.annotation_id)) {
+        ResolvedDimension stale_copy = *last;
+        stale_copy.stale = true;
+        stale_copy.warning = warning;
+        drawing_runtime::store_dimension_at(document, annotation.annotation_id,
+                                            std::move(stale_copy),
+                                            target_revision);
+      } else {
+        // No last-known value: cache the broken marker (no geometry —
+        // the flatten skips it; the panel shows the warning).
+        resolved.stale = true;
+        drawing_runtime::store_dimension_at(document, annotation.annotation_id,
+                                            std::move(resolved),
+                                            target_revision);
+      }
+      annotation.dependency_broken = true;
+      annotation.warning = warning;
+    } else {
+      drawing_runtime::store_dimension_at(document, annotation.annotation_id,
+                                          std::move(resolved),
+                                          target_revision);
+      annotation.dependency_broken = false;
+      annotation.warning.clear();
+    }
+  }
 }
 
 }  // namespace
@@ -74,7 +137,7 @@ void refresh_drawing_dependencies(DocumentState& document,
         // with a unit normal the last fallback always resolves).
         if (!view.section.has_value()) {
           store_broken_result(
-              document, view,
+              document, drawing, view,
               "The section view has no section definition — the view "
               "holds its last-known projection.",
               std::nullopt, target_revision);
@@ -108,7 +171,7 @@ void refresh_drawing_dependencies(DocumentState& document,
         }
         if (x_length < 1e-9) {
           store_broken_result(
-              document, view,
+              document, drawing, view,
               "The cutting plane normal is degenerate — the view holds "
               "its last-known projection.",
               std::nullopt, target_revision);
@@ -158,7 +221,7 @@ void refresh_drawing_dependencies(DocumentState& document,
                   "holds its last-known projection.";
         polysmith::core::log_warn("drawing", "view '" + view.view_id +
                                                  "': " + warning);
-        store_broken_result(document, view, warning, broken_ref,
+        store_broken_result(document, drawing, view, warning, broken_ref,
                             target_revision);
         continue;
       }
@@ -183,6 +246,13 @@ void refresh_drawing_dependencies(DocumentState& document,
       input.source_revision = target_revision;
       drawing_runtime::store_projection_at(
           document, view.view_id, project(input), target_revision);
+
+      // ── Annotation re-resolution (P6) ─────────────────────────
+      if (const ProjectionResult* fresh = drawing_runtime::cached_projection_at(
+              document, view.view_id, target_revision)) {
+        refresh_view_annotations(document, drawing, view, *fresh,
+                                 target_revision);
+      }
     }
   }
 }

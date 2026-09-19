@@ -1,7 +1,12 @@
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import type { ViewportDrawingCurve, ViewportState } from "@/types";
+import type {
+  DrawingDimensionPreviewPayload,
+  ViewportDrawingCurve,
+  ViewportDrawingText,
+  ViewportState,
+} from "@/types";
 import { themeColor } from "@/utils";
 
 import { ORTHO_FRUSTUM_HEIGHT } from "./viewportPanelTypes";
@@ -161,7 +166,6 @@ function addSheetGroup(
   const staleColor = sheetColor("--cad-drawing-stale", "#e08a3c");
 
   for (const curve of sheet.curves) {
-    const points = tessellateSheetCurve(curve);
     const isHidden = curve.line_class === "hidden";
     const isFurniture = FURNITURE_PURPOSES.has(curve.purpose ?? "");
     // The P5 core flatten applies the ISO line styles (dash patterns
@@ -170,12 +174,28 @@ function addSheetGroup(
     const color = isHidden ? hiddenColor
       : isFurniture ? borderColor
         : visibleColor;
+    if (curve.kind === "filled_poly") {
+      const mesh = buildFilledPoly(curve.points ?? [], color);
+      if (mesh) {
+        group.add(mesh);
+      }
+      continue;
+    }
+    const points = tessellateSheetCurve(curve);
     const widthMm = curve.width_mm
       ?? (isHidden ? ISO_THIN_LINE_MM : ISO_THICK_LINE_MM);
     const ribbon = buildRibbon(points, widthMm, color);
     if (ribbon) {
       group.add(ribbon);
     }
+  }
+
+  // Text records (P6: dimension values) — sprites at the record's
+  // letter height, stale ones tinted like stale views.
+  const textColor = sheetColor("--cad-drawing-visible-line", "#1c1b1b");
+  const staleTextColor = sheetColor("--cad-drawing-stale", "#e08a3c");
+  for (const text of sheet.texts ?? []) {
+    addTextObject(group, text, textColor, staleTextColor);
   }
 
   for (const view of sheet.views) {
@@ -210,7 +230,13 @@ function addSheetGroup(
 }
 
 /** Canvas-texture sprite for a sheet label (mm-sized). */
-function makeLabelSprite(text: string, color: number, x: number, y: number) {
+function makeLabelSprite(
+  text: string,
+  color: number,
+  x: number,
+  y: number,
+  heightMm = 3,
+) {
   const fontPx = 96;
   const padPx = 16;
   const canvas = document.createElement("canvas");
@@ -229,21 +255,90 @@ function makeLabelSprite(text: string, color: number, x: number, y: number) {
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({ map: texture, toneMapped: false });
   const sprite = new THREE.Sprite(material);
-  // mm-per-pixel: 3 mm text height at 96px font.
-  const mmPerPx = 3 / fontPx;
+  // mm-per-pixel: the requested text height at 96px font.
+  const mmPerPx = heightMm / fontPx;
   sprite.scale.set(width * mmPerPx, canvas.height * mmPerPx, 1);
   sprite.position.set(x, y, 0.5);
   sprite.renderOrder = 2;
   return sprite;
 }
 
-/** Adds the drawing sheets to a dedicated group (drawing workspace). */
+/** Filled polygon mesh (dimension arrowheads) — a THREE.Shape in the
+ *  XY plane, triangulated. */
+function buildFilledPoly(
+  points: Array<[number, number]>,
+  color: number,
+): THREE.Mesh | null {
+  if (points.length < 3) {
+    return null;
+  }
+  const shape = new THREE.Shape();
+  shape.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i += 1) {
+    shape.lineTo(points[i][0], points[i][1]);
+  }
+  shape.closePath();
+  const mesh = new THREE.Mesh(
+    new THREE.ShapeGeometry(shape),
+    new THREE.MeshBasicMaterial({ color, toneMapped: false }),
+  );
+  mesh.renderOrder = 1;
+  return mesh;
+}
+
+/** Adds one text record (dimension values) as a sprite. */
+function addTextObject(group: THREE.Group, text: ViewportDrawingText,
+                       color: number, staleColor: number) {
+  const sprite = makeLabelSprite(
+    text.text,
+    text.stale ? staleColor : color,
+    text.position[0],
+    text.position[1],
+    text.height_mm,
+  );
+  if (sprite) {
+    group.add(sprite);
+  }
+}
+
+/** Draws a set of curves + an optional text record (the dimension
+ *  preview payload shape mirrors the sheet curves). */
+function addPreviewObjects(
+  group: THREE.Group,
+  preview: DrawingDimensionPreviewPayload,
+) {
+  const color = sheetColor("--cad-drawing-visible-line", "#1c1b1b");
+  for (const curve of preview.curves ?? []) {
+    if (curve.kind === "filled_poly") {
+      const mesh = buildFilledPoly(curve.points ?? [], color);
+      if (mesh) {
+        group.add(mesh);
+      }
+      continue;
+    }
+    const points = tessellateSheetCurve(curve as ViewportDrawingCurve);
+    const ribbon = buildRibbon(points, curve.width_mm || 0.25, color);
+    if (ribbon) {
+      group.add(ribbon);
+    }
+  }
+  if (preview.text) {
+    addTextObject(group, preview.text, color, color);
+  }
+}
+
+/** Adds the drawing sheets to a dedicated group (drawing workspace).
+ *  `preview` carries the non-mutating dimension preview (P6) — drawn
+ *  on top of the active sheet; the scene rebuilds it every sync so
+ *  it tracks the latest preview reply. */
 export function addDrawingSheetObjects({
   viewport,
   drawingGroup,
+  preview,
 }: {
   viewport: ViewportState | null;
   drawingGroup: THREE.Group;
+  preview?: DrawingDimensionPreviewPayload | null;
 }) {
   const sheets = viewport?.drawing_sheets ?? [];
   let offsetX = 0;
@@ -253,6 +348,10 @@ export function addDrawingSheetObjects({
     sheetGroup.position.set(offsetX, 0, 0);
     addSheetGroup(sheetGroup, sheet);
     drawingGroup.add(sheetGroup);
+    // The preview belongs to the FIRST sheet (the active one).
+    if (preview && !preview.error && offsetX === 0) {
+      addPreviewObjects(sheetGroup, preview);
+    }
     offsetX += sheet.width_mm + 24;
   }
 }

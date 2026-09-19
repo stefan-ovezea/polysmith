@@ -423,29 +423,117 @@ paper A3 landscape resizes the sheet; section panel + hatch live
 updates; edit the model → everything updates; undo/redo.  Commit C5
 after the user confirms.
 
-## NEXT: P6 — ISO 129-1 dimensions (C6)
-`core/drawing/drawing_resolution.cpp` — the witness resolution
-ladder (exact source re-resolve → projected-edge re-resolve →
-ambiguous → not found; dependency_broken + warning + last-known,
-never silently substitute; ambiguity margin; user-initiated
-undoable `drawing_annotation_repair`); cosmetic fields (text
-offset, arrow flip) never re-project.
-`core/drawing/drawing_dimension_geometry.cpp` — extension lines
-(8×d gap/overshoot), closed filled arrowheads (one style per
-drawing), unbroken dimension line, text above, unidirectional,
-⌀/R prefixes (⌀ omittable if unambiguous), diameter for arcs
->180° / radius <180°, ° for angles, decimal separator from
-`decimal_separator` — reuse the wiki/Dimension-Rendering-Design.md
-rules, factored not duplicated.  Commands:
-`drawing_dimension_create{view_id, record_id, dim_type}` (core
-mints the witness from pick — cam_capture_edge_reference
-precedent), `drawing_dimension_update/delete/preview` → Enter/
-Escape.  UI: Dimension tool activates the reserved
-DimensionToolMode drawing-sheet modes.  Test
-`cad_core_drawing_dimension_test` — value == model dim × scale;
-**fail-before: edit upstream feature → value updates**; delete body
-→ broken + last value kept; ambiguity → no substitution; save/load;
-decimal comma ("12,5").
+## P6 — ISO 129-1 dimensions (C6) — DONE, gates green
+
+**Resolution (`core/drawing/drawing_resolution.h/.cpp`, new):**
+- `measure_from_picks()` — preview/create: picks (sheet-mm) resolve
+  to the nearest visible record (`resolve_pick` — point-to-line /
+  |dist−r| / sampled ellipse); a pick is never a stored ordinal.
+  Kind rules: linear = edge length / two-edge distance (parallel
+  lines perpendicular distance, circles center distance, line+circle
+  center distance); radius always; diameter arcs > 180° only (full
+  circles store start==end → sweep 2π); angular = two non-parallel
+  lines (smaller sector).  Coincident edges from different sources
+  refuse the pick (ambiguity — never silently substitute).
+- `resolve_annotation()` — the refresh ladder: **identity pass
+  (body + edge index + kind — the topology-stable fast path, minted
+  through the same deterministic compile pipeline so parametric
+  edits follow)** → strict body+geometry 0.01 mm → relaxed 0.1 mm
+  (re-created features) → ambiguous → not found.  Failure =
+  dependency_broken + warning + the last-known value kept, marked
+  stale (runtime cache, memory-only — the projection contract).
+  Split-edge records from the SAME source merge (longest span).
+- ISO 129-1 formatting: round 0.01, strip trailing zeros, decimal
+  separator, ° on angles; defaults ⌀ diameter / R radius.
+**Graphics (`core/drawing/drawing_dimension_geometry.h/.cpp`, new):**
+extension lines (2 mm gap + 2 mm overshoot = 8× the thin 0.25),
+closed filled 30° arrowheads as sheet-mm `filled_poly` primitives
+(new stream kind), unbroken dimension line, text record (3.5 mm
+lettering, unidirectional — always horizontal), radius/diameter
+leaders, angular arc (12 mm radius, tangential arrows).  All
+offsets SHEET-mm constants (annotation scale independent of view
+scale).  Cosmetic fields (text_offset, arrow_flip) steer placement
+only — never re-project.
+**Stream:** `SheetPrimitive.kind += "filled_poly"` (+points);
+`SheetText{text, position, height_mm, angle_deg, h_align, purpose,
+stale}`; `SheetPrimitiveStream.texts[]`; viewport payload + zod + TS
+carry both.
+**Runtime:** `drawing_runtime` += dimension entries
+(cached_dimension[_at]/store_dimension_at/last_known_dimension/
+erase_dimension; drop_stale prunes into last_known; invalidate
+clears; the cascade deletes erase).
+**Refresh:** `store_broken_result` degrades a broken view's
+annotations with it; `refresh_view_annotations` re-resolves each
+view's annotations against the fresh projection right after
+`project()`.
+**Commands:** `drawing_dimension_create` (picks + optional
+annotation_id = REPAIR — witness/kind re-captured, cosmetics kept;
+mints `drawing-edge-N` via the reserved counter), `_update`
+(cosmetic only), `_delete`, non-mutating `drawing_dimension_preview`
+→ `drawing_dimension_preview` event {value, text_value, curves[],
+text, error}.  Schema + TS payloads/factories/wrappers + wiki both
+files.
+**UI:** toolbar Dimension button → DimensionPanel (kind buttons,
+pick count, live value/error) + armed sheet pick (ViewportPanel
+ray→z=0 plane, `drawingPickArmed`/`onDrawingPick`); the preview
+payload renders on the sheet via sceneSync (rebuild-key carries
+the preview signature); filled_poly → THREE.Shape, texts → canvas
+sprites at the record's height; workspace-leak cleanup on leaving
+drawing.  **Fix: `--cad-muted`/`--cad-danger` theme aliases added
+to all 6 theme JSONs (the drawing panels' muted text was silently
+unresolved).**
+**Tests:** new `cad_core_drawing_dimension_test` (11 tests): create
+from pick (witness/edge-ref/value/text/5 dimension primitives +
+text record), **fail-before: box resize 20→30 → value follows
+through the identity pass**, delete body → broken + last-known
+value stale (still drawn), radius/diameter rules + the >180° gate +
+"R7,5"/"⌀15" texts, distance 10 + angular 45° + same-edge-twice
+refusal, ambiguity refuses, cosmetic update (⌀M40 override, flip,
+text offset) + no re-projection, save/load round-trip, undo/redo
+(cache cleared + re-resolved), formatting ("12,5", "40", "0",
+"45°"), golden (drawing_dimension_linear.txt).
+**Gates:** `pnpm core:build` clean + **60/60 suites pass** +
+`tsc --noEmit` clean.
+
+**Deviation from plan (noted):** the create command takes PICKS
+(sheet-mm), not a `record_id` — record identity is runtime-cache
+state and the TNP doctrine forbids trusting it across recomputes;
+the pick re-resolves at command time (same class of robustness as
+the CAM face pick).  `drawing_annotation_repair` is folded into
+`drawing_dimension_create` with an `annotation_id` (re-pick the
+edge; cosmetics survive).  Dimension text renders as canvas sprites
+until P7 vectorizes glyphs; the DXF backend will emit DRW_Text from
+the same `SheetText` records.
+
+**Known P6 carry-overs (documented, not silent):** baseline/chain
+and ordinate dimension chains; dims on ellipse/bspline edges;
+drag-to-move dimension text (text_offset is panel-set only);
+per-drawing arrow style picker (the closed-filled style is fixed,
+per ISO 129-1 one style per drawing).
+
+**NEEDS IN-APP VERIFICATION (C3+C4+C5+C6 together):** `pnpm dev` →
+drawing workspace → Dimension → click an edge → live value on the
+sheet; second edge → distance/angle; Enter commits → the dimension
+draws with arrowheads + 3.5 mm text; edit the model → the value
+updates; delete the body → dimension stays with the stale tint +
+warning; undo/redo; decimal comma on fractional values.  Commit C6
+after the user confirms.
+
+## NEXT: P7 — ISO 7200 title block + drawing text (C7)
+Fill the title-block reservation (8 mandatory ISO 7200 fields +
+scale auto-fill, sheet x-of-y, projection symbol already drawn,
+"Dimensions in millimetres" + ISO 8015 note, revision rows); layout
+180 mm fixed × 63 mm, bottom-right; text via the existing text
+engine vector glyphs into the flattened stream (the SheetText
+records stay — glyph primitives become a parallel emission for
+PDF/SVG); **bundle a single-stroke ISO 3098 font** (OSIFONT —
+verify the GPL font-embedding exception at vendoring; public-domain
+Hershey fallback) via the bundled-font pattern; the A–A section
+label + arrows on the parent view (the P4 carry-over);
+`drawing_title_block_update{sheet_id, TitleBlock}` + a
+TitleBlockEditor floating panel.  Test
+`cad_core_drawing_title_block_test` — 8 fields rendered, auto-fills,
+glyph determinism golden.
 
 ---
 

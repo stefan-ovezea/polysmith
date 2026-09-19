@@ -135,3 +135,86 @@ export function makeDrawingSectionUpdateCommand(
     payload: { drawing_id: drawingId, view_id: viewId, section },
   };
 }
+
+// ── Dimensions (P6) ───────────────────────────────────────────────
+
+export function makeDrawingDimensionCreateCommand(params: {
+  drawingId: string;
+  viewId: string;
+  dimType: "linear" | "angular" | "radius" | "diameter";
+  pick: [number, number];
+  pick2?: [number, number];
+  annotationId?: string;
+}): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_dimension_create",
+    payload: {
+      drawing_id: params.drawingId,
+      view_id: params.viewId,
+      dim_type: params.dimType,
+      pick: params.pick,
+      ...(params.pick2 ? { pick_2: params.pick2 } : {}),
+      ...(params.annotationId ? { annotation_id: params.annotationId } : {}),
+    },
+  };
+}
+
+export function makeDrawingDimensionUpdateCommand(params: {
+  drawingId: string;
+  annotationId: string;
+  textOverride?: string;
+  prefix?: string;
+  arrowFlip?: boolean;
+  textOffset?: [number, number];
+}): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_dimension_update",
+    payload: {
+      drawing_id: params.drawingId,
+      annotation_id: params.annotationId,
+      ...(params.textOverride !== undefined
+        ? { text_override: params.textOverride }
+        : {}),
+      ...(params.prefix !== undefined ? { prefix: params.prefix } : {}),
+      ...(params.arrowFlip !== undefined
+        ? { arrow_flip: params.arrowFlip }
+        : {}),
+      ...(params.textOffset !== undefined
+        ? { text_offset: params.textOffset }
+        : {}),
+    },
+  };
+}
+
+export function makeDrawingDimensionDeleteCommand(
+  drawingId: string,
+  annotationId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_dimension_delete",
+    payload: { drawing_id: drawingId, annotation_id: annotationId },
+  };
+}
+
+export function makeDrawingDimensionPreviewCommand(params: {
+  drawingId: string;
+  viewId: string;
+  dimType: "linear" | "angular" | "radius" | "diameter";
+  pick: [number, number];
+  pick2?: [number, number];
+}): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_dimension_preview",
+    payload: {
+      drawing_id: params.drawingId,
+      view_id: params.viewId,
+      dim_type: params.dimType,
+      pick: params.pick,
+      ...(params.pick2 ? { pick_2: params.pick2 } : {}),
+    },
+  };
+}

@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "core/document/document_state.h"
+#include "core/drawing/drawing_dimension_geometry.h"
 #include "core/drawing/drawing_projection.h"
 #include "core/drawing/drawing_runtime.h"
 
@@ -545,6 +546,7 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
   // coincidence-priority pass needs the full geometry.
   std::vector<SheetPrimitive> view_primitives;
   std::vector<SheetPrimitive> hatch_primitives;
+  std::vector<SheetPrimitive> dimension_primitives;
   int view_index = 0;
   for (const auto& view_id : sheet->view_ids) {
     ++view_index;
@@ -591,6 +593,31 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
         bounds.max[0] = std::max({bounds.max[0], p.p0[0], p.p1[0]});
         bounds.max[1] = std::max({bounds.max[1], p.p0[1], p.p1[1]});
       }
+      // ── Dimensions (P6) ──────────────────────────────────────
+      // The refresh pass resolved this view's annotations against
+      // the fresh projection; the flatten consumes the resolved
+      // attachment geometry (memory-only, like the projections).
+      // Annotation primitives never join the view-geometry dedup —
+      // they draw on top, after hatching.
+      for (const auto& annotation : drawing->annotations) {
+        if (annotation.view_id != view->view_id) {
+          continue;
+        }
+        const ResolvedDimension* resolved = drawing_runtime::cached_dimension(
+            document, annotation.annotation_id);
+        if (resolved == nullptr || resolved->broken) {
+          continue;  // no geometry (the panel shows the warning)
+        }
+        DimensionGraphics graphics =
+            build_dimension_graphics(*resolved, annotation, *view,
+                                     resolved->stale);
+        dimension_primitives.insert(dimension_primitives.end(),
+                                    graphics.primitives.begin(),
+                                    graphics.primitives.end());
+        if (graphics.text.has_value()) {
+          stream.texts.push_back(graphics.text.value());
+        }
+      }
     }
     stream.views.push_back(std::move(bounds));
   }
@@ -633,6 +660,10 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
     emit_primitive(stream.primitives, std::move(p));
   }
   for (auto& p : hatch_primitives) {
+    stream.primitives.push_back(std::move(p));
+  }
+  // Dimensions last — annotations draw on top of the sheet content.
+  for (auto& p : dimension_primitives) {
     stream.primitives.push_back(std::move(p));
   }
   return stream;

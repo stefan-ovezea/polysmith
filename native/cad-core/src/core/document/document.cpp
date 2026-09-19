@@ -2,6 +2,7 @@
 #include "core/cam/cam_runtime.h"
 #include "core/drawing/drawing_projection.h"
 #include "core/drawing/drawing_refresh.h"
+#include "core/drawing/drawing_resolution.h"
 #include "core/drawing/drawing_runtime.h"
 #include "core/diagnostics/logger.h"
 #include "core/sketch/sketch_feature.h"

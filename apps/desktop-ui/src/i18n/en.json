@@ -226,6 +226,8 @@
       "deleteDrawingTitle": "Delete the active drawing",
       "sheetSettings": "Sheet…",
       "sheetSettingsTitle": "Sheet settings: paper, orientation, projection angle",
+      "dimension": "Dimension",
+      "dimensionTitle": "Dimension a view: pick an edge (a second edge makes a distance or angle), Enter to commit",
       "viewCount": "{{count}} view(s)",
       "noDrawing": "No drawing yet",
       "exists": "A drawing already exists in this document."
@@ -250,6 +252,17 @@
       "top": "Top",
       "bottom": "Bottom",
       "back": "Back"
+    },
+    "dimensionPanel": {
+      "title": "Dimension",
+      "pickHint": "Click an edge on the sheet — the value previews live.  A second edge makes a distance or angle.",
+      "pickCount": "{{count}} edge(s) picked",
+      "kind": "Dimension type",
+      "kindLinear": "Linear",
+      "kindRadius": "Radius",
+      "kindDiameter": "Diameter",
+      "kindAngular": "Angle",
+      "clearPicks": "Clear"
     },
     "sheetPanel": {
       "title": "Sheet settings",

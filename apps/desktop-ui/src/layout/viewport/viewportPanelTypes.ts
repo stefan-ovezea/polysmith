@@ -3,6 +3,7 @@ import type {
   ArmedSketchConstraint,
   ConstraintType,
   DocumentState,
+  DrawingDimensionPreviewPayload,
   MoveFeatureParameters,
   SelectionFilter,
   SlicerExportFormat,
@@ -56,6 +57,13 @@ export interface ViewportPanelProps {
   // stock, toolpath or sketch objects) and fits the camera to the
   // sheet — the workspace-leak discipline.
   showDrawingSheet?: boolean;
+  // P6: the non-mutating dimension preview drawn on the sheet (the
+  // core computes value + graphics per pick).
+  drawingDimensionPreview?: DrawingDimensionPreviewPayload | null;
+  // P6 dimension tool: while armed, every pointer-up in the drawing
+  // workspace delivers the clicked sheet-mm point.
+  drawingPickArmed?: boolean;
+  onDrawingPick?: (point: [number, number]) => void;
   wcsOrientation?: string;
   // CAM setup the viewport renders (WCS marker, stock box, origin
   // snap candidates) — falls back to the first setup.

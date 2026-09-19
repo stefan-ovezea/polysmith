@@ -211,6 +211,11 @@ import type {
   DrawingViewDeleteCommand,
   DrawingViewMoveCommand,
   DrawingSectionUpdateCommand,
+  DrawingDimensionCreateCommand,
+  DrawingDimensionUpdateCommand,
+  DrawingDimensionDeleteCommand,
+  DrawingDimensionPreviewCommand,
+  DrawingDimensionPreviewPayload,
 } from "./ipc/drawingCommands";
 import type {
   FeatureEntry,
@@ -699,6 +704,12 @@ export interface LogEntry {
   timestamp: string;
 }
 
+export interface DrawingDimensionPreviewEvent {
+  id: string;
+  type: "drawing_dimension_preview";
+  payload: DrawingDimensionPreviewPayload;
+}
+
 export type CoreMessage =
   | HelloEvent
   | PongEvent
@@ -711,6 +722,7 @@ export type CoreMessage =
   | LogEvent
   | TrimPreviewResultEvent
   | CornerTrimPreviewResultEvent
+  | DrawingDimensionPreviewEvent
   | CamGenerationProgressEvent
   | CamGenerationResultEvent
   | CamPostListResultEvent
@@ -1050,6 +1062,10 @@ export type CoreCommand =
   | DrawingViewDeleteCommand
   | DrawingViewMoveCommand
   | DrawingSectionUpdateCommand
+  | DrawingDimensionCreateCommand
+  | DrawingDimensionUpdateCommand
+  | DrawingDimensionDeleteCommand
+  | DrawingDimensionPreviewCommand
   | RemoveSketchProjectionsCommand
   | RedefineSketchPlaneCommand
   | ProjectFaceIntoSketchCommand

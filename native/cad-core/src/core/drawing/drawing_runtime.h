@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "core/drawing/drawing_resolution.h"
 #include "core/drawing/drawing_types.h"
 
 namespace polysmith::core {
@@ -31,6 +32,13 @@ struct Entry {
   ProjectionResult projection;
 };
 
+/// A resolved dimension value + attachment geometry (memory-only, the
+/// projection contract: derived state never enters undo snapshots).
+struct DimensionEntry {
+  int revision = -1;
+  ResolvedDimension dimension;
+};
+
 struct PerDocument {
   int last_revision = -1;
   std::unordered_map<std::string, Entry> projections;  // view_id -> result
@@ -39,6 +47,10 @@ struct PerDocument {
   // when its source body disappears — the SolidWorks-detached
   // precedent, never a silent substitute.
   std::unordered_map<std::string, Entry> last_known;   // view_id -> result
+  // Resolved dimensions keyed by annotation id, with the same
+  // last-known retention for broken annotations.
+  std::unordered_map<std::string, DimensionEntry> dimensions;
+  std::unordered_map<std::string, DimensionEntry> last_known_dimensions;
 };
 
 PerDocument& document_state(const std::string& document_id);
@@ -83,6 +95,26 @@ void drop_stale(const DocumentState& document, int target_revision);
 // branch's bumped value), so a branch switch invalidates everything
 // and the views honestly fall back to re-projection.
 void invalidate(const std::string& document_id);
+
+// ── Resolved dimensions (P6) ──────────────────────────────────────
+//
+// Same revision discipline as projections: resolved at refresh time
+// against the fresh projection, validated on read, pruned into
+// last_known by drop_stale so broken annotations keep their value.
+
+const ResolvedDimension* cached_dimension(const DocumentState& document,
+                                          const std::string& annotation_id);
+const ResolvedDimension* cached_dimension_at(const DocumentState& document,
+                                             const std::string& annotation_id,
+                                             int revision);
+void store_dimension_at(const DocumentState& document,
+                        const std::string& annotation_id,
+                        ResolvedDimension dimension, int target_revision);
+const ResolvedDimension* last_known_dimension(const DocumentState& document,
+                                              const std::string& annotation_id);
+/// Removes a deleted annotation's cached state (both maps).
+void erase_dimension(const std::string& document_id,
+                     const std::string& annotation_id);
 
 }  // namespace drawing_runtime
 

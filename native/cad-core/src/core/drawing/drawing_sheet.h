@@ -33,7 +33,7 @@ struct SheetLineStyle {
 };
 
 struct SheetPrimitive {
-  /// "line" | "circle_arc" | "ellipse_arc"
+  /// "line" | "circle_arc" | "ellipse_arc" | "filled_poly"
   std::string kind = "line";
   /// Endpoints (sheet-mm) — always populated.
   std::array<double, 2> p0 = {0.0, 0.0};
@@ -47,15 +47,38 @@ struct SheetPrimitive {
   /// Angular parameters (radians) for circle/ellipse arcs.
   double start_angle = 0.0;
   double end_angle = 0.0;
+  /// Polygon vertices (sheet-mm) for "filled_poly" — closed filled
+  /// paths: dimension arrowheads today, any solid fill later.
+  std::vector<std::array<double, 2>> points;
   SheetLineStyle style;
   /// Why the primitive exists: "view_geometry" | "hatch" |
   /// "cutting_plane" | "frame" | "centring_mark" | "grid_ref" |
-  /// "projection_symbol" — the backends and the UI can filter on it
-  /// (e.g. the DXF layer split).
+  /// "projection_symbol" | "dimension" — the backends and the UI can
+  /// filter on it (e.g. the DXF layer split).
   std::string purpose = "view_geometry";
   /// "visible" | "hidden" — kept for coloring even though dash
   /// patterns are already applied.
   std::string line_class = "visible";
+};
+
+/// A text record in the flattened stream (sheet-mm).  Kept as DATA
+/// rather than glyph geometry so the DXF backend can emit a real
+/// DRW_Text; P7's text engine upgrades PDF/SVG to vector glyphs and
+/// the UI draws a canvas sprite for now.
+struct SheetText {
+  std::string text;
+  /// Anchor position (sheet-mm) — the anchor is the text CENTER.
+  std::array<double, 2> position = {0.0, 0.0};
+  /// ISO 3098 letter height in mm (dimension numerals 3.5).
+  double height_mm = 3.5;
+  double angle_deg = 0.0;
+  /// "left" | "center" | "right"
+  std::string h_align = "center";
+  /// Why the text exists: "dimension" today, "title_block" / "grid_ref"
+  /// with P7.
+  std::string purpose = "dimension";
+  /// true when the dimension is degraded (last-known value shown).
+  bool stale = false;
 };
 
 /// View metadata on the flattened sheet (content bounds in sheet-mm)
@@ -81,6 +104,7 @@ struct SheetPrimitiveStream {
   double height_mm = 297.0;
   std::vector<SheetPrimitive> primitives;
   std::vector<SheetViewBounds> views;
+  std::vector<SheetText> texts;
 };
 
 /// ISO 5457 trimmed sheet sizes (portrait): A0..A4.

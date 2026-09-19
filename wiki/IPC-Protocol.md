@@ -771,6 +771,28 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
   the undo push; `paper_size_mm` resolves the trimmed ISO 5457
   dimensions for the combination (portrait = width×height as listed,
   landscape swaps).  The bump re-flattens the sheet.
+- `drawing_dimension_create { drawing_id, view_id, dim_type, pick,
+  pick_2?, annotation_id? }` — creates (or, with `annotation_id`,
+  repairs) a dimension: `dim_type` linear/angular/radius/diameter,
+  `pick`/`pick_2` are SHEET-mm points resolved against the view's
+  CURRENT projection — the core mints the `SourceEdgeWitness` from the
+  nearest record's provenance and the persistent edge reference id
+  (`drawing-edge-N`).  A pick is never a stored ordinal (the TNP
+  mantra).  Kind-vs-geometry rules (linear needs a straight edge,
+  diameter only for arcs > 180°, angular needs two non-parallel
+  lines, coincident edges from different sources refuse) throw BEFORE
+  the undo push.
+- `drawing_dimension_update { drawing_id, annotation_id,
+  text_override?, prefix?, arrow_flip?, text_offset? }` — cosmetic
+  edits only (never re-projects, never re-resolves); the bump
+  re-flattens.
+- `drawing_dimension_delete { drawing_id, annotation_id }` — removes
+  the annotation and its cached value.
+- `drawing_dimension_preview { drawing_id, view_id, dim_type, pick,
+  pick_2? }` — NON-mutating: replies with a
+  `drawing_dimension_preview` event `{value, text_value, curves[],
+  text, error?}` — the core-computed value plus the sheet-mm graphics
+  the UI renders until Enter commits the create.
 
 Section views (P4): the refresh cuts every source body with a
 half-space when `section.cut_away` is true (material on the normal
@@ -797,6 +819,22 @@ visible > hidden > cutting_plane > hatch on the undashed records, and
 cutting-plane traces lying on a visible/hidden line are dropped (the
 support-overlap rule).  The stream is deterministic and memory-only
 (golden-file pinned).
+
+Dimensions (P6): the refresh pass resolves each annotation against
+its view's fresh projection through the witness ladder — identity
+(body + edge index + kind, the topology-stable fast path that follows
+parametric edits) → strict body+geometry (0.01 mm) → relaxed geometry
+(0.1 mm, re-created features) → ambiguous (multiple distinct sources
+match → refuse) → not found (dependency_broken + warning + the
+last-known value kept, marked stale — never blank, never silently
+substituted).  Measured values and attachment geometry live in the
+runtime cache (memory-only, the projection contract).  The flatten
+emits the ISO 129-1 graphics: extension lines (8×d gap/overshoot),
+closed filled arrowheads (sheet-mm `filled_poly` primitives), the
+unbroken dimension line, and a `texts[]` record (3.5 mm lettering,
+unidirectional, ⌀/R prefixes, decimal separator, ° on angles).  A
+cosmetic `drawing_dimension_update` never re-projects — it only
+re-flattens.
 
 Every mutator replies with a `document_state` event; validation errors
 reply with an `error` event.  Views are re-projected inside the single

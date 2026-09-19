@@ -16,9 +16,10 @@ namespace polysmith::core {
 // flattened stream (frame, centring marks, grid refs, title block)
 // lands in P5 on top of this same payload shape.
 
-/// One exact curve on the sheet: line / circle arc / ellipse arc.
+/// One exact curve on the sheet: line / circle arc / ellipse arc /
+/// filled polygon (dimension arrowheads).
 struct ViewportDrawingCurve {
-  /// "line" | "circle" | "ellipse"
+  /// "line" | "circle" | "ellipse" | "filled_poly"
   std::string kind = "line";
   /// "visible" | "hidden"
   std::string line_class = "visible";
@@ -27,9 +28,9 @@ struct ViewportDrawingCurve {
   /// and scanline hatching on section views)
   std::string curve_class = "sharp";
   /// "view_geometry" | "hatch" | "cutting_plane" | "frame" |
-  /// "centring_mark" | "grid_ref" | "projection_symbol" — from the
-  /// P5 flattened stream (the furniture purposes render in the
-  /// border color).
+  /// "centring_mark" | "grid_ref" | "projection_symbol" |
+  /// "dimension" — from the P5 flattened stream (the furniture
+  /// purposes render in the border color).
   std::string purpose = "view_geometry";
   /// ISO line-group width in mm (P5: dash patterns are already
   /// applied by the core flatten — the renderer draws continuous
@@ -47,6 +48,25 @@ struct ViewportDrawingCurve {
   /// Angular parameters (radians) for circle/ellipse arcs.
   double start_angle = 0.0;
   double end_angle = 0.0;
+  /// Polygon vertices (sheet-mm) for "filled_poly" — closed filled
+  /// paths (dimension arrowheads).
+  std::vector<std::array<double, 2>> points;
+};
+
+/// One text record on the sheet (P6: dimension values).  The renderer
+/// draws a sprite; the DXF backend emits a real DRW_Text from the
+/// same record.
+struct ViewportDrawingText {
+  std::string text;
+  /// Anchor = text CENTER (sheet-mm).
+  std::array<double, 2> position = {0.0, 0.0};
+  double height_mm = 3.5;
+  double angle_deg = 0.0;
+  /// "left" | "center" | "right"
+  std::string h_align = "center";
+  std::string purpose = "dimension";
+  /// true when the dimension is degraded (last-known value shown).
+  bool stale = false;
 };
 
 /// One view on the sheet: label + degradation state (the curves
@@ -73,6 +93,7 @@ struct ViewportDrawingSheet {
   double height_mm = 297.0;
   std::vector<ViewportDrawingCurve> curves;
   std::vector<ViewportDrawingView> views;
+  std::vector<ViewportDrawingText> texts;
 };
 
 }  // namespace polysmith::core

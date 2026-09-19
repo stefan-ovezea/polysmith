@@ -635,6 +635,7 @@ export const viewportStateSchema = z.object({
               minor_radius: z.number().optional(),
               start_angle: z.number().default(0),
               end_angle: z.number().default(0),
+              points: z.array(z.tuple([z.number(), z.number()])).optional(),
             }),
           )
           .default([]),
@@ -649,6 +650,19 @@ export const viewportStateSchema = z.object({
               max: z.tuple([z.number(), z.number()]),
               stale: z.boolean(),
               warning: z.string(),
+            }),
+          )
+          .default([]),
+        texts: z
+          .array(
+            z.object({
+              text: z.string(),
+              position: z.tuple([z.number(), z.number()]),
+              height_mm: z.number().default(3.5),
+              angle_deg: z.number().default(0),
+              h_align: z.string().default("center"),
+              purpose: z.string().default("dimension"),
+              stale: z.boolean().default(false),
             }),
           )
           .default([]),
