@@ -11,6 +11,7 @@
 #include "core/drawing/drawing_runtime.h"
 #include "core/drawing/drawing_text.h"
 #include "core/drawing/drawing_title_block.h"
+#include "core/geometry/body_compiler.h"
 
 namespace polysmith::core {
 
@@ -461,6 +462,95 @@ void flatten_view(std::vector<SheetPrimitive>& view_primitives,
   }
 }
 
+// ── Shared flatten passes (flatten_sheet + the live view preview) ──
+//
+// (1) Coincidence priority (ISO 128-2): primitives sharing exact
+// geometry collapse to the highest-priority line (visible > hidden >
+// cutting plane); a cutting-plane trace lying ON a visible or hidden
+// line (same support, overlapping range) is dropped entirely — the
+// trace never draws over a real edge.
+
+std::vector<SheetPrimitive> coincidence_pass(
+    std::vector<SheetPrimitive>&& view_primitives) {
+  std::vector<SheetPrimitive> deduped;
+  std::unordered_map<std::string, size_t> by_key;
+  for (auto& p : view_primitives) {
+    const std::string key = geometry_key(p);
+    const auto found = by_key.find(key);
+    if (found == by_key.end()) {
+      by_key.emplace(key, deduped.size());
+      deduped.push_back(std::move(p));
+    } else if (priority_rank(p) < priority_rank(deduped[found->second])) {
+      deduped[found->second] = std::move(p);
+    }
+  }
+  std::vector<SheetPrimitive> survivors;
+  for (auto& p : deduped) {
+    if (p.purpose == "cutting_plane") {
+      const bool covered = std::any_of(
+          deduped.begin(), deduped.end(), [&](const SheetPrimitive& other) {
+            return other.purpose == "view_geometry" &&
+                   supports_overlap(p, other);
+          });
+      if (covered) {
+        continue;
+      }
+    }
+    survivors.push_back(std::move(p));
+  }
+  return survivors;
+}
+
+// (2) Section labels (P7: A–A labels + arrows on cutting planes).
+// Only traces that survived the coincidence pass get labels — a
+// trace lying on a real edge is dropped and so is its label.
+
+void collect_section_labels(const std::vector<SheetPrimitive>& survivors,
+                            std::vector<SheetPrimitive>& out_primitives,
+                            std::vector<SheetText>& out_texts) {
+  for (const auto& p : survivors) {
+    if (p.purpose != "cutting_plane" || p.section_label.empty()) {
+      continue;
+    }
+    const double mx = 0.5 * (p.p0[0] + p.p1[0]);
+    const double my = 0.5 * (p.p0[1] + p.p1[1]);
+    for (const auto& end : {p.p0, p.p1}) {
+      // The section's sight direction from the trace pass; outward
+      // from the trace midpoint is the fallback.
+      std::array<double, 2> d = {end[0] - mx, end[1] - my};
+      if (p.trace_sight_dir.has_value()) {
+        d = p.trace_sight_dir.value();
+      }
+      const double len = std::hypot(d[0], d[1]);
+      if (len < 1e-9) {
+        continue;
+      }
+      d[0] /= len;
+      d[1] /= len;
+      // Filled arrow: tip at the trace end, 3 mm long, 1 mm
+      // half-width (the dimension arrows' proportions).
+      const double tail_x = end[0] - 3.0 * d[0];
+      const double tail_y = end[1] - 3.0 * d[1];
+      SheetPrimitive arrow;
+      arrow.kind = "filled_poly";
+      arrow.purpose = "section_label";
+      arrow.style = {"continuous", kThinLineMm};
+      arrow.points = {{end[0], end[1]},
+                      {tail_x - d[1], tail_y + d[0]},
+                      {tail_x + d[1], tail_y - d[0]}};
+      out_primitives.push_back(std::move(arrow));
+      // The label letter beyond the arrow tail.
+      SheetText label;
+      label.text = p.section_label;
+      label.position = {end[0] - 5.5 * d[0], end[1] - 5.5 * d[1]};
+      label.height_mm = 5.0;
+      label.h_align = "center";
+      label.purpose = "section_label";
+      out_texts.push_back(std::move(label));
+    }
+  }
+}
+
 }  // namespace
 
 // ── Public API ────────────────────────────────────────────────────
@@ -608,85 +698,15 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
     stream.views.push_back(std::move(bounds));
   }
 
-  // ── Coincidence priority (ISO 128-2) ────────────────────────────
-  // (1) Primitives sharing exact geometry collapse to the highest-
-  // priority line.  (2) A cutting-plane trace lying ON a visible or
-  // hidden line (same support, overlapping range) is dropped
-  // entirely — the trace never draws over a real edge.
-  std::vector<SheetPrimitive> deduped;
-  std::unordered_map<std::string, size_t> by_key;
-  for (auto& p : view_primitives) {
-    const std::string key = geometry_key(p);
-    const auto found = by_key.find(key);
-    if (found == by_key.end()) {
-      by_key.emplace(key, deduped.size());
-      deduped.push_back(std::move(p));
-    } else if (priority_rank(p) < priority_rank(deduped[found->second])) {
-      deduped[found->second] = std::move(p);
-    }
-  }
-  std::vector<SheetPrimitive> survivors;
-  for (auto& p : deduped) {
-    if (p.purpose == "cutting_plane") {
-      const bool covered = std::any_of(
-          deduped.begin(), deduped.end(), [&](const SheetPrimitive& other) {
-            return other.purpose == "view_geometry" &&
-                   supports_overlap(p, other);
-          });
-      if (covered) {
-        continue;
-      }
-    }
-    survivors.push_back(std::move(p));
-  }
-
-  // ── Section labels (P7: A–A labels + arrows on cutting planes) ─
-  // Collected BEFORE the dashing pass moves the survivors out.  Only
-  // traces that survived the coincidence pass get labels — a trace
-  // lying on a real edge is dropped and so is its label.
+  // ── Coincidence priority (ISO 128-2) + section labels ────────────
+  // Shared with the live view preview (see the helpers above) — the
+  // passes must be IDENTICAL for a preview and its committed view.
+  std::vector<SheetPrimitive> survivors = coincidence_pass(
+      std::move(view_primitives));
   std::vector<SheetPrimitive> section_label_primitives;
   std::vector<SheetText> section_label_texts;
-  for (const auto& p : survivors) {
-    if (p.purpose != "cutting_plane" || p.section_label.empty()) {
-      continue;
-    }
-    const double mx = 0.5 * (p.p0[0] + p.p1[0]);
-    const double my = 0.5 * (p.p0[1] + p.p1[1]);
-    for (const auto& end : {p.p0, p.p1}) {
-      // The section's sight direction from the trace pass; outward
-      // from the trace midpoint is the fallback.
-      std::array<double, 2> d = {end[0] - mx, end[1] - my};
-      if (p.trace_sight_dir.has_value()) {
-        d = p.trace_sight_dir.value();
-      }
-      const double len = std::hypot(d[0], d[1]);
-      if (len < 1e-9) {
-        continue;
-      }
-      d[0] /= len;
-      d[1] /= len;
-      // Filled arrow: tip at the trace end, 3 mm long, 1 mm
-      // half-width (the dimension arrows' proportions).
-      const double tail_x = end[0] - 3.0 * d[0];
-      const double tail_y = end[1] - 3.0 * d[1];
-      SheetPrimitive arrow;
-      arrow.kind = "filled_poly";
-      arrow.purpose = "section_label";
-      arrow.style = {"continuous", kThinLineMm};
-      arrow.points = {{end[0], end[1]},
-                      {tail_x - d[1], tail_y + d[0]},
-                      {tail_x + d[1], tail_y - d[0]}};
-      section_label_primitives.push_back(std::move(arrow));
-      // The label letter beyond the arrow tail.
-      SheetText label;
-      label.text = p.section_label;
-      label.position = {end[0] - 5.5 * d[0], end[1] - 5.5 * d[1]};
-      label.height_mm = 5.0;
-      label.h_align = "center";
-      label.purpose = "section_label";
-      section_label_texts.push_back(std::move(label));
-    }
-  }
+  collect_section_labels(survivors, section_label_primitives,
+                         section_label_texts);
 
   // Dashing happens AFTER the priority pass, then the primitives
   // land in the stream (furniture is already in).
@@ -719,6 +739,109 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
                              glyphs.end());
   }
   return stream;
+}
+
+std::optional<ViewPreviewGeometry> preview_view_geometry(
+    const DocumentState& document, const std::string& drawing_id,
+    const DrawingView& def) {
+  const Drawing* drawing = nullptr;
+  for (const auto& d : document.drawing.drawings) {
+    if (d.drawing_id == drawing_id) {
+      drawing = &d;
+      break;
+    }
+  }
+  if (drawing == nullptr) {
+    return std::nullopt;
+  }
+
+  ViewPreviewGeometry preview;
+
+  // ── Frame + sources (the refresh pass's rules, un-cached) ───────
+  const auto frame = resolve_view_frame(def);
+  if (!frame.has_value()) {
+    preview.warning = def.kind == "section"
+                          ? "The cutting plane normal is degenerate."
+                          : "The view direction could not be resolved.";
+    return preview;
+  }
+  const auto bodies = compile_bodies(document, /*include_meshes=*/false);
+  std::vector<SourceBody> sources;
+  for (const auto& body_id : def.source_body_ids) {
+    const auto found =
+        std::find_if(bodies.bodies.begin(), bodies.bodies.end(),
+                     [&](const CompiledBody& b) { return b.id == body_id; });
+    if (found == bodies.bodies.end()) {
+      preview.warning = "The source body '" + body_id +
+                        "' no longer exists.";
+      return preview;
+    }
+    sources.push_back({body_id, found->shape});
+  }
+
+  ProjectionInput input;
+  input.sources = std::move(sources);
+  input.frame = frame.value();
+  input.show_hidden = def.show_hidden;
+  input.section = def.kind == "section" ? def.section : std::nullopt;
+  // Sibling sections trace their cutting planes onto the preview —
+  // the preview's own (uncommitted) section is not among them.
+  for (const auto& other : drawing->views) {
+    if (other.section.has_value()) {
+      input.section_traces.push_back({other.section.value()});
+    }
+  }
+  input.source_revision = document.revision;
+
+  const ProjectionResult projection = project(input);
+
+  // ── Flatten exactly like a committed view ────────────────────────
+  std::vector<SheetPrimitive> view_primitives;
+  std::vector<SheetPrimitive> hatch_primitives;
+  std::vector<SheetHatchRegion> hatch_regions;
+  flatten_view(view_primitives, hatch_primitives, hatch_regions, def,
+               projection);
+
+  // Content bounds from the view geometry (pre-dash, the flatten_sheet
+  // rule) — the UI draws the placement frame from these.
+  for (const auto& p : view_primitives) {
+    if (p.purpose != "view_geometry") {
+      continue;
+    }
+    if (!preview.min.has_value()) {
+      preview.min = std::array<double, 2>{p.p0[0], p.p0[1]};
+      preview.max = std::array<double, 2>{p.p0[0], p.p0[1]};
+    }
+    preview.min.value()[0] =
+        std::min({preview.min.value()[0], p.p0[0], p.p1[0]});
+    preview.min.value()[1] =
+        std::min({preview.min.value()[1], p.p0[1], p.p1[1]});
+    preview.max.value()[0] =
+        std::max({preview.max.value()[0], p.p0[0], p.p1[0]});
+    preview.max.value()[1] =
+        std::max({preview.max.value()[1], p.p0[1], p.p1[1]});
+  }
+
+  // The same coincidence + label + dash passes as flatten_sheet —
+  // a preview and its committed view must be pixel-identical.
+  std::vector<SheetPrimitive> survivors =
+      coincidence_pass(std::move(view_primitives));
+  std::vector<SheetPrimitive> section_label_primitives;
+  std::vector<SheetText> section_label_texts;
+  collect_section_labels(survivors, section_label_primitives,
+                         section_label_texts);
+  for (auto& p : survivors) {
+    emit_primitive(preview.primitives, std::move(p));
+  }
+  for (auto& p : hatch_primitives) {
+    preview.primitives.push_back(std::move(p));
+  }
+  for (auto& p : section_label_primitives) {
+    preview.primitives.push_back(std::move(p));
+  }
+  preview.texts = std::move(section_label_texts);
+
+  return preview;
 }
 
 }  // namespace polysmith::core

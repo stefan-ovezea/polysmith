@@ -8,6 +8,7 @@ import {
   makeDrawingSheetUpdateCommand,
   makeDrawingViewCreateCommand,
   makeDrawingViewDeleteCommand,
+  makeDrawingViewMoveCommand,
   makeDrawingSectionUpdateCommand,
   makeDrawingTitleBlockUpdateCommand,
   makeDrawingExportCommand,
@@ -15,6 +16,7 @@ import {
   makeDrawingDimensionUpdateCommand,
   makeDrawingDimensionDeleteCommand,
   makeDrawingDimensionPreviewCommand,
+  makeDrawingViewPreviewCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
   makeCamSetupDeleteCommand,
@@ -241,6 +243,7 @@ import type {
   Drawing,
   DrawingDimensionPreviewPayload,
   DrawingView,
+  DrawingViewPreviewPayload,
   SectionDefinition,
   TitleBlock,
   ExtrudeAdvancedParameters,
@@ -264,6 +267,7 @@ import type {
 
 import { useCadCoreStore } from "@/state";
 import { SketchTool } from "@/types";
+import { drawingViewPreviewResultSchema } from "@/lib/schemas/ipc/drawingSchema";
 import {
   sendAndRefreshSessionViewport,
   sendAndRefreshViewport,
@@ -1738,6 +1742,15 @@ export function useCadCore() {
         makeDrawingViewDeleteCommand(drawingId, viewId),
       );
     },
+    drawingViewMove: async (
+      drawingId: string,
+      viewId: string,
+      sheetPosition: [number, number],
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingViewMoveCommand(drawingId, viewId, sheetPosition),
+      );
+    },
     drawingSheetUpdate: async (
       drawingId: string,
       sheetId: string,
@@ -1831,6 +1844,30 @@ export function useCadCore() {
       const payload = (response as { payload?: DrawingDimensionPreviewPayload })
         .payload;
       return payload ?? null;
+    },
+    drawingViewPreview: async (params: {
+      drawingId: string;
+      sheetId: string;
+      view: DrawingView;
+    }): Promise<DrawingViewPreviewPayload | null> => {
+      // Awaited: the reply is the drawing_view_preview_result event
+      // carrying the ghost geometry (never mutates).  Zod-validated —
+      // a schema mismatch degrades to no preview rather than garbage.
+      const response = await sendCoreCommandAwaited(
+        makeDrawingViewPreviewCommand(
+          params.drawingId,
+          params.sheetId,
+          params.view,
+        ) as CoreCommand & { id: string },
+      );
+      const raw = (response as { payload?: unknown }).payload;
+      if (!raw) {
+        return null;
+      }
+      const parsed = drawingViewPreviewResultSchema.safeParse(raw);
+      return parsed.success
+        ? (parsed.data as DrawingViewPreviewPayload)
+        : null;
     },
     camSetupUpdate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupUpdateCommand(camSetup));

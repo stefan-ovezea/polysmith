@@ -82,6 +82,12 @@ export interface DrawingViewMoveCommand {
   };
 }
 
+export interface DrawingViewPreviewCommand {
+  id: string;
+  type: "drawing_view_preview";
+  payload: { drawing_id: string; sheet_id: string; view: DrawingView };
+}
+
 export interface DrawingSectionUpdateCommand {
   id: string;
   type: "drawing_section_update";

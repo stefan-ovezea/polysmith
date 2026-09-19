@@ -4,6 +4,7 @@ import type {
   ConstraintType,
   DocumentState,
   DrawingDimensionPreviewPayload,
+  DrawingViewPreviewPayload,
   MoveFeatureParameters,
   SelectionFilter,
   SlicerExportFormat,
@@ -60,6 +61,27 @@ export interface ViewportPanelProps {
   // P6: the non-mutating dimension preview drawn on the sheet (the
   // core computes value + graphics per pick).
   drawingDimensionPreview?: DrawingDimensionPreviewPayload | null;
+  // Insert View ghost (drawing_view_preview_result) — translucent
+  // geometry + placement frame on the active sheet.
+  drawingViewPreview?: DrawingViewPreviewPayload | null;
+  // In-progress mouse drag of a committed view (dashed frame ghost).
+  drawingViewDrag?: { min: [number, number]; max: [number, number]; label: string } | null;
+  // Mouse-first insert: while armed, the sheet tracks the cursor
+  // (hover feeds the ghost position) and a click commits the view at
+  // that point — no coordinate typing.
+  drawingInsertArmed?: boolean;
+  onDrawingInsertMove?: (point: [number, number] | null) => void;
+  onDrawingInsertCommit?: (point: [number, number]) => void;
+  // Mouse-first reposition: grabbing a view frame drags it;
+  // pointer-up commits drawing_view_move.
+  drawingViewDragArmed?: boolean;
+  onDrawingViewDragStart?: (
+    viewId: string,
+    point: [number, number],
+    grabOffset: [number, number],
+  ) => void;
+  onDrawingViewDragMove?: (point: [number, number]) => void;
+  onDrawingViewDrop?: (point: [number, number]) => void;
   // P6 dimension tool: while armed, every pointer-up in the drawing
   // workspace delivers the clicked sheet-mm point.
   drawingPickArmed?: boolean;

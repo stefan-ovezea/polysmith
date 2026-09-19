@@ -245,3 +245,13 @@ export interface ViewportDrawingSheet {
   views: ViewportDrawingView[];
   texts: ViewportDrawingText[];
 }
+
+/** drawing_view_preview_result — the core's ghost of an uncommitted
+ *  view definition (same vocabulary as a committed sheet view). */
+export interface DrawingViewPreviewPayload {
+  drawing_id: string;
+  sheet_id: string;
+  curves: ViewportDrawingCurve[];
+  texts: ViewportDrawingText[];
+  view: ViewportDrawingView;
+}

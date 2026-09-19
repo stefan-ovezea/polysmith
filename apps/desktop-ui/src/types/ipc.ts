@@ -210,6 +210,7 @@ import type {
   DrawingViewUpdateCommand,
   DrawingViewDeleteCommand,
   DrawingViewMoveCommand,
+  DrawingViewPreviewCommand,
   DrawingSectionUpdateCommand,
   DrawingTitleBlockUpdateCommand,
   DrawingExportCommand,
@@ -232,6 +233,7 @@ import type {
 } from "./geometry/cam";
 import type {
   DrawingDocumentData,
+  DrawingViewPreviewPayload,
   ViewportDrawingSheet,
 } from "./geometry/drawing";
 import type { SelectionFilter, SelectionFilterUpdate } from "./selectionFilter";
@@ -712,6 +714,12 @@ export interface DrawingDimensionPreviewEvent {
   payload: DrawingDimensionPreviewPayload;
 }
 
+export interface DrawingViewPreviewResultEvent {
+  id: string;
+  type: "drawing_view_preview_result";
+  payload: DrawingViewPreviewPayload;
+}
+
 export type CoreMessage =
   | HelloEvent
   | PongEvent
@@ -725,6 +733,7 @@ export type CoreMessage =
   | TrimPreviewResultEvent
   | CornerTrimPreviewResultEvent
   | DrawingDimensionPreviewEvent
+  | DrawingViewPreviewResultEvent
   | CamGenerationProgressEvent
   | CamGenerationResultEvent
   | CamPostListResultEvent
@@ -1063,6 +1072,7 @@ export type CoreCommand =
   | DrawingViewUpdateCommand
   | DrawingViewDeleteCommand
   | DrawingViewMoveCommand
+  | DrawingViewPreviewCommand
   | DrawingSectionUpdateCommand
   | DrawingTitleBlockUpdateCommand
   | DrawingExportCommand

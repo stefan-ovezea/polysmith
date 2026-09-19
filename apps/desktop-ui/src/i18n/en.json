@@ -243,7 +243,8 @@
     "insertPanel": {
       "title": "Insert View",
       "noBody": "Select a body in the CAD workspace first — the view projects the selected body.",
-      "bodySelected": "{{count}} body selected",
+      "body": "Body",
+      "bodyAll": "All bodies ({{count}})",
       "viewKind": "View type",
       "projectionKind": "Projection",
       "sectionKind": "Section",
@@ -254,12 +255,27 @@
       "hatchSpacing": "Hatch spacing",
       "scale": "Scale",
       "showHidden": "Hidden edges",
+      "position": "Position on sheet",
+      "positionX": "X",
+      "positionY": "Y",
+      "clickToPlace": "Move over the sheet — the view follows the cursor. Click to place it, Escape when done.",
       "front": "Front",
       "right": "Right",
       "left": "Left",
       "top": "Top",
       "bottom": "Bottom",
       "back": "Back"
+    },
+    "newPanel": {
+      "title": "New Drawing",
+      "name": "Name",
+      "paperSize": "Paper",
+      "orientation": "Orientation",
+      "portrait": "Portrait",
+      "landscape": "Landscape",
+      "projectionAngle": "Projection",
+      "firstAngle": "First angle (ISO)",
+      "thirdAngle": "Third angle (ASME)"
     },
     "dimensionPanel": {
       "title": "Dimension",

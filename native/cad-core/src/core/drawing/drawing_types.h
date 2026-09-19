@@ -144,7 +144,10 @@ struct DrawingSheet {
   std::string sheet_id;
   std::string name;
   PaperSize paper_size = "A4";
-  SheetOrientation orientation = "portrait";
+  // Landscape is the mechanical-drawing convention (the ISO 5457
+  // portrait listing is the paper's untrimmed orientation; CAD
+  // sheets default landscape).
+  SheetOrientation orientation = "landscape";
   /// Per-sheet projection-angle override (ISO 5456).  The drawing
   /// default is first-angle; the projection symbol is always shown.
   std::string projection_angle = "first_angle";

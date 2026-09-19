@@ -113,4 +113,17 @@ std::vector<std::array<std::array<double, 2>, 2>> compute_hatch_segments(
 std::optional<DrawingViewFrame> standard_view_frame(
     const std::string& standard_view);
 
+/// Resolves a view's projection frame — the single source of truth
+/// shared by the refresh pass and the live view preview so the two
+/// never drift:
+///   - sections: the view plane IS the cutting plane (P4); view-X is
+///     the orthogonal projection of world +X onto the plane, with
+///     +Y/+Z fallbacks.  A degenerate (zero-length) normal resolves
+///     to nullopt.
+///   - standard views: standard_view_frame(name).
+///   - otherwise: the view's custom frame.
+/// Returns nullopt when nothing resolves (no section, unknown
+/// standard-view name, no custom frame).
+std::optional<DrawingViewFrame> resolve_view_frame(const DrawingView& view);
+
 }  // namespace polysmith::core

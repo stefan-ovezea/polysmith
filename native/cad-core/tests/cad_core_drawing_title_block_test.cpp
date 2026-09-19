@@ -122,6 +122,7 @@ TitleBlockFixture make_fixture() {
   drawing.name = "Test Drawing";
   DrawingSheet sheet;
   sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";  // explicit: the tests pin portrait
   sheet.paper_size = "A4";
   drawing.sheets.push_back(sheet);
   fixture.document = fixture.manager.drawing_create(drawing);
@@ -257,6 +258,7 @@ bool test_sheet_x_of_y() {
   TitleBlockFixture fixture = make_fixture();
   DrawingSheet second_sheet;
   second_sheet.name = "Sheet 2";
+  second_sheet.orientation = "portrait";
   second_sheet.paper_size = "A4";
   fixture.document = fixture.manager.drawing_sheet_create(
       fixture.drawing_id, second_sheet);
@@ -456,6 +458,66 @@ bool test_undo_redo() {
                 "redo restores the title block");
 }
 
+bool test_landscape_keeps_title_block() {
+  TitleBlockFixture fixture = make_fixture();
+  fixture.document = fixture.manager.drawing_title_block_update(
+      fixture.drawing_id, fixture.sheet_id, filled_title_block());
+  // The user's flow: flip the sheet to landscape AFTER filling the
+  // title block — every field must survive and the block must stay
+  // inside the new sheet bounds (regression for "the title box does
+  // not get populated in landscape").
+  fixture.document = fixture.manager.drawing_sheet_update(
+      fixture.drawing_id, fixture.sheet_id, "A4", "landscape",
+      "first_angle", "Sheet 1");
+  const auto flat = polysmith::core::flatten_sheet(
+      fixture.document, fixture.drawing_id, fixture.sheet_id);
+  if (!flat.has_value()) {
+    return expect(false, "flatten_sheet returns a stream");
+  }
+  if (!expect(std::abs(flat->width_mm - 297.0) < 1e-6 &&
+                  std::abs(flat->height_mm - 210.0) < 1e-6,
+              "landscape stream dims 297x210")) {
+    return false;
+  }
+  if (!expect(has_text(flat.value(), "Polysmith GmbH", "title_block") &&
+                  has_text(flat.value(), "PS-2026-001", "title_block") &&
+                  has_text(flat.value(), "Test Bracket", "title_block") &&
+                  has_text(flat.value(), "Dimensions in millimetres",
+                           "title_block"),
+              "every title block field survives the orientation flip")) {
+    return false;
+  }
+  if (!expect(count_purpose(flat.value(), "title_block") > 10,
+              "title block lines exist in landscape")) {
+    return false;
+  }
+  // The block + symbol re-anchor at the landscape bottom-right
+  // (bx = 297−10−180 = 107) — nothing may land off the sheet.
+  for (const auto& p : flat->primitives) {
+    if (p.purpose != "title_block" && p.purpose != "projection_symbol") {
+      continue;
+    }
+    for (const auto& point : {p.p0, p.p1}) {
+      if (point[0] < 0.0 || point[0] > 297.0 || point[1] < 0.0 ||
+          point[1] > 210.0) {
+        std::cerr << "  DEBUG off-sheet point: " << point[0] << ", "
+                  << point[1] << "\n";
+        return expect(false, "title block inside the landscape sheet");
+      }
+    }
+  }
+  for (const auto& t : flat->texts) {
+    if (t.purpose != "title_block") {
+      continue;
+    }
+    if (t.position[0] < 0.0 || t.position[0] > 297.0 ||
+        t.position[1] < 0.0 || t.position[1] > 210.0) {
+      return expect(false, "title block texts inside the landscape sheet");
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -520,6 +582,14 @@ int main() {
 
   std::cout << "  Test 8: undo/redo... ";
   if (test_undo_redo()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 9: landscape keeps the populated title block... ";
+  if (test_landscape_keeps_title_block()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

@@ -286,4 +286,13 @@ json make_drawing_dimension_preview_event(const std::string& id,
   };
 }
 
+json make_drawing_view_preview_event(const std::string& id,
+                                     const json& payload) {
+  return {
+      {"id", id},
+      {"type", "drawing_view_preview_result"},
+      {"payload", payload},
+  };
+}
+
 }  // namespace polysmith::protocol

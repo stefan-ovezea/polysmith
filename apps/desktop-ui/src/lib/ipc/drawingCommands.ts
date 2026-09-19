@@ -109,6 +109,21 @@ export function makeDrawingViewDeleteCommand(
   };
 }
 
+/** Non-mutating live preview of an uncommitted view definition —
+ *  the core replies with drawing_view_preview_result carrying the
+ *  ghost geometry (the same vocabulary as a committed sheet view). */
+export function makeDrawingViewPreviewCommand(
+  drawingId: string,
+  sheetId: string,
+  view: DrawingView,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_view_preview",
+    payload: { drawing_id: drawingId, sheet_id: sheetId, view },
+  };
+}
+
 export function makeDrawingViewMoveCommand(
   drawingId: string,
   viewId: string,

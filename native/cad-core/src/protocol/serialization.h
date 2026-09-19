@@ -31,6 +31,8 @@ json to_payload(const polysmith::core::ViewportSketchDimensionPrimitive& primiti
 json to_payload(const polysmith::core::ViewportSketchConstraintPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive);
 json to_payload(const polysmith::core::ViewportToolpathPrimitive& primitive);
+json to_payload(const polysmith::core::ViewportDrawingCurve& curve);
+json to_payload(const polysmith::core::ViewportDrawingText& text);
 json to_payload(const polysmith::core::ViewportState& viewport);
 
 // ── CAM types (cam_types.h) ─────────────────────────────────────

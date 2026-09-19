@@ -126,6 +126,7 @@
         "drawing_dimension_update",
         "drawing_dimension_delete",
         "drawing_dimension_preview",
+        "drawing_view_preview",
         "export_body_step",
         "export_body_stl",
         "export_document",

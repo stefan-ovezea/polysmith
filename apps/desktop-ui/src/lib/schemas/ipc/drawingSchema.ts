@@ -9,6 +9,11 @@
 
 import { z } from "zod";
 
+import {
+  viewportDrawingCurveShape,
+  viewportDrawingTextShape,
+} from "./viewportStateSchema";
+
 const vec2Schema = z.tuple([z.number(), z.number()]);
 const vec3Schema = z.tuple([z.number(), z.number(), z.number()]);
 
@@ -88,7 +93,7 @@ const drawingSheetSchema = z
     sheet_id: z.string().default(""),
     name: z.string().default(""),
     paper_size: z.string().default("A4"),
-    orientation: z.string().default("portrait"),
+    orientation: z.string().default("landscape"),
     projection_angle: z.string().default("first_angle"),
     view_ids: z.array(z.string()).default([]),
     title_block: titleBlockSchema.default({
@@ -195,3 +200,27 @@ export const drawingDocumentDataSchema = drawingDocumentDataShape
     selected_annotation_id: null,
     decimal_separator: ",",
   }));
+
+// ── View preview result (drawing_view_preview_result event) ───────
+//
+// The core projects an UNCOMMITTED view definition and replies with
+// the ghost geometry in the same vocabulary as a committed sheet view
+// (curves/texts) plus a view record — an empty view_id marks the
+// ghost, and a non-empty warning means the projection degraded.
+
+export const drawingViewPreviewResultSchema = z.object({
+  drawing_id: z.string(),
+  sheet_id: z.string(),
+  curves: z.array(viewportDrawingCurveShape).default([]),
+  texts: z.array(viewportDrawingTextShape).default([]),
+  view: z.object({
+    view_id: z.string().default(""),
+    label: z.string().default(""),
+    scale: z.number().default(1),
+    origin: z.tuple([z.number(), z.number()]).default([0, 0]),
+    min: z.tuple([z.number(), z.number()]).default([0, 0]),
+    max: z.tuple([z.number(), z.number()]).default([0, 0]),
+    stale: z.boolean().default(false),
+    warning: z.string().default(""),
+  }),
+});

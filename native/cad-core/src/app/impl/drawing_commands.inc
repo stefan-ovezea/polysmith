@@ -149,6 +149,101 @@
     return;
   }
 
+  if (command.type == "drawing_view_preview") {
+    // Non-mutating: project + flatten an UNCOMMITTED view definition
+    // and reply with the ghost geometry (the Insert View panel renders
+    // it live until Enter commits the real drawing_view_create).
+    const auto drawing_id = read_string(command.payload, "drawing_id");
+    const auto sheet_id = read_string(command.payload, "sheet_id");
+    const auto def = polysmith::protocol::drawing_view_from_payload(
+        command.payload.at("view"));
+
+    const auto document = document_manager().get_document();
+    if (!document.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return;
+    }
+    const auto preview = polysmith::core::preview_view_geometry(
+        document.value(), drawing_id, def);
+    if (!preview.has_value()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "UNKNOWN_DRAWING",
+          "The drawing was not found."));
+      return;
+    }
+
+    // Mirror the sheet emission's primitive vocabulary so the UI
+    // reuses the same parsers + scene builders as a committed view
+    // (drawing_sheet_emit.inc — keep the two mappings in sync).
+    polysmith::protocol::json curves = polysmith::protocol::json::array();
+    for (const auto& p : preview->primitives) {
+      polysmith::core::ViewportDrawingCurve curve;
+      curve.kind = p.kind;
+      curve.line_class = p.line_class;
+      curve.curve_class = p.purpose;
+      curve.purpose = p.purpose;
+      curve.width_mm = p.style.width_mm;
+      curve.p0 = p.p0;
+      curve.p1 = p.p1;
+      curve.center = p.center;
+      curve.radius = p.radius;
+      curve.major_dir = p.major_dir;
+      curve.major_radius = p.major_radius;
+      curve.minor_radius = p.minor_radius;
+      curve.start_angle = p.start_angle;
+      curve.end_angle = p.end_angle;
+      curve.points = p.points;
+      curves.push_back(polysmith::protocol::to_payload(curve));
+    }
+    polysmith::protocol::json texts = polysmith::protocol::json::array();
+    for (const auto& t : preview->texts) {
+      polysmith::core::ViewportDrawingText text;
+      text.text = t.text;
+      text.position = t.position;
+      text.height_mm = t.height_mm;
+      text.angle_deg = t.angle_deg;
+      text.h_align = t.h_align;
+      text.purpose = t.purpose;
+      text.stale = t.stale;
+      texts.push_back(polysmith::protocol::to_payload(text));
+    }
+
+    polysmith::protocol::json reply = {
+        {"drawing_id", drawing_id},
+        {"sheet_id", sheet_id},
+        {"curves", curves},
+        {"texts", texts},
+        // A view record shaped like a committed view (empty id marks
+        // it as the uncommitted preview).
+        {"view",
+         {
+             {"view_id", ""},
+             {"label", !def.standard_view.empty() ? def.standard_view
+                                                  : def.kind},
+             {"scale", def.scale},
+             {"origin", polysmith::protocol::json::array(
+                            {def.sheet_position[0], def.sheet_position[1]})},
+             {"min", preview->min.has_value()
+                         ? polysmith::protocol::json::array(
+                               {preview->min.value()[0],
+                                preview->min.value()[1]})
+                         : polysmith::protocol::json::array({0.0, 0.0})},
+             {"max", preview->max.has_value()
+                         ? polysmith::protocol::json::array(
+                               {preview->max.value()[0],
+                                preview->max.value()[1]})
+                         : polysmith::protocol::json::array({0.0, 0.0})},
+             {"stale", false},
+             {"warning", preview->warning},
+         }},
+    };
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_drawing_view_preview_event(
+            command.id, reply));
+    return;
+  }
+
   if (command.type == "drawing_section_update") {
     const auto drawing_id = read_string(
         command.payload, "drawing_id");

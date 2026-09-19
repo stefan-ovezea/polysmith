@@ -176,7 +176,7 @@ polysmith::core::DrawingSheet drawing_sheet_from_payload(
   sheet.sheet_id = drawing_read_string(payload, "sheet_id", "");
   sheet.name = drawing_read_string(payload, "name", "");
   sheet.paper_size = drawing_read_string(payload, "paper_size", "A4");
-  sheet.orientation = drawing_read_string(payload, "orientation", "portrait");
+  sheet.orientation = drawing_read_string(payload, "orientation", "landscape");
   sheet.projection_angle =
       drawing_read_string(payload, "projection_angle", "first_angle");
   sheet.view_ids = drawing_read_string_list(payload, "view_ids");

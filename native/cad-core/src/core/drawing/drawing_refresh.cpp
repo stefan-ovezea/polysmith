@@ -128,13 +128,13 @@ void refresh_drawing_dependencies(DocumentState& document,
         continue;  // already computed for this revision
       }
 
-      // ── Frame resolution ────────────────────────────────────
+      // ── Frame resolution (shared with the live view preview) ──
       std::optional<DrawingViewFrame> frame;
       if (view.kind == "section") {
         // Section frames derive from the cutting plane (P4): the view
-        // plane IS the cutting plane; view-X is the orthogonal
-        // projection of world +X onto the plane (fallbacks +Y, +Z —
-        // with a unit normal the last fallback always resolves).
+        // plane IS the cutting plane.  Two distinct degradation
+        // messages distinguish a missing definition from a degenerate
+        // normal.
         if (!view.section.has_value()) {
           store_broken_result(
               document, drawing, view,
@@ -143,33 +143,8 @@ void refresh_drawing_dependencies(DocumentState& document,
               std::nullopt, target_revision);
           continue;
         }
-        DrawingViewFrame section_frame;
-        section_frame.origin = view.section->cutting_plane_point;
-        section_frame.normal = view.section->cutting_plane_normal;
-        const auto project_onto_plane = [&](const std::array<double, 3>& axis) {
-          const double dot = axis[0] * section_frame.normal[0] +
-                             axis[1] * section_frame.normal[1] +
-                             axis[2] * section_frame.normal[2];
-          return std::array<double, 3>{
-              axis[0] - dot * section_frame.normal[0],
-              axis[1] - dot * section_frame.normal[1],
-              axis[2] - dot * section_frame.normal[2]};
-        };
-        std::array<double, 3> x_axis = project_onto_plane({1.0, 0.0, 0.0});
-        double x_length = std::sqrt(x_axis[0] * x_axis[0] +
-                                    x_axis[1] * x_axis[1] +
-                                    x_axis[2] * x_axis[2]);
-        if (x_length < 1e-9) {
-          x_axis = project_onto_plane({0.0, 1.0, 0.0});
-          x_length = std::sqrt(x_axis[0] * x_axis[0] + x_axis[1] * x_axis[1] +
-                               x_axis[2] * x_axis[2]);
-        }
-        if (x_length < 1e-9) {
-          x_axis = project_onto_plane({0.0, 0.0, 1.0});
-          x_length = std::sqrt(x_axis[0] * x_axis[0] + x_axis[1] * x_axis[1] +
-                               x_axis[2] * x_axis[2]);
-        }
-        if (x_length < 1e-9) {
+        frame = resolve_view_frame(view);
+        if (!frame.has_value()) {
           store_broken_result(
               document, drawing, view,
               "The cutting plane normal is degenerate — the view holds "
@@ -177,19 +152,14 @@ void refresh_drawing_dependencies(DocumentState& document,
               std::nullopt, target_revision);
           continue;
         }
-        section_frame.x_direction = {x_axis[0] / x_length, x_axis[1] / x_length,
-                                     x_axis[2] / x_length};
-        frame = section_frame;
-      } else if (!view.standard_view.empty()) {
-        frame = standard_view_frame(view.standard_view);
-        if (!frame.has_value()) {
+      } else {
+        frame = resolve_view_frame(view);
+        if (!frame.has_value() && !view.standard_view.empty()) {
           polysmith::core::log_warn(
               "drawing", "the view '" + view.view_id +
                              "' has an unknown standard view '" +
                              view.standard_view + "'");
         }
-      } else if (view.custom_frame.has_value()) {
-        frame = view.custom_frame;
       }
 
       // ── Source body resolution ─────────────────────────────

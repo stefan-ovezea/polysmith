@@ -2,6 +2,37 @@ import { z } from "zod";
 
 import { planeFrameSchema } from "./common";
 
+// Drawing curve/text shapes — shared by the sheet payload here and
+// the drawing_view_preview_result event (the core emits the preview
+// in the same vocabulary as a committed view).
+export const viewportDrawingCurveShape = z.object({
+  kind: z.string(),
+  line_class: z.string(),
+  curve_class: z.string(),
+  purpose: z.string().default("view_geometry"),
+  width_mm: z.number().default(0.5),
+  p0: z.tuple([z.number(), z.number()]),
+  p1: z.tuple([z.number(), z.number()]),
+  center: z.tuple([z.number(), z.number()]).optional(),
+  radius: z.number().optional(),
+  major_dir: z.tuple([z.number(), z.number()]).optional(),
+  major_radius: z.number().optional(),
+  minor_radius: z.number().optional(),
+  start_angle: z.number().default(0),
+  end_angle: z.number().default(0),
+  points: z.array(z.tuple([z.number(), z.number()])).optional(),
+});
+
+export const viewportDrawingTextShape = z.object({
+  text: z.string(),
+  position: z.tuple([z.number(), z.number()]),
+  height_mm: z.number().default(3.5),
+  angle_deg: z.number().default(0),
+  h_align: z.string().default("center"),
+  purpose: z.string().default("dimension"),
+  stale: z.boolean().default(false),
+});
+
 export const viewportStateSchema = z.object({
   has_active_document: z.boolean(),
   boxes: z.array(
@@ -618,27 +649,7 @@ export const viewportStateSchema = z.object({
         name: z.string(),
         width_mm: z.number(),
         height_mm: z.number(),
-        curves: z
-          .array(
-            z.object({
-              kind: z.string(),
-              line_class: z.string(),
-              curve_class: z.string(),
-              purpose: z.string().default("view_geometry"),
-              width_mm: z.number().default(0.5),
-              p0: z.tuple([z.number(), z.number()]),
-              p1: z.tuple([z.number(), z.number()]),
-              center: z.tuple([z.number(), z.number()]).optional(),
-              radius: z.number().optional(),
-              major_dir: z.tuple([z.number(), z.number()]).optional(),
-              major_radius: z.number().optional(),
-              minor_radius: z.number().optional(),
-              start_angle: z.number().default(0),
-              end_angle: z.number().default(0),
-              points: z.array(z.tuple([z.number(), z.number()])).optional(),
-            }),
-          )
-          .default([]),
+        curves: z.array(viewportDrawingCurveShape).default([]),
         views: z
           .array(
             z.object({
@@ -653,19 +664,7 @@ export const viewportStateSchema = z.object({
             }),
           )
           .default([]),
-        texts: z
-          .array(
-            z.object({
-              text: z.string(),
-              position: z.tuple([z.number(), z.number()]),
-              height_mm: z.number().default(3.5),
-              angle_deg: z.number().default(0),
-              h_align: z.string().default("center"),
-              purpose: z.string().default("dimension"),
-              stale: z.boolean().default(false),
-            }),
-          )
-          .default([]),
+        texts: z.array(viewportDrawingTextShape).default([]),
       }),
     )
     .default([]),

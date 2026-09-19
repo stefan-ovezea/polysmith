@@ -489,6 +489,7 @@ bool test_section_mutators() {
   drawing.name = "Test Drawing";
   DrawingSheet sheet;
   sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";  // explicit: the tests pin portrait
   drawing.sheets.push_back(sheet);
   DocumentState document = manager.drawing_create(drawing);
   const std::string drawing_id = document.drawing.drawings[0].drawing_id;
@@ -681,6 +682,7 @@ bool test_section_emission() {
   drawing.name = "Test Drawing";
   DrawingSheet sheet;
   sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";  // explicit: the tests pin portrait
   drawing.sheets.push_back(sheet);
   DocumentState document = manager.drawing_create(drawing);
   const std::string drawing_id = document.drawing.drawings[0].drawing_id;

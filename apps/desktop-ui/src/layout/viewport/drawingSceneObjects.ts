@@ -3,6 +3,7 @@ import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js
 
 import type {
   DrawingDimensionPreviewPayload,
+  DrawingViewPreviewPayload,
   ViewportDrawingCurve,
   ViewportDrawingText,
   ViewportState,
@@ -77,7 +78,7 @@ export function tessellateSheetCurve(
 /// XY plane — linewidth is ignored on Windows, so ISO line groups are
 /// real geometry.
 function buildRibbon(points: Array<[number, number]>, widthMm: number,
-                     color: number): THREE.Mesh | null {
+                     color: number, opacity = 1): THREE.Mesh | null {
   if (points.length < 2) {
     return null;
   }
@@ -113,7 +114,12 @@ function buildRibbon(points: Array<[number, number]>, widthMm: number,
   geometry.setIndex(indices);
   const mesh = new THREE.Mesh(
     geometry,
-    new THREE.MeshBasicMaterial({ color, toneMapped: false }),
+    new THREE.MeshBasicMaterial({
+      color,
+      toneMapped: false,
+      transparent: opacity < 1,
+      opacity,
+    }),
   );
   mesh.renderOrder = 1;
   return mesh;
@@ -144,6 +150,10 @@ function addSheetGroup(
       toneMapped: false,
     }),
   );
+  // PlaneGeometry is centered on its origin (spans −w/2..+w/2); the
+  // border, curves and the camera fit all use sheet coordinates
+  // (0..w, 0..h) — shift the paper so its extents match.
+  paper.position.set(sheet.width_mm / 2, sheet.height_mm / 2, 0);
   paper.renderOrder = 0;
   paper.name = "sheet-paper";
   group.add(paper);
@@ -199,7 +209,8 @@ function addSheetGroup(
   for (const view of sheet.views) {
     // View frame: a light rectangle around the content bounds plus a
     // label sprite (the P5 flatten turns these into proper view
-    // boundary lines).
+    // boundary lines).  Named + tagged so the pointer-down hit test
+    // can start a drag (mouse repositioning → drawing_view_move).
     const labelColor = view.stale
       ? staleColor
       : sheetColor("--cad-drawing-view-label", "#11505a");
@@ -213,6 +224,12 @@ function addSheetGroup(
       labelColor,
     );
     if (frame) {
+      frame.name = `view-frame:${view.view_id}`;
+      frame.userData.viewFrame = {
+        viewId: view.view_id,
+        min: [view.min[0], view.min[1]] as [number, number],
+        max: [view.max[0], view.max[1]] as [number, number],
+      };
       group.add(frame);
     }
     const label = makeLabelSprite(
@@ -266,6 +283,7 @@ function makeLabelSprite(
 function buildFilledPoly(
   points: Array<[number, number]>,
   color: number,
+  opacity = 1,
 ): THREE.Mesh | null {
   if (points.length < 3) {
     return null;
@@ -278,7 +296,12 @@ function buildFilledPoly(
   shape.closePath();
   const mesh = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
-    new THREE.MeshBasicMaterial({ color, toneMapped: false }),
+    new THREE.MeshBasicMaterial({
+      color,
+      toneMapped: false,
+      transparent: opacity < 1,
+      opacity,
+    }),
   );
   mesh.renderOrder = 1;
   return mesh;
@@ -325,18 +348,182 @@ function addPreviewObjects(
   }
 }
 
+/** Dashed ribbon — short dashes along a polyline (the Insert View
+ *  ghost's placement frame). */
+function buildDashedRibbon(
+  points: Array<[number, number]>,
+  widthMm: number,
+  color: number,
+  dashLenMm: number,
+  gapLenMm: number,
+  opacity = 1,
+): THREE.Group | null {
+  const group = new THREE.Group();
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const [x0, y0] = points[i];
+    const [x1, y1] = points[i + 1];
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    if (len < 1e-6) {
+      continue;
+    }
+    const steps = Math.max(1, Math.round(len / (dashLenMm + gapLenMm)));
+    const seg = len / steps;
+    const dash = Math.min(dashLenMm, seg);
+    const dx = (x1 - x0) / len;
+    const dy = (y1 - y0) / len;
+    for (let s = 0; s < steps; s += 1) {
+      const t0 = s * seg;
+      const t1 = t0 + dash;
+      const ribbon = buildRibbon(
+        [
+          [x0 + dx * t0, y0 + dy * t0],
+          [x0 + dx * t1, y0 + dy * t1],
+        ],
+        widthMm,
+        color,
+        opacity,
+      );
+      if (ribbon) {
+        group.add(ribbon);
+      }
+    }
+  }
+  return group.children.length > 0 ? group : null;
+}
+
+/** ISO 5455 scale label: 1 → "1:1", 0.5 → "1:2", 2 → "2:1". */
+function scaleLabel(scale: number): string {
+  if (scale >= 1) {
+    return `${scale}:1`;
+  }
+  const divisor = 1 / scale;
+  return `1:${Number.isInteger(divisor) ? divisor : divisor.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}`;
+}
+
+/** Draws the Insert View ghost (drawing_view_preview_result): the
+ *  uncommitted view's projected curves, translucent, plus a dashed
+ *  placement frame around its content bounds and a label with the
+ *  view name + scale — so position/orientation/scale are all visible
+ *  BEFORE the commit.  A degraded preview shows its warning instead. */
+function addViewPreviewObjects(
+  group: THREE.Group,
+  preview: DrawingViewPreviewPayload,
+) {
+  const color = sheetColor("--cad-drawing-preview", "#7c3aed");
+  const staleColor = sheetColor("--cad-drawing-stale", "#e08a3c");
+  const { view } = preview;
+  const hasGeometry = view.warning === "" &&
+    !(view.min[0] === 0 && view.min[1] === 0 &&
+      view.max[0] === 0 && view.max[1] === 0);
+
+  // Ghost curves — the committed view's exact geometry, translucent.
+  for (const curve of preview.curves) {
+    if (curve.kind === "filled_poly") {
+      const mesh = buildFilledPoly(curve.points ?? [], color, 0.45);
+      if (mesh) {
+        group.add(mesh);
+      }
+      continue;
+    }
+    const points = tessellateSheetCurve(curve);
+    const ribbon = buildRibbon(points, curve.width_mm || 0.25, color, 0.45);
+    if (ribbon) {
+      group.add(ribbon);
+    }
+  }
+
+  if (hasGeometry) {
+    // Dashed placement frame around the content bounds.
+    const frame = buildDashedRibbon(
+      [
+        [view.min[0], view.min[1]], [view.max[0], view.min[1]],
+        [view.max[0], view.max[1]], [view.min[0], view.max[1]],
+        [view.min[0], view.min[1]],
+      ],
+      ISO_THIN_LINE_MM,
+      color,
+      4,
+      3,
+      0.8,
+    );
+    if (frame) {
+      group.add(frame);
+    }
+    const label = makeLabelSprite(
+      `${view.label} · ${scaleLabel(view.scale)}`,
+      color,
+      view.min[0],
+      view.max[1] + 6,
+      3.5,
+    );
+    if (label) {
+      group.add(label);
+    }
+  } else {
+    const label = makeLabelSprite(
+      view.warning || "No preview",
+      staleColor,
+      view.origin[0],
+      view.origin[1] + 6,
+      3.5,
+    );
+    if (label) {
+      group.add(label);
+    }
+  }
+}
+
 /** Adds the drawing sheets to a dedicated group (drawing workspace).
- *  `preview` carries the non-mutating dimension preview (P6) — drawn
- *  on top of the active sheet; the scene rebuilds it every sync so
- *  it tracks the latest preview reply. */
+ *  `preview` carries the non-mutating dimension preview (P6);
+ *  `viewPreview` carries the Insert View ghost — both drawn on top of
+ *  the active sheet; the scene rebuilds them every sync so they track
+ *  the latest preview reply. */
+/** The in-progress drag ghost of a committed view (mouse
+ *  repositioning): a dashed frame + label following the cursor. */
+function addViewDragGhost(
+  group: THREE.Group,
+  drag: { min: [number, number]; max: [number, number]; label: string },
+) {
+  const color = sheetColor("--cad-drawing-preview", "#7c3aed");
+  const frame = buildDashedRibbon(
+    [
+      [drag.min[0], drag.min[1]], [drag.max[0], drag.min[1]],
+      [drag.max[0], drag.max[1]], [drag.min[0], drag.max[1]],
+      [drag.min[0], drag.min[1]],
+    ],
+    ISO_THIN_LINE_MM,
+    color,
+    4,
+    3,
+    0.8,
+  );
+  if (frame) {
+    group.add(frame);
+  }
+  const label = makeLabelSprite(
+    drag.label,
+    color,
+    drag.min[0],
+    drag.max[1] + 6,
+    3.5,
+  );
+  if (label) {
+    group.add(label);
+  }
+}
+
 export function addDrawingSheetObjects({
   viewport,
   drawingGroup,
   preview,
+  viewPreview,
+  viewDrag,
 }: {
   viewport: ViewportState | null;
   drawingGroup: THREE.Group;
   preview?: DrawingDimensionPreviewPayload | null;
+  viewPreview?: DrawingViewPreviewPayload | null;
+  viewDrag?: { min: [number, number]; max: [number, number]; label: string } | null;
 }) {
   const sheets = viewport?.drawing_sheets ?? [];
   let offsetX = 0;
@@ -346,9 +533,17 @@ export function addDrawingSheetObjects({
     sheetGroup.position.set(offsetX, 0, 0);
     addSheetGroup(sheetGroup, sheet);
     drawingGroup.add(sheetGroup);
-    // The preview belongs to the FIRST sheet (the active one).
-    if (preview && !preview.error && offsetX === 0) {
-      addPreviewObjects(sheetGroup, preview);
+    // The previews + drag ghost belong to the FIRST sheet (the active one).
+    if (offsetX === 0) {
+      if (preview && !preview.error) {
+        addPreviewObjects(sheetGroup, preview);
+      }
+      if (viewPreview) {
+        addViewPreviewObjects(sheetGroup, viewPreview);
+      }
+      if (viewDrag) {
+        addViewDragGhost(sheetGroup, viewDrag);
+      }
     }
     offsetX += sheet.width_mm + 24;
   }
@@ -381,5 +576,18 @@ export function fitCameraToDrawingSheet({
   camera.zoom = Math.max(1e-4, zoom);
   camera.updateProjectionMatrix();
   controls.target.set(offsetX + widthMm / 2, heightMm / 2, 0);
+  // Straighten: the camera may arrive tilted from the CAD workspace —
+  // a drawing must be read flat.  The view-cube idiom: keep the
+  // distance, stand straight above the target (Z is up).
+  const distance = Math.max(
+    camera.position.distanceTo(controls.target),
+    ORTHO_FRUSTUM_HEIGHT,
+  );
+  camera.position.set(
+    controls.target.x,
+    controls.target.y,
+    controls.target.z + distance,
+  );
+  camera.up.set(0, 0, 1);
   controls.update();
 }

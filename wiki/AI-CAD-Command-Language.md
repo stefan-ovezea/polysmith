@@ -3518,6 +3518,11 @@ cache, the toolpath contract) — they never appear in document payloads.
   view, its annotations, and its id from every sheet's `view_ids`.
 - `drawing_view_move` — payload `{drawing_id, view_id, sheet_position:
   [x, y]}`. Cosmetic only — never re-projects.
+- `drawing_view_preview` — payload `{drawing_id, sheet_id, view}`.
+  NON-mutating: projects + flattens an uncommitted view definition and
+  replies with `drawing_view_preview_result` `{drawing_id, sheet_id,
+  curves[], texts[], view}` (the `view` record has an empty `view_id`
+  — the ghost marker; `warning` non-empty = degraded projection).
 - `drawing_section_update` — payload `{drawing_id, view_id, section}`.
   Replaces a section view's `SectionDefinition` (cutting plane
   point/normal, `cut_away`, label, hatch angle/spacing). The view must

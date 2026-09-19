@@ -105,6 +105,7 @@ import { CamFloatingPanels } from "./app/CamFloatingPanels";
 import {
   DimensionPanel,
   InsertViewPanel,
+  NewDrawingPanel,
   SectionPanel,
   SheetPanel,
   TitleBlockPanel,
@@ -621,6 +622,41 @@ function App() {
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
   const [isDrawingInsertPanelOpen, setIsDrawingInsertPanelOpen] =
     useState(false);
+  // Bumped after every projection insert so the still-open panel clears
+  // its manual position override for the next view.
+  const [insertPanelResetToken, setInsertPanelResetToken] = useState(0);
+  // New Drawing setup dialog (name + paper + orientation + angle) —
+  // the "new drawing" toolbar button opens it instead of creating a
+  // silent default.
+  const [isNewDrawingPanelOpen, setIsNewDrawingPanelOpen] =
+    useState(false);
+  // The Insert View ghost (drawing_view_preview_result) — the core's
+  // projection of the uncommitted view definition, rendered on the
+  // sheet until Enter commits.
+  const [drawingViewPreviewPayload, setDrawingViewPreviewPayload] = useState<
+    import("@/types").DrawingViewPreviewPayload | null
+  >(null);
+  const drawingViewPreviewRequestRef = useRef(0);
+  // Mouse-first Insert View: the ghost follows the cursor over the
+  // sheet; a click commits at the clicked point (commitPoint carries
+  // the token so the panel reacts even to repeated clicks).
+  const [insertCursorPoint, setInsertCursorPoint] = useState<
+    [number, number] | null
+  >(null);
+  const [insertCommitPoint, setInsertCommitPoint] = useState<{
+    token: number;
+    point: [number, number];
+  } | null>(null);
+  // Mouse-first view reposition: an in-progress view-frame drag
+  // (ghost rect follows the cursor until the drop commits the move).
+  const [viewDrag, setViewDrag] = useState<{
+    viewId: string;
+    grabOffset: [number, number];
+    min: [number, number];
+    max: [number, number];
+    label: string;
+    current: [number, number];
+  } | null>(null);
   // Sheet settings panel (P5: paper, orientation, projection angle).
   const [isDrawingSheetPanelOpen, setIsDrawingSheetPanelOpen] =
     useState(false);
@@ -786,27 +822,22 @@ function App() {
     return bodyIds;
   }, [viewport, document?.selected_feature_id]);
 
-  // Union center of the referenced bodies — the default cutting plane
-  // of a section view passes through it (P4).
-  const drawingBodyCenter = useMemo(() => {
-    const bodies =
-      viewport?.bodies.filter((body) => drawingBodyIds.includes(body.id)) ?? [];
-    if (bodies.length === 0) {
-      return { x: 0, y: 0, z: 0 };
-    }
-    let x = 0;
-    let y = 0;
-    let z = 0;
-    for (const body of bodies) {
-      x += body.center.x;
-      y += body.center.y;
-      z += body.center.z;
-    }
-    return { x: x / bodies.length, y: y / bodies.length, z: z / bodies.length };
-  }, [viewport, drawingBodyIds]);
+  // The compiled bodies with user labels — the Fusion-style body
+  // choice in the Insert View panel; the section plane's default
+  // passes through the chosen bodies' union center.
+  const drawingAvailableBodies = useMemo(
+    () =>
+      (viewport?.bodies ?? []).map((body) => ({
+        id: body.id,
+        label: body.label,
+        center: body.center,
+      })),
+    [viewport?.bodies],
+  );
 
-  // Bounds (sheet-mm) of the front projection view on the active
-  // sheet — the anchor for first/third-angle placement (P5).
+  // Bounds (sheet-mm) + scale of the front projection view on the
+  // active sheet — the anchor for first/third-angle placement and
+  // the size reference for the on-sheet clamp (P5).
   const drawingBaseViewBounds = useMemo(() => {
     const sheet = viewport?.drawing_sheets?.find(
       (candidate) =>
@@ -820,7 +851,24 @@ function App() {
     if (!bounds) {
       return null;
     }
-    return { min: bounds.min, max: bounds.max };
+    return {
+      min: bounds.min,
+      max: bounds.max,
+      scale: base?.scale ?? 1,
+    };
+  }, [viewport, activeDrawing]);
+
+  // The active sheet's trimmed size (sheet-mm) — view positions are
+  // clamped into it so they never land off the paper.
+  const drawingSheetSize = useMemo(() => {
+    const sheet = viewport?.drawing_sheets?.find(
+      (candidate) => candidate.sheet_id === activeDrawing?.sheets[0]?.sheet_id,
+    );
+    if (!sheet) {
+      // A4 landscape fallback until the first payload arrives.
+      return { width_mm: 297, height_mm: 210 };
+    }
+    return { width_mm: sheet.width_mm, height_mm: sheet.height_mm };
   }, [viewport, activeDrawing]);
 
   // Grid fallback for views that don't slot around the front view
@@ -830,7 +878,12 @@ function App() {
     return [30 + (count % 3) * 80, 40 + Math.floor(count / 3) * 90];
   }, [activeDrawing]);
 
-  const drawingNewAction = async () => {
+  const drawingNewAction = async (settings?: {
+    name: string;
+    paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
+    orientation: "portrait" | "landscape";
+    projection_angle: "first_angle" | "third_angle";
+  }) => {
     await runAction(async () => {
       if (document?.drawing.drawings.length) {
         addMessage(t("drawing.toolbar.exists"));
@@ -838,14 +891,14 @@ function App() {
       }
       await drawingCreate({
         drawing_id: "",
-        name: t("drawing.defaultName"),
+        name: settings?.name.trim() || t("drawing.defaultName"),
         sheets: [
           {
             sheet_id: "",
             name: t("drawing.defaultSheet"),
-            paper_size: "A4",
-            orientation: "portrait",
-            projection_angle: "first_angle",
+            paper_size: settings?.paper_size ?? "A4",
+            orientation: settings?.orientation ?? "landscape",
+            projection_angle: settings?.projection_angle ?? "first_angle",
             view_ids: [],
             title_block: {
               legal_owner: "",
@@ -904,7 +957,14 @@ function App() {
       hatch_spacing_mm: number;
     };
   }) => {
-    setIsDrawingInsertPanelOpen(false);
+    // A projection insert keeps the panel open (Fusion's Apply
+    // semantics) so further views can be added without losing the
+    // floating window; Escape/Cancel closes it.  A section insert
+    // closes the panel — the section panel takes over.
+    if (view.kind === "section") {
+      setIsDrawingInsertPanelOpen(false);
+      setInsertCursorPoint(null);
+    }
     await runAction(async () => {
       const drawing = document?.drawing.drawings.find(
         (d) => d.drawing_id === document?.drawing.active_drawing_id,
@@ -942,6 +1002,102 @@ function App() {
         }
       }
     });
+    if (view.kind === "projection") {
+      // The panel stays open — clear its manual position override so
+      // the next view auto-slots instead of stacking on the same X/Y.
+      setInsertPanelResetToken((token) => token + 1);
+    }
+    // The committed view now draws as real sheet geometry — drop the
+    // ghost so it never double-draws.
+    drawingViewPreviewRequestRef.current += 1;
+    setDrawingViewPreviewPayload(null);
+  };
+
+  // The Insert View ghost: the panel sends its uncommitted definition
+  // on every change; the core projects it and the scene draws the
+  // translucent result until Enter commits.  A request id guards
+  // against stale replies racing newer ones.
+  const drawingViewPreviewAction = async (
+    view: import("@/types").DrawingView | null,
+  ) => {
+    if (!view || !activeDrawing || activeDrawing.sheets.length === 0) {
+      drawingViewPreviewRequestRef.current += 1;
+      setDrawingViewPreviewPayload(null);
+      return;
+    }
+    const requestId = ++drawingViewPreviewRequestRef.current;
+    const payload = await drawingViewPreview({
+      drawingId: activeDrawing.drawing_id,
+      sheetId: activeDrawing.sheets[0].sheet_id,
+      view,
+    });
+    if (requestId !== drawingViewPreviewRequestRef.current) {
+      return;  // a newer definition superseded this reply
+    }
+    setDrawingViewPreviewPayload(payload);
+  };
+
+  // ── Mouse-first interactions ─────────────────────────────────────
+
+  // The ghost follows the cursor over the sheet (Insert View open).
+  const drawingInsertMoveAction = (point: [number, number] | null) => {
+    setInsertCursorPoint(point);
+  };
+
+  // A click on the sheet commits the view at the clicked point — the
+  // panel reacts to the token bump and builds the view around it.
+  const drawingInsertCommitAction = (point: [number, number]) => {
+    setInsertCommitPoint((previous) => ({
+      token: (previous?.token ?? 0) + 1,
+      point,
+    }));
+  };
+
+  // View-frame drag: press starts it, the ghost follows, the drop
+  // commits drawing_view_move with the grab offset preserved.
+  const drawingViewDragStartAction = (
+    viewId: string,
+    point: [number, number],
+    grabOffset: [number, number],
+  ) => {
+    const view = activeDrawing?.views.find((v) => v.view_id === viewId);
+    if (!view) {
+      return;
+    }
+    const sheet = viewport?.drawing_sheets?.find((candidate) =>
+      candidate.views.some((v) => v.view_id === viewId),
+    );
+    const bounds = sheet?.views.find((v) => v.view_id === viewId);
+    setViewDrag({
+      viewId,
+      grabOffset,
+      min: bounds ? bounds.min : point,
+      max: bounds ? bounds.max : point,
+      label: view.standard_view || view.kind,
+      current: point,
+    });
+  };
+
+  const drawingViewDragMoveAction = (point: [number, number]) => {
+    setViewDrag((previous) => (previous ? { ...previous, current: point } : previous));
+  };
+
+  const drawingViewDropAction = async (point: [number, number]) => {
+    const drag = viewDrag;
+    setViewDrag(null);
+    if (!drag || !activeDrawing) {
+      return;
+    }
+    const newMin: [number, number] = [
+      Math.round((point[0] + drag.grabOffset[0]) * 100) / 100,
+      Math.round((point[1] + drag.grabOffset[1]) * 100) / 100,
+    ];
+    // A click without real movement must not mint a no-op undo step.
+    const moved =
+      Math.hypot(newMin[0] - drag.min[0], newMin[1] - drag.min[1]) >= 0.5;
+    if (moved) {
+      await drawingViewMove(activeDrawing.drawing_id, drag.viewId, newMin);
+    }
   };
 
   const drawingDeleteAction = async () => {
@@ -1487,6 +1643,8 @@ function App() {
     drawingExport,
     drawingDimensionCreate,
     drawingDimensionPreview,
+    drawingViewPreview,
+    drawingViewMove,
   } = useCadCore();
 
   // Completes an armed "Pick a face…" sketch-plane redefinition: the
@@ -3113,9 +3271,17 @@ function App() {
             drawingCount: document?.drawing.drawings.length ?? 0,
             viewCount: activeDrawing?.views.length ?? 0,
             onNewDrawing: () => {
-              void drawingNewAction();
+              // The setup dialog, not a silent default: name + paper +
+              // orientation + projection angle (the "New Drawing"
+              // button is the drawing's creation entry point).
+              setIsNewDrawingPanelOpen(true);
             },
             onInsertView: () => {
+              // Insert placement and dimension picking share the
+              // sheet pointer — opening one disarms the other.
+              setIsDimensionPanelOpen(false);
+              setDrawingDimPicks([]);
+              setDrawingDimPreview(null);
               setIsDrawingInsertPanelOpen(true);
             },
             onDeleteDrawing: () => {
@@ -3125,6 +3291,12 @@ function App() {
               setIsDrawingSheetPanelOpen(true);
             },
             onDimension: () => {
+              // Insert placement and dimension picking share the
+              // sheet pointer — opening one disarms the other.
+              setIsDrawingInsertPanelOpen(false);
+              setInsertCursorPoint(null);
+              drawingViewPreviewRequestRef.current += 1;
+              setDrawingViewPreviewPayload(null);
               setDrawingDimPicks([]);
               setDrawingDimPreview(null);
               setIsDimensionPanelOpen(true);
@@ -3428,6 +3600,47 @@ function App() {
               drawingDimensionPreview={
                 workspaceView === "drawing" ? drawingDimPreview : null
               }
+              // Insert View ghost: the uncommitted view's translucent
+              // projection + placement frame on the active sheet.
+              drawingViewPreview={
+                workspaceView === "drawing" ? drawingViewPreviewPayload : null
+              }
+              // Mouse-first view reposition: the in-progress drag
+              // ghost (dashed frame following the cursor).
+              drawingViewDrag={
+                workspaceView === "drawing" && viewDrag
+                  ? {
+                      min: [
+                        viewDrag.current[0] + viewDrag.grabOffset[0],
+                        viewDrag.current[1] + viewDrag.grabOffset[1],
+                      ] as [number, number],
+                      max: [
+                        viewDrag.current[0] + viewDrag.grabOffset[0] +
+                          (viewDrag.max[0] - viewDrag.min[0]),
+                        viewDrag.current[1] + viewDrag.grabOffset[1] +
+                          (viewDrag.max[1] - viewDrag.min[1]),
+                      ] as [number, number],
+                      label: viewDrag.label,
+                    }
+                  : null
+              }
+              // Mouse-first Insert View: hover feeds the ghost, a
+              // click commits the view at the clicked point.
+              drawingInsertArmed={
+                workspaceView === "drawing" && isDrawingInsertPanelOpen
+              }
+              onDrawingInsertMove={drawingInsertMoveAction}
+              onDrawingInsertCommit={drawingInsertCommitAction}
+              // View frames are draggable when NOT inserting (the two
+              // interactions share the pointer).
+              drawingViewDragArmed={
+                workspaceView === "drawing" && !isDrawingInsertPanelOpen
+              }
+              onDrawingViewDragStart={drawingViewDragStartAction}
+              onDrawingViewDragMove={drawingViewDragMoveAction}
+              onDrawingViewDrop={(point) => {
+                void drawingViewDropAction(point);
+              }}
               drawingPickArmed={
                 workspaceView === "drawing" && isDimensionPanelOpen
               }
@@ -5361,21 +5574,44 @@ function App() {
                 camOperationPreview={camOperationPreview}
                 camOperationGenerate={camOperationGenerate}
               />
+              {isNewDrawingPanelOpen ? (
+                <NewDrawingPanel
+                  disabled={status !== "connected"}
+                  defaultName={t("drawing.defaultName")}
+                  onCommit={(settings) => {
+                    setIsNewDrawingPanelOpen(false);
+                    void drawingNewAction(settings);
+                  }}
+                  onClose={() => {
+                    setIsNewDrawingPanelOpen(false);
+                  }}
+                />
+              ) : null}
               {isDrawingInsertPanelOpen ? (
                 <InsertViewPanel
                   disabled={status !== "connected"}
+                  resetToken={insertPanelResetToken}
                   nextSheetPosition={nextDrawingSheetPosition}
                   baseViewBounds={drawingBaseViewBounds}
                   projectionAngle={
                     activeDrawing?.sheets[0]?.projection_angle ?? "first_angle"
                   }
                   bodyIds={drawingBodyIds}
-                  sectionPlaneCenter={drawingBodyCenter}
+                  availableBodies={drawingAvailableBodies}
+                  sheetSize={drawingSheetSize}
+                  cursorPosition={insertCursorPoint}
+                  commitPoint={insertCommitPoint}
+                  onPreviewChange={(view) => {
+                    void drawingViewPreviewAction(view);
+                  }}
                   onCommit={(view) => {
                     void drawingInsertViewAction(view);
                   }}
                   onCancel={() => {
                     setIsDrawingInsertPanelOpen(false);
+                    setInsertCursorPoint(null);
+                    drawingViewPreviewRequestRef.current += 1;
+                    setDrawingViewPreviewPayload(null);
                   }}
                 />
               ) : null}

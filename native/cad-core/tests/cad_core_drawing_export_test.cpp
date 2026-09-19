@@ -182,6 +182,7 @@ ExportFixture make_fixture() {
   drawing.name = "Test Drawing";
   DrawingSheet sheet;
   sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";  // explicit: the tests pin portrait
   sheet.paper_size = "A4";
   drawing.sheets.push_back(sheet);
   fixture.document = fixture.manager.drawing_create(drawing);

@@ -758,6 +758,16 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
 - `drawing_view_move { drawing_id, view_id, sheet_position: [x, y] }`
   — moves the view origin on its sheet (sheet-mm).  Purely cosmetic —
   never re-projects.
+- `drawing_view_preview { drawing_id, sheet_id, view }` — NON-mutating
+  Insert View ghost: the core projects + flattens an UNCOMMITTED view
+  definition (the same engine, coincidence and dash passes as a
+  committed view) and replies with `drawing_view_preview_result`
+  `{drawing_id, sheet_id, curves[], texts[], view}` where `view` is a
+  committed-view-shaped record with an EMPTY `view_id` (the ghost
+  marker) plus `label`, `scale`, `origin`, content `min`/`max`, and a
+  `warning` (non-empty = degraded projection — no geometry).  Sibling
+  sections trace their cutting planes onto the preview; the preview's
+  own uncommitted section does not.  Never mutates, never caches.
 - `drawing_section_update { drawing_id, view_id, section }` — replaces
   a section view's `SectionDefinition` (cutting plane point/normal,
   `cut_away`, label, hatch angle/spacing).  The view must be kind

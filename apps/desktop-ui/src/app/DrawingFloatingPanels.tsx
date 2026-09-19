@@ -64,29 +64,80 @@ const THIRD_ANGLE_SLOT: Record<string, [number, number]> = {
 
 export interface InsertViewPanelProps {
   disabled: boolean;
+  /** Bumped after each committed projection view (the panel stays
+   *  open) — clears the manual position override for the next view. */
+  resetToken: number;
   /** Grid fallback position (front itself, sections, no base view). */
   nextSheetPosition: [number, number];
-  /** Bounds (sheet-mm) of the front view already on the sheet — the
-   *  anchor for first/third-angle placement of further views. */
-  baseViewBounds: { min: [number, number]; max: [number, number] } | null;
+  /** Bounds (sheet-mm) + scale of the front view already on the sheet
+   *  — the anchor for first/third-angle placement of further views
+   *  and the size reference for the on-sheet clamp. */
+  baseViewBounds:
+    | { min: [number, number]; max: [number, number]; scale: number }
+    | null;
   /** The active sheet's projection angle (placement mirrors on it). */
   projectionAngle: "first_angle" | "third_angle";
-  /** Body ids the view may reference (the selected body, or all). */
+  /** Body ids the view may reference (the no-bodies gate). */
   bodyIds: string[];
-  /** Union center of the referenced bodies — the default cutting
-   *  plane passes through it (a moveable plane point is P5+). */
-  sectionPlaneCenter: { x: number; y: number; z: number };
+  /** The compiled bodies with user labels — the Fusion-style body
+   *  choice ("All bodies" = the assembly view). */
+  availableBodies: Array<{
+    id: string;
+    label: string;
+    center: { x: number; y: number; z: number };
+  }>;
+  /** The active sheet's trimmed size (the on-sheet clamp). */
+  sheetSize: { width_mm: number; height_mm: number };
+  /** Mouse-first placement: the cursor's current sheet-mm position
+   *  (null = off the sheet) — the ghost follows it until the user
+   *  types a manual override. */
+  cursorPosition: [number, number] | null;
+  /** A click on the sheet commits the view at this point — the token
+   *  bumps per click so repeated clicks at the same spot still fire. */
+  commitPoint: { token: number; point: [number, number] } | null;
+  /** Live ghost: called (debounced) with the uncommitted view
+   *  definition on every change, null when the panel closes — the
+   *  host sends drawing_view_preview and renders the reply. */
+  onPreviewChange: (view: DrawingView | null) => void;
   onCommit: (view: DrawingView) => void;
   onCancel: () => void;
 }
 
+/** Clamps a view position so its (estimated) content stays inside the
+ *  sheet's 10 mm drawing margin — the first/third-angle slots can
+ *  otherwise push views off the paper when the base view sits near an
+ *  edge. */
+export function clampSheetPosition(
+  position: [number, number],
+  viewWidthMm: number,
+  viewHeightMm: number,
+  sheetWidthMm: number,
+  sheetHeightMm: number,
+): [number, number] {
+  const margin = 10;
+  const x = Math.min(
+    Math.max(position[0], margin),
+    Math.max(margin, sheetWidthMm - margin - viewWidthMm),
+  );
+  const y = Math.min(
+    Math.max(position[1], margin),
+    Math.max(margin, sheetHeightMm - margin - viewHeightMm),
+  );
+  return [x, y];
+}
+
 export function InsertViewPanel({
   disabled,
+  resetToken,
   nextSheetPosition,
   baseViewBounds,
   projectionAngle,
   bodyIds,
-  sectionPlaneCenter,
+  availableBodies,
+  sheetSize,
+  cursorPosition,
+  commitPoint,
+  onPreviewChange,
   onCommit,
   onCancel,
 }: InsertViewPanelProps) {
@@ -100,34 +151,115 @@ export function InsertViewPanel({
   const [sectionLabel, setSectionLabel] = useState("A");
   const [hatchAngle, setHatchAngle] = useState("45");
   const [hatchSpacing, setHatchSpacing] = useState("3");
+  // The Fusion-style body choice: "__all__" = the assembly view.
+  const [bodyChoice, setBodyChoice] = useState<string>(() =>
+    bodyIds.length === 1 ? bodyIds[0] : "__all__",
+  );
+  // Manual position override (mm) — null follows the auto slotting.
+  const [positionX, setPositionX] = useState<string | null>(null);
+  const [positionY, setPositionY] = useState<string | null>(null);
   const commitRef = useRef(onCommit);
   commitRef.current = onCommit;
 
+  // Re-slot automatically when the view choice changes or a view was
+  // just committed (the panel stays open); a typed override belongs
+  // to the previous slot and must not leak.
+  useEffect(() => {
+    setPositionX(null);
+    setPositionY(null);
+  }, [kind, standardView, resetToken]);
+
   // Projection views slot around the front view per the sheet's
   // projection angle; front/back, sections and the no-base-view case
-  // fall back to the side-by-side grid.
+  // fall back to the side-by-side grid.  The result is clamped into
+  // the sheet's drawing area — slots near the sheet edge must not
+  // push the view off the paper.
   const sheetPosition = useMemo<[number, number]>(() => {
     const slots =
       projectionAngle === "third_angle" ? THIRD_ANGLE_SLOT : FIRST_ANGLE_SLOT;
     const slot = slots[standardView];
-    if (kind !== "projection" || !baseViewBounds || !slot) {
-      return nextSheetPosition;
+    let position = nextSheetPosition;
+    if (kind === "projection" && baseViewBounds && slot) {
+      const gap = 20;
+      const sx = baseViewBounds.max[0] - baseViewBounds.min[0] + gap;
+      const sy = baseViewBounds.max[1] - baseViewBounds.min[1] + gap;
+      position = [
+        baseViewBounds.min[0] + slot[0] * sx,
+        baseViewBounds.min[1] + slot[1] * sy,
+      ];
     }
-    const gap = 20;
-    const sx = baseViewBounds.max[0] - baseViewBounds.min[0] + gap;
-    const sy = baseViewBounds.max[1] - baseViewBounds.min[1] + gap;
+    // The new view's estimated content size: the base view's bounds
+    // (the same body) at the chosen scale.
+    const scaleRatio = (Number(scale) || 1) / (baseViewBounds?.scale ?? 1);
+    const viewW = baseViewBounds
+      ? (baseViewBounds.max[0] - baseViewBounds.min[0]) * scaleRatio
+      : 0;
+    const viewH = baseViewBounds
+      ? (baseViewBounds.max[1] - baseViewBounds.min[1]) * scaleRatio
+      : 0;
+    return clampSheetPosition(position, viewW, viewH, sheetSize.width_mm,
+                              sheetSize.height_mm);
+  }, [kind, standardView, projectionAngle, baseViewBounds,
+      nextSheetPosition, scale, sheetSize]);
+
+  // Position priority: a typed override wins; otherwise the CURSOR
+  // (mouse-first placement — the ghost follows the pointer over the
+  // sheet); otherwise the auto-slot.
+  const finalPosition = useMemo<[number, number]>(() => {
+    if (positionX === null && positionY === null && cursorPosition) {
+      return cursorPosition;
+    }
+    if (positionX === null && positionY === null) {
+      return sheetPosition;
+    }
     return [
-      baseViewBounds.min[0] + slot[0] * sx,
-      baseViewBounds.min[1] + slot[1] * sy,
+      positionX !== null && positionX.trim() !== ""
+        ? Number(positionX) || 0
+        : cursorPosition?.[0] ?? sheetPosition[0],
+      positionY !== null && positionY.trim() !== ""
+        ? Number(positionY) || 0
+        : cursorPosition?.[1] ?? sheetPosition[1],
     ];
-  }, [kind, standardView, projectionAngle, baseViewBounds, nextSheetPosition]);
+  }, [sheetPosition, positionX, positionY, cursorPosition]);
+
+  // A body chosen earlier may disappear while the panel is open
+  // (deleted upstream) — fall back to the assembly view instead of
+  // committing a ghost id.
+  const effectiveBodyChoice =
+    bodyChoice === "__all__" ||
+    availableBodies.some((body) => body.id === bodyChoice)
+      ? bodyChoice
+      : "__all__";
+
+  const chosenBodyIds = useMemo(() => {
+    if (effectiveBodyChoice === "__all__") {
+      return availableBodies.map((body) => body.id);
+    }
+    return [effectiveBodyChoice];
+  }, [effectiveBodyChoice, availableBodies]);
+
+  // The default cutting plane passes through the CHOSEN bodies'
+  // union center (a moveable plane point is P5+).
+  const chosenBodyCenter = useMemo(() => {
+    const chosen = availableBodies.filter((body) =>
+      chosenBodyIds.includes(body.id),
+    );
+    if (chosen.length === 0) {
+      return { x: 0, y: 0, z: 0 };
+    }
+    return {
+      x: chosen.reduce((sum, body) => sum + body.center.x, 0) / chosen.length,
+      y: chosen.reduce((sum, body) => sum + body.center.y, 0) / chosen.length,
+      z: chosen.reduce((sum, body) => sum + body.center.z, 0) / chosen.length,
+    };
+  }, [availableBodies, chosenBodyIds]);
 
   const view = useMemo<DrawingView>(() => {
     const base = {
       view_id: "",
-      source_body_ids: bodyIds,
+      source_body_ids: chosenBodyIds,
       scale: Number(scale) || 1,
-      sheet_position: sheetPosition,
+      sheet_position: finalPosition,
       // ISO 128-3 §7: hidden edges are not drawn on sectioned parts.
       show_hidden: kind === "projection" && showHidden,
       warning: "",
@@ -140,9 +272,9 @@ export function InsertViewPanel({
         standard_view: "",
         section: {
           cutting_plane_point: [
-            sectionPlaneCenter.x,
-            sectionPlaneCenter.y,
-            sectionPlaneCenter.z,
+            chosenBodyCenter.x,
+            chosenBodyCenter.y,
+            chosenBodyCenter.z,
           ],
           cutting_plane_normal: normal?.vector ?? [1, 0, 0],
           cut_away: cutAway,
@@ -163,15 +295,15 @@ export function InsertViewPanel({
     sectionLabel,
     hatchAngle,
     hatchSpacing,
-    bodyIds,
-    sheetPosition,
-    sectionPlaneCenter,
+    chosenBodyIds,
+    finalPosition,
+    chosenBodyCenter,
   ]);
 
   // Enter commits, Escape cancels (the contextual workflow pattern).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Enter" && !disabled && bodyIds.length > 0) {
+      if (event.key === "Enter" && !disabled && chosenBodyIds.length > 0) {
         commitRef.current(view);
       } else if (event.key === "Escape") {
         onCancel();
@@ -181,7 +313,43 @@ export function InsertViewPanel({
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [disabled, bodyIds.length, view, onCancel]);
+  }, [disabled, chosenBodyIds.length, view, onCancel]);
+
+  // ── Live ghost ─────────────────────────────────────────────────
+  // Every definition change sends the uncommitted view to the host
+  // (debounced — cursor-follow and typing must not spam the core);
+  // the host projects it and the sheet draws the translucent result
+  // with its placement frame.
+  const previewRef = useRef(onPreviewChange);
+  previewRef.current = onPreviewChange;
+  useEffect(() => {
+    if (disabled || chosenBodyIds.length === 0) {
+      previewRef.current(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      previewRef.current(view);
+    }, 80);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [view, disabled, chosenBodyIds.length]);
+  // The ghost must never outlive the panel.
+  useEffect(() => {
+    return () => {
+      previewRef.current(null);
+    };
+  }, []);
+  // A click on the sheet commits the view AT the clicked point (the
+  // token guards repeated clicks at the same coordinates).
+  const lastCommitTokenRef = useRef(0);
+  useEffect(() => {
+    if (!commitPoint || commitPoint.token === lastCommitTokenRef.current) {
+      return;
+    }
+    lastCommitTokenRef.current = commitPoint.token;
+    commitRef.current({ ...view, sheet_position: commitPoint.point });
+  }, [commitPoint, view]);
 
   return (
     <section className="pointer-events-auto cad-floating-panel px-5 py-5">
@@ -193,11 +361,30 @@ export function InsertViewPanel({
               {t("drawing.insertPanel.noBody")}
             </p>
           ) : (
-            <p className="mt-3 text-sm tracking-[0.18em] text-[color:var(--cad-muted)] uppercase">
-              {t("drawing.insertPanel.bodySelected", {
-                count: bodyIds.length,
-              })}
-            </p>
+            <label className="mt-3 flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+              {t("drawing.insertPanel.body")}
+              <select
+                className="cad-input flex-1"
+                value={effectiveBodyChoice}
+                disabled={disabled}
+                onChange={(event) => {
+                  setBodyChoice(event.target.value);
+                }}
+              >
+                {availableBodies.length > 1 ? (
+                  <option value="__all__">
+                    {t("drawing.insertPanel.bodyAll", {
+                      count: availableBodies.length,
+                    })}
+                  </option>
+                ) : null}
+                {availableBodies.map((body) => (
+                  <option key={body.id} value={body.id}>
+                    {body.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
         </div>
 
@@ -371,11 +558,56 @@ export function InsertViewPanel({
           ) : null}
         </div>
 
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-[var(--cad-muted)]">
+            {t("drawing.insertPanel.position")}
+          </label>
+          {/* X/Y sheet-mm, auto-filled from the slotting; typing one
+              value overrides it (cleared on view change). */}
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.insertPanel.positionX")}
+            <input
+              className="cad-input w-16"
+              type="number"
+              step="1"
+              value={
+                positionX !== null
+                  ? positionX
+                  : String(Math.round(finalPosition[0] * 10) / 10)
+              }
+              onChange={(event) => {
+                setPositionX(event.target.value);
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.insertPanel.positionY")}
+            <input
+              className="cad-input w-16"
+              type="number"
+              step="1"
+              value={
+                positionY !== null
+                  ? positionY
+                  : String(Math.round(finalPosition[1] * 10) / 10)
+              }
+              onChange={(event) => {
+                setPositionY(event.target.value);
+              }}
+            />
+          </label>
+          <span className="text-xs text-[var(--cad-muted)]">mm</span>
+        </div>
+
+        <p className="text-xs text-[var(--cad-muted)]">
+          {t("drawing.insertPanel.clickToPlace")}
+        </p>
+
         <div className="flex gap-3 pt-1">
           <button
             type="button"
             className="cad-ribbon-action cad-ribbon-action-primary flex-1"
-            disabled={disabled || bodyIds.length === 0}
+            disabled={disabled || chosenBodyIds.length === 0}
             onClick={() => {
               commitRef.current(view);
             }}
@@ -736,7 +968,11 @@ export function SheetPanel({
             className="cad-ribbon-action cad-ribbon-action-primary flex-1"
             disabled={disabled}
             onClick={() => {
+              // The selects already committed live; Confirm applies the
+              // name and closes the panel (the contextual Enter/Escape
+              // pattern — a confirm that does nothing visible is broken).
               commitRef.current(settings);
+              onClose();
             }}
           >
             {t("common.confirm")}
@@ -759,6 +995,176 @@ export function SheetPanel({
             {t("drawing.sheetPanel.titleBlock")}
           </button>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+// ── New Drawing setup dialog ───────────────────────────────────────
+//
+// The "New Drawing" toolbar button opens THIS instead of creating a
+// silent default: name, ISO 5457 paper size, orientation and the
+// ISO 5456 projection angle are chosen up front (the document-level
+// settings, editable later in the Sheet panel).  Enter/Confirm
+// commits, Escape cancels — the contextual workflow pattern.
+
+export interface NewDrawingPanelProps {
+  disabled: boolean;
+  defaultName: string;
+  onCommit: (settings: {
+    name: string;
+    paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
+    orientation: "portrait" | "landscape";
+    projection_angle: "first_angle" | "third_angle";
+  }) => void;
+  onClose: () => void;
+}
+
+export function NewDrawingPanel({
+  disabled,
+  defaultName,
+  onCommit,
+  onClose,
+}: NewDrawingPanelProps) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(defaultName);
+  const [paperSize, setPaperSize] = useState<"A0" | "A1" | "A2" | "A3" | "A4">(
+    "A4",
+  );
+  const [orientation, setOrientation] = useState<"portrait" | "landscape">(
+    "landscape",
+  );
+  const [projectionAngle, setProjectionAngle] = useState<
+    "first_angle" | "third_angle"
+  >("first_angle");
+
+  const settings = useMemo(
+    () => ({
+      name: name.trim() || defaultName,
+      paper_size: paperSize,
+      orientation,
+      projection_angle: projectionAngle,
+    }),
+    [name, defaultName, paperSize, orientation, projectionAngle],
+  );
+
+  // Enter commits, Escape cancels.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && !disabled) {
+        onCommit(settings);
+      } else if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [disabled, settings, onCommit, onClose]);
+
+  return (
+    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
+      <div className="space-y-4">
+        <div>
+          <p className="cad-kicker">{t("drawing.newPanel.title")}</p>
+        </div>
+
+        <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+          {t("drawing.newPanel.name")}
+          <input
+            className="cad-input w-40"
+            value={name}
+            autoFocus
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
+          />
+        </label>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.newPanel.paperSize")}
+            <select
+              className="cad-input"
+              value={paperSize}
+              onChange={(event) => {
+                setPaperSize(
+                  event.target.value as
+                    | "A0"
+                    | "A1"
+                    | "A2"
+                    | "A3"
+                    | "A4",
+                );
+              }}
+            >
+              {PAPER_SIZES.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.newPanel.orientation")}
+            <select
+              className="cad-input"
+              value={orientation}
+              onChange={(event) => {
+                setOrientation(
+                  event.target.value as "portrait" | "landscape",
+                );
+              }}
+            >
+              <option value="portrait">
+                {t("drawing.newPanel.portrait")}
+              </option>
+              <option value="landscape">
+                {t("drawing.newPanel.landscape")}
+              </option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.newPanel.projectionAngle")}
+            <select
+              className="cad-input"
+              value={projectionAngle}
+              onChange={(event) => {
+                setProjectionAngle(
+                  event.target.value as "first_angle" | "third_angle",
+                );
+              }}
+            >
+              <option value="first_angle">
+                {t("drawing.newPanel.firstAngle")}
+              </option>
+              <option value="third_angle">
+                {t("drawing.newPanel.thirdAngle")}
+              </option>
+            </select>
+          </label>
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            className="cad-ribbon-action cad-ribbon-action-primary flex-1"
+            disabled={disabled}
+            onClick={() => {
+              onCommit(settings);
+            }}
+          >
+            {t("common.confirm")}
+          </button>
+          <button
+            type="button"
+            className="cad-ribbon-action flex-1"
+            onClick={onClose}
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
       </div>
     </section>
   );

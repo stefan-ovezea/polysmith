@@ -147,6 +147,7 @@
     "--cad-drawing-visible-line": "#1c1b1b",
     "--cad-drawing-hidden-line": "#5c5f77",
     "--cad-drawing-view-label": "#1e66f5",
-    "--cad-drawing-stale": "#fe640b"
+    "--cad-drawing-stale": "#fe640b",
+    "--cad-drawing-preview": "#8839ef"
   }
 }

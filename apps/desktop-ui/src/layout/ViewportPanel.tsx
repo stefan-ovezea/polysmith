@@ -255,6 +255,15 @@ export function ViewportPanel({
   showCamToolpath = true,
   showDrawingSheet = false,
   drawingDimensionPreview = null,
+  drawingViewPreview = null,
+  drawingViewDrag = null,
+  drawingInsertArmed = false,
+  onDrawingInsertMove,
+  onDrawingInsertCommit,
+  drawingViewDragArmed = false,
+  onDrawingViewDragStart,
+  onDrawingViewDragMove,
+  onDrawingViewDrop,
   drawingPickArmed = false,
   onDrawingPick,
   wcsOrientation = "z_up",
@@ -741,6 +750,29 @@ export function ViewportPanel({
   drawingPickArmedRef.current = drawingPickArmed;
   const drawingPickRef = useRef(onDrawingPick);
   drawingPickRef.current = onDrawingPick;
+  // Mouse-first Insert View: hover feeds the ghost position, a click
+  // commits the view at the clicked sheet-mm point (no typing).  A
+  // click-vs-pan guard uses the pointer-down client position.
+  const drawingInsertArmedRef = useRef(drawingInsertArmed);
+  drawingInsertArmedRef.current = drawingInsertArmed;
+  const drawingInsertMoveRef = useRef(onDrawingInsertMove);
+  drawingInsertMoveRef.current = onDrawingInsertMove;
+  const drawingInsertCommitRef = useRef(onDrawingInsertCommit);
+  drawingInsertCommitRef.current = onDrawingInsertCommit;
+  const drawingPointerDownClientRef = useRef<{ x: number; y: number } | null>(
+    null,
+  );
+  // Mouse-first view reposition: grabbing a view frame starts a drag
+  // (the frame follows the cursor); pointer-up commits the move.
+  const drawingViewDragArmedRef = useRef(drawingViewDragArmed);
+  drawingViewDragArmedRef.current = drawingViewDragArmed;
+  const drawingViewDragStartRef = useRef(onDrawingViewDragStart);
+  drawingViewDragStartRef.current = onDrawingViewDragStart;
+  const drawingViewDragMoveRef = useRef(onDrawingViewDragMove);
+  drawingViewDragMoveRef.current = onDrawingViewDragMove;
+  const drawingViewDropRef = useRef(onDrawingViewDrop);
+  drawingViewDropRef.current = onDrawingViewDrop;
+  const viewFrameDragRef = useRef<{ viewId: string } | null>(null);
   const selectEdgeRef = useRef(onSelectEdge);
   const selectVertexRef = useRef(onSelectVertex);
   const startSketchRef = useRef(onStartSketch);
@@ -1358,6 +1390,15 @@ export function ViewportPanel({
       canvas.style.cursor = "";
     }
   }, [arrayCenterPicking]);
+  // Crosshair while the Insert View placement is armed (mouse-first —
+  // the click places the view).
+  useEffect(() => {
+    if (!rendererRef.current) {
+      return;
+    }
+    const canvas = rendererRef.current.domElement as HTMLCanvasElement;
+    canvas.style.cursor = drawingInsertArmed ? "crosshair" : "";
+  }, [drawingInsertArmed]);
   useEffect(() => {
     activeSketchPlaneIdRef.current = activeSketchPlaneId;
     activeSketchPlaneFrameRef.current = activeSketchPlaneFrame;
@@ -2872,6 +2913,29 @@ export function ViewportPanel({
     let frameId: number | null = null;
     let renderBurstUntil = 0;
 
+    // Resolves a pointer event to a sheet-mm point on the drawing
+    // sheet plane (z = 0, the FIRST sheet's coordinates) — shared by
+    // the insert-view hover/click and the view-frame drag.
+    const resolveSheetPoint = (
+      pickEvent: PointerEvent,
+    ): [number, number] | null => {
+      setPointerNdcFromEvent(pointer, pickEvent, renderer);
+      raycaster.setFromCamera(pointer, camera);
+      const hit = new THREE.Vector3();
+      if (
+        raycaster.ray.intersectPlane(
+          new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+          hit,
+        )
+      ) {
+        return [
+          Math.round(hit.x * 1000) / 1000,
+          Math.round(hit.y * 1000) / 1000,
+        ];
+      }
+      return null;
+    };
+
     rendererRef.current = renderer;
     sceneRef.current = scene;
     cameraRef.current = camera;
@@ -3403,6 +3467,54 @@ export function ViewportPanel({
       // from the store so async core events land here immediately.
       pointerDownRevisionRef.current =
         useCadCoreStore.getState().document?.revision ?? 0;
+      // The insert-view commit's click-vs-pan guard compares against
+      // this position on pointer-up.
+      drawingPointerDownClientRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+      // Mouse-first view reposition: a press on a view frame starts
+      // the drag (the frame follows the cursor; controls pause so the
+      // drag never pans the camera).
+      if (drawingViewDragArmedRef.current) {
+        setPointerNdcFromEvent(pointer, event, renderer);
+        raycaster.setFromCamera(pointer, camera);
+        const hits = raycaster.intersectObjects(
+          drawingGroupRef.current?.children ?? [],
+          true,
+        );
+        const frameHit = hits.find(
+          (hit) =>
+            typeof (hit.object as THREE.Mesh).userData?.viewFrame
+              ?.viewId === "string",
+        );
+        if (frameHit) {
+          const frame = (frameHit.object as THREE.Mesh).userData
+            .viewFrame as {
+            viewId: string;
+            min: [number, number];
+            max: [number, number];
+          };
+          const point = resolveSheetPoint(event);
+          if (point) {
+            viewFrameDragRef.current = { viewId: frame.viewId };
+            const grabOffset: [number, number] = [
+              frame.min[0] - point[0],
+              frame.min[1] - point[1],
+            ];
+            controls.enabled = false;
+            // Capture the pointer so the drop fires even when the
+            // pointer leaves the canvas mid-drag.
+            renderer.domElement.setPointerCapture(event.pointerId);
+            drawingViewDragStartRef.current?.(
+              frame.viewId,
+              point,
+              grabOffset,
+            );
+            return;
+          }
+        }
+      }
       // Drag-paint trim (R5): pressing inside the trim tool starts a
       // stroke; the pointer-move path records every crossed entity
       // and the pointer-up commits them as one batch.
@@ -3498,6 +3610,20 @@ export function ViewportPanel({
     }
 
     function handlePointerMove(event: PointerEvent) {
+
+      // --- Mouse-first view reposition: the dragged frame follows ---
+      if (viewFrameDragRef.current) {
+        const point = resolveSheetPoint(event);
+        drawingViewDragMoveRef.current?.(point ?? [0, 0]);
+        return;
+      }
+
+      // --- Mouse-first Insert View: the ghost follows the cursor ---
+      if (drawingInsertArmedRef.current) {
+        const point = resolveSheetPoint(event);
+        drawingInsertMoveRef.current?.(point);
+        return;
+      }
 
       // --- Rectangle selection drag tracking ---
       if (selectionDragRef.current?.active) {
@@ -4321,19 +4447,39 @@ export function ViewportPanel({
         // the core maps it to the nearest projected edge.
         drawingPickArmed: drawingPickArmedRef.current,
         drawingPick: (pickEvent) => {
-          setPointerNdcFromEvent(pointer, pickEvent, renderer);
-          raycaster.setFromCamera(pointer, camera);
-          const hit = new THREE.Vector3();
-          if (
-            raycaster.ray.intersectPlane(
-              new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
-              hit,
-            )
-          ) {
-            drawingPickRef.current?.([
-              Math.round(hit.x * 1000) / 1000,
-              Math.round(hit.y * 1000) / 1000,
-            ]);
+          const point = resolveSheetPoint(pickEvent);
+          if (point) {
+            drawingPickRef.current?.(point);
+          }
+        },
+        // Mouse-first Insert View: a click on the sheet commits the
+        // view at the clicked point — guarded against pan/zoom drags
+        // (a click moves < 6 px between down and up).
+        drawingInsertArmed: drawingInsertArmedRef.current,
+        drawingInsertCommit: (pickEvent) => {
+          const down = drawingPointerDownClientRef.current;
+          const moved =
+            down !== null &&
+            Math.abs(pickEvent.clientX - down.x) +
+              Math.abs(pickEvent.clientY - down.y) >=
+              6;
+          if (moved) {
+            return;  // a pan/zoom drag, not a placement click
+          }
+          const point = resolveSheetPoint(pickEvent);
+          if (point) {
+            drawingInsertCommitRef.current?.(point);
+          }
+        },
+        // Mouse-first view reposition: the drop consumes the
+        // pointer-up and commits drawing_view_move.
+        viewDragActive: viewFrameDragRef.current !== null,
+        drawingViewDrop: (pickEvent) => {
+          const point = resolveSheetPoint(pickEvent);
+          viewFrameDragRef.current = null;
+          controls.enabled = true;
+          if (point) {
+            drawingViewDropRef.current?.(point);
           }
         },
         activeSketchPlaneId,
@@ -5023,6 +5169,8 @@ export function ViewportPanel({
       showCamToolpath,
       showDrawingSheet,
       drawingDimensionPreview,
+      drawingViewPreview,
+      drawingViewDrag,
       wcsOrientation,
       activeCamSetupId,
       // All pick modes share the snap markers + hover suppression —
@@ -5051,7 +5199,7 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, showDrawingSheet, drawingDimensionPreview, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, showDrawingSheet, drawingDimensionPreview, drawingViewPreview, drawingViewDrag, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   // Entering the drawing workspace fits the camera to the sheet — the
   // sheet is the workspace's whole content, so the default CAD framing

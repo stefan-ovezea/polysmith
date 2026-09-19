@@ -81,6 +81,14 @@ interface ViewportPointerUpParams {
   // delivers the clicked sheet-mm point instead of scene selection.
   drawingPickArmed: boolean;
   drawingPick: (event: PointerEvent) => void;
+  // Mouse-first insert view: while the Insert View panel is open, a
+  // click on the sheet commits the view at the clicked point.
+  drawingInsertArmed: boolean;
+  drawingInsertCommit: (event: PointerEvent) => void;
+  // Mouse-first view reposition: an in-progress view-frame drag
+  // consumes the pointer-up (the drop).
+  viewDragActive: boolean;
+  drawingViewDrop: (event: PointerEvent) => void;
   activeSketchPlaneId: string | null;
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   pointerDown: PointerDownPosition | null;
@@ -646,6 +654,14 @@ function finishScenePointerUp(params: ViewportPointerUpParams) {
   }
   if (params.drillPickPointEnabled) {
     params.drillPickPoint(params.event);
+    return;
+  }
+  if (params.viewDragActive) {
+    params.drawingViewDrop(params.event);
+    return;
+  }
+  if (params.drawingInsertArmed) {
+    params.drawingInsertCommit(params.event);
     return;
   }
   if (params.drawingPickArmed) {

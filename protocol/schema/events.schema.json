@@ -27,6 +27,7 @@
         "cam_tool_parse_result",
         "cam_face_attestation_result",
         "drawing_dimension_preview",
+        "drawing_view_preview_result",
         "log",
         "trim_preview_result",
         "error"

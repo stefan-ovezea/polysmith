@@ -176,4 +176,30 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
     const DocumentState& document, const std::string& drawing_id,
     const std::string& sheet_id);
 
+/// Geometry of a view that is NOT (yet) on the sheet — the Insert
+/// View live preview.  Flattened exactly like a committed view
+/// (coincidence priority + ISO 128-2 dashing + section labels),
+/// memory-only, never cached.  Sibling sections of the drawing still
+/// trace their cutting planes onto the preview; the preview's own
+/// (uncommitted) section does not.
+struct ViewPreviewGeometry {
+  std::vector<SheetPrimitive> primitives;
+  std::vector<SheetText> texts;
+  /// Content bounds (sheet-mm) of the view geometry — nullopt when
+  /// the projection produced no geometry.
+  std::optional<std::array<double, 2>> min;
+  std::optional<std::array<double, 2>> max;
+  /// Dependency-degradation warning (missing body / unresolvable
+  /// frame); the UI shows it and drops the preview graphics.
+  std::string warning;
+};
+
+/// Projects + flattens a preview view definition.  Returns nullopt
+/// when the drawing does not exist; a dependency problem yields a
+/// geometry with `warning` set instead of a failure — the panel
+/// shows the reason rather than a silent empty preview.
+std::optional<ViewPreviewGeometry> preview_view_geometry(
+    const DocumentState& document, const std::string& drawing_id,
+    const DrawingView& def);
+
 }  // namespace polysmith::core

@@ -26,6 +26,7 @@
 #include "core/document/document.h"
 #include "core/drawing/drawing_projection.h"
 #include "core/drawing/drawing_runtime.h"
+#include "core/drawing/drawing_sheet.h"
 #include "core/geometry/body_compiler.h"
 #include "core/primitive/primitive_types.h"
 #include "core/viewport/viewport.h"
@@ -397,6 +398,7 @@ bool test_refresh_and_undo() {
   drawing.name = "Test Drawing";
   DrawingSheet sheet;
   sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";  // explicit: the tests pin portrait
   sheet.paper_size = "A4";
   drawing.sheets.push_back(sheet);
   DocumentState document = manager.drawing_create(drawing);
@@ -502,6 +504,7 @@ bool test_view_mutators() {
   drawing.name = "Test Drawing";
   DrawingSheet sheet;
   sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";  // explicit: the tests pin portrait
   drawing.sheets.push_back(sheet);
   DocumentState document = manager.drawing_create(drawing);
   const std::string drawing_id = document.drawing.drawings[0].drawing_id;
@@ -600,6 +603,146 @@ bool test_view_mutators() {
                 "section views with a definition are accepted (P4)");
 }
 
+// ── Test 7a: live view preview (Insert View ghost) ────────────────
+
+bool test_view_preview_geometry() {
+  DocumentManager manager;
+  const std::string body_id =
+      make_box_document(manager, {.width = 20.0, .height = 20.0,
+                                  .depth = 10.0});
+  Drawing drawing;
+  drawing.name = "Test Drawing";
+  DrawingSheet sheet;
+  sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";  // explicit: the tests pin portrait
+  drawing.sheets.push_back(sheet);
+  DocumentState document = manager.drawing_create(drawing);
+  const std::string drawing_id = document.drawing.drawings[0].drawing_id;
+  const std::string sheet_id = document.drawing.drawings[0].sheets[0].sheet_id;
+
+  // Commit a front view so the preview's sibling-trace source exists.
+  DrawingView front;
+  front.kind = "projection";
+  front.standard_view = "front";
+  front.source_body_ids = {body_id};
+  front.sheet_position = {30.0, 40.0};
+  document = manager.drawing_view_create(drawing_id, sheet_id, front);
+
+  // Preview a TOP view at a chosen sheet position — uncommitted, so
+  // the document must be untouched.
+  const int revision_before = document.revision;
+  const size_t views_before = document.drawing.drawings[0].views.size();
+  DrawingView def;
+  def.kind = "projection";
+  def.standard_view = "top";
+  def.source_body_ids = {body_id};
+  def.scale = 1.0;
+  def.sheet_position = {30.0, 10.0};
+  const auto preview = polysmith::core::preview_view_geometry(
+      document, drawing_id, def);
+  if (!expect(preview.has_value(), "preview projects an uncommitted view")) {
+    return false;
+  }
+  if (!expect(preview->warning.empty() && preview->min.has_value() &&
+                  preview->max.has_value(),
+              "healthy preview has bounds and no warning")) {
+    return false;
+  }
+  document = manager.get_document().value();
+  if (!expect(document.revision == revision_before &&
+                  document.drawing.drawings[0].views.size() == views_before,
+              "preview does not mutate the document")) {
+    return false;
+  }
+
+  // The preview must match the COMMITTED equivalent: create the same
+  // top view for real, flatten the sheet, and compare the
+  // view-geometry primitive sets.
+  const auto flat_before = polysmith::core::flatten_sheet(
+      document, drawing_id, sheet_id);
+  const size_t geometry_before = flat_before.has_value()
+      ? std::count_if(flat_before->primitives.begin(),
+                      flat_before->primitives.end(),
+                      [](const polysmith::core::SheetPrimitive& p) {
+                        return p.purpose == "view_geometry";
+                      })
+      : 0;
+  DrawingView committed = def;
+  document = manager.drawing_view_create(drawing_id, sheet_id, committed);
+  const auto flat_after = polysmith::core::flatten_sheet(
+      document, drawing_id, sheet_id);
+  if (!expect(flat_after.has_value(), "sheet flattens after the commit")) {
+    return false;
+  }
+  const size_t geometry_after = std::count_if(
+      flat_after->primitives.begin(), flat_after->primitives.end(),
+      [](const polysmith::core::SheetPrimitive& p) {
+        return p.purpose == "view_geometry";
+      });
+  const size_t preview_geometry = std::count_if(
+      preview->primitives.begin(), preview->primitives.end(),
+      [](const polysmith::core::SheetPrimitive& p) {
+        return p.purpose == "view_geometry";
+      });
+  if (!expect(preview_geometry == geometry_after - geometry_before,
+              "preview geometry equals the committed view's geometry")) {
+    return false;
+  }
+
+  // Bounds: the top view of the 20×20×10 corner-at-origin box is a
+  // 20 wide × 10 deep rectangle.  The top frame has view-Y = N×X =
+  // −world X, so the content spans view-Y −20..0 — placed at (30,10)
+  // the sheet bounds are (30,−10)–(50,10).
+  if (!expect(near(preview->min.value()[0], 30.0, 1e-4) &&
+                  near(preview->min.value()[1], -10.0, 1e-4) &&
+                  near(preview->max.value()[0], 50.0, 1e-4) &&
+                  near(preview->max.value()[1], 10.0, 1e-4),
+              "preview bounds match scale + sheet_position")) {
+    return false;
+  }
+
+  // A missing body degrades with a warning and no geometry — never a
+  // crash, never a silent empty preview.
+  DrawingView ghost;
+  ghost.kind = "projection";
+  ghost.standard_view = "front";
+  ghost.source_body_ids = {"body-that-does-not-exist"};
+  const auto broken = polysmith::core::preview_view_geometry(
+      document, drawing_id, ghost);
+  if (!expect(broken.has_value() && !broken->warning.empty() &&
+                  !broken->min.has_value(),
+              "missing body returns a warning, not geometry")) {
+    return false;
+  }
+
+  // A section preview carries hatch primitives (ISO 128-3 §7).
+  DrawingView section_def;
+  section_def.kind = "section";
+  section_def.source_body_ids = {body_id};
+  section_def.sheet_position = {120.0, 40.0};
+  polysmith::core::SectionDefinition section;
+  section.cutting_plane_point = {10.0, 0.0, 0.0};
+  section.cutting_plane_normal = {1.0, 0.0, 0.0};
+  section_def.section = section;
+  const auto section_preview = polysmith::core::preview_view_geometry(
+      document, drawing_id, section_def);
+  const bool has_hatch = section_preview.has_value() &&
+      std::any_of(section_preview->primitives.begin(),
+                  section_preview->primitives.end(),
+                  [](const polysmith::core::SheetPrimitive& p) {
+                    return p.purpose == "hatch";
+                  });
+  if (!expect(has_hatch, "section preview includes hatching")) {
+    return false;
+  }
+
+  // An unknown drawing yields nullopt.
+  return expect(!polysmith::core::preview_view_geometry(
+                     document, "no-such-drawing", def)
+                     .has_value(),
+                "unknown drawing returns nullopt");
+}
+
 // ── Test 7b: viewport sheet emission ──────────────────────────────
 
 bool test_viewport_sheet_emission() {
@@ -612,6 +755,7 @@ bool test_viewport_sheet_emission() {
   drawing.name = "Test Drawing";
   DrawingSheet sheet;
   sheet.name = "Sheet 1";
+  sheet.orientation = "portrait";  // explicit: the tests pin portrait
   sheet.paper_size = "A4";
   drawing.sheets.push_back(sheet);
   DocumentState document = manager.drawing_create(drawing);
@@ -801,6 +945,14 @@ int main() {
 
   std::cout << "  Test 8: viewport sheet emission... ";
   if (test_viewport_sheet_emission()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 9: live view preview geometry... ";
+  if (test_view_preview_geometry()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

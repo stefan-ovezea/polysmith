@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type {
   DocumentState,
   DrawingDimensionPreviewPayload,
+  DrawingViewPreviewPayload,
   PrimitiveInteractionState,
   PrimitiveVisual,
   ReferencePlaneInteractionState,
@@ -139,6 +140,13 @@ interface SyncViewportSceneParams {
   /** P6: the non-mutating dimension preview (drawn on the sheet) —
    *  part of the rebuild key so every preview reply repaints it. */
   drawingDimensionPreview: DrawingDimensionPreviewPayload | null;
+  /** Insert View ghost (drawing_view_preview_result) — the uncommitted
+   *  view's translucent geometry + placement frame, also part of the
+   *  rebuild key. */
+  drawingViewPreview: DrawingViewPreviewPayload | null;
+  /** In-progress mouse drag of a committed view — a dashed frame
+   *  ghost following the cursor until the drop commits the move. */
+  drawingViewDrag: { min: [number, number]; max: [number, number]; label: string } | null;
   wcsOrientation: string;
   activeCamSetupId?: string | null;
   /** True while the CAM origin pick is armed — draws the snap-target
@@ -308,6 +316,8 @@ function rebuildViewportScene(
       viewport: params.viewport,
       drawingGroup: groups.drawingGroup,
       preview: params.drawingDimensionPreview,
+      viewPreview: params.drawingViewPreview,
+      viewDrag: params.drawingViewDrag,
     });
     params.refs.lastSceneBuildKey.current = sceneBuildKey;
     return;
@@ -334,6 +344,8 @@ function viewportSceneBuildKey({
   showStock,
   showDrawingSheet,
   drawingDimensionPreview,
+  drawingViewPreview,
+  drawingViewDrag,
   wcsOrientation,
   activeCamSetupId,
   originPickArmed,
@@ -398,6 +410,25 @@ function viewportSceneBuildKey({
         drawingDimensionPreview.curves?.length ?? 0,
       ].join("|")
     : "nopreview";
+  // The Insert View ghost repaints per reply — its origin, bounds and
+  // curve count all feed the rebuild key.
+  const viewPreviewSignature = drawingViewPreview
+    ? [
+        drawingViewPreview.view.label,
+        drawingViewPreview.view.origin.join(","),
+        drawingViewPreview.view.min.join(","),
+        drawingViewPreview.view.max.join(","),
+        drawingViewPreview.view.warning,
+        drawingViewPreview.curves.length,
+      ].join("|")
+    : "noviewpreview";
+  const viewDragSignature = drawingViewDrag
+    ? [
+        drawingViewDrag.min.join(","),
+        drawingViewDrag.max.join(","),
+        drawingViewDrag.label,
+      ].join("|")
+    : "noviewdrag";
   return [
     sceneData.geometryKey,
     displayUnits,
@@ -407,6 +438,8 @@ function viewportSceneBuildKey({
     showDrawingSheet ? "drawing:on" : "drawing:off",
     "drawing:" + drawingSignature,
     "preview:" + previewSignature,
+    "viewpreview:" + viewPreviewSignature,
+    "viewdrag:" + viewDragSignature,
     "cam:" + camSignature,
     // The origin-pick markers are added/removed on arm/disarm, so
     // the arm state must be part of the rebuild key.  The drill flag

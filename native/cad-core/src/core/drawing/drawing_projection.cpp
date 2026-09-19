@@ -546,6 +546,50 @@ std::optional<DrawingViewFrame> standard_view_frame(
   return frame;
 }
 
+std::optional<DrawingViewFrame> resolve_view_frame(const DrawingView& view) {
+  if (view.kind == "section") {
+    if (!view.section.has_value()) {
+      return std::nullopt;  // no definition at all
+    }
+    // The view plane IS the cutting plane; view-X is the orthogonal
+    // projection of world +X onto the plane (fallbacks +Y, +Z — with
+    // a unit normal the last fallback always resolves).
+    DrawingViewFrame frame;
+    frame.origin = view.section->cutting_plane_point;
+    frame.normal = view.section->cutting_plane_normal;
+    const auto project_onto_plane = [&](const std::array<double, 3>& axis) {
+      const double dot = axis[0] * frame.normal[0] + axis[1] * frame.normal[1] +
+                         axis[2] * frame.normal[2];
+      return std::array<double, 3>{axis[0] - dot * frame.normal[0],
+                                   axis[1] - dot * frame.normal[1],
+                                   axis[2] - dot * frame.normal[2]};
+    };
+    std::array<double, 3> x_axis = project_onto_plane({1.0, 0.0, 0.0});
+    double x_length = std::sqrt(x_axis[0] * x_axis[0] + x_axis[1] * x_axis[1] +
+                                x_axis[2] * x_axis[2]);
+    if (x_length < 1e-9) {
+      x_axis = project_onto_plane({0.0, 1.0, 0.0});
+      x_length = std::sqrt(x_axis[0] * x_axis[0] + x_axis[1] * x_axis[1] +
+                           x_axis[2] * x_axis[2]);
+    }
+    if (x_length < 1e-9) {
+      x_axis = project_onto_plane({0.0, 0.0, 1.0});
+      x_length = std::sqrt(x_axis[0] * x_axis[0] + x_axis[1] * x_axis[1] +
+                           x_axis[2] * x_axis[2]);
+    }
+    if (x_length < 1e-9) {
+      return std::nullopt;  // degenerate normal
+    }
+    frame.x_direction = {x_axis[0] / x_length, x_axis[1] / x_length,
+                         x_axis[2] / x_length};
+    return frame;
+  }
+  if (!view.standard_view.empty()) {
+    return standard_view_frame(view.standard_view);
+  }
+  return view.custom_frame;
+}
+
 // ── The projection itself ─────────────────────────────────────────
 
 ProjectionResult project(const ProjectionInput& input) {
