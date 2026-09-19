@@ -345,6 +345,28 @@ DocumentState DocumentManager::drawing_sheet_update(
   return document_.value();
 }
 
+DocumentState DocumentManager::drawing_title_block_update(
+    const std::string& drawing_id, const std::string& sheet_id,
+    const TitleBlock& title_block) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  DrawingSheet* sheet = find_sheet(*drawing, sheet_id);
+  if (sheet == nullptr) {
+    throw std::runtime_error("Unknown sheet: " + sheet_id);
+  }
+  // Nothing to validate beyond what the payload parser already did —
+  // every field is a string.  Canonical mutator shape still applies.
+  push_undo_state();
+  clear_redo_stack();
+  sheet->title_block = title_block;
+  // Cosmetic: the bump only re-flattens, nothing re-projects.
+  bump_geometry_revision();
+  return document_.value();
+}
+
 DocumentState DocumentManager::drawing_view_create(
     const std::string& drawing_id, const std::string& sheet_id,
     const DrawingView& view) {

@@ -165,6 +165,20 @@
     return;
   }
 
+  if (command.type == "drawing_title_block_update") {
+    const auto drawing_id = read_string(command.payload, "drawing_id");
+    const auto sheet_id = read_string(command.payload, "sheet_id");
+    const auto title_block =
+        polysmith::protocol::title_block_from_payload(
+            command.payload.at("title_block"));
+    const auto document = document_manager().drawing_title_block_update(
+        drawing_id, sheet_id, title_block);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return;
+  }
+
   // ── Dimensions (P6) ─────────────────────────────────────────────
   // Picks are sheet-mm points resolved against the view's CURRENT
   // projection; the core mints the witness from the record's

@@ -57,6 +57,12 @@
   DocumentState drawing_section_update(const std::string& drawing_id,
                                        const std::string& view_id,
                                        const SectionDefinition& section);
+  // Replaces the sheet's ISO 7200 title block data (the eight
+  // mandatory fields + revision rows).  Purely cosmetic — the bump
+  // only re-flattens, nothing re-projects.
+  DocumentState drawing_title_block_update(const std::string& drawing_id,
+                                           const std::string& sheet_id,
+                                           const TitleBlock& title_block);
 
   // ── Dimensions (P6) ───────────────────────────────────────────
   // The core mints the witness from the pick: picks are sheet-mm

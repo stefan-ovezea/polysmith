@@ -4,6 +4,7 @@ import type {
   DrawingSheet,
   DrawingView,
   SectionDefinition,
+  TitleBlock,
 } from "@/types";
 
 // Drawing command factories — every command replies with a
@@ -133,6 +134,18 @@ export function makeDrawingSectionUpdateCommand(
     id: crypto.randomUUID(),
     type: "drawing_section_update",
     payload: { drawing_id: drawingId, view_id: viewId, section },
+  };
+}
+
+export function makeDrawingTitleBlockUpdateCommand(
+  drawingId: string,
+  sheetId: string,
+  titleBlock: TitleBlock,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_title_block_update",
+    payload: { drawing_id: drawingId, sheet_id: sheetId, title_block: titleBlock },
   };
 }
 

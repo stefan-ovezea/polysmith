@@ -763,6 +763,14 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
   `cut_away`, label, hatch angle/spacing).  The view must be kind
   `"section"`; a degenerate normal or non-positive hatch spacing is
   rejected before the undo push.  The bump re-cuts and re-projects.
+- `drawing_title_block_update { drawing_id, sheet_id, title_block }`
+  — replaces the sheet's ISO 7200 title block data: the eight
+  mandatory fields (legal owner, identification number, date of
+  issue, title, approval person, creator, document type, segment/
+  sheet number) plus `revision_rows` (each `[zone, rev, description,
+  date, approved]`).  Purely cosmetic — the bump re-flattens only.
+  The scale auto-fills from the sheet's FIRST view at flatten time;
+  nothing is re-projected.
 - `drawing_sheet_update { drawing_id, sheet_id, paper_size, orientation,
   projection_angle, name }` — edits the sheet: `paper_size` A0–A4,
   `orientation` portrait/landscape, `projection_angle` `"first_angle"`
@@ -809,16 +817,17 @@ Sheets (P5): `flatten_sheet(document, drawing_id, sheet_id)` produces
 the `SheetPrimitiveStream` that the viewport emission (`drawing_sheets`
 in the viewport payload) consumes — the sheet furniture (0.7 mm frame
 at 20/10 mm margins, centring marks, grid-reference ticks, the
-ISO 5456-2 projection symbol honoring the per-sheet angle) plus every
-view's geometry transformed into sheet-mm with the ISO 128-2 line
-styles ALREADY applied (dash patterns recalculated at corners per
-Annex A — every dash sequence starts and ends with a dash; hidden =
-dashed thin, cutting-plane = chain thin, hatching = continuous thin
-emitted last).  Coincident geometry is de-duplicated by the priority
-visible > hidden > cutting_plane > hatch on the undashed records, and
-cutting-plane traces lying on a visible/hidden line are dropped (the
-support-overlap rule).  The stream is deterministic and memory-only
-(golden-file pinned).
+ISO 7200 title block with the ISO 5456-2 projection symbol inside it
+honoring the per-sheet angle) plus every view's geometry transformed
+into sheet-mm with the ISO 128-2 line styles ALREADY applied (dash
+patterns recalculated at corners per Annex A — every dash sequence
+starts and ends with a dash; hidden = dashed thin, cutting-plane =
+chain thin, hatching = continuous thin emitted last).  Coincident
+geometry is de-duplicated by the priority visible > hidden >
+cutting_plane > hatch on the undashed records, and cutting-plane
+traces lying on a visible/hidden line are dropped (the support-overlap
+rule).  The stream is deterministic and memory-only (golden-file
+pinned).
 
 Dimensions (P6): the refresh pass resolves each annotation against
 its view's fresh projection through the witness ladder — identity
@@ -835,6 +844,26 @@ unbroken dimension line, and a `texts[]` record (3.5 mm lettering,
 unidirectional, ⌀/R prefixes, decimal separator, ° on angles).  A
 cosmetic `drawing_dimension_update` never re-projects — it only
 re-flattens.
+
+Title block + drawing text (P7): the flatten fills the 180×63 mm
+ISO 7200 block bottom-right inside the frame — the eight mandatory
+fields as `texts[]` records (purpose `"title_block"`), the scale
+auto-filled from the sheet's FIRST view (ISO 5455 formatting with the
+drawing's decimal separator), `Sheet x/y` from the sheet index, the
+"Dimensions in millimetres" + ISO 8015 notes, the projection symbol
+in the top-right cell, and the revision table (zone/rev/description/
+date/approved) stacked above the block while rows exist.  Every
+surviving cutting-plane trace additionally emits its section label at
+both ends (purpose `"section_label"`: the label letter + a filled
+arrow pointing along the section's sight direction).  Every `texts[]`
+record ALSO emits vector glyph line primitives (purpose
+`"text_glyph"`, thin continuous) laid out by the core text engine
+with the bundled OSIFONT single-stroke font (LGPL v3 + font-embedding
+exception; `POLYSMITH_DRAWING_FONT_PATH` overrides the path) — the
+viewport and the PDF/SVG backends draw the glyphs, the DXF backend
+emits the DATA record as real text.  Glyph contours are sorted by a
+geometric key so the stream stays reproducible across runs (OCCT's
+glyph face order is hash-dependent).
 
 Every mutator replies with a `document_state` event; validation errors
 reply with an `error` event.  Views are re-projected inside the single

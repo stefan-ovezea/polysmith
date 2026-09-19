@@ -6,6 +6,7 @@ import type {
   DrawingSheet,
   DrawingView,
   SectionDefinition,
+  TitleBlock,
 } from "@/types";
 
 // ── Insert View panel (contextual workflow, P3/P4/P5) ─────────────
@@ -594,6 +595,8 @@ export interface SheetPanelProps {
     projection_angle: DrawingSheet["projection_angle"];
     name: string;
   }) => void;
+  /** Opens the ISO 7200 title block editor for this sheet (P7). */
+  onOpenTitleBlock?: () => void;
   onClose: () => void;
 }
 
@@ -601,6 +604,7 @@ export function SheetPanel({
   disabled,
   sheet,
   onCommit,
+  onOpenTitleBlock,
   onClose,
 }: SheetPanelProps) {
   const { t } = useTranslation();
@@ -733,6 +737,216 @@ export function SheetPanel({
             disabled={disabled}
             onClick={() => {
               commitRef.current(settings);
+            }}
+          >
+            {t("common.confirm")}
+          </button>
+          <button
+            type="button"
+            className="cad-ribbon-action flex-1"
+            onClick={onClose}
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+
+        {onOpenTitleBlock ? (
+          <button
+            type="button"
+            className="cad-ribbon-action w-full"
+            onClick={onOpenTitleBlock}
+          >
+            {t("drawing.sheetPanel.titleBlock")}
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+// ── Title block editor (P7) ────────────────────────────────────────
+//
+// Edits the sheet's ISO 7200 title block: the eight mandatory fields
+// plus revision rows (zone/rev/description/date/approved).  Enter
+// commits drawing_title_block_update with the whole record; Escape
+// cancels.  The document round-trip re-syncs the draft.
+
+export interface TitleBlockPanelProps {
+  disabled: boolean;
+  /** The active sheet's title block (the round-trip re-syncs it). */
+  titleBlock: TitleBlock;
+  onCommit: (titleBlock: TitleBlock) => void;
+  onClose: () => void;
+}
+
+const TITLE_BLOCK_FIELD_KEYS = [
+  "legal_owner",
+  "identification",
+  "date",
+  "title",
+  "approver",
+  "creator",
+  "document_type",
+] as const;
+
+const REVISION_COLUMN_KEYS = [
+  "revisionZone",
+  "revisionRev",
+  "revisionDescription",
+  "revisionDate",
+  "revisionApproved",
+] as const;
+
+export function TitleBlockPanel({
+  disabled,
+  titleBlock,
+  onCommit,
+  onClose,
+}: TitleBlockPanelProps) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState<TitleBlock>(titleBlock);
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  // Re-sync when the document round-trip lands with committed values.
+  useEffect(() => {
+    setDraft(titleBlock);
+  }, [titleBlock]);
+
+  // Enter commits the whole record, Escape cancels.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && !disabled) {
+        commitRef.current(draft);
+      } else if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [disabled, draft, onClose]);
+
+  const setField = (field: (typeof TITLE_BLOCK_FIELD_KEYS)[number], value: string) => {
+    setDraft((prev) => ({ ...prev, [field]: value }));
+  };
+  const setRevisionCell = (
+    rowIndex: number,
+    column: 0 | 1 | 2 | 3 | 4,
+    value: string,
+  ) => {
+    setDraft((prev) => {
+      const rows = prev.revision_rows.map((row, index) =>
+        index === rowIndex
+          ? (row.map((cell, c) => (c === column ? value : cell)) as [
+              string,
+              string,
+              string,
+              string,
+              string,
+            ])
+          : row,
+      );
+      return { ...prev, revision_rows: rows };
+    });
+  };
+
+  return (
+    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
+      <div className="space-y-4">
+        <div>
+          <p className="cad-kicker">{t("drawing.titleBlockPanel.title")}</p>
+        </div>
+
+        {TITLE_BLOCK_FIELD_KEYS.map((field) => (
+          <label
+            key={field}
+            className="flex items-center gap-2 text-xs text-[var(--cad-muted)]"
+          >
+            <span className="w-32 shrink-0">
+              {t(`drawing.titleBlockPanel.${field}`)}
+            </span>
+            <input
+              className="cad-input flex-1"
+              value={draft[field]}
+              onChange={(event) => {
+                setField(field, event.target.value);
+              }}
+            />
+          </label>
+        ))}
+
+        <div>
+          <div className="flex items-center justify-between">
+            <p className="cad-kicker">{t("drawing.titleBlockPanel.revisions")}</p>
+            <button
+              type="button"
+              className="cad-ribbon-action"
+              disabled={disabled}
+              onClick={() => {
+                setDraft((prev) => ({
+                  ...prev,
+                  revision_rows: [...prev.revision_rows, ["", "", "", "", ""]],
+                }));
+              }}
+            >
+              {t("drawing.titleBlockPanel.addRevision")}
+            </button>
+          </div>
+          <div className="mt-2 space-y-1">
+            {draft.revision_rows.length === 0 ? (
+              <p className="text-xs text-[var(--cad-muted)]">
+                {t("drawing.titleBlockPanel.noRevisions")}
+              </p>
+            ) : (
+              draft.revision_rows.map((row, rowIndex) => (
+                <div key={rowIndex} className="flex items-center gap-1">
+                  {REVISION_COLUMN_KEYS.map((columnKey, column) => (
+                    <input
+                      key={columnKey}
+                      className="cad-input flex-1"
+                      placeholder={t(
+                        `drawing.titleBlockPanel.${columnKey}`,
+                      )}
+                      value={row[column]}
+                      onChange={(event) => {
+                        setRevisionCell(
+                          rowIndex,
+                          column as 0 | 1 | 2 | 3 | 4,
+                          event.target.value,
+                        );
+                      }}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    className="cad-ribbon-action"
+                    disabled={disabled}
+                    onClick={() => {
+                      setDraft((prev) => ({
+                        ...prev,
+                        revision_rows: prev.revision_rows.filter(
+                          (_, index) => index !== rowIndex,
+                        ),
+                      }));
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            className="cad-ribbon-action cad-ribbon-action-primary flex-1"
+            disabled={disabled}
+            onClick={() => {
+              commitRef.current(draft);
             }}
           >
             {t("common.confirm")}

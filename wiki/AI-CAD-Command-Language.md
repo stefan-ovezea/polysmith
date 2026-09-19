@@ -3523,6 +3523,14 @@ cache, the toolpath contract) — they never appear in document payloads.
   point/normal, `cut_away`, label, hatch angle/spacing). The view must
   be kind `"section"`; a degenerate normal or non-positive hatch
   spacing is rejected before the undo push.
+- `drawing_title_block_update` — payload `{drawing_id, sheet_id,
+  title_block}`. Replaces the sheet's ISO 7200 title block data: the
+  eight mandatory fields (`legal_owner`, `identification`, `date`,
+  `title`, `approver`, `creator`, `document_type`, segment/sheet
+  number auto-filled) plus `revision_rows` (each `[zone, rev,
+  description, date, approved]`). Purely cosmetic — the bump
+  re-flattens only. The scale auto-fills from the sheet's FIRST view
+  at flatten time.
 - `drawing_sheet_update` — payload `{drawing_id, sheet_id, paper_size,
   orientation, projection_angle, name}`. `paper_size` A0–A4,
   `orientation` portrait/landscape (landscape swaps the trimmed ISO

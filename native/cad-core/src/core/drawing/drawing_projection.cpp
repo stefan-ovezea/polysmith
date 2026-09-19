@@ -913,7 +913,29 @@ ProjectionResult project(const ProjectionInput& input) {
       rec.p_end = points[best_j];
       // Derived geometry: no model-edge provenance (the default
       // witness is the "unresolved" identity); the chain line ties to
-      // its section through the label (P7).
+      // its section through the label.  The sight direction drives
+      // the A–A arrows: the section viewer sits on the plane's
+      // NORMAL side (that side is cut away) looking along −normal.
+      rec.section_label = section.label;
+      {
+        const gp_Pnt base(section.cutting_plane_point[0],
+                          section.cutting_plane_point[1],
+                          section.cutting_plane_point[2]);
+        const gp_Pnt tip(
+            base.X() - section.cutting_plane_normal[0],
+            base.Y() - section.cutting_plane_normal[1],
+            base.Z() - section.cutting_plane_normal[2]);
+        gp_Pnt2d base_2d, tip_2d;
+        projector.Project(base, base_2d);
+        projector.Project(tip, tip_2d);
+        const double dx = tip_2d.X() - base_2d.X();
+        const double dy = tip_2d.Y() - base_2d.Y();
+        const double length = std::hypot(dx, dy);
+        if (length > 1e-9) {
+          rec.trace_sight_dir = std::array<double, 2>{dx / length,
+                                                      dy / length};
+        }
+      }
       result.edges.push_back(std::move(rec));
     }
   }

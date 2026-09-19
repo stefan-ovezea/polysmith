@@ -519,21 +519,60 @@ updates; delete the body → dimension stays with the stale tint +
 warning; undo/redo; decimal comma on fractional values.  Commit C6
 after the user confirms.
 
-## NEXT: P7 — ISO 7200 title block + drawing text (C7)
-Fill the title-block reservation (8 mandatory ISO 7200 fields +
-scale auto-fill, sheet x-of-y, projection symbol already drawn,
-"Dimensions in millimetres" + ISO 8015 note, revision rows); layout
-180 mm fixed × 63 mm, bottom-right; text via the existing text
-engine vector glyphs into the flattened stream (the SheetText
-records stay — glyph primitives become a parallel emission for
-PDF/SVG); **bundle a single-stroke ISO 3098 font** (OSIFONT —
-verify the GPL font-embedding exception at vendoring; public-domain
-Hershey fallback) via the bundled-font pattern; the A–A section
-label + arrows on the parent view (the P4 carry-over);
-`drawing_title_block_update{sheet_id, TitleBlock}` + a
-TitleBlockEditor floating panel.  Test
-`cad_core_drawing_title_block_test` — 8 fields rendered, auto-fills,
-glyph determinism golden.
+## P7 — ISO 7200 title block + drawing text (C7) — DONE, gates green
+- **Font**: OSIFONT vendored at
+  `apps/desktop-ui/src-tauri/resources/fonts/osifont-lgpl3fe.ttf`
+  (+ `FONT-LICENSE.txt` — LGPL v3 + font-embedding exception).
+  `TextEngine::bundled_iso3098_font_path()` (env
+  `POLYSMITH_DRAWING_FONT_PATH` — the Tauri shell sets it to the
+  packaged resource) + repo-relative fallbacks.
+- **Drawing text**: `core/drawing/drawing_text.{h,cpp}` —
+  `drawing_text_glyphs(SheetText)` lays out via the text engine and
+  emits "text_glyph" line primitives (thin continuous).  Layouts
+  cached per (font, text, height, angle, h_align); contours sorted by
+  a geometric key because OCCT's StdPrs_BRepFont face order is
+  hash-dependent (multi-part glyphs like "i" flip across runs — the
+  sort makes the stream/golden reproducible).
+- **Title block**: `core/drawing/drawing_title_block.{h,cpp}` —
+  `flatten_title_block` fills the 180×63 mm block bottom-right inside
+  the frame: 8 mandatory fields (segment/sheet number auto-filled
+  "x/y"), scale auto-filled from the sheet's FIRST view (ISO 5455,
+  decimal separator honored), "Dimensions in millimetres" + ISO 8015
+  note, revision table (zone/rev/description/date/approved) above the
+  block while rows exist, and the projection symbol MOVED inside the
+  top-right cell (P5's provisional above-block placement replaced —
+  the sheet/dimension goldens regenerated accordingly).
+- **Section labels (P4 carry-over)**: the trace pass populates
+  `ProjectedEdgeRecord.section_label` + `trace_sight_dir` (the sight
+  direction = −cutting-plane normal projected into the view plane);
+  the flatten emits the label letter + a filled arrow at BOTH ends of
+  every surviving cutting-plane trace (purpose "section_label").
+- **Command**: `drawing_title_block_update{drawing_id, sheet_id,
+  title_block}` — mutator (canonical shape), app handler, schema,
+  TS types/factory/hook.  UI: `TitleBlockPanel` (all 8 fields +
+  revision-row editor), opened from the SheetPanel "Title block…"
+  button; workspace-leak cleanup closes it.
+- **UI scene**: SheetText sprites removed — the sheet renders the
+  core's vector glyphs (purpose "text_glyph"); view-label sprites and
+  the dimension-preview sprite stay.
+- **Tests**: `cad_core_drawing_title_block_test` (8 tests: fields +
+  auto-fills render, scale auto-fill from the first view incl. "1:2,5"
+  decimal comma, sheet x/y, revision rows, glyph determinism golden,
+  section labels + arrows, save/load, undo/redo).  Golden
+  `drawing_title_block_glyphs.txt` pins the OSIFONT glyph stream
+  (verified stable across 4 runs).  Dimension/sheet tests updated for
+  the by-purpose text lookup + the symbol's new position; their
+  goldens filter "text_glyph" (pinned by the glyph golden).
+- Gates: `pnpm core:build` ✓ · `pnpm test:core` 61/61 ✓ (×2, no
+  update) · tsc ✓ · cargo check ✓.
+- **Deviations/notes**: the projection symbol moved from "centered
+  above the block" (P5 provisional) to "inside the top-right cell" —
+  ISO 7200 allows both, inside avoids the revision-table collision;
+  revision rows stack UPWARD from the block top (newest nearest the
+  header).  Glyph determinism needed a contour sort (OCCT upstream
+  nondeterminism — documented in IPC-Protocol.md).
+
+NEXT: **P8 — SVG + DXF export** (C8) per the plan.
 
 ---
 

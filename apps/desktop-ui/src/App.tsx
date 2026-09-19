@@ -107,6 +107,7 @@ import {
   InsertViewPanel,
   SectionPanel,
   SheetPanel,
+  TitleBlockPanel,
 } from "./app/DrawingFloatingPanels";
 import { ConstructionPendingPanels } from "./app/ConstructionPendingPanels";
 import { PrimitiveFeatureEditPanel } from "./app/PrimitiveFeatureEditPanel";
@@ -618,6 +619,8 @@ function App() {
   // Sheet settings panel (P5: paper, orientation, projection angle).
   const [isDrawingSheetPanelOpen, setIsDrawingSheetPanelOpen] =
     useState(false);
+  // ISO 7200 title block editor (P7) — opened from the sheet panel.
+  const [isTitleBlockPanelOpen, setIsTitleBlockPanelOpen] = useState(false);
   // Dimension tool (P6): the panel arms the sheet pick; picks
   // accumulate (max 2) and the core preview replies with value +
   // graphics until Enter commits.
@@ -965,6 +968,26 @@ function App() {
         drawing.drawing_id,
         drawing.sheets[0].sheet_id,
         settings,
+      );
+    });
+  };
+
+  // ISO 7200 title block (P7): the eight mandatory fields + revision
+  // rows on the active drawing's first sheet, committed as one record.
+  const drawingTitleBlockCommitAction = async (
+    titleBlock: import("@/types").TitleBlock,
+  ) => {
+    await runAction(async () => {
+      const drawing = document?.drawing.drawings.find(
+        (d) => d.drawing_id === document?.drawing.active_drawing_id,
+      );
+      if (!drawing || drawing.sheets.length === 0) {
+        return;
+      }
+      await drawingTitleBlockUpdate(
+        drawing.drawing_id,
+        drawing.sheets[0].sheet_id,
+        titleBlock,
       );
     });
   };
@@ -1415,6 +1438,7 @@ function App() {
     drawingViewDelete,
     drawingSectionUpdate,
     drawingSheetUpdate,
+    drawingTitleBlockUpdate,
     drawingDimensionCreate,
     drawingDimensionPreview,
   } = useCadCore();
@@ -2720,6 +2744,7 @@ function App() {
       return;
     }
     closeDimensionTool();
+    setIsTitleBlockPanelOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView]);
 
@@ -5309,8 +5334,32 @@ function App() {
                         onCommit={(settings) => {
                           void drawingSheetSettingsAction(settings);
                         }}
+                        onOpenTitleBlock={() => {
+                          setIsDrawingSheetPanelOpen(false);
+                          setIsTitleBlockPanelOpen(true);
+                        }}
                         onClose={() => {
                           setIsDrawingSheetPanelOpen(false);
+                        }}
+                      />
+                    );
+                  })()
+                : null}
+              {isTitleBlockPanelOpen && activeDrawing != null
+                ? (() => {
+                    const sheet = activeDrawing.sheets[0];
+                    if (!sheet) {
+                      return null;
+                    }
+                    return (
+                      <TitleBlockPanel
+                        disabled={status !== "connected"}
+                        titleBlock={sheet.title_block}
+                        onCommit={(titleBlock) => {
+                          void drawingTitleBlockCommitAction(titleBlock);
+                        }}
+                        onClose={() => {
+                          setIsTitleBlockPanelOpen(false);
                         }}
                       />
                     );

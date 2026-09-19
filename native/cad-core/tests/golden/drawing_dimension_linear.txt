@@ -23,12 +23,23 @@ grid_ref line 20,194.667 25,194.667
 grid_ref line 200,194.667 195,194.667
 grid_ref line 20,240.833 25,240.833
 grid_ref line 200,240.833 195,240.833
-projection_symbol circle_arc 105,88 105,88 c100,88 r5
-projection_symbol circle_arc 102.5,88 102.5,88 c100,88 r2.5
-projection_symbol line 110,83 110,93
-projection_symbol line 125,85.5 125,90.5
-projection_symbol line 110,83 125,85.5
-projection_symbol line 110,93 125,90.5
+title_block line 20,10 200,10
+title_block line 200,10 200,73
+title_block line 200,73 20,73
+title_block line 20,73 20,10
+title_block line 70,10 70,73
+title_block line 120,10 120,73
+title_block line 150,10 150,73
+title_block line 200,10 200,73
+title_block line 20,24 200,24
+title_block line 20,40 200,40
+title_block line 20,54 200,54
+projection_symbol circle_arc 170,63.5 170,63.5 c165,63.5 r5
+projection_symbol circle_arc 167.5,63.5 167.5,63.5 c165,63.5 r2.5
+projection_symbol line 175,58.5 175,68.5
+projection_symbol line 190,61 190,66
+projection_symbol line 175,58.5 190,61
+projection_symbol line 175,68.5 190,66
 view_geometry line 30,40 30,50
 view_geometry line 30,40 50,40
 view_geometry line 30,50 50,50
@@ -38,4 +49,17 @@ dimension line 50,52 50,60
 dimension line 30,58 50,58
 dimension filled_poly 0,0 0,0 pts 30,58 33,57.25 33,58.75
 dimension filled_poly 0,0 0,0 pts 50,58 47,58.75 47,57.25
+text title_block "Dimensions in millimetres" 45,63.5 h2.5
+text title_block "Scale" 72,70.5 h2.5
+text title_block "1:1" 72,58.5 h5
+text title_block "Sheet" 122,70.5 h2.5
+text title_block "1/1" 122,58.5 h5
+text title_block "Legal owner" 22,51.5 h2.5
+text title_block "Identification number" 152,51.5 h2.5
+text title_block "Title" 22,37.5 h2.5
+text title_block "Document type" 152,37.5 h2.5
+text title_block "Creator" 22,21.5 h2.5
+text title_block "Approval person" 72,21.5 h2.5
+text title_block "Date of issue" 122,21.5 h2.5
+text title_block "Tolerancing per ISO 8015" 175,17 h2.5
 text dimension "20" 40,60.75 h3.5

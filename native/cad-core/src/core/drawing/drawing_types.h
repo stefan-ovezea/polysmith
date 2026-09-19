@@ -267,6 +267,13 @@ struct ProjectedEdgeRecord {
   std::variant<SourceEdgeWitness, FaceAttestation> source;
   /// Visible parameter intervals (partial visibility splits).
   std::vector<std::array<double, 2>> visible_intervals;
+  /// Cutting-plane traces only (curve_class == "cutting_plane"): the
+  /// sibling section's label, and the section's sight direction
+  /// projected into this view plane (unit 2D vector).  Populated by
+  /// the trace pass; the flatten emits the A–A labels + arrows from
+  /// them (P7).
+  std::string section_label;
+  std::optional<std::array<double, 2>> trace_sight_dir;
 };
 
 /// One hatch region boundary in sheet space (section views).

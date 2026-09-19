@@ -53,18 +53,25 @@ struct SheetPrimitive {
   SheetLineStyle style;
   /// Why the primitive exists: "view_geometry" | "hatch" |
   /// "cutting_plane" | "frame" | "centring_mark" | "grid_ref" |
-  /// "projection_symbol" | "dimension" — the backends and the UI can
+  /// "projection_symbol" | "title_block" | "dimension" |
+  /// "section_label" | "text_glyph" — the backends and the UI can
   /// filter on it (e.g. the DXF layer split).
   std::string purpose = "view_geometry";
   /// "visible" | "hidden" — kept for coloring even though dash
   /// patterns are already applied.
   std::string line_class = "visible";
+  /// Cutting-plane traces only: the sibling section's label + sight
+  /// direction (unit 2D vector) — the flatten emits the A–A labels
+  /// and arrows from these.
+  std::string section_label;
+  std::optional<std::array<double, 2>> trace_sight_dir;
 };
 
 /// A text record in the flattened stream (sheet-mm).  Kept as DATA
 /// rather than glyph geometry so the DXF backend can emit a real
-/// DRW_Text; P7's text engine upgrades PDF/SVG to vector glyphs and
-/// the UI draws a canvas sprite for now.
+/// DRW_Text.  P7 additionally emits vector glyph line primitives
+/// ("text_glyph") for every record — the viewport and the PDF/SVG
+/// backends render those, the DXF backend renders the DATA.
 struct SheetText {
   std::string text;
   /// Anchor position (sheet-mm) — the anchor is the text CENTER.
@@ -74,8 +81,8 @@ struct SheetText {
   double angle_deg = 0.0;
   /// "left" | "center" | "right"
   std::string h_align = "center";
-  /// Why the text exists: "dimension" today, "title_block" / "grid_ref"
-  /// with P7.
+  /// Why the text exists: "dimension" | "title_block" |
+  /// "section_label".
   std::string purpose = "dimension";
   /// true when the dimension is degraded (last-known value shown).
   bool stale = false;

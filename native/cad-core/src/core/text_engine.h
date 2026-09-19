@@ -106,6 +106,14 @@ class TextEngine {
   // then falls back to the embedded default font.
   static std::string bundled_font_path();
 
+  // Resolves the bundled ISO 3098 single-stroke drawing font (OSIFONT,
+  // LGPL v3 + font-embedding exception — see the FONT-LICENSE.txt next
+  // to the .ttf).  POLYSMITH_DRAWING_FONT_PATH env var first (the
+  // Tauri shell sets it to the packaged resource), then repo-relative
+  // fallbacks.  Returns "" when nothing exists — callers fall back to
+  // bundled_font_path().
+  static std::string bundled_iso3098_font_path();
+
  private:
   // Defined out-of-line (text_engine.cpp) so the unique_ptr<Impl>
   // destructor never needs the incomplete Impl type in header-only TUs

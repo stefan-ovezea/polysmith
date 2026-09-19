@@ -227,18 +227,19 @@ bool test_furniture() {
                    near(p.radius.value(), 2.5);
     }
   }
-  // Frustum: the near base (x ≈ 110) must be the TALL one in first
-  // angle.  The two vertical base lines are at x≈110 and x≈125.
+  // Frustum: the near base (x ≈ 175, inside the ISO 7200 title block
+  // top-right cell since P7) must be the TALL one in first angle.
+  // The two vertical base lines are at x≈175 and x≈190.
   double near_base_height = 0.0;
   double far_base_height = 0.0;
   for (const auto& p : flat->primitives) {
     if (p.purpose != "projection_symbol" || p.kind != "line") {
       continue;
     }
-    if (near(p.p0[0], p.p1[0], 1e-4) && near(p.p0[0], 110.0, 0.01)) {
+    if (near(p.p0[0], p.p1[0], 1e-4) && near(p.p0[0], 175.0, 0.01)) {
       near_base_height = std::abs(p.p1[1] - p.p0[1]);
     }
-    if (near(p.p0[0], p.p1[0], 1e-4) && near(p.p0[0], 125.0, 0.01)) {
+    if (near(p.p0[0], p.p1[0], 1e-4) && near(p.p0[0], 190.0, 0.01)) {
       far_base_height = std::abs(p.p1[1] - p.p0[1]);
     }
   }
@@ -500,7 +501,7 @@ bool test_symbol_orientation() {
       if (p.purpose != "projection_symbol" || p.kind != "line") {
         continue;
       }
-      if (near(p.p0[0], p.p1[0], 1e-4) && near(p.p0[0], 110.0, 0.01)) {
+      if (near(p.p0[0], p.p1[0], 1e-4) && near(p.p0[0], 175.0, 0.01)) {
         height = std::abs(p.p1[1] - p.p0[1]);
       }
     }
@@ -627,6 +628,12 @@ bool test_determinism_and_golden() {
     out << std::fixed;
     out.precision(6);
     for (const auto& p : stream.primitives) {
+      // Glyph segments are pinned by the title-block glyph golden
+      // (drawing_title_block_glyphs.txt) — ~6k of them per sheet
+      // would drown the furniture/geometry this golden protects.
+      if (p.purpose == "text_glyph") {
+        continue;
+      }
       out << p.purpose << "|" << p.kind << "|" << p.line_class << "|"
           << quant(p.style.width_mm) << "|";
       if (p.kind == "line") {

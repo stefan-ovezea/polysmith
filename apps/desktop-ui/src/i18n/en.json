@@ -273,7 +273,26 @@
       "landscape": "Landscape",
       "projectionAngle": "Projection angle",
       "firstAngle": "First angle",
-      "thirdAngle": "Third angle"
+      "thirdAngle": "Third angle",
+      "titleBlock": "Title block…"
+    },
+    "titleBlockPanel": {
+      "title": "Title block (ISO 7200)",
+      "legal_owner": "Legal owner",
+      "identification": "Identification no.",
+      "date": "Date of issue",
+      "title": "Title",
+      "approver": "Approval person",
+      "creator": "Creator",
+      "document_type": "Document type",
+      "revisions": "Revisions",
+      "addRevision": "Add row",
+      "noRevisions": "No revision rows.",
+      "revisionZone": "Zone",
+      "revisionRev": "Rev",
+      "revisionDescription": "Description",
+      "revisionDate": "Date",
+      "revisionApproved": "Approved"
     },
     "sectionPanel": {
       "title": "Section {{label}}",

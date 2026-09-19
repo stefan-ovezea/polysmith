@@ -8,6 +8,7 @@ import type {
   DrawingSheet,
   DrawingView,
   SectionDefinition,
+  TitleBlock,
 } from "../geometry/drawing";
 
 export interface DrawingCreateCommand {
@@ -88,6 +89,16 @@ export interface DrawingSectionUpdateCommand {
     drawing_id: string;
     view_id: string;
     section: SectionDefinition;
+  };
+}
+
+export interface DrawingTitleBlockUpdateCommand {
+  id: string;
+  type: "drawing_title_block_update";
+  payload: {
+    drawing_id: string;
+    sheet_id: string;
+    title_block: TitleBlock;
   };
 }
 

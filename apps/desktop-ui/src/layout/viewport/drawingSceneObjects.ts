@@ -120,12 +120,15 @@ function buildRibbon(points: Array<[number, number]>, widthMm: number,
 }
 
 /// The furniture purposes (from the core's flattened stream) draw in
-/// the border color instead of the visible-line color.
+/// the border color instead of the visible-line color.  Text glyphs
+/// (P7) draw in the visible color like the dimension values they
+/// represent.
 const FURNITURE_PURPOSES = new Set([
   "frame",
   "centring_mark",
   "grid_ref",
   "projection_symbol",
+  "title_block",
 ]);
 
 /** Adds one sheet (paper, border, projection curves, view frames). */
@@ -190,14 +193,9 @@ function addSheetGroup(
     }
   }
 
-  // Text records (P6: dimension values) — sprites at the record's
-  // letter height, stale ones tinted like stale views.
-  const textColor = sheetColor("--cad-drawing-visible-line", "#1c1b1b");
-  const staleTextColor = sheetColor("--cad-drawing-stale", "#e08a3c");
-  for (const text of sheet.texts ?? []) {
-    addTextObject(group, text, textColor, staleTextColor);
-  }
-
+  // Text records stay DATA (the DXF backend emits real DRW_Text from
+  // them); the sheet renders the P7 vector glyphs instead — they land
+  // in `curves` as "text_glyph" line primitives drawn above.
   for (const view of sheet.views) {
     // View frame: a light rectangle around the content bounds plus a
     // label sprite (the P5 flatten turns these into proper view

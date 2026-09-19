@@ -9,6 +9,8 @@
 #include "core/drawing/drawing_dimension_geometry.h"
 #include "core/drawing/drawing_projection.h"
 #include "core/drawing/drawing_runtime.h"
+#include "core/drawing/drawing_text.h"
+#include "core/drawing/drawing_title_block.h"
 
 namespace polysmith::core {
 
@@ -363,60 +365,6 @@ void emit_grid_reference_ticks(std::vector<SheetPrimitive>& out, double w,
   }
 }
 
-/// The ISO 5456-2 projection symbol: a truncated cone (frustum) +
-/// two concentric circles.  h = 10d = 5 mm, H = 20d = 10 mm at
-/// d = 0.5.  First angle: the frustum's LARGE end nearest the
-/// circles; third angle: the small end nearest.  Provisional
-/// placement: centered above the title-block reservation (ISO 7200:
-/// 180 mm wide, 63 mm tall, bottom-right — P7 fills it in).
-void emit_projection_symbol(std::vector<SheetPrimitive>& out, double w,
-                            double h, const std::string& projection_angle) {
-  const double H = 10.0;
-  const double hh = 5.0;
-  const double L = 1.5 * H;
-  const double x1_frame = w - kMarginMm;
-  const double y0 = kMarginMm;
-  const double title_top = y0 + 63.0;                 // ISO 7200 default
-  const double bottom = title_top + 10.0;
-  const double title_center_x = x1_frame - 180.0 / 2.0;
-  const double symbol_left = title_center_x - (L + 1.5 * H) / 2.0;
-  const double x1 = symbol_left + 1.5 * H;   // near base of the frustum
-  const double cy = bottom + H / 2.0;        // centerline
-  const double circle_cx = symbol_left + H / 2.0;
-
-  const auto line = [&](std::array<double, 2> a, std::array<double, 2> b) {
-    SheetPrimitive p;
-    p.purpose = "projection_symbol";
-    p.style = {"continuous", kThickLineMm};  // stroke d = 0.5
-    p.p0 = a;
-    p.p1 = b;
-    out.push_back(std::move(p));
-  };
-  const auto circle = [&](double cx, double r) {
-    SheetPrimitive p;
-    p.kind = "circle_arc";
-    p.purpose = "projection_symbol";
-    p.style = {"continuous", kThickLineMm};
-    p.center = {{cx, cy}};
-    p.radius = r;
-    p.start_angle = 0.0;
-    p.end_angle = 2.0 * kPi;
-    p.p0 = {cx + r, cy};
-    p.p1 = {cx + r, cy};
-    out.push_back(std::move(p));
-  };
-  circle(circle_cx, H / 2.0);
-  circle(circle_cx, H / 4.0);
-  // Frustum: near base (x1) and far base (x1 + L); first angle keeps
-  // the large end nearest the circles.
-  const double near_h = projection_angle == "first_angle" ? H : hh;
-  const double far_h = projection_angle == "first_angle" ? hh : H;
-  line({x1, cy - near_h / 2.0}, {x1, cy + near_h / 2.0});
-  line({x1 + L, cy - far_h / 2.0}, {x1 + L, cy + far_h / 2.0});
-  line({x1, cy - near_h / 2.0}, {x1 + L, cy - far_h / 2.0});
-  line({x1, cy + near_h / 2.0}, {x1 + L, cy + far_h / 2.0});
-}
-
 // ── View flattening ───────────────────────────────────────────────
 
 SheetLineStyle style_for(const ProjectedEdgeRecord& rec) {
@@ -466,6 +414,8 @@ void flatten_view(std::vector<SheetPrimitive>& view_primitives,
     p.start_angle = rec.start_angle;
     p.end_angle = rec.end_angle;
     p.style = style_for(rec);
+    p.section_label = rec.section_label;
+    p.trace_sight_dir = rec.trace_sight_dir;
     // UNDASHED here — the coincidence-priority pass needs the full
     // geometry (a dashed hidden edge and a solid visible edge
     // coincide only before dashing).  Dashing happens after the
@@ -540,7 +490,17 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
   emit_frame(stream.primitives, w, h);
   emit_centring_marks(stream.primitives, w, h);
   emit_grid_reference_ticks(stream.primitives, w, h, sheet->paper_size);
-  emit_projection_symbol(stream.primitives, w, h, sheet->projection_angle);
+  // The ISO 7200 title block (+ projection symbol inside it) needs
+  // the sheet index for the "Sheet x/y" auto-fill.
+  size_t sheet_index = 0;
+  for (size_t i = 0; i < drawing->sheets.size(); ++i) {
+    if (drawing->sheets[i].sheet_id == sheet_id) {
+      sheet_index = i;
+      break;
+    }
+  }
+  flatten_title_block(document, *drawing, *sheet, sheet_index,
+                      drawing->sheets.size(), stream);
 
   // Views in sheet order: collect UNDASHED primitives first — the
   // coincidence-priority pass needs the full geometry.
@@ -654,6 +614,54 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
     survivors.push_back(std::move(p));
   }
 
+  // ── Section labels (P7: A–A labels + arrows on cutting planes) ─
+  // Collected BEFORE the dashing pass moves the survivors out.  Only
+  // traces that survived the coincidence pass get labels — a trace
+  // lying on a real edge is dropped and so is its label.
+  std::vector<SheetPrimitive> section_label_primitives;
+  std::vector<SheetText> section_label_texts;
+  for (const auto& p : survivors) {
+    if (p.purpose != "cutting_plane" || p.section_label.empty()) {
+      continue;
+    }
+    const double mx = 0.5 * (p.p0[0] + p.p1[0]);
+    const double my = 0.5 * (p.p0[1] + p.p1[1]);
+    for (const auto& end : {p.p0, p.p1}) {
+      // The section's sight direction from the trace pass; outward
+      // from the trace midpoint is the fallback.
+      std::array<double, 2> d = {end[0] - mx, end[1] - my};
+      if (p.trace_sight_dir.has_value()) {
+        d = p.trace_sight_dir.value();
+      }
+      const double len = std::hypot(d[0], d[1]);
+      if (len < 1e-9) {
+        continue;
+      }
+      d[0] /= len;
+      d[1] /= len;
+      // Filled arrow: tip at the trace end, 3 mm long, 1 mm
+      // half-width (the dimension arrows' proportions).
+      const double tail_x = end[0] - 3.0 * d[0];
+      const double tail_y = end[1] - 3.0 * d[1];
+      SheetPrimitive arrow;
+      arrow.kind = "filled_poly";
+      arrow.purpose = "section_label";
+      arrow.style = {"continuous", kThinLineMm};
+      arrow.points = {{end[0], end[1]},
+                      {tail_x - d[1], tail_y + d[0]},
+                      {tail_x + d[1], tail_y - d[0]}};
+      section_label_primitives.push_back(std::move(arrow));
+      // The label letter beyond the arrow tail.
+      SheetText label;
+      label.text = p.section_label;
+      label.position = {end[0] - 5.5 * d[0], end[1] - 5.5 * d[1]};
+      label.height_mm = 5.0;
+      label.h_align = "center";
+      label.purpose = "section_label";
+      section_label_texts.push_back(std::move(label));
+    }
+  }
+
   // Dashing happens AFTER the priority pass, then the primitives
   // land in the stream (furniture is already in).
   for (auto& p : survivors) {
@@ -665,6 +673,23 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
   // Dimensions last — annotations draw on top of the sheet content.
   for (auto& p : dimension_primitives) {
     stream.primitives.push_back(std::move(p));
+  }
+  // Section labels on top — the filled arrow terminates the chain
+  // line's end dash (ISO 128-3).
+  for (auto& p : section_label_primitives) {
+    stream.primitives.push_back(std::move(p));
+  }
+  stream.texts.insert(stream.texts.end(), section_label_texts.begin(),
+                      section_label_texts.end());
+
+  // ── Vector glyphs (P7) ─────────────────────────────────────────
+  // SheetText records stay as DATA (the DXF backend emits a real
+  // DRW_Text from them); the viewport and the PDF/SVG backends draw
+  // these single-stroke glyph primitives instead.
+  for (const auto& text : stream.texts) {
+    auto glyphs = drawing_text_glyphs(text);
+    stream.primitives.insert(stream.primitives.end(), glyphs.begin(),
+                             glyphs.end());
   }
   return stream;
 }

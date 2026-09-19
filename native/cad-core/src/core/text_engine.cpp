@@ -669,4 +669,24 @@ std::string TextEngine::bundled_font_path() {
   return "";
 }
 
+std::string TextEngine::bundled_iso3098_font_path() {
+  const char* env = std::getenv("POLYSMITH_DRAWING_FONT_PATH");
+  if (env != nullptr && *env != '\0' && std::filesystem::exists(env)) {
+    return std::string(env);
+  }
+  // Same repo-relative fallbacks as bundled_font_path (repo root for
+  // pnpm test:core, native/cad-core for direct test runs).
+  const std::vector<std::string> candidates = {
+      "apps/desktop-ui/src-tauri/resources/fonts/osifont-lgpl3fe.ttf",
+      "../../apps/desktop-ui/src-tauri/resources/fonts/"
+      "osifont-lgpl3fe.ttf",
+  };
+  for (const auto& candidate : candidates) {
+    if (std::filesystem::exists(candidate)) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
 }  // namespace polysmith::core::text

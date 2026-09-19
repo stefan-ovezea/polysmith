@@ -104,6 +104,19 @@ int count_purpose(const SheetPrimitiveStream& stream,
       [&](const SheetPrimitive& p) { return p.purpose == purpose; }));
 }
 
+// The P7 flatten carries MORE text than the dimensions (the title
+// block labels) — the dimension assertions pick their record by
+// purpose.
+const SheetText* find_text(const SheetPrimitiveStream& stream,
+                           const std::string& purpose) {
+  for (const auto& t : stream.texts) {
+    if (t.purpose == purpose) {
+      return &t;
+    }
+  }
+  return nullptr;
+}
+
 // ── Fixture: document with a 20x20x10 box, a drawing, and a front
 //    view at sheet [30, 40], scale 1.  The front view shows the y-z
 //    face: content y∈[0,20] (view X), z∈[0,10] (view Y); the top
@@ -302,14 +315,16 @@ bool test_create_linear() {
               "2 arrowheads + 3 thin lines")) {
     return false;
   }
-  if (!expect(flat->texts.size() == 1 && flat->texts[0].text == "20" &&
-                  near(flat->texts[0].height_mm, 3.5),
+  const SheetText* dimension_text = find_text(flat.value(), "dimension");
+  if (!expect(dimension_text != nullptr &&
+                  dimension_text->text == "20" &&
+                  near(dimension_text->height_mm, 3.5),
               "text record \"20\" at ISO 3098 height 3.5")) {
     return false;
   }
   // Text above the dimension line (the line is at sheet y 50+8=58;
   // the text sits above it).
-  if (!expect(flat->texts[0].position[1] > 58.0,
+  if (!expect(dimension_text->position[1] > 58.0,
               "text above the dimension line")) {
     return false;
   }
@@ -375,7 +390,8 @@ bool test_delete_body_degrades() {
               "stale dimension still draws")) {
     return false;
   }
-  return expect(!flat->texts.empty() && flat->texts[0].stale,
+  const SheetText* stale_text = find_text(flat.value(), "dimension");
+  return expect(stale_text != nullptr && stale_text->stale,
                 "stale text record flagged");
 }
 
@@ -508,8 +524,10 @@ bool test_cosmetic_update() {
   }
   const auto flat = polysmith::core::flatten_sheet(
       document, fixture.drawing_id, fixture.sheet_id);
-  if (!expect(flat.has_value() && flat->texts.size() == 1 &&
-                  flat->texts[0].text == "\xE2\x8C\x80M40",
+  const SheetText* dimension_text =
+      flat.has_value() ? find_text(flat.value(), "dimension") : nullptr;
+  if (!expect(dimension_text != nullptr &&
+                  dimension_text->text == "\xE2\x8C\x80M40",
               "text shows ⌀ + override")) {
     return false;
   }
@@ -525,7 +543,7 @@ bool test_cosmetic_update() {
   }
   // text_offset shifts the text from the default position (mid of the
   // dimension line = x 40, shifted +5 → 45).
-  return expect(near(flat->texts[0].position[0], 45.0, 1e-3),
+  return expect(near(dimension_text->position[0], 45.0, 1e-3),
                 "text_offset applied");
 }
 
@@ -617,6 +635,12 @@ bool test_golden() {
   std::ostringstream out;
   out << "sheet " << flat->width_mm << "x" << flat->height_mm << "\n";
   for (const auto& p : flat->primitives) {
+    // The P7 glyph segments are pinned by the title-block glyph
+    // golden (drawing_title_block_glyphs.txt) — dumping ~6k of them
+    // here again would drown the dimension geometry.
+    if (p.purpose == "text_glyph") {
+      continue;
+    }
     out << p.purpose << " " << p.kind << " " << quant(p.p0[0]) << ","
         << quant(p.p0[1]) << " " << quant(p.p1[0]) << ","
         << quant(p.p1[1]);

@@ -9,6 +9,7 @@ import {
   makeDrawingViewCreateCommand,
   makeDrawingViewDeleteCommand,
   makeDrawingSectionUpdateCommand,
+  makeDrawingTitleBlockUpdateCommand,
   makeDrawingDimensionCreateCommand,
   makeDrawingDimensionUpdateCommand,
   makeDrawingDimensionDeleteCommand,
@@ -240,6 +241,7 @@ import type {
   DrawingDimensionPreviewPayload,
   DrawingView,
   SectionDefinition,
+  TitleBlock,
   ExtrudeAdvancedParameters,
   EdgeAttestation,
   FaceAttestation,
@@ -1756,6 +1758,15 @@ export function useCadCore() {
     ) => {
       await sendAndRefreshSessionViewport(
         makeDrawingSectionUpdateCommand(drawingId, viewId, section),
+      );
+    },
+    drawingTitleBlockUpdate: async (
+      drawingId: string,
+      sheetId: string,
+      titleBlock: TitleBlock,
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingTitleBlockUpdateCommand(drawingId, sheetId, titleBlock),
       );
     },
     drawingDimensionCreate: async (params: {
