@@ -617,7 +617,7 @@ after the user confirms.
   double-dash — layers stay CONTINUOUS and the linetypes are defined
   but unassigned (documented in IPC-Protocol.md).
 
-## P9 — PDF + annotated DXF (C9) — IN PROGRESS, gates pending
+## P9 — PDF + annotated DXF (C9) — DONE, gates green
 
 - **Vendored deps**: libharu 2.4.4 + zlib 1.3.1 under `third_party/`
   (codeload tarballs — github.com DNS fails on this machine,
@@ -689,8 +689,15 @@ after the user confirms.
   greediness trap), end-to-end + non-mutation, error path.  Both
   suites green locally.
 
-NEXT: P9 gates (full `pnpm test:core` + tsc) → C9 commit request →
-P10 hardening.
+**Gates:** `pnpm core:build` clean + **63/63 suites pass** + `tsc
+--noEmit` clean.
+
+**Committed as C9** (`495ad90`): 592 files (incl. the two vendored
+trees), P9 complete.
+
+NEXT: **P10 hardening** per the plan (TNP regression suite,
+decimal-comma end-to-end, theme audit, perf caps, docs) + the
+pending C3–C9 in-app verification.
 
 ---
 
