@@ -134,7 +134,11 @@ import { triggerCamSlot } from "./app/camSlotActions";
 import { triggerCamEngrave } from "./app/camEngraveActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
-import { pickGcodeExportPath } from "./app/documentDialogs";
+import {
+  pickDrawingDxfPath,
+  pickDrawingSvgPath,
+  pickGcodeExportPath,
+} from "./app/documentDialogs";
 import { useProfileFeatureActions } from "./app/profileFeatureActions";
 import { createRecentProjectHandlers } from "./app/recentProjectHandlers";
 import * as selectionSources from "./app/selectionSources";
@@ -992,6 +996,36 @@ function App() {
     });
   };
 
+  // Sheet export (P8): a save dialog picks the path, then the core
+  // writes the flattened sheet ("svg" | "dxf") and replies with the
+  // document_exported event.  Non-mutating.
+  const drawingExportAction = async (format: "svg" | "dxf") => {
+    const drawing = document?.drawing.drawings.find(
+      (d) => d.drawing_id === document?.drawing.active_drawing_id,
+    );
+    if (!drawing || drawing.sheets.length === 0) {
+      return;
+    }
+    const picker = format === "svg" ? pickDrawingSvgPath : pickDrawingDxfPath;
+    const filePath = await picker({
+      translate: t,
+      documentName: document?.name,
+      addMessage,
+    });
+    if (!filePath) {
+      return;
+    }
+    await runAction(async () => {
+      await drawingExport(
+        drawing.drawing_id,
+        drawing.sheets[0].sheet_id,
+        format,
+        filePath,
+      );
+      addMessage(`export requested: ${filePath}`);
+    });
+  };
+
   // ── Dimension tool (P6) ──────────────────────────────────────────
 
   // Guards against out-of-order preview replies (rapid pick/type
@@ -1439,6 +1473,7 @@ function App() {
     drawingSectionUpdate,
     drawingSheetUpdate,
     drawingTitleBlockUpdate,
+    drawingExport,
     drawingDimensionCreate,
     drawingDimensionPreview,
   } = useCadCore();
@@ -3082,6 +3117,12 @@ function App() {
               setDrawingDimPicks([]);
               setDrawingDimPreview(null);
               setIsDimensionPanelOpen(true);
+            },
+            onExportSvg: () => {
+              void drawingExportAction("svg");
+            },
+            onExportDxf: () => {
+              void drawingExportAction("dxf");
             },
           }}
           canUndo={document?.can_undo ?? false}

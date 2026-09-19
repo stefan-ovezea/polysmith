@@ -572,7 +572,52 @@ after the user confirms.
   header).  Glyph determinism needed a contour sort (OCCT upstream
   nondeterminism — documented in IPC-Protocol.md).
 
-NEXT: **P8 — SVG + DXF export** (C8) per the plan.
+## P8 — SVG + DXF export (C8) — DONE, gates green
+- **`core/drawing/export/drawing_export.{h,cpp}`** —
+  `export_drawing_sheet(document, drawing_id, sheet_id, format,
+  file_path)` — NON-mutating: flattens from the current runtime
+  projections (no undo push, no bump; the revision stays untouched —
+  test-pinned).  Unknown format/drawing/sheet/empty path throw.
+- **SVG backend** (`drawing_svg_export.cpp`): mm `viewBox` at the
+  sheet size, y-axis flipped to SVG's screen convention, `A` path
+  segments for circle arcs (math-CCW = sweep **0** after the flip —
+  first golden caught the inverted flag), tessellated ellipse arcs
+  (48 segments), `<polygon>` arrowheads, glyph primitives render the
+  text (records stay DATA — no `<text>` elements), 3-decimal fixed
+  formatting.  Golden `drawing_svg_tiny.txt` pins a hand-built stream.
+- **DXF backend** (`drawing_dxf_export.cpp`, ASCII R2013 AC1027):
+  layers VISIBLE 0.5 / HIDDEN·CUTTING·HATCH·ANNOTATION·FURNITURE 0.25
+  / FRAME 0.7 / TEXT 0.25 with per-entity lineweights; pre-dashed
+  segments on CONTINUOUS layers (the ISO patterns are baked in by the
+  core flatten — HIDDEN/CHAIN linetypes are still DEFINED for reuse
+  and the P9 annotated mode); text records → real DRW_Text (VMiddle,
+  HLeft/HCenter/HRight); glyph primitives SKIPPED (no double text);
+  filled polys → fanned SOLID quads; the title block as the
+  registered `POLYSMITH_TITLE_BLOCK` block + INSERT (writeBlockRecord
+  before writeBlock — the libdxfrw UB trap).  Parse-back test reads
+  the file through the libdxfrw READER (a counting DRW_Interface) and
+  asserts per-layer entity counts, coordinates within 1e-4, the
+  INSERT, and block contents.
+- **Command**: `drawing_export{drawing_id, sheet_id, format,
+  file_path}` → `document_exported` (handler in drawing_commands.inc,
+  schema += drawing_export).  UI: DrawingToolbar "SVG…" / "DXF…"
+  buttons → pickDrawingSvgPath/pickDrawingDxfPath save dialogs →
+  `drawingExport` hook → export action with the addMessage pattern
+  (AppTopBar's export precedent).
+- **Tests**: `cad_core_drawing_export_test` (4 tests: SVG golden,
+  DXF parse-back, SVG end-to-end, error paths + non-mutation).
+- Gates: `pnpm core:build` ✓ · `pnpm test:core` 62/62 ✓ (×2, no
+  update) · tsc ✓.
+- **Deviations/notes**: no `ISheetStreamBackend` interface — the two
+  backends share the STREAM, not sink code, so an abstract sink was a
+  speculative abstraction (CLAUDE.md); the PDF backend (P9) gets its
+  own `ISheetPdfBackend` seam per the plan.  The plan's DXF LTYPE
+  assignment was adjusted: the core flatten pre-dashes (Annex-A), so
+  assigning the HIDDEN/CHAIN linetypes to stream layers would
+  double-dash — layers stay CONTINUOUS and the linetypes are defined
+  but unassigned (documented in IPC-Protocol.md).
+
+NEXT: **P9 — PDF (libharu) + annotated DXF** (C9) per the plan.
 
 ---
 

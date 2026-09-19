@@ -10,6 +10,7 @@ import {
   makeDrawingViewDeleteCommand,
   makeDrawingSectionUpdateCommand,
   makeDrawingTitleBlockUpdateCommand,
+  makeDrawingExportCommand,
   makeDrawingDimensionCreateCommand,
   makeDrawingDimensionUpdateCommand,
   makeDrawingDimensionDeleteCommand,
@@ -1767,6 +1768,17 @@ export function useCadCore() {
     ) => {
       await sendAndRefreshSessionViewport(
         makeDrawingTitleBlockUpdateCommand(drawingId, sheetId, titleBlock),
+      );
+    },
+    drawingExport: async (
+      drawingId: string,
+      sheetId: string,
+      format: "svg" | "dxf",
+      filePath: string,
+    ) => {
+      // Non-mutating: the reply is the document_exported event.
+      await sendCoreCommand(
+        makeDrawingExportCommand({ drawingId, sheetId, format, filePath }),
       );
     },
     drawingDimensionCreate: async (params: {

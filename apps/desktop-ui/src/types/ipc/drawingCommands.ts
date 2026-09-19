@@ -102,6 +102,21 @@ export interface DrawingTitleBlockUpdateCommand {
   };
 }
 
+// ── Export (P8) ────────────────────────────────────────────────────
+
+export type DrawingExportFormat = "svg" | "dxf";
+
+export interface DrawingExportCommand {
+  id: string;
+  type: "drawing_export";
+  payload: {
+    drawing_id: string;
+    sheet_id: string;
+    format: DrawingExportFormat;
+    file_path: string;
+  };
+}
+
 // ── Dimensions (P6) ───────────────────────────────────────────────
 
 export type DrawingDimensionKind =

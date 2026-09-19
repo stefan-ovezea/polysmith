@@ -212,6 +212,7 @@ import type {
   DrawingViewMoveCommand,
   DrawingSectionUpdateCommand,
   DrawingTitleBlockUpdateCommand,
+  DrawingExportCommand,
   DrawingDimensionCreateCommand,
   DrawingDimensionUpdateCommand,
   DrawingDimensionDeleteCommand,
@@ -1064,6 +1065,7 @@ export type CoreCommand =
   | DrawingViewMoveCommand
   | DrawingSectionUpdateCommand
   | DrawingTitleBlockUpdateCommand
+  | DrawingExportCommand
   | DrawingDimensionCreateCommand
   | DrawingDimensionUpdateCommand
   | DrawingDimensionDeleteCommand

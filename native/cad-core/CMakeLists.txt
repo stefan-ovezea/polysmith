@@ -159,6 +159,9 @@ set(CAD_CORE_SOURCES
   src/core/drawing/drawing_sheet.cpp
   src/core/drawing/drawing_text.cpp
   src/core/drawing/drawing_title_block.cpp
+  src/core/drawing/export/drawing_export.cpp
+  src/core/drawing/export/drawing_dxf_export.cpp
+  src/core/drawing/export/drawing_svg_export.cpp
   src/core/cam/drilling_generator.cpp
   src/core/cam/face_milling.cpp
   src/core/cam/laser/laser_fill.cpp
@@ -505,3 +508,4 @@ polysmith_add_core_test(cad_core_drawing_section_test tests/cad_core_drawing_sec
 polysmith_add_core_test(cad_core_drawing_sheet_test tests/cad_core_drawing_sheet_test.cpp)
 polysmith_add_core_test(cad_core_drawing_dimension_test tests/cad_core_drawing_dimension_test.cpp)
 polysmith_add_core_test(cad_core_drawing_title_block_test tests/cad_core_drawing_title_block_test.cpp)
+polysmith_add_core_test(cad_core_drawing_export_test tests/cad_core_drawing_export_test.cpp)

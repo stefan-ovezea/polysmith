@@ -4,6 +4,7 @@
 #include "core/drawing/drawing_refresh.h"
 #include "core/drawing/drawing_resolution.h"
 #include "core/drawing/drawing_runtime.h"
+#include "core/drawing/export/drawing_export.h"
 #include "core/diagnostics/logger.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/sketch_profile.h"

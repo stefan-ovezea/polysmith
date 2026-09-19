@@ -367,6 +367,19 @@ DocumentState DocumentManager::drawing_title_block_update(
   return document_.value();
 }
 
+ExportResult DocumentManager::export_drawing_sheet(
+    const std::string& drawing_id, const std::string& sheet_id,
+    const std::string& format, const std::string& file_path) const {
+  require_document();
+  // Non-mutating: no undo push, no bump — the export reads the
+  // current flattened state (the invariant: every mutation bumps the
+  // revision and the refresh pass keeps the runtime projections
+  // current, so the flatten is live).
+  return polysmith::core::export_drawing_sheet(document_.value(),
+                                               drawing_id, sheet_id, format,
+                                               file_path);
+}
+
 DocumentState DocumentManager::drawing_view_create(
     const std::string& drawing_id, const std::string& sheet_id,
     const DrawingView& view) {

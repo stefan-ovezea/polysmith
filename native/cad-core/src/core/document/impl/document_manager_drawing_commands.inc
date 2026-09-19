@@ -63,6 +63,15 @@
   DocumentState drawing_title_block_update(const std::string& drawing_id,
                                            const std::string& sheet_id,
                                            const TitleBlock& title_block);
+  // Exports one sheet of a drawing ("svg" | "dxf" — PDF lands in P9).
+  // NON-mutating: flattens from the current runtime projections (an
+  // export never re-projects, never pushes undo, never bumps the
+  // revision).  Throws on an unknown drawing/sheet/format or I/O
+  // failure.
+  ExportResult export_drawing_sheet(const std::string& drawing_id,
+                                    const std::string& sheet_id,
+                                    const std::string& format,
+                                    const std::string& file_path) const;
 
   // ── Dimensions (P6) ───────────────────────────────────────────
   // The core mints the witness from the pick: picks are sheet-mm

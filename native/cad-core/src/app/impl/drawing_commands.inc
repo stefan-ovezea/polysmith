@@ -179,6 +179,28 @@
     return;
   }
 
+  // ── Export (P8) ─────────────────────────────────────────────────
+  // Non-mutating: replies with the document_exported event, never a
+  // document state (nothing changed).
+
+  if (command.type == "drawing_export") {
+    const auto drawing_id = read_string(command.payload, "drawing_id");
+    const auto sheet_id = read_string(command.payload, "sheet_id");
+    const auto format = read_string(command.payload, "format");
+    const auto file_path = read_string(command.payload, "file_path");
+    const auto export_result = document_manager().export_drawing_sheet(
+        drawing_id, sheet_id, format, file_path);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_exported_event(
+            command.id, polysmith::protocol::json{
+                            {"file_path", export_result.file_path},
+                            {"format", export_result.format},
+                            {"exported_feature_count",
+                             export_result.exported_feature_count},
+                        }));
+    return;
+  }
+
   // ── Dimensions (P6) ─────────────────────────────────────────────
   // Picks are sheet-mm points resolved against the view's CURRENT
   // projection; the core mints the witness from the record's

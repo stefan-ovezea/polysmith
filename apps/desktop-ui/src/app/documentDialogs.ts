@@ -120,6 +120,54 @@ export async function pickExportDxfPath({
   return filePath;
 }
 
+export async function pickDrawingSvgPath({
+  translate,
+  documentName,
+  addMessage,
+}: DocumentDialogContext) {
+  const filePath = await save({
+    title: translate("dialogs.exportDrawingSvgTitle"),
+    defaultPath: `${makeDefaultExportBaseName(documentName)}.svg`,
+    filters: [
+      {
+        name: translate("dialogs.svgFileType"),
+        extensions: ["svg"],
+      },
+    ],
+  });
+
+  if (filePath === null) {
+    addMessage("export canceled");
+    return null;
+  }
+
+  return filePath;
+}
+
+export async function pickDrawingDxfPath({
+  translate,
+  documentName,
+  addMessage,
+}: DocumentDialogContext) {
+  const filePath = await save({
+    title: translate("dialogs.exportDrawingDxfTitle"),
+    defaultPath: `${makeDefaultExportBaseName(documentName)}.dxf`,
+    filters: [
+      {
+        name: translate("dialogs.dxfFileType"),
+        extensions: ["dxf"],
+      },
+    ],
+  });
+
+  if (filePath === null) {
+    addMessage("export canceled");
+    return null;
+  }
+
+  return filePath;
+}
+
 export async function pickSaveDocumentPath({
   translate,
   documentName,

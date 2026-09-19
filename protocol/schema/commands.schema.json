@@ -121,6 +121,7 @@
         "drawing_section_update",
         "drawing_title_block_update",
         "drawing_view_update",
+        "drawing_export",
         "drawing_dimension_create",
         "drawing_dimension_update",
         "drawing_dimension_delete",

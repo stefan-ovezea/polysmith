@@ -12,6 +12,9 @@ export interface DrawingToolbarActions {
   onSheetSettings: () => void;
   /** Arms the dimension tool (P6: pick an edge → live value → Enter). */
   onDimension: () => void;
+  /** Exports the active sheet as SVG/DXF (P8). */
+  onExportSvg: () => void;
+  onExportDxf: () => void;
 }
 
 export interface DrawingToolbarProps extends Partial<DrawingToolbarActions> {
@@ -19,7 +22,8 @@ export interface DrawingToolbarProps extends Partial<DrawingToolbarActions> {
 }
 
 /** Toolbar for the ISO Drawing workspace: drawing lifecycle + view
- *  insertion + sheet settings + the dimension tool (P6). */
+ *  insertion + sheet settings + the dimension tool (P6) + sheet
+ *  export (P8). */
 export function DrawingToolbar({
   disabled,
   drawingCount = 0,
@@ -29,6 +33,8 @@ export function DrawingToolbar({
   onDeleteDrawing,
   onSheetSettings,
   onDimension,
+  onExportSvg,
+  onExportDxf,
 }: DrawingToolbarProps) {
   const { t } = useTranslation();
 
@@ -78,6 +84,24 @@ export function DrawingToolbar({
         onClick={onDimension}
       >
         {t("drawing.toolbar.dimension")}
+      </button>
+      <button
+        type="button"
+        className="cad-ribbon-action"
+        disabled={disabled || drawingCount === 0}
+        title={t("drawing.toolbar.exportSvgTitle")}
+        onClick={onExportSvg}
+      >
+        {t("drawing.toolbar.exportSvg")}
+      </button>
+      <button
+        type="button"
+        className="cad-ribbon-action"
+        disabled={disabled || drawingCount === 0}
+        title={t("drawing.toolbar.exportDxfTitle")}
+        onClick={onExportDxf}
+      >
+        {t("drawing.toolbar.exportDxf")}
       </button>
       <span className="text-xs text-[var(--cad-muted)]">
         {drawingCount > 0

@@ -149,6 +149,24 @@ export function makeDrawingTitleBlockUpdateCommand(
   };
 }
 
+export function makeDrawingExportCommand(params: {
+  drawingId: string;
+  sheetId: string;
+  format: "svg" | "dxf";
+  filePath: string;
+}): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "drawing_export",
+    payload: {
+      drawing_id: params.drawingId,
+      sheet_id: params.sheetId,
+      format: params.format,
+      file_path: params.filePath,
+    },
+  };
+}
+
 // ── Dimensions (P6) ───────────────────────────────────────────────
 
 export function makeDrawingDimensionCreateCommand(params: {
