@@ -48,6 +48,7 @@ Responsibilities:
 - geometry ownership
 - import/export
 - recompute behavior
+- drawing projections and drawing export (SVG/DXF/PDF)
 
 This is the source of truth for the model.
 
@@ -97,9 +98,14 @@ Vendored or externally built dependencies.
 
 Examples:
 
-- OpenCascade
-- nlohmann/json
-- future geometry or helper libraries
+- OpenCascade 8 (`occt8/`, git submodule)
+- FreeType (`freetype/`, git submodule — OCCT font rendering)
+- planegcs (`planegcs/`, git submodule — 2D constraint solver)
+- libdxfrw (`libdxfrw/`, git submodule — DXF read/write)
+- OndselSolver (`OndselSolver/`, git submodule — planned for assemblies)
+- libharu + zlib (`libharu/`, `zlib/`) — PDF export; vendored in-tree,
+  NOT submodules: a fresh clone has them and the cad-core CMake builds both
+- nlohmann/json (`nlohmann/`, header-only)
 
 Do not mix application code into this directory.
 

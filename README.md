@@ -81,6 +81,13 @@ Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is 
 - LaserGRBL integration: "Export & open in LaserGRBL" handoff + direct GRBL
   streaming over serial (connect, ok-handshake streaming, status polling,
   jog/home, pause/resume)
+- ISO drawing workbench: drawings with ISO 5457 sheets (A0–A4, centring
+  marks, grid-reference ticks) and an ISO 7200 title block; base, projected
+  (first/third-angle), and section views with HLR projection, ISO 128 line
+  styles, and ISO 128-3 hatching; Fusion-style ribbon with a base→projected→
+  section tool flow and cursor-following ghost views
+- Drawing export: SVG, DXF, and PDF (libharu); the osifont LGPL font is
+  bundled for drawing text
 
 ## The Project's Mantra: Topological Naming Problem (TNP)
 
@@ -100,7 +107,7 @@ Remaining from the original v1 roadmap:
 
 ## Cross-Platform
 
-Must compile on Windows (MSVC) and POSIX (Linux/macOS, GCC/Clang). OpenCascade 8 and FreeType are vendored as git submodules.
+Must compile on Windows (MSVC) and POSIX (Linux/macOS, GCC/Clang). OpenCascade 8, FreeType, and libdxfrw are vendored as git submodules; zlib and libharu are vendored in-tree under `third_party/` and built by the CAD core — no system packages needed.
 
 ## Rules for Contributions
 
@@ -341,11 +348,14 @@ dimensions, trim, project, fillets, sketched text), the interaction layer
 (snap, drag, selection, view cube, draft dimensions), and the full CAM
 workspace (mill + laser operations, post processors, machine library,
 LaserGRBL integration, direct GRBL streaming — verified on the user's real
-machine).
+machine), and the ISO drawing workbench (sheets, base/projected/section
+views, SVG/DXF/PDF export; the geometry/symbols/annotate ribbon tabs are
+the next phase).
 
 Current focus:
 
 - the last remaining v1 feature: the measure tool
+- drawing workbench: user in-app verification, then the geometry/symbols/annotate tabs
 - laser workflow polish from real-machine feedback
 
 ## Wiki

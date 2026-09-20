@@ -42,6 +42,7 @@
 | ⚡ **[Planegcs Dual-Deployment Solver](Planegcs-Dual-Solver)** | WASM + native planegcs for UI-side drag preview and core-side final solve |
 | 🧩 **[GCS Implementation Strategy](GCS-Implementation-Strategy)** | Freeze state machine, speculative inferencing, DOF feedback — implementation plan |
 | 🔧 **[CAM Development Plan](CAM-Development)** | CAM workspace: data model, TNP strategy, preview pipeline, v1 operations |
+| 📐 **[Drawing Workspace UI Study](Drawing-Workspace-UI-Study)** | Fusion-style ISO drawing workspace: design study and phased implementation plan (R1 shipped) |
 
 ### 🤖 AI / Agent
 

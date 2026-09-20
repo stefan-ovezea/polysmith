@@ -3959,3 +3959,52 @@ expected was missing entirely. Restored as the arc's second badge:
 Gates: `tsc --noEmit` clean (UI-only change; core untouched —
 54/54 suites from the previous round stand). AWAITING user in-app
 verification.
+
+## 2026-09-19
+
+### ISO drawing workbench — full implementation (PR #90, `aa9c4ba` on dev)
+
+The drawing workbench landed end-to-end: core data model + HLR
+projection engine + ISO 5457 sheets + sections + exports (P0–P9), and
+the Fusion-style drawing workspace UI (R1).
+
+- **Core (`core/drawing/`):** `DrawingDocumentData` (drawings → sheets →
+  views → annotations, serialized in `.polysmith` files); projection
+  engine iterating HLRBRep_Data directly with source-edge witnesses per
+  visible interval (TNP-anchored; geometry-based matching because HLR
+  splits circles at silhouettes and `IsSame` fails on the copies);
+  revision-keyed `drawing_runtime` projection cache invalidated at every
+  undo/redo branch switch and refreshed inside `bump_geometry_revision`;
+  missing bodies degrade with `broken_ref` + warning + last-known
+  projection marked stale. Section views cut with a half-space and
+  hatch per ISO 128-3 (shared scanline hatcher, thin lines, 45°,
+  0.7–3 mm); sheets carry the ISO 5457 furniture (frame, centring
+  marks, grid-reference ticks, projection symbol) and an ISO 7200
+  title block; `flatten_sheet` produces the deterministic
+  `SheetPrimitiveStream` the viewport draws and the export backends
+  consume (ISO 128-2 line styles applied in core, Annex-A corner rule).
+- **Commands:** drawing_create/delete/set_active, sheet_create/delete/
+  update, view_create/update/delete/move, section_update — schemas in
+  `protocol/schema/`, TS mirrors, documented in
+  [IPC-Protocol](IPC-Protocol) and
+  [AI-CAD-Command-Language](AI-CAD-Command-Language).
+- **UI:** six-tab ribbon (views/geometry/dimension/symbols/annotate/
+  modify — geometry/symbols/annotate are disabled placeholders for the
+  next phase); `drawingTool` state machine with Base View (orientation
+  strip + iso + "Current 3D view" from the CAD camera), auto-projected
+  mode (8 cursor sectors, slot math, exact-placement learning), section
+  placement, move, delete; ghost previews ride the mouse with no
+  round-trip per move (core-side preview cache); the workspace renders
+  sheets only (workspace-leak discipline).
+- **Exports:** SVG, DXF (libdxfrw), PDF (libharu). **New vendored
+  deps:** libharu 2.4.4 + zlib 1.3.1 vendored in-tree (NOT submodules —
+  the cad-core CMake builds both); osifont LGPL font bundled in
+  `apps/desktop-ui/src-tauri/resources/fonts/`.
+- **Tests:** 63/63 suites — hlr_provenance_test,
+  cad_core_drawing_projection/section/sheet/title_block/dimension/
+  save_load/export/pdf_export tests + golden files in `tests/golden/`
+  (`POLYSMITH_UPDATE_GOLDEN=1` regeneration).
+
+Gates: `pnpm core:build` + `pnpm test:core` clean per phase; `tsc
+--noEmit` clean. AWAITING user in-app verification of the drawing
+workspace milestone.

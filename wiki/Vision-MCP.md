@@ -1,5 +1,11 @@
 # Vision MCP
 
+> **OBSOLETE (2026-09-20):** this MCP server is no longer used — the AI
+> models now read screenshots directly from the transcript (embedded
+> base64), so no local Ollama vision server is needed. The submodule, the
+> `.mcp.json` registration, and the Claude Code server enablement were all
+> removed. This page is kept for history only.
+
 Local AI vision for understanding screenshots and images. The MCP server sends
 images to a local [Ollama](https://ollama.com/) multimodal model — nothing
 leaves your machine.

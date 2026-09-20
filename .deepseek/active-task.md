@@ -1,6 +1,6 @@
 # Active task: ISO DRAWING WORKBENCH — full implementation (2026-09-19)
 
-## CURRENT SESSION (2026-09-19): R1 IMPLEMENTED (uncommitted) — AWAITING USER IN-APP VERIFICATION
+## CURRENT SESSION (2026-09-19): R1 MERGED to dev as PR #90 (`aa9c4ba`) — AWAITING USER IN-APP VERIFICATION
 
 > **R1 of the Fusion-style drawing workspace rework** (per the user-
 > approved plan `C:\Users\ThinkPad\.claude\plans\serialized-stirring-frog.md`

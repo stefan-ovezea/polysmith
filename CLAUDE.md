@@ -141,16 +141,18 @@ When implementing a task:
 apps/desktop-ui/           React + TypeScript + Tauri desktop app
   src/
     app/                   Feature actions, lifecycle, tool logic, panel components
+    app/drawing/           Drawing tool state machine (ribbon tools, ghost placement)
     layout/                Layout components (panels, toolbars, viewport)
     layout/viewport/       Viewport rendering (Three.js), draft previews, snap, selection
     state/                 Zustand store (cadCoreStore.ts)
     hooks/                 React hooks for core bridge, event handling
-    lib/                   IPC protocol helpers, schema parsing, core client
+    lib/                   IPC protocol helpers, schema parsing, core client, drawing commands + view math
     types/                 TypeScript types (IPC, geometry, viewport, scene)
     config/                App config, theme JSON files
     i18n/                  Translation strings (en.json)
   src-tauri/
     src/                   Rust: core process management, protocol bridge, OrcaSlicer integration
+    resources/             Bundled cad_core binary (release builds) + fonts (osifont)
     Cargo.toml
 native/cad-core/           C++ CAD core (CMake project)
   src/
@@ -166,6 +168,7 @@ native/cad-core/           C++ CAD core (CMake project)
       primitive/           Box and cylinder primitives
       construction/        Construction planes
       cam/                 CAM operations (face milling)
+      drawing/             ISO drawing: HLR projection, sheets, sections, title block, SVG/DXF/PDF export
       viewport/            Viewport state generation (mesh data, primitives)
       export/              STEP/STL export
       diagnostics/         Structured logging
@@ -174,9 +177,12 @@ protocol/schema/           IPC JSON schemas (commands, events)
 wiki/                      Canonical documentation
 third_party/
   occt8/                   Vendored OpenCascade 8 source (git submodule)
-  freetype/                FreeType (git submodule)
+  freetype/                FreeType — OCCT font rendering (git submodule)
   planegcs/                2D geometric constraint solver from FreeCAD (git submodule)
-  planegcs-validation/     Planegcs test suite (git submodule)
+  libdxfrw/                DXF read/write (git submodule)
+  libharu/                 PDF generation — vendored in-tree, NOT a submodule (built by cad-core CMake)
+  zlib/                    Compression — libharu's only hard dependency (vendored in-tree)
+  nlohmann/                JSON for C++ (header-only, vendored)
   OndselSolver/            Assembly constraint solver from FreeCAD/Ondsel (git submodule; planned for parts assembly)
 scripts/                   Build scripts (configure-occt.mjs, build-release.mjs)
 ```
@@ -267,6 +273,10 @@ pnpm --filter desktop-ui exec tsc --noEmit
 - **OpenCascade 8** — geometry kernel, vendored as a git submodule at `third_party/occt8/`
 - **planegcs** — 2D geometric constraint solver (ported from FreeCAD), built as a static library linked into the CAD core
 - **OndselSolver** — 3D assembly constraint solver from FreeCAD/Ondsel, vendored as a git submodule at `third_party/OndselSolver` (registered, not yet built or linked — planned for parts assembly)
+- **libharu** — PDF generation for drawing export; vendored in-tree at `third_party/libharu` (not a submodule), built by the cad-core CMake
+- **zlib** — compression, libharu's only hard dependency; vendored in-tree at `third_party/zlib`
+- **libdxfrw** — DXF read/write for drawing export; git submodule
+- **osifont** — ISO 3098-style open CAD font (LGPL), bundled as a Tauri resource at `apps/desktop-ui/src-tauri/resources/fonts/` for drawing title blocks and text
 - **Eigen3** — linear algebra (used by planegcs)
 - **Boost** — graph and math libraries (used by planegcs constraint solving)
 - **nlohmann/json** — JSON parsing in the C++ core (header-only, vendored)

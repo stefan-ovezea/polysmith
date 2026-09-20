@@ -1,6 +1,6 @@
 # Drawing Workspace UI Study — the Fusion-style rework (2026-09-19)
 
-> **Status:** study complete, implementation NOT started. This is the
+> **Status:** study complete; R1 implemented and merged (PR #90, `aa9c4ba`). This is the
 > blueprint for the drawing-workspace UI rework requested by the user:
 > a 2026-feel, toolbar-driven workspace in the spirit of Fusion 360's
 > Drawing workspace — tools on the ribbon, direct manipulation on the

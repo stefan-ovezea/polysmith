@@ -95,8 +95,12 @@ The original v1 milestones 0–3 are complete. The codebase now has:
   post files + G-code export; LaserGRBL integration ("Export & open" handoff +
   direct GRBL streaming over serial with ok-handshake streaming, status
   polling, jog/home)
-- ISO Drawing workspace scaffolding: workspace type, dropdown entry, Sheet tab,
-  placeholder toolbar. Reserved for future ISO dimensioning from 3D models.
+- ISO drawing workbench: drawings with ISO 5457 sheets (A0–A4) and an
+  ISO 7200 title block; base, projected (first/third-angle), and section
+  views with HLR projection, ISO 128 line styles, and ISO 128-3 hatching;
+  Fusion-style six-tab ribbon (geometry/symbols/annotate tabs reserved for
+  the next phase); SVG/DXF/PDF export. Drawing dimensions from 3D models
+  still to come.
 - Natural-language AI command bar
 - View cube with cardinal face snaps, sketch-plane rotation arrows, orthographic camera
 - Dynamic grids (zoom-aware millimetric spacing, sketch-plane back grid)
