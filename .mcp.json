@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "polysmith-vision": {
+      "command": "python",
+      "args": ["./tools/vision-mcp/server.py"]
+    }
+  }
+}

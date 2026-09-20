@@ -184,6 +184,9 @@ third_party/
   zlib/                    Compression — libharu's only hard dependency (vendored in-tree)
   nlohmann/                JSON for C++ (header-only, vendored)
   OndselSolver/            Assembly constraint solver from FreeCAD/Ondsel (git submodule; planned for parts assembly)
+
+tools/
+  vision-mcp/              polysmith-vision MCP server — screenshot description via deepseek-flash (stdlib Python)
 scripts/                   Build scripts (configure-occt.mjs, build-release.mjs)
 ```
 

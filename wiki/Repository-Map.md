@@ -10,6 +10,7 @@ native/
 protocol/
 wiki/
 third_party/
+tools/
 ```
 
 ## apps/
@@ -108,6 +109,20 @@ Examples:
 - nlohmann/json (`nlohmann/`, header-only)
 
 Do not mix application code into this directory.
+
+---
+
+## tools/
+
+Developer tooling — not shipped inside the app.
+
+### `tools/vision-mcp`
+
+`polysmith-vision` MCP server (Python stdlib only, registered in
+`.mcp.json`): describes screenshots by extracting pasted images from the
+Claude Code session transcript and calling `deepseek-flash` through the
+user's own DeepSeek gateway. Replaces the old Ollama-based
+`deepseek-vision` MCP (see [Vision-MCP](Vision-MCP)).
 
 ---
 

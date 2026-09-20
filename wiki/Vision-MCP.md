@@ -4,7 +4,10 @@
 > models now read screenshots directly from the transcript (embedded
 > base64), so no local Ollama vision server is needed. The submodule, the
 > `.mcp.json` registration, and the Claude Code server enablement were all
-> removed. This page is kept for history only.
+> removed. **Superseded by the `polysmith-vision` MCP** — see
+> `tools/vision-mcp/README.md` (same job, but calls `deepseek-flash`
+> through the user's own gateway; no local Ollama). This page is kept for
+> history only.
 
 Local AI vision for understanding screenshots and images. The MCP server sends
 images to a local [Ollama](https://ollama.com/) multimodal model — nothing
