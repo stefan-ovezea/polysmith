@@ -1,9 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
+import { open } from "@tauri-apps/plugin-dialog";
 
+import { Dropdown } from "@/lib/components/Dropdown";
 import type {
+  DrawingAnnotationKind,
+  DrawingAnnotationPreviewPayload,
   DrawingDimensionPreviewPayload,
   DrawingSheet,
+  DrawingTemplate,
   DrawingView,
   SectionDefinition,
   TitleBlock,
@@ -740,57 +751,244 @@ export function SheetPanel({
   );
 }
 
-// ── New Drawing setup dialog ───────────────────────────────────────
+// ── Create Drawing dialog (Fusion-style) ───────────────────────────
 //
-// The "New Drawing" toolbar button opens THIS instead of creating a
-// silent default: name, ISO 5457 paper size, orientation and the
-// ISO 5456 projection angle are chosen up front (the document-level
-// settings, editable later in the Sheet panel).  Enter/Confirm
-// commits, Escape cancels — the contextual workflow pattern.
+// The "New Drawing" ribbon button opens THIS: Drawing Type
+// (Automatic = auto-places a front base view, Manual = empty
+// drawing), Contents (which bodies the auto view references) and a
+// collapsible Destination section (standard/units/sheet settings +
+// template create/load).  Enter/OK commits, Escape cancels — the
+// contextual workflow pattern.
+//
+// Templates are setup-only JSON {name, sheets[]} files: the core owns
+// the file I/O (drawing_template_save/load); the panel drives the
+// pickers.  A template loaded here keeps its per-sheet definitions
+// verbatim (including title blocks — the dialog itself cannot edit
+// title blocks, so templates SAVED from here carry empty ones).
 
-export interface NewDrawingPanelProps {
-  disabled: boolean;
-  defaultName: string;
-  onCommit: (settings: {
+export type CreateDrawingType = "automatic" | "manual";
+export type CreateDrawingContents = "all" | "selected" | "pick";
+
+export interface CreateDrawingSettings {
+  name: string;
+  drawing_type: CreateDrawingType;
+  contents: CreateDrawingContents;
+  /** The dialog-built sheets (sheetCount copies of the controls). */
+  sheets: Array<{
     name: string;
     paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
     orientation: "portrait" | "landscape";
     projection_angle: "first_angle" | "third_angle";
-  }) => void;
+  }>;
+  /** A loaded template's sheets verbatim (per-sheet variance + title
+   *  blocks ride through) — null when the dialog builds fresh. */
+  template_sheets: DrawingSheet[] | null;
+}
+
+export interface NewDrawingPanelProps {
+  disabled: boolean;
+  defaultName: string;
+  /** The Selected-contents gate (button disabled while null). */
+  selectedBodyId: string | null;
+  /** App-data drawing templates dir (the load picker's default). */
+  templatesDir: string;
+  onCommit: (settings: CreateDrawingSettings) => void;
   onClose: () => void;
+  onSaveTemplate: (template: DrawingTemplate) => Promise<void>;
+  onLoadTemplate: (filePath: string) => Promise<DrawingTemplate>;
+}
+
+type PaperSize = "A0" | "A1" | "A2" | "A3" | "A4";
+type SheetOrientation = "portrait" | "landscape";
+
+/** ISO 5457 trimmed PORTRAIT sizes (short × long, sheet-mm) — the
+ *  landscape orientation swaps them.  Mirrors the core's
+ *  paper_size_mm (drawing_sheet.cpp). */
+const PAPER_SIZE_MM: Record<PaperSize, [number, number]> = {
+  A0: [841, 1189],
+  A1: [594, 841],
+  A2: [420, 594],
+  A3: [297, 420],
+  A4: [210, 297],
+};
+
+const EMPTY_TITLE_BLOCK: TitleBlock = {
+  legal_owner: "",
+  identification: "",
+  date: "",
+  title: "",
+  approver: "",
+  creator: "",
+  document_type: "",
+  revision_rows: [],
+};
+
+/** The panel's radio-style toggle button (DrawingRibbon's pattern). */
+function PanelToggle({
+  active,
+  onClick,
+  disabled,
+  tooltip,
+  children,
+}: {
+  active: boolean;
+  onClick?: () => void;
+  disabled?: boolean;
+  tooltip?: string;
+  children: ReactNode;
+}) {
+  const state = active
+    ? "cad-ribbon-action cad-ribbon-action-primary"
+    : "cad-ribbon-action";
+  return (
+    <button
+      type="button"
+      className={`${state} flex h-8 items-center gap-1 px-2 leading-none`}
+      disabled={disabled}
+      data-tooltip={tooltip}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** A label-left / control-right form row. */
+function PanelRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-28 shrink-0 text-xs text-[var(--cad-muted)]">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
 }
 
 export function NewDrawingPanel({
   disabled,
   defaultName,
+  selectedBodyId,
+  templatesDir,
   onCommit,
   onClose,
+  onSaveTemplate,
+  onLoadTemplate,
 }: NewDrawingPanelProps) {
   const { t } = useTranslation();
   const [name, setName] = useState(defaultName);
-  const [paperSize, setPaperSize] = useState<"A0" | "A1" | "A2" | "A3" | "A4">(
-    "A4",
+  const [drawingType, setDrawingType] = useState<CreateDrawingType>(
+    "automatic",
   );
-  const [orientation, setOrientation] = useState<"portrait" | "landscape">(
+  const [contents, setContents] = useState<CreateDrawingContents>("all");
+  const [destinationCollapsed, setDestinationCollapsed] = useState(false);
+  const [drawingChoice, setDrawingChoice] = useState<"new" | "template">(
+    "new",
+  );
+  const [template, setTemplate] = useState<DrawingTemplate | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [paperSize, setPaperSize] = useState<PaperSize>("A4");
+  const [orientation, setOrientation] = useState<SheetOrientation>(
     "landscape",
   );
   const [projectionAngle, setProjectionAngle] = useState<
     "first_angle" | "third_angle"
   >("first_angle");
+  const [sheetCount, setSheetCount] = useState("1");
 
-  const settings = useMemo(
-    () => ({
+  // Sheet size → trimmed Width/Height (the Fusion dialog's read-only
+  // derived row; the core's flatten applies the same swap).
+  const [widthMm, heightMm] = useMemo(() => {
+    const [short, long] = PAPER_SIZE_MM[paperSize];
+    return orientation === "landscape" ? [long, short] : [short, long];
+  }, [paperSize, orientation]);
+
+  const settings = useMemo<CreateDrawingSettings>(() => {
+    const count = Math.min(
+      Math.max(parseInt(sheetCount, 10) || 1, 1),
+      99,
+    );
+    return {
       name: name.trim() || defaultName,
-      paper_size: paperSize,
-      orientation,
-      projection_angle: projectionAngle,
-    }),
-    [name, defaultName, paperSize, orientation, projectionAngle],
-  );
+      drawing_type: drawingType,
+      contents,
+      sheets: Array.from({ length: count }, (_, index) => ({
+        name: t("drawing.newPanel.sheetName", { number: index + 1 }),
+        paper_size: paperSize,
+        orientation,
+        projection_angle: projectionAngle,
+      })),
+      template_sheets:
+        drawingChoice === "template" && template ? template.sheets : null,
+    };
+  }, [
+    name,
+    defaultName,
+    drawingType,
+    contents,
+    sheetCount,
+    paperSize,
+    orientation,
+    projectionAngle,
+    drawingChoice,
+    template,
+    t,
+  ]);
 
-  // Enter commits, Escape cancels.
+  const browseTemplate = async () => {
+    const path = await open({
+      title: t("drawing.newPanel.drawingBrowseTemplate"),
+      multiple: false,
+      defaultPath: templatesDir,
+      filters: [{ name: "PolySmith drawing template", extensions: ["json"] }],
+    });
+    if (!path || typeof path !== "string") {
+      setDrawingChoice("new");
+      return;
+    }
+    try {
+      const loaded = await onLoadTemplate(path);
+      setTemplate(loaded);
+      setDrawingChoice("template");
+      setTemplateError(null);
+    } catch {
+      setTemplateError(t("drawing.newPanel.templateLoadFailed"));
+      setDrawingChoice("new");
+    }
+  };
+
+  const saveTemplate = () => {
+    // One canonical sheet — sheetCount copies would be redundant
+    // (the template holds SETTINGS, not the sheet run).
+    void onSaveTemplate({
+      name: name.trim() || defaultName,
+      sheets: [
+        {
+          sheet_id: "",
+          name: t("drawing.defaultSheet"),
+          paper_size: paperSize,
+          orientation,
+          projection_angle: projectionAngle,
+          view_ids: [],
+          title_block: EMPTY_TITLE_BLOCK,
+        },
+      ],
+    });
+  };
+
+  // Enter commits, Escape cancels — never while a dropdown menu is
+  // open (Enter/Escape belong to the menu then).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement | null)?.closest(".cad-dropdown")) {
+        return;
+      }
       if (event.key === "Enter" && !disabled) {
         onCommit(settings);
       } else if (event.key === "Escape") {
@@ -804,16 +1002,33 @@ export function NewDrawingPanel({
   }, [disabled, settings, onCommit, onClose]);
 
   return (
-    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
+    <section className="pointer-events-auto cad-floating-panel w-[360px] px-5 py-5">
       <div className="space-y-4">
-        <div>
+        {/* Header: title + the Destination collapse chevron. */}
+        <div className="flex items-center justify-between">
           <p className="cad-kicker">{t("drawing.newPanel.title")}</p>
+          <button
+            type="button"
+            className="px-1 py-1 text-[9px] text-[var(--cad-muted)] hover:text-on-surface"
+            aria-label={
+              destinationCollapsed
+                ? t("drawing.newPanel.destinationExpand")
+                : t("drawing.newPanel.destinationCollapse")
+            }
+            onClick={() => {
+              setDestinationCollapsed((current) => !current);
+            }}
+          >
+            {destinationCollapsed ? "▸" : "▾"}
+          </button>
         </div>
 
-        <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-          {t("drawing.newPanel.name")}
+        <label className="flex items-center gap-2">
+          <span className="w-28 shrink-0 text-xs text-[var(--cad-muted)]">
+            {t("drawing.newPanel.name")}
+          </span>
           <input
-            className="cad-input w-40"
+            className="cad-input flex-1"
             value={name}
             autoFocus
             onChange={(event) => {
@@ -822,84 +1037,251 @@ export function NewDrawingPanel({
           />
         </label>
 
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-            {t("drawing.newPanel.paperSize")}
-            <select
-              className="cad-input"
-              value={paperSize}
-              onChange={(event) => {
-                setPaperSize(
-                  event.target.value as
-                    | "A0"
-                    | "A1"
-                    | "A2"
-                    | "A3"
-                    | "A4",
-                );
-              }}
-            >
-              {PAPER_SIZES.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-            {t("drawing.newPanel.orientation")}
-            <select
-              className="cad-input"
-              value={orientation}
-              onChange={(event) => {
-                setOrientation(
-                  event.target.value as "portrait" | "landscape",
-                );
-              }}
-            >
-              <option value="portrait">
-                {t("drawing.newPanel.portrait")}
-              </option>
-              <option value="landscape">
-                {t("drawing.newPanel.landscape")}
-              </option>
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-xs text-[var(--cad-muted)]">
-            {t("drawing.newPanel.projectionAngle")}
-            <select
-              className="cad-input"
-              value={projectionAngle}
-              onChange={(event) => {
-                setProjectionAngle(
-                  event.target.value as "first_angle" | "third_angle",
-                );
-              }}
-            >
-              <option value="first_angle">
-                {t("drawing.newPanel.firstAngle")}
-              </option>
-              <option value="third_angle">
-                {t("drawing.newPanel.thirdAngle")}
-              </option>
-            </select>
-          </label>
-        </div>
+        {/* Drawing Type: Automatic (auto base view) / Manual (empty). */}
+        <PanelRow label={t("drawing.newPanel.drawingType")}>
+          <PanelToggle
+            active={drawingType === "automatic"}
+            onClick={() => {
+              setDrawingType("automatic");
+            }}
+          >
+            {t("drawing.newPanel.automatic")}
+          </PanelToggle>
+          <PanelToggle
+            active={drawingType === "manual"}
+            onClick={() => {
+              setDrawingType("manual");
+            }}
+          >
+            {t("drawing.newPanel.manual")}
+          </PanelToggle>
+        </PanelRow>
 
-        <div className="flex gap-3 pt-1">
+        {/* Contents: which bodies the auto base view references. */}
+        {drawingType === "automatic" && (
+          <PanelRow label={t("drawing.newPanel.contents")}>
+            <PanelToggle
+              active={contents === "all"}
+              onClick={() => {
+                setContents("all");
+              }}
+            >
+              {t("drawing.newPanel.contentsAll")}
+            </PanelToggle>
+            <PanelToggle
+              active={contents === "selected"}
+              disabled={!selectedBodyId}
+              tooltip={
+                selectedBodyId
+                  ? undefined
+                  : t("drawing.newPanel.contentsSelectedHint")
+              }
+              onClick={() => {
+                setContents("selected");
+              }}
+            >
+              {t("drawing.newPanel.contentsSelected")}
+            </PanelToggle>
+            <PanelToggle
+              active={contents === "pick"}
+              onClick={() => {
+                setContents("pick");
+              }}
+            >
+              {t("drawing.newPanel.contentsPick")}
+            </PanelToggle>
+          </PanelRow>
+        )}
+
+        {/* Destination: the collapsible sheet/template settings. */}
+        {!destinationCollapsed && (
+          <div className="space-y-3 border-t border-white/10 pt-3">
+            <PanelRow label={t("drawing.newPanel.drawing")}>
+              <Dropdown
+                value={drawingChoice}
+                options={[
+                  {
+                    value: "new",
+                    label: t("drawing.newPanel.drawingCreateNew"),
+                  },
+                  {
+                    value: "template",
+                    label: t("drawing.newPanel.drawingBrowseTemplate"),
+                  },
+                ]}
+                label={t("drawing.newPanel.drawing")}
+                onChange={(value) => {
+                  if (value === "template") {
+                    void browseTemplate();
+                  } else {
+                    setDrawingChoice("new");
+                    setTemplate(null);
+                    setTemplateError(null);
+                  }
+                }}
+                buttonClassName="flex-1"
+              />
+              <button
+                type="button"
+                className="cad-ribbon-action h-8 px-2 leading-none"
+                onClick={saveTemplate}
+              >
+                {t("drawing.newPanel.createTemplate")}
+              </button>
+            </PanelRow>
+
+            {templateError != null && (
+              <p className="text-xs text-danger">{templateError}</p>
+            )}
+            {drawingChoice === "template" && template != null && (
+              <p className="text-xs text-[var(--cad-muted)]">
+                {t("drawing.newPanel.templateLoadedSummary", {
+                  name: template.name,
+                  count: template.sheets.length,
+                })}
+              </p>
+            )}
+
+            <PanelRow label={t("drawing.newPanel.baseDocument")}>
+              <PanelToggle active={true}>
+                {t("drawing.newPanel.baseNew")}
+              </PanelToggle>
+              <PanelToggle
+                active={false}
+                disabled
+                tooltip={t("drawing.newPanel.baseReferenceTitle")}
+              >
+                {t("drawing.newPanel.baseReference")}
+              </PanelToggle>
+            </PanelRow>
+
+            <PanelRow label={t("drawing.newPanel.standard")}>
+              <Dropdown
+                value="iso"
+                options={[{ value: "iso", label: "ISO" }]}
+                label={t("drawing.newPanel.standard")}
+                buttonClassName="flex-1"
+              />
+            </PanelRow>
+
+            <PanelRow label={t("drawing.newPanel.units")}>
+              <Dropdown
+                value="mm"
+                options={[{ value: "mm", label: "mm" }]}
+                label={t("drawing.newPanel.units")}
+                buttonClassName="flex-1"
+              />
+            </PanelRow>
+
+            <PanelRow label={t("drawing.newPanel.sheetSize")}>
+              <Dropdown
+                value={paperSize}
+                options={PAPER_SIZES.map((value) => ({ value, label: value }))}
+                label={t("drawing.newPanel.sheetSize")}
+                onChange={(value) => {
+                  setPaperSize(value);
+                }}
+                buttonClassName="flex-1"
+              />
+            </PanelRow>
+
+            <PanelRow label={t("drawing.newPanel.width")}>
+              <span className="text-sm text-[var(--cad-muted)]">
+                {widthMm}
+                <span className="cad-metric">mm</span>
+              </span>
+              <span className="text-sm text-[var(--cad-muted)]">
+                {t("drawing.newPanel.height")}
+              </span>
+              <span className="text-sm text-[var(--cad-muted)]">
+                {heightMm}
+                <span className="cad-metric">mm</span>
+              </span>
+            </PanelRow>
+
+            <PanelRow label={t("drawing.newPanel.orientation")}>
+              <PanelToggle
+                active={orientation === "portrait"}
+                onClick={() => {
+                  setOrientation("portrait");
+                }}
+              >
+                {t("drawing.newPanel.portrait")}
+              </PanelToggle>
+              <PanelToggle
+                active={orientation === "landscape"}
+                onClick={() => {
+                  setOrientation("landscape");
+                }}
+              >
+                {t("drawing.newPanel.landscape")}
+              </PanelToggle>
+            </PanelRow>
+
+            <PanelRow label={t("drawing.newPanel.sheetCount")}>
+              <input
+                className="cad-input w-16"
+                inputMode="numeric"
+                value={sheetCount}
+                onChange={(event) => {
+                  if (/^\d{0,2}$/.test(event.target.value)) {
+                    setSheetCount(event.target.value);
+                  }
+                }}
+              />
+            </PanelRow>
+
+            <PanelRow label={t("drawing.newPanel.projectionAngle")}>
+              <PanelToggle
+                active={projectionAngle === "first_angle"}
+                onClick={() => {
+                  setProjectionAngle("first_angle");
+                }}
+              >
+                {t("drawing.newPanel.firstAngle")}
+              </PanelToggle>
+              <PanelToggle
+                active={projectionAngle === "third_angle"}
+                onClick={() => {
+                  setProjectionAngle("third_angle");
+                }}
+              >
+                {t("drawing.newPanel.thirdAngle")}
+              </PanelToggle>
+            </PanelRow>
+          </div>
+        )}
+
+        {/* Footer: info summary left, OK/Cancel right. */}
+        <div className="flex items-center gap-2 pt-1">
           <button
             type="button"
-            className="cad-ribbon-action cad-ribbon-action-primary flex-1"
+            className="flex h-5 w-5 items-center justify-center rounded-full border border-white/20 text-[10px] text-[var(--cad-muted)]"
+            data-tooltip={t("drawing.newPanel.infoSummary", {
+              paperSize,
+              orientation: t(
+                orientation === "portrait"
+                  ? "drawing.newPanel.portrait"
+                  : "drawing.newPanel.landscape",
+              ),
+            })}
+          >
+            i
+          </button>
+          <div className="flex-1" />
+          <button
+            type="button"
+            className="cad-ribbon-action cad-ribbon-action-primary"
             disabled={disabled}
             onClick={() => {
               onCommit(settings);
             }}
           >
-            {t("common.confirm")}
+            {t("common.ok")}
           </button>
           <button
             type="button"
-            className="cad-ribbon-action flex-1"
+            className="cad-ribbon-action"
             onClick={onClose}
           >
             {t("common.cancel")}
@@ -1240,6 +1622,270 @@ export function DimensionPanel({
           >
             {t("drawing.dimensionPanel.clearPicks")}
           </button>
+          <button
+            type="button"
+            className="cad-ribbon-action flex-1"
+            onClick={onClose}
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Annotation panel (GEOMETRY / SYMBOLS / ANNOTATE tabs) ───────────
+//
+// The pick→preview→Enter flow mirrors DimensionPanel: picks
+// accumulate (max 2 — the second circle of a centerline), the core
+// preview replies with the attachment graphics, Enter commits
+// drawing_annotation_create.  P1 ships leader_text; the
+// GEOMETRY/SYMBOLS kinds join in P2/P3.
+
+export interface AnnotationPanelProps {
+  disabled: boolean;
+  /** The armed annotation kind (P1: "leader_text"). */
+  kind: DrawingAnnotationKind;
+  /** Picks accumulated in sheet-mm (the pick is just a point — the
+   *  core resolves the nearest edge). */
+  picks: Array<[number, number]>;
+  /** The latest core preview (graphics + error). */
+  preview: DrawingAnnotationPreviewPayload | null;
+  /** The annotation's rendered text (leader_text content). */
+  text: string;
+  onTextChange: (text: string) => void;
+  onClearPicks: () => void;
+  onCommit: () => void;
+  onClose: () => void;
+}
+
+export function AnnotationPanel({
+  disabled,
+  kind,
+  picks,
+  preview,
+  text,
+  onTextChange,
+  onClearPicks,
+  onCommit,
+  onClose,
+}: AnnotationPanelProps) {
+  const { t } = useTranslation();
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  const canCommit = picks.length > 0 && !preview?.error;
+
+  // Enter commits, Escape cancels.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && !disabled && canCommit) {
+        commitRef.current();
+      } else if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [disabled, canCommit, onClose]);
+
+  return (
+    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
+      <div className="space-y-4">
+        <div>
+          <p className="cad-kicker">
+            {t(`drawing.annotationPanel.kind${
+              kind
+                .split("_")
+                .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                .join("")
+            }`)}
+          </p>
+          <p className="mt-3 text-sm text-[color:var(--cad-muted)]">
+            {picks.length === 0
+              ? t("drawing.annotationPanel.pickHint")
+              : picks.length === 1 && kind === "centerline"
+                ? t("drawing.annotationPanel.pickTwoHint")
+                : t("drawing.annotationPanel.pickCount", { count: picks.length })}
+          </p>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.annotationPanel.textLabel")}
+          </p>
+          <input
+            className="cad-input w-full"
+            type="text"
+            value={text}
+            disabled={disabled}
+            placeholder={t("drawing.annotationPanel.textPlaceholder")}
+            onChange={(event) => {
+              onTextChange(event.currentTarget.value);
+            }}
+          />
+        </div>
+
+        {preview ? (
+          preview.error ? (
+            <p className="text-xs text-[color:var(--cad-danger)]">
+              {preview.error}
+            </p>
+          ) : null
+        ) : null}
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            className="cad-ribbon-action cad-ribbon-action-primary flex-1"
+            disabled={disabled || !canCommit}
+            onClick={() => {
+              commitRef.current();
+            }}
+          >
+            {t("common.confirm")}
+          </button>
+          <button
+            type="button"
+            className="cad-ribbon-action flex-1"
+            disabled={picks.length === 0}
+            onClick={onClearPicks}
+          >
+            {t("drawing.annotationPanel.clearPicks")}
+          </button>
+          <button
+            type="button"
+            className="cad-ribbon-action flex-1"
+            onClick={onClose}
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Note panel (ANNOTATE → Text) ───────────────────────────────────
+//
+// Armed: the panel holds the draft text + height; a CLICK on the
+// sheet places the note (Enter has nothing to commit while armed).
+// Editing (a note was clicked): Enter commits drawing_note_update,
+// Escape closes.
+
+export interface NotePanelProps {
+  disabled: boolean;
+  /** true = armed (click places), false = editing an existing note. */
+  armed: boolean;
+  text: string;
+  heightMm: number;
+  onTextChange: (text: string) => void;
+  onHeightChange: (heightMm: number) => void;
+  onCommit: () => void;
+  onClose: () => void;
+}
+
+export function NotePanel({
+  disabled,
+  armed,
+  text,
+  heightMm,
+  onTextChange,
+  onHeightChange,
+  onCommit,
+  onClose,
+}: NotePanelProps) {
+  const { t } = useTranslation();
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  // Editing: Enter commits, Escape closes.  Armed: Escape only (the
+  // click on the sheet is the commit gesture).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && !disabled && !armed) {
+        commitRef.current();
+      } else if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [disabled, armed, onClose]);
+
+  return (
+    <section className="pointer-events-auto cad-floating-panel px-5 py-5">
+      <div className="space-y-4">
+        <div>
+          <p className="cad-kicker">
+            {t(
+              armed
+                ? "drawing.notePanel.title"
+                : "drawing.notePanel.editTitle",
+            )}
+          </p>
+          {armed ? (
+            <p className="mt-3 text-sm text-[color:var(--cad-muted)]">
+              {t("drawing.notePanel.placeHint")}
+            </p>
+          ) : null}
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.notePanel.textLabel")}
+          </p>
+          <input
+            className="cad-input w-full"
+            type="text"
+            value={text}
+            disabled={disabled}
+            placeholder={t("drawing.notePanel.textPlaceholder")}
+            onChange={(event) => {
+              onTextChange(event.currentTarget.value);
+            }}
+          />
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs text-[var(--cad-muted)]">
+            {t("drawing.notePanel.heightLabel")}
+          </p>
+          <input
+            className="cad-input"
+            type="number"
+            min={1}
+            max={20}
+            step={0.5}
+            value={heightMm}
+            disabled={disabled}
+            onChange={(event) => {
+              const value = Number(event.currentTarget.value);
+              if (Number.isFinite(value) && value > 0) {
+                onHeightChange(value);
+              }
+            }}
+          />
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          {!armed ? (
+            <button
+              type="button"
+              className="cad-ribbon-action cad-ribbon-action-primary flex-1"
+              disabled={disabled}
+              onClick={() => {
+                commitRef.current();
+              }}
+            >
+              {t("common.confirm")}
+            </button>
+          ) : null}
           <button
             type="button"
             className="cad-ribbon-action flex-1"

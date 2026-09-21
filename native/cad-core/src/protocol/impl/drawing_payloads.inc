@@ -118,6 +118,9 @@ json to_payload(const polysmith::core::Annotation& annotation) {
   if (annotation.witness_2.has_value()) {
     j["witness_2"] = to_payload(annotation.witness_2.value());
   }
+  if (annotation.attach_param.has_value()) {
+    j["attach_param"] = annotation.attach_param.value();
+  }
   if (annotation.text_override.has_value()) {
     j["text_override"] = annotation.text_override.value();
   }
@@ -136,7 +139,30 @@ json to_payload(const polysmith::core::Annotation& annotation) {
   return j;
 }
 
+// ── SheetNote ──────────────────────────────────────────────────────
+
+json to_payload(const polysmith::core::SheetNote& note) {
+  json j;
+  j["note_id"] = note.note_id;
+  j["sheet_id"] = note.sheet_id;
+  j["text"] = note.text;
+  j["position"] = drawing_array2(note.position);
+  j["height_mm"] = note.height_mm;
+  j["angle_deg"] = note.angle_deg;
+  j["h_align"] = note.h_align;
+  return j;
+}
+
 // ── DrawingView ───────────────────────────────────────────────────
+
+json to_payload(const polysmith::core::DetailDefinition& detail) {
+  json j;
+  j["parent_view_id"] = detail.parent_view_id;
+  j["center"] = drawing_array2(detail.center);
+  j["radius"] = detail.radius;
+  j["label"] = detail.label;
+  return j;
+}
 
 json to_payload(const polysmith::core::DrawingView& view) {
   json j;
@@ -152,6 +178,9 @@ json to_payload(const polysmith::core::DrawingView& view) {
   j["show_hidden"] = view.show_hidden;
   if (view.section.has_value()) {
     j["section"] = to_payload(view.section.value());
+  }
+  if (view.detail.has_value()) {
+    j["detail"] = to_payload(view.detail.value());
   }
   if (view.broken_ref.has_value()) {
     j["broken_ref"] = view.broken_ref.value();
@@ -177,6 +206,11 @@ json to_payload(const polysmith::core::Drawing& drawing) {
     annotations.push_back(to_payload(annotation));
   }
   j["annotations"] = annotations;
+  json notes = json::array();
+  for (const auto& note : drawing.notes) {
+    notes.push_back(to_payload(note));
+  }
+  j["notes"] = notes;
   return j;
 }
 

@@ -117,6 +117,8 @@ json to_payload(const polysmith::core::TitleBlock& title_block);
 json to_payload(const polysmith::core::DrawingSheet& sheet);
 json to_payload(const polysmith::core::AnnotationExtension& extension);
 json to_payload(const polysmith::core::Annotation& annotation);
+json to_payload(const polysmith::core::SheetNote& note);
+json to_payload(const polysmith::core::DetailDefinition& detail);
 json to_payload(const polysmith::core::DrawingView& view);
 json to_payload(const polysmith::core::Drawing& drawing);
 json to_payload(const polysmith::core::DrawingDocumentData& drawing);
@@ -134,6 +136,10 @@ polysmith::core::DrawingSheet drawing_sheet_from_payload(const json& payload);
 polysmith::core::DrawingView drawing_view_from_payload(const json& payload);
 polysmith::core::SectionDefinition section_definition_from_payload(
     const json& payload);
+polysmith::core::DetailDefinition detail_definition_from_payload(
+    const json& payload);
 polysmith::core::TitleBlock title_block_from_payload(const json& payload);
+polysmith::core::AnnotationExtension annotation_extension_from_payload(
+    const json& payload);
 
 }  // namespace polysmith::protocol

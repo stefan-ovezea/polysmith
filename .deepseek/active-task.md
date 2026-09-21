@@ -1,6 +1,146 @@
 # Active task: ISO DRAWING WORKBENCH — full implementation (2026-09-19)
 
-## CURRENT SESSION (2026-09-19): R1 MERGED to dev as PR #90 (`aa9c4ba`) — AWAITING USER IN-APP VERIFICATION
+## CURRENT SESSION (2026-09-20): feature/ISO-drawing-fix — dimension drag (VERIFIED) + PDF export fix + CREATE DRAWING dialog + templates
+
+**Part 1 — whole-dimension drag + decimal dot: USER-VERIFIED in-app**
+("dimension works now"). `text_offset` = placement point (perpendicular
+drag moves the dim line + stretches extensions, parallel slides the
+text, radius/diameter re-aim, angular arc clamps at 12); drag commits
+ONE `drawing_dimension_update` per drop; `SheetText.annotation_id`
+plumbing for hit-testing; decimal separator "." default + stored-","
+migration. 63/63 suites incl. `whole_dimension_drag`, goldens unchanged.
+
+**Part 1b — PDF export parse error: FIXED (user-reported, not yet
+re-verified)**: `documentExportedEventSchema` format enum now includes
+"svg"/"pdf" (drawing-sheet exports) + TS `DocumentExportResult` widened
+— the awaited export completes instead of timing out.
+
+**Part 2 — CREATE DRAWING dialog (Fusion-style) + templates (NOT
+committed — awaiting user in-app verification):**
+- Dialog: Drawing Type Automatic/Manual; Contents All/Selected/Pick…;
+  collapsible Destination (Standard ISO, Units mm, Sheet Size +
+  derived Width/Height, Orientation, Sheet Count 1–99, Projection
+  angle, Base Document row, template browse + Save Template…); info
+  tooltip + OK/Cancel; Enter/Escape with the `.cad-dropdown` guard.
+- Automatic = create (N sheets) + auto front base view: create →
+  awaitDocumentChange → awaitViewportChange (new store waiter) →
+  `bestFitIsoScale` → ONE `drawing_view_update` (scale + centered
+  position together). Manual = empty; Pick… = armBaseView.
+- Templates: setup-only JSON {name, sheets[]} (title blocks in, ids
+  out); new core commands `drawing_template_save`/`drawing_template_load`
+  + result events + `POLYSMITH_TEMPLATES_DIR` (Tauri env,
+  `<app_data>/templates`); hooks throw on error replies (errors
+  RESOLVE awaited promises); loaded templates flow through the normal
+  `drawing_create`.
+- Gates: **64/64 core suites** (new cad_core_drawing_template_test),
+  tsc clean, cargo check clean.
+
+**Part 3 — ANNOTATE tab (Text + Leader Text) + shared annotation
+infrastructure (USER-VERIFIED IN-APP "it is working" after fix round 1,
+NOT committed):**
+- The user reported GEOMETRY/SYMBOLS/ANNOTATE tabs dead; scoping
+  answered: all three this round, same branch. Phase 1 = ANNOTATE
+  (leader_text as the pilot kind of the generic command family).
+- Core: `SheetNote` + `Drawing.notes`; 9 new `Annotation` kinds +
+  `attach_param`; witness ladder extracted from `resolve_annotation`
+  into a shared helper; refresh/flatten branch on
+  `is_annotation_kind()`; new `drawing_annotation_geometry.h/.cpp`
+  (P1: leader_text emitter — arrow + leader + offset-anchored text);
+  `drawing_note_create/update/delete` +
+  `drawing_annotation_create/update/delete/preview` (7 commands,
+  pick→preview→Enter, `placement` → `text_offset` via a zero-offset
+  probe); DXF layers purpose "annotation" on ANNOTATION.
+- UI: ANNOTATE tab real tools (Text/Leader Text); NotePanel +
+  AnnotationPanel floating panels; drag generalized to
+  owner dimension|annotation|note (+sheetIndex for note drops);
+  annotation preview prop threaded App → ViewportPanel → sceneSync →
+  `drawing-overlay-annotation` overlay sub-group.
+- Gates so far: `cad_core_drawing_note_test` 10/10 +
+  `cad_core_drawing_annotation_test` 9/9 + all prior drawing suites
+  green (goldens unchanged); tsc clean. Wiki IPC-Protocol +
+  AI-CAD-Command-Language + Implementation-Log updated.
+- **Fix round 1 (user in-app report: panel "only confirm/cancel",
+  invisible instructions, drag duplicated the note):** (1) the shell's
+  theme bootstrap only seeded stored themes when absent — the user's
+  stored themes predate `--cad-muted`/`--cad-danger`/`--cad-drawing-*`,
+  so every floating-panel hint rendered with unresolved vars.
+  `app_config.rs` now BACKFILLS missing color keys from the bundled
+  theme (user edits preserved) — next app start updates the stored
+  themes. (2) AnnotationPanel gained the Text input (content →
+  `text_override`; typing re-requests the preview live; carried by
+  create). (3) Text-tool flow: a press on committed text wins over the
+  armed placement (no more duplicate notes), placing a note DISARMS the
+  tool + opens the edit panel (Fusion flow), unchanged confirms skip
+  the no-op update. Gates: tsc + cargo check clean.
+
+**Part 4 — GEOMETRY + SYMBOLS tabs (Phases 2+3, IMPLEMENTED — NOT
+committed):**
+- Core: 8 emitters in drawing_annotation_geometry.cpp (center cross,
+  pre-dashed chain line ±3 mm overshoot, 5 mm edge extension from the
+  SNAPPED end, ISO 1302 check, ISO 2553 reference line, ISO 1101
+  14×7 frame, filled datum triangle + letter box, balloon circle);
+  centerline rejects concentric circles; resolve_pick gained
+  prefer_witness_source (real edge wins over a coincident silhouette;
+  dimensions keep the strict rule).
+- UI: GEOMETRY + SYMBOLS ribbon tabs live (8 tools), shared
+  `armAnnotationTool` (balloon auto-increments the next number),
+  centerline pick-two hint.
+- Gates: annotation suite 9 → 18 tests + 8 new goldens; full
+  `pnpm test:core` **66/66**; tsc clean. Wiki + Implementation-Log
+  updated.
+
+**Part 5 — DETAIL VIEWS (ISO 128-3 §4.12, per the approved plan
+`optimized-stargazing-pie.md`): CORE DONE + UI IMPLEMENTED — NOT
+committed (awaiting user in-app verification):**
+- Core: `DetailDefinition` + kind `"detail"`; refresh second pass
+  clips the parent's cached projection (`drawing_detail_clip.{h,cpp}`:
+  analytic line∩circle, sampled+bisected arc spans with seam unwrap,
+  keep-inside ellipse heuristic, witnesses verbatim); flatten emits
+  detail boundary circle + `"<letter> (<scale>)"` (purposes
+  `detail_boundary`/`detail_label`) + parent marker circle + bare
+  letter; bounds = circle extent; DXF ANNOTATION layer; validation
+  (parent = plain projection, radius > 0) + cascade delete + no
+  dims/annotations on details; serialization both ways.
+- Tests: new `cad_core_drawing_detail_test` 9/9 + golden
+  `drawing_detail_box.txt`; clip caught 3 real bugs (seam span
+  unwrap, cosine sign early-outs, unbisected transitions). Full
+  gate **67/67 core suites** (2026-09-21).
+- UI: `detail_view` tool (hook gesture state, stays armed after a
+  commit); VIEWS ribbon + strip hint; ViewportPanel circle drag on
+  projection-view CONTENT bounds (frames/texts keep their drags);
+  `drawing-overlay-detail` ghost sub-group (dashed circle + center
+  cross + letter); App commit = letter from detail count, ISO scale ≥
+  parent×2, slot right of parent via `clampSheetPosition`. tsc clean.
+- Wiki IPC-Protocol + AI-CAD-Command-Language + Implementation-Log
+  updated.
+
+**Next session checklist:**
+- User verifies Part 1b (PDF export reports success) and Part 2 (dialog
+  layout per the Fusion screenshot: A3 landscape → 420×297; Automatic
+  → centered best-fit front view, nothing armed; Selected gate; Pick…
+  arms; Manual empty; Sheet Count N; Save/Browse template round-trip;
+  broken template file → error, dialog usable; Enter/Escape +
+  dropdown guard; existing "drawing already exists" guard).
+- User verifies Part 4 (Phases 2+3): GEOMETRY → Center Mark on a bore
+  (cross on the center, no text), Centerline between two holes (chain
+  line, two picks), Edge Extension from the nearest end; SYMBOLS →
+  each of the five renders per ISO, the panel Text edits the content
+  live, drag repositions (leader/circle follows); DXF export shows the
+  ANNOTATION layer; delete the source body → dependency_broken, no
+  crash.
+- User verifies Part 5 (detail views): VIEWS → Detail View → press-drag
+  a circle on the box front view → dashed circle + center cross + letter
+  ghost → release → enlarged view lands right of the parent with
+  boundary circle + "A (2:1)"; parent shows marker circle + "A"; drag
+  the detail frame; delete the parent view → detail disappears; delete
+  the source body → both degrade (stale), undo restores; save/reload
+  keeps details; DXF export shows the ANNOTATION layer circles.
+- Then commit the parts (approval needed, no Co-Authored-By) —
+  messages name cad_core_drawing_dimension_test + drawing_template_test
+  + drawing_note_test + drawing_annotation_test + drawing_detail_test +
+  save_load + full test:core + tsc + cargo check.
+
+## SESSION (2026-09-19): R1 MERGED to dev as PR #90 (`aa9c4ba`) — AWAITING USER IN-APP VERIFICATION
 
 > **R1 of the Fusion-style drawing workspace rework** (per the user-
 > approved plan `C:\Users\ThinkPad\.claude\plans\serialized-stirring-frog.md`

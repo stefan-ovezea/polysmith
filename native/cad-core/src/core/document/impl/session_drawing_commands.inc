@@ -51,9 +51,14 @@ polysmith::core::DrawingView* find_view(Drawing& drawing,
 //   - "section": a section definition required — the frame derives
 //     from the cutting plane (never a standard view or custom frame,
 //     never the uncut body).
-void validate_view_definition(const DrawingView& view) {
+//   - "detail": a detail definition + an existing PROJECTION parent
+//     required — the frame is the parent's, the content is the
+//     parent's projection clipped to the circle (V1: no section
+//     parents, no detail-of-detail).
+void validate_view_definition(const DrawingView& view,
+                              const Drawing& drawing) {
   if (view.kind != "projection" && view.kind != "axonometric" &&
-      view.kind != "section") {
+      view.kind != "section" && view.kind != "detail") {
     throw std::runtime_error("Unknown view kind: " + view.kind);
   }
   if (view.kind == "section") {
@@ -69,6 +74,32 @@ void validate_view_definition(const DrawingView& view) {
     }
     if (!(view.section->hatch_spacing_mm > 0.0)) {
       throw std::runtime_error("The hatch spacing must be positive");
+    }
+  } else if (view.kind == "detail") {
+    if (!view.detail.has_value()) {
+      throw std::runtime_error("Detail views need a detail definition");
+    }
+    const auto& detail = view.detail.value();
+    if (detail.parent_view_id.empty()) {
+      throw std::runtime_error("The detail view needs a parent view");
+    }
+    if (!(detail.radius > 0.0)) {
+      throw std::runtime_error("The detail circle radius must be positive");
+    }
+    const DrawingView* parent = nullptr;
+    for (const auto& candidate : drawing.views) {
+      if (candidate.view_id == detail.parent_view_id) {
+        parent = &candidate;
+        break;
+      }
+    }
+    if (parent == nullptr) {
+      throw std::runtime_error(
+          "The detail view's parent view does not exist");
+    }
+    if (parent->kind != "projection") {
+      throw std::runtime_error(
+          "Detail views need a projection view as their parent");
     }
   } else {
     if (!view.standard_view.empty() &&
@@ -272,8 +303,13 @@ DocumentState DocumentManager::drawing_sheet_delete(
   for (const auto& annotation : drawing->annotations) {
     if (std::find(dying_view_ids.begin(), dying_view_ids.end(),
                   annotation.view_id) != dying_view_ids.end()) {
-      drawing_runtime::erase_dimension(document_->id,
-                                       annotation.annotation_id);
+      if (is_annotation_kind(annotation.kind)) {
+        drawing_runtime::erase_attachment(document_->id,
+                                          annotation.annotation_id);
+      } else {
+        drawing_runtime::erase_dimension(document_->id,
+                                         annotation.annotation_id);
+      }
     }
   }
   drawing->annotations.erase(
@@ -284,6 +320,13 @@ DocumentState DocumentManager::drawing_sheet_delete(
                                         a.view_id) != dying_view_ids.end();
                      }),
       drawing->annotations.end());
+  // Free notes on the deleted sheet die with it (their sheet is gone).
+  drawing->notes.erase(
+      std::remove_if(drawing->notes.begin(), drawing->notes.end(),
+                     [&](const SheetNote& n) {
+                       return n.sheet_id == sheet_id;
+                     }),
+      drawing->notes.end());
   // Clear selection ids that pointed at the deleted sheet's content.
   if (document_->drawing.selected_view_id.has_value() &&
       std::find(dying_view_ids.begin(), dying_view_ids.end(),
@@ -395,7 +438,7 @@ DocumentState DocumentManager::drawing_view_create(
   if (!view.view_id.empty() && find_view(*drawing, view.view_id) != nullptr) {
     throw std::runtime_error("A view with this id already exists");
   }
-  validate_view_definition(view);
+  validate_view_definition(view, *drawing);
 
   push_undo_state();
   clear_redo_stack();
@@ -421,7 +464,7 @@ DocumentState DocumentManager::drawing_view_update(
   if (existing == nullptr) {
     throw std::runtime_error("Unknown view: " + view.view_id);
   }
-  validate_view_definition(view);
+  validate_view_definition(view, *drawing);
 
   push_undo_state();
   clear_redo_stack();
@@ -444,30 +487,50 @@ DocumentState DocumentManager::drawing_view_delete(
 
   push_undo_state();
   clear_redo_stack();
+  // Detail views whose parent is the deleted view die with it (the
+  // parent link is their whole meaning — the Fusion behavior).
+  std::vector<std::string> removed_ids = {view_id};
+  for (const auto& v : drawing->views) {
+    if (v.kind == "detail" && v.detail.has_value() &&
+        v.detail.value().parent_view_id == view_id) {
+      removed_ids.push_back(v.view_id);
+    }
+  }
   drawing->views.erase(
       std::remove_if(drawing->views.begin(), drawing->views.end(),
                      [&](const DrawingView& v) {
-                       return v.view_id == view_id;
+                       return std::find(removed_ids.begin(), removed_ids.end(),
+                                        v.view_id) != removed_ids.end();
                      }),
       drawing->views.end());
-  // Annotations attached to the view die with it.
+  // Annotations attached to the removed views die with them.
   for (const auto& annotation : drawing->annotations) {
-    if (annotation.view_id == view_id) {
-      drawing_runtime::erase_dimension(document_->id,
-                                       annotation.annotation_id);
+    if (std::find(removed_ids.begin(), removed_ids.end(),
+                  annotation.view_id) != removed_ids.end()) {
+      if (is_annotation_kind(annotation.kind)) {
+        drawing_runtime::erase_attachment(document_->id,
+                                          annotation.annotation_id);
+      } else {
+        drawing_runtime::erase_dimension(document_->id,
+                                         annotation.annotation_id);
+      }
     }
   }
   drawing->annotations.erase(
       std::remove_if(drawing->annotations.begin(), drawing->annotations.end(),
                      [&](const Annotation& a) {
-                       return a.view_id == view_id;
+                       return std::find(removed_ids.begin(), removed_ids.end(),
+                                        a.view_id) != removed_ids.end();
                      }),
       drawing->annotations.end());
-  // Remove the id from every sheet's ordering list.
+  // Remove the ids from every sheet's ordering list.
   for (auto& sheet : drawing->sheets) {
-    sheet.view_ids.erase(
-        std::remove(sheet.view_ids.begin(), sheet.view_ids.end(), view_id),
-        sheet.view_ids.end());
+    for (const auto& removed_id : removed_ids) {
+      sheet.view_ids.erase(
+          std::remove(sheet.view_ids.begin(), sheet.view_ids.end(),
+                      removed_id),
+          sheet.view_ids.end());
+    }
   }
   if (document_->drawing.selected_view_id == view_id) {
     document_->drawing.selected_view_id.reset();
@@ -516,7 +579,7 @@ DocumentState DocumentManager::drawing_section_update(
   // Validate the patched view BEFORE the undo push (canonical shape).
   DrawingView patched = *view;
   patched.section = section;
-  validate_view_definition(patched);
+  validate_view_definition(patched, *drawing);
 
   push_undo_state();
   clear_redo_stack();
@@ -547,6 +610,12 @@ DocumentState DocumentManager::drawing_dimension_create(
   DrawingView* view = find_view(*drawing, view_id);
   if (view == nullptr) {
     throw std::runtime_error("Unknown view: " + view_id);
+  }
+  if (view->kind == "detail") {
+    // Detail views carry no annotation cache in V1 — dimension the
+    // parent view instead of silently vanishing.
+    throw std::runtime_error("Dimension the parent view instead — detail "
+                             "views do not carry dimensions.");
   }
   if (dim_type != "linear" && dim_type != "angular" &&
       dim_type != "radius" && dim_type != "diameter") {
@@ -694,6 +763,296 @@ DocumentState DocumentManager::drawing_dimension_delete(
   clear_redo_stack();
   // The cached value is derived state — drop it with the annotation.
   drawing_runtime::erase_dimension(document_->id, annotation_id);
+  if (document_->drawing.selected_annotation_id == annotation_id) {
+    document_->drawing.selected_annotation_id.reset();
+  }
+  drawing->annotations.erase(found);
+  bump_geometry_revision();
+  return document_.value();
+}
+
+// ── Sheet notes (ANNOTATE → Text) ──────────────────────────────────
+//
+// Free text is NOT model-anchored: its position is direct sheet-mm
+// state, so a note survives body/view edits untouched.  Mutators
+// follow the canonical shape; the create mints "drawing-note-N" and
+// rounds the position to 0.01 (no sub-0.01 noise in stored state).
+
+DocumentState DocumentManager::drawing_note_create(
+    const std::string& drawing_id, const std::string& sheet_id,
+    const std::string& text, const std::array<double, 2>& position,
+    const std::optional<double>& height_mm,
+    const std::optional<double>& angle_deg,
+    const std::optional<std::string>& h_align) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  if (find_sheet(*drawing, sheet_id) == nullptr) {
+    throw std::runtime_error("Unknown sheet: " + sheet_id);
+  }
+  if (height_mm.has_value() && !(height_mm.value() > 0.0)) {
+    throw std::runtime_error("The note height must be positive");
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  SheetNote note;
+  note.note_id = "drawing-note-" + std::to_string(next_drawing_note_id_++);
+  note.sheet_id = sheet_id;
+  note.text = text;
+  note.position = {std::round(position[0] * 100.0) / 100.0,
+                   std::round(position[1] * 100.0) / 100.0};
+  note.height_mm = height_mm.value_or(3.5);
+  note.angle_deg = angle_deg.value_or(0.0);
+  note.h_align = h_align.value_or("center");
+  drawing->notes.push_back(std::move(note));
+  // Cosmetic-only: the bump only re-flattens.
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_note_update(
+    const std::string& drawing_id, const std::string& note_id,
+    const std::optional<std::string>& text,
+    const std::optional<std::array<double, 2>>& position,
+    const std::optional<double>& height_mm,
+    const std::optional<double>& angle_deg,
+    const std::optional<std::string>& h_align) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  auto found = std::find_if(
+      drawing->notes.begin(), drawing->notes.end(),
+      [&](const SheetNote& n) { return n.note_id == note_id; });
+  if (found == drawing->notes.end()) {
+    throw std::runtime_error("Unknown note: " + note_id);
+  }
+  if (height_mm.has_value() && !(height_mm.value() > 0.0)) {
+    throw std::runtime_error("The note height must be positive");
+  }
+
+  // Cosmetic-only: never re-projects, never re-resolves.
+  push_undo_state();
+  clear_redo_stack();
+  if (text.has_value()) {
+    found->text = text.value();
+  }
+  if (position.has_value()) {
+    found->position = {std::round(position.value()[0] * 100.0) / 100.0,
+                       std::round(position.value()[1] * 100.0) / 100.0};
+  }
+  if (height_mm.has_value()) {
+    found->height_mm = height_mm.value();
+  }
+  if (angle_deg.has_value()) {
+    found->angle_deg = angle_deg.value();
+  }
+  if (h_align.has_value()) {
+    found->h_align = h_align.value();
+  }
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_note_delete(
+    const std::string& drawing_id, const std::string& note_id) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  auto found = std::find_if(
+      drawing->notes.begin(), drawing->notes.end(),
+      [&](const SheetNote& n) { return n.note_id == note_id; });
+  if (found == drawing->notes.end()) {
+    throw std::runtime_error("Unknown note: " + note_id);
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  drawing->notes.erase(found);
+  bump_geometry_revision();
+  return document_.value();
+}
+
+// ── Annotations (GEOMETRY / SYMBOLS / ANNOTATE tabs) ───────────────
+//
+// The generic family for non-dimension annotations.  Like dimensions,
+// the core resolves the pick against the view's CURRENT projection
+// and mints the witness — a pick is never a stored ordinal (the TNP
+// mantra).  The optional placement (leader_text) makes the core
+// compute text_offset so the text lands exactly where the user
+// clicked: the default anchor comes from the graphics builder itself
+// (one source of truth, no duplicated layout math).
+
+DocumentState DocumentManager::drawing_annotation_create(
+    const std::string& drawing_id, const std::string& view_id,
+    const std::string& kind, const std::array<double, 2>& pick,
+    const std::optional<std::array<double, 2>>& pick_2,
+    const std::optional<std::string>& text_override,
+    const std::optional<std::string>& prefix,
+    const std::vector<AnnotationExtension>& extensions,
+    const std::optional<std::array<double, 2>>& placement) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  DrawingView* view = find_view(*drawing, view_id);
+  if (view == nullptr) {
+    throw std::runtime_error("Unknown view: " + view_id);
+  }
+  if (view->kind == "detail") {
+    // Detail views carry no annotation cache in V1 — annotate the
+    // parent view instead of silently vanishing.
+    throw std::runtime_error("Annotate the parent view instead — detail "
+                             "views do not carry annotations.");
+  }
+  if (!is_annotation_kind(kind)) {
+    throw std::runtime_error("Unknown annotation kind: " + kind);
+  }
+  const ProjectionResult* projection =
+      drawing_runtime::cached_projection(document_.value(), view_id);
+  if (projection == nullptr) {
+    throw std::runtime_error(
+        "The view has no projection yet — create the view first.");
+  }
+
+  // Resolve the picks + mint the witness BEFORE the undo push
+  // (canonical shape): validation can throw.
+  std::string error;
+  std::vector<const ProjectedEdgeRecord*> records;
+  std::optional<double> attach_param;
+  const auto resolved = resolve_annotation_picks(
+      *projection, *view, kind, pick, pick_2,
+      /*pick_tolerance_sheetmm=*/5.0, text_override, prefix.value_or(""),
+      &error, &records, &attach_param);
+  if (!resolved.has_value()) {
+    throw std::runtime_error(error);
+  }
+  if (records.empty()) {
+    throw std::runtime_error("The pick resolved to no edge.");
+  }
+  Annotation built;
+  built.kind = kind;
+  built.view_id = view_id;
+  built.text_override = text_override;
+  built.prefix = prefix.value_or("");
+  built.extensions = extensions;
+  built.attach_param = attach_param;
+  if (!witness_from_record(*records[0], &built.witness, &error)) {
+    throw std::runtime_error(error);
+  }
+  if (records.size() > 1) {
+    SourceEdgeWitness second;
+    if (!witness_from_record(*records[1], &second, &error)) {
+      throw std::runtime_error(error);
+    }
+    built.witness_2 = second;
+  }
+  // The placement click: text_offset = placement − the default text
+  // anchor (probed through a zero-offset copy of the annotation).
+  if (placement.has_value()) {
+    Annotation probe = built;
+    probe.text_offset.reset();
+    AnnotationGraphics probe_graphics = build_annotation_graphics(
+        resolved.value(), probe, *view, /*stale=*/false);
+    if (probe_graphics.text.has_value()) {
+      built.text_offset =
+          std::array<double, 2>{placement.value()[0] -
+                                    probe_graphics.text->position[0],
+                                placement.value()[1] -
+                                    probe_graphics.text->position[1]};
+    }
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  built.source_edge_id =
+      "drawing-edge-" + std::to_string(next_drawing_edge_ref_id_++);
+  built.annotation_id =
+      "drawing-annotation-" + std::to_string(next_drawing_annotation_id_++);
+  document_->drawing.selected_annotation_id = built.annotation_id;
+  drawing->annotations.push_back(std::move(built));
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_annotation_update(
+    const std::string& drawing_id, const std::string& annotation_id,
+    const std::optional<std::string>& text_override,
+    const std::optional<std::string>& prefix,
+    const std::optional<bool>& arrow_flip,
+    const std::optional<std::array<double, 2>>& text_offset,
+    const std::optional<std::vector<AnnotationExtension>>& extensions,
+    const std::optional<double>& attach_param) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  auto found = std::find_if(
+      drawing->annotations.begin(), drawing->annotations.end(),
+      [&](const Annotation& a) { return a.annotation_id == annotation_id; });
+  if (found == drawing->annotations.end()) {
+    throw std::runtime_error("Unknown annotation: " + annotation_id);
+  }
+
+  // Cosmetic-only: never re-projects, never re-resolves.  The bump
+  // re-flattens so the new text/placement shows.
+  push_undo_state();
+  clear_redo_stack();
+  if (text_override.has_value()) {
+    found->text_override = text_override.value().empty()
+                               ? std::optional<std::string>()
+                               : text_override;
+  }
+  if (prefix.has_value()) {
+    found->prefix = prefix.value();
+  }
+  if (arrow_flip.has_value()) {
+    found->arrow_flip = arrow_flip.value();
+  }
+  if (text_offset.has_value()) {
+    found->text_offset = text_offset;
+  }
+  if (extensions.has_value()) {
+    found->extensions = extensions.value();
+  }
+  if (attach_param.has_value()) {
+    found->attach_param = attach_param;
+  }
+  bump_geometry_revision();
+  return document_.value();
+}
+
+DocumentState DocumentManager::drawing_annotation_delete(
+    const std::string& drawing_id, const std::string& annotation_id) {
+  require_document();
+  Drawing* drawing = find_drawing(document_.value(), drawing_id);
+  if (drawing == nullptr) {
+    throw std::runtime_error("Unknown drawing: " + drawing_id);
+  }
+  auto found = std::find_if(
+      drawing->annotations.begin(), drawing->annotations.end(),
+      [&](const Annotation& a) { return a.annotation_id == annotation_id; });
+  if (found == drawing->annotations.end()) {
+    throw std::runtime_error("Unknown annotation: " + annotation_id);
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+  // The cached attachment is derived state — drop it with the
+  // annotation.
+  if (is_annotation_kind(found->kind)) {
+    drawing_runtime::erase_attachment(document_->id, annotation_id);
+  } else {
+    drawing_runtime::erase_dimension(document_->id, annotation_id);
+  }
   if (document_->drawing.selected_annotation_id == annotation_id) {
     document_->drawing.selected_annotation_id.reset();
   }

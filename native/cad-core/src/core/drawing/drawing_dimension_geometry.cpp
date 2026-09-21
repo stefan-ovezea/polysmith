@@ -122,22 +122,30 @@ void emit_linear_single(DimensionGraphics* out, const ResolvedDimension& r,
   const Pt b = to_sheet(view, r.a_p1);
   const Pt d = unit(b - a);
   const Pt n = perp(d) * outward_side(annotation.arrow_flip);
+  const double text_rise = kTextGapMm + kTextHeightMm / 2.0;
+  const Pt pa0 = a + n * kDimOffsetMm;
+  const Pt pb0 = b + n * kDimOffsetMm;
+  const Pt mid = (pa0 + pb0) * 0.5 + n * text_rise;  // default text anchor
+  const Pt t = apply_text_offset(annotation, mid);   // dragged text anchor
+  // Dragging the text moves the whole dimension: the dimension line
+  // follows the text's PERPENDICULAR component (extension lines
+  // stretch), the parallel component slides the text along the line.
+  // The delta formulation keeps the no-offset layout bit-exact (the
+  // default dim line is kDimOffsetMm from the feature).
+  const double o = kDimOffsetMm + dot(t - mid, n);
   // Extension lines: gap off the feature, overshoot past the
   // dimension line.
   out->primitives.push_back(
-      thin_line(a + n * kDimGapMm, a + n * (kDimOffsetMm + kDimOvershootMm)));
+      thin_line(a + n * kDimGapMm, a + n * (o + kDimOvershootMm)));
   out->primitives.push_back(
-      thin_line(b + n * kDimGapMm, b + n * (kDimOffsetMm + kDimOvershootMm)));
-  const Pt pa = a + n * kDimOffsetMm;
-  const Pt pb = b + n * kDimOffsetMm;
+      thin_line(b + n * kDimGapMm, b + n * (o + kDimOvershootMm)));
+  const Pt pa = a + n * o;
+  const Pt pb = b + n * o;
   out->primitives.push_back(thin_line(pa, pb));
   out->primitives.push_back(arrow(pa, d * -1.0));  // outward at the left end
   out->primitives.push_back(arrow(pb, d));         // outward at the right end
-  const Pt mid = (pa + pb) * 0.5 + n * (kTextGapMm + kTextHeightMm / 2.0);
-  out->text = dimension_text(r.text,
-                             apply_text_offset(annotation, mid), stale);
-  out->semantic =
-      linear_semantic(r.text, pa, apply_text_offset(annotation, mid), a, b);
+  out->text = dimension_text(r.text, t, stale);
+  out->semantic = linear_semantic(r.text, pa, t, a, b);
 }
 
 void emit_linear_two_lines(DimensionGraphics* out, const ResolvedDimension& r,
@@ -224,17 +232,27 @@ void emit_radius(DimensionGraphics* out, const ResolvedDimension& r,
   const Pt p = to_sheet(view, r.a_p1);  // arc point nearest the pick
   const Pt dir = unit(p - c);
   const Pt n = perp(dir) * outward_side(annotation.arrow_flip);
-  out->primitives.push_back(thin_line(c, p));
-  out->primitives.push_back(arrow(p, dir));
   const Pt mid = (c + p) * 0.5 + n * (kTextGapMm + kTextHeightMm / 2.0);
-  out->text = dimension_text(r.text,
-                             apply_text_offset(annotation, mid), stale);
+  const Pt t = apply_text_offset(annotation, mid);
+  // With a placement offset the leader re-aims through the dragged
+  // text (the center stays fixed); without one it keeps pointing at
+  // the picked arc point.
+  const double r_len = dist2(c, p);
+  const Pt leader_dir = annotation.text_offset.has_value()
+                            ? unit(t - c)
+                            : dir;
+  const Pt arc_pt = annotation.text_offset.has_value()
+                        ? c + leader_dir * r_len
+                        : p;
+  out->primitives.push_back(thin_line(c, arc_pt));
+  out->primitives.push_back(arrow(arc_pt, leader_dir));
+  out->text = dimension_text(r.text, t, stale);
   SheetDimension s;
   s.kind = "radius";
   s.def_point = c;  // center
-  s.text_point = apply_text_offset(annotation, mid);
-  s.arc_point = p;  // point on the arc
-  s.leader_length = dist2(c, p);
+  s.text_point = t;
+  s.arc_point = arc_pt;  // point on the arc
+  s.leader_length = r_len;
   s.text = r.text;
   out->semantic = std::move(s);
 }
@@ -247,18 +265,25 @@ void emit_diameter(DimensionGraphics* out, const ResolvedDimension& r,
   const Pt q = c - (p - c);  // opposite arc point
   const Pt dir = unit(p - q);
   const Pt n = perp(dir) * outward_side(annotation.arrow_flip);
-  out->primitives.push_back(thin_line(q, p));
-  out->primitives.push_back(arrow(q, dir * -1.0));
-  out->primitives.push_back(arrow(p, dir));
   const Pt mid = c + n * (kTextGapMm + kTextHeightMm / 2.0);
-  out->text = dimension_text(r.text,
-                             apply_text_offset(annotation, mid), stale);
+  const Pt t = apply_text_offset(annotation, mid);
+  // With a placement offset the dimension line stays through the
+  // center but re-aims toward the dragged text; without one it keeps
+  // the picked direction.
+  const double r_len = dist2(c, p);
+  const Pt axis_dir = annotation.text_offset.has_value() ? unit(t - c) : dir;
+  const Pt p2 = annotation.text_offset.has_value() ? c + axis_dir * r_len : p;
+  const Pt q2 = annotation.text_offset.has_value() ? c - axis_dir * r_len : q;
+  out->primitives.push_back(thin_line(q2, p2));
+  out->primitives.push_back(arrow(q2, axis_dir * -1.0));
+  out->primitives.push_back(arrow(p2, axis_dir));
+  out->text = dimension_text(r.text, t, stale);
   SheetDimension s;
   s.kind = "diameter";
-  s.def_point = q;  // opposite arc point
-  s.text_point = apply_text_offset(annotation, mid);
-  s.arc_point = p;  // first arc point
-  s.leader_length = dist2(c, p);
+  s.def_point = q2;  // opposite arc point
+  s.text_point = t;
+  s.arc_point = p2;  // first arc point
+  s.leader_length = r_len;
   s.text = r.text;
   out->semantic = std::move(s);
 }
@@ -301,14 +326,26 @@ void emit_angular(DimensionGraphics* out, const ResolvedDimension& r,
   while (sweep < -kPi) {
     sweep += 2.0 * kPi;
   }
-  const Pt r1 = apex + u1 * kAngularRadiusMm;
-  const Pt r2 = apex + u2 * kAngularRadiusMm;
+  const double mid_ang = a1_ang + sweep / 2.0;
+  Pt text_pos = apex + Pt{std::cos(mid_ang), std::sin(mid_ang)} *
+                            (kAngularRadiusMm + 6.0);
+  const Pt text_anchor = apply_text_offset(annotation, text_pos);
+  // With a placement offset the arc radius follows the dragged text
+  // (the default text sits 6 mm beyond the arc, clamped to the
+  // default minimum radius); without one the arc keeps the default
+  // radius bit-exactly.
+  const double radius = annotation.text_offset.has_value()
+                            ? std::max(dist2(text_anchor, apex) - 6.0,
+                                       kAngularRadiusMm)
+                            : kAngularRadiusMm;
+  const Pt r1 = apex + u1 * radius;
+  const Pt r2 = apex + u2 * radius;
   SheetPrimitive arc;
   arc.kind = "circle_arc";
   arc.p0 = r1;
   arc.p1 = r2;
   arc.center = apex;
-  arc.radius = kAngularRadiusMm;
+  arc.radius = radius;
   arc.start_angle = a1_ang;
   arc.end_angle = a1_ang + sweep;
   arc.style = {"continuous", kThinLineMm};
@@ -318,11 +355,7 @@ void emit_angular(DimensionGraphics* out, const ResolvedDimension& r,
   const Pt tang1 = perp(u1) * (sweep >= 0.0 ? 1.0 : -1.0);
   out->primitives.push_back(arrow(r1, tang1));
   out->primitives.push_back(arrow(r2, tang1 * -1.0));
-  const double mid_ang = a1_ang + sweep / 2.0;
-  Pt text_pos = apex + Pt{std::cos(mid_ang), std::sin(mid_ang)} *
-                            (kAngularRadiusMm + 6.0);
-  out->text = dimension_text(r.text,
-                             apply_text_offset(annotation, text_pos), stale);
+  out->text = dimension_text(r.text, text_anchor, stale);
   SheetDimension s;
   s.kind = "angular";
   s.def1 = apex;               // line 1-1
@@ -330,8 +363,8 @@ void emit_angular(DimensionGraphics* out, const ResolvedDimension& r,
   s.arc_point = apex;          // line 2-1 (shared apex)
   s.def_point = r2;            // line 2-2
   s.dim_point = apex + Pt{std::cos(mid_ang), std::sin(mid_ang)} *
-                           kAngularRadiusMm;  // the arc location point
-  s.text_point = apply_text_offset(annotation, text_pos);
+                           radius;  // the arc location point
+  s.text_point = text_anchor;
   s.text = r.text;
   out->semantic = std::move(s);
 }

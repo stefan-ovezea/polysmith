@@ -8,6 +8,7 @@ import {
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { sheetSceneOffsetX } from "@/lib/drawingViewMath";
 import { getShowHiddenEdges } from "@/utils/viewport/primitiveObjects";
 import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 import {
@@ -255,6 +256,7 @@ export function ViewportPanel({
   showCamToolpath = true,
   showDrawingSheet = false,
   drawingDimensionPreview = null,
+  drawingAnnotationPreview = null,
   drawingViewPreview = null,
   drawingViewDrag = null,
   drawingGhostFrame = null,
@@ -272,6 +274,15 @@ export function ViewportPanel({
   cameraFrameCaptureRef,
   drawingPickArmed = false,
   onDrawingPick,
+  drawingDimensionTextDrag = null,
+  onDrawingDimensionTextDragStart,
+  onDrawingDimensionTextDragMove,
+  onDrawingDimensionTextDrop,
+  drawingDetailDragArmed = false,
+  drawingDetailDrag = null,
+  onDrawingDetailDragStart,
+  onDrawingDetailDragMove,
+  onDrawingDetailDragFinish,
   wcsOrientation = "z_up",
   activeCamSetupId = null,
   onSnapshotCaptureReady,
@@ -773,6 +784,23 @@ export function ViewportPanel({
   drawingPickArmedRef.current = drawingPickArmed;
   const drawingPickRef = useRef(onDrawingPick);
   drawingPickRef.current = onDrawingPick;
+  // Whole-dimension drag: a press on a dimension text starts a drag
+  // whose ghost is a label sprite; pointer-up commits the placement
+  // (drawing_dimension_update with text_offset).
+  const drawingDimensionTextDragStartRef = useRef(
+    onDrawingDimensionTextDragStart,
+  );
+  drawingDimensionTextDragStartRef.current = onDrawingDimensionTextDragStart;
+  const drawingDimensionTextDragMoveRef = useRef(
+    onDrawingDimensionTextDragMove,
+  );
+  drawingDimensionTextDragMoveRef.current = onDrawingDimensionTextDragMove;
+  const drawingDimensionTextDropRef = useRef(onDrawingDimensionTextDrop);
+  drawingDimensionTextDropRef.current = onDrawingDimensionTextDrop;
+  const dimensionTextDragRef = useRef<{
+    drawingId: string;
+    id: string;
+  } | null>(null);
   // Mouse-first Insert View: hover feeds the ghost position, a click
   // commits the view at the clicked sheet-mm point (no typing).  A
   // click-vs-pan guard uses the pointer-down client position.
@@ -822,6 +850,31 @@ export function ViewportPanel({
   drawingFramePickArmedRef.current = drawingFramePickArmed;
   const drawingFramePickRef = useRef(onDrawingFramePick);
   drawingFramePickRef.current = onDrawingFramePick;
+  // Detail View circle drag: while armed, a press inside a projection
+  // view's content bounds starts the circle; pointer-up finishes it
+  // (the app-side action decides whether the radius clears the commit
+  // threshold).  The gesture state itself lives in the tool hook —
+  // this ref only routes the pointer events.
+  const drawingDetailDragArmedRef = useRef(drawingDetailDragArmed);
+  drawingDetailDragArmedRef.current = drawingDetailDragArmed;
+  const drawingDetailDragStartRef = useRef(onDrawingDetailDragStart);
+  drawingDetailDragStartRef.current = onDrawingDetailDragStart;
+  const drawingDetailDragMoveRef = useRef(onDrawingDetailDragMove);
+  drawingDetailDragMoveRef.current = onDrawingDetailDragMove;
+  const drawingDetailDragFinishRef = useRef(onDrawingDetailDragFinish);
+  drawingDetailDragFinishRef.current = onDrawingDetailDragFinish;
+  const detailDragRef = useRef<{ viewId: string } | null>(null);
+  // Disarming mid-drag (Esc → hook.cancel) must end the pointer
+  // routing and hand the controls back — the pointer-capture release
+  // below never runs for a cancelled gesture.
+  useEffect(() => {
+    if (!drawingDetailDragArmed && detailDragRef.current) {
+      detailDragRef.current = null;
+      if (controlsRef.current) {
+        controlsRef.current.enabled = true;
+      }
+    }
+  }, [drawingDetailDragArmed]);
   // The sheet-only drawing scene never counts as a CAD camera —
   // record snapshots only while the model is shown.
   const showDrawingSheetRef = useRef(showDrawingSheet);
@@ -1444,14 +1497,16 @@ export function ViewportPanel({
     }
   }, [arrayCenterPicking]);
   // Crosshair while the Insert View placement is armed (mouse-first —
-  // the click places the view).
+  // the click places the view), and while the Detail View circle drag
+  // is armed (press-drag draws the circle).
   useEffect(() => {
     if (!rendererRef.current) {
       return;
     }
     const canvas = rendererRef.current.domElement as HTMLCanvasElement;
-    canvas.style.cursor = drawingInsertArmed ? "crosshair" : "";
-  }, [drawingInsertArmed]);
+    canvas.style.cursor =
+      drawingInsertArmed || drawingDetailDragArmed ? "crosshair" : "";
+  }, [drawingInsertArmed, drawingDetailDragArmed]);
   useEffect(() => {
     activeSketchPlaneIdRef.current = activeSketchPlaneId;
     activeSketchPlaneFrameRef.current = activeSketchPlaneFrame;
@@ -3627,6 +3682,83 @@ export function ViewportPanel({
       drawingViewDragStartRef.current?.(frame.viewId, point, grabOffset);
     }
 
+    // Hit-test a committed dimension's / annotation's / note's TEXT —
+    // the sheet text records carry the owning id in annotation_id
+    // (title-block/section-label texts do not).  Proximity test in
+    // sheet-mm with the same per-sheet scene x offsets the renderer
+    // lays sheets out at.  The purpose maps to the drag owner:
+    // "dimension" → dimension, "annotation" → annotation,
+    // "note" → free note (its position is absolute sheet-mm).
+    function hitTestDimensionText(event: PointerEvent): {
+      owner: "dimension" | "annotation" | "note";
+      drawingId: string;
+      id: string;
+      sheetIndex: number;
+      text: string;
+      heightMm: number;
+    } | null {
+      const point = resolveSheetPoint(event);
+      if (!point) {
+        return null;
+      }
+      const sheets = viewportRef.current?.drawing_sheets ?? [];
+      for (let index = 0; index < sheets.length; index += 1) {
+        const sheet = sheets[index];
+        const offsetX = sheetSceneOffsetX(sheets, index);
+        for (const text of sheet.texts) {
+          const owner =
+            text.purpose === "dimension"
+              ? "dimension"
+              : text.purpose === "annotation"
+                ? "annotation"
+                : text.purpose === "note"
+                  ? "note"
+                  : null;
+          if (owner === null || !text.annotation_id) {
+            continue;
+          }
+          const dx = text.position[0] + offsetX - point[0];
+          const dy = text.position[1] - point[1];
+          if (Math.hypot(dx, dy) <= 5) {
+            return {
+              owner,
+              drawingId: sheet.drawing_id,
+              id: text.annotation_id,
+              sheetIndex: index,
+              text: text.text,
+              heightMm: text.height_mm,
+            };
+          }
+        }
+      }
+      return null;
+    }
+
+    // Starts a dimension/annotation/note text drag: the ghost label
+    // follows the cursor, controls pause so the drag never pans the
+    // camera, and the pointer is captured so the drop fires even
+    // off-canvas.
+    function beginDimensionTextDrag(
+      event: PointerEvent,
+      hit: {
+        owner: "dimension" | "annotation" | "note";
+        drawingId: string;
+        id: string;
+        sheetIndex: number;
+        text: string;
+        heightMm: number;
+      },
+      point: [number, number],
+    ) {
+      dimensionTextDragRef.current = {
+        drawingId: hit.drawingId,
+        id: hit.id,
+      };
+      controls.enabled = false;
+      renderer.domElement.setPointerCapture(event.pointerId);
+      drawingDimensionTextDragStartRef.current?.(hit, point);
+    }
+
     function handlePointerDown(event: PointerEvent) {
       cancelPendingDraftPointerMoveFrame();
       objectSnapLatchRef.current = null;
@@ -3676,6 +3808,69 @@ export function ViewportPanel({
               beginViewFrameDrag(event, frame, point);
             }
             return;
+          }
+        }
+      }
+      // Whole-dimension drag: a press on a dimension/annotation/note
+      // text starts a drag (active in every drawing mode except
+      // dimension-pick-armed).  A committed text ALSO wins over an
+      // armed Insert placement — with the Text tool armed, pressing an
+      // existing note must drag it, not stack a duplicate note on it.
+      // The frame press above wins on its own hit; this is the
+      // fallback for everything else on the sheet.
+      if (
+        showDrawingSheetRef.current &&
+        !drawingPickArmedRef.current
+      ) {
+        const dimText = hitTestDimensionText(event);
+        if (dimText) {
+          const point = resolveSheetPoint(event);
+          if (point) {
+            beginDimensionTextDrag(event, dimText, point);
+            return;
+          }
+        }
+      }
+      // Detail View circle drag: a press INSIDE a projection view's
+      // content bounds starts the circle (center = press point, the
+      // radius follows the cursor).  The frame press above keeps its
+      // drag behavior (view repositioning stays on in every mode);
+      // committed texts keep their drag above; section and detail
+      // views cannot parent a detail (the core validates too) so
+      // their content area is inert here.
+      if (
+        showDrawingSheetRef.current &&
+        drawingDetailDragArmedRef.current
+      ) {
+        const point = resolveSheetPoint(event);
+        if (point) {
+          const sheet0 = viewportRef.current?.drawing_sheets?.[0];
+          if (sheet0) {
+            const documentNow = documentRef.current;
+            const drawingNow = documentNow?.drawing.drawings.find(
+              (entry) =>
+                entry.drawing_id === documentNow.drawing.active_drawing_id,
+            );
+            const projectionIds = new Set(
+              (drawingNow?.views ?? [])
+                .filter((view) => view.kind === "projection")
+                .map((view) => view.view_id),
+            );
+            for (const view of sheet0.views) {
+              if (
+                projectionIds.has(view.view_id) &&
+                point[0] > view.min[0] &&
+                point[0] < view.max[0] &&
+                point[1] > view.min[1] &&
+                point[1] < view.max[1]
+              ) {
+                detailDragRef.current = { viewId: view.view_id };
+                controls.enabled = false;
+                renderer.domElement.setPointerCapture(event.pointerId);
+                drawingDetailDragStartRef.current?.(view.view_id, point);
+                return;
+              }
+            }
           }
         }
       }
@@ -3803,6 +3998,20 @@ export function ViewportPanel({
       if (viewFrameDragRef.current) {
         const point = resolveSheetPoint(event);
         drawingViewDragMoveRef.current?.(point ?? [0, 0]);
+        return;
+      }
+
+      // --- Mouse-first dimension reposition: the text ghost follows ---
+      if (dimensionTextDragRef.current) {
+        const point = resolveSheetPoint(event);
+        drawingDimensionTextDragMoveRef.current?.(point ?? [0, 0]);
+        return;
+      }
+
+      // --- Detail View circle drag: the ghost follows the cursor ---
+      if (detailDragRef.current) {
+        const point = resolveSheetPoint(event);
+        drawingDetailDragMoveRef.current?.(point ?? [0, 0]);
         return;
       }
 
@@ -4093,6 +4302,15 @@ export function ViewportPanel({
 
       const hit = intersectSceneTargets(event);
       applySceneHover(hit, hoverActions());
+      // Grab cursor over a draggable dimension text (the drawing
+      // workspace has no other hover targets — a miss resets it).
+      if (showDrawingSheetRef.current) {
+        const overDimensionText =
+          !drawingInsertArmedRef.current &&
+          !drawingPickArmedRef.current &&
+          hitTestDimensionText(event) !== null;
+        setCanvasCursor(overDimensionText ? "grab" : "");
+      }
     }
 
     function handlePointerLeave() {
@@ -4345,6 +4563,37 @@ export function ViewportPanel({
         }
         if (point) {
           drawingViewDropRef.current?.(point);
+        }
+        return;
+      }
+
+      // Mouse-first dimension reposition: the drop commits the
+      // placement (the App-side action refuses no-op moves < 0.5 mm).
+      if (dimensionTextDragRef.current !== null) {
+        const point = resolveSheetPoint(event);
+        dimensionTextDragRef.current = null;
+        controls.enabled = true;
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        }
+        if (point) {
+          drawingDimensionTextDropRef.current?.(point);
+        }
+        return;
+      }
+
+      // Detail View circle drag: the drop finishes the gesture — the
+      // app-side action decides whether the radius clears the commit
+      // threshold (≥ 2 mm); the tool stays armed either way.
+      if (detailDragRef.current !== null) {
+        const point = resolveSheetPoint(event);
+        detailDragRef.current = null;
+        controls.enabled = true;
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        }
+        if (point) {
+          drawingDetailDragFinishRef.current?.(point);
         }
         return;
       }
@@ -5408,11 +5657,14 @@ export function ViewportPanel({
       showCamToolpath,
       showDrawingSheet,
       drawingDimensionPreview,
+      drawingAnnotationPreview,
       drawingViewPreview,
       drawingViewDrag,
+      drawingDimensionTextDrag,
       drawingGhostFrame,
       drawingGhostAnchored,
       drawingSelectedViewId,
+      drawingDetailDrag,
       wcsOrientation,
       activeCamSetupId,
       // All pick modes share the snap markers + hover suppression —
@@ -5441,7 +5693,7 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
-  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, showDrawingSheet, drawingDimensionPreview, drawingViewPreview, drawingViewDrag, drawingGhostFrame, drawingGhostAnchored, drawingSelectedViewId, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
+  }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, showDrawingSheet, drawingDimensionPreview, drawingAnnotationPreview, drawingViewPreview, drawingViewDrag, drawingDimensionTextDrag, drawingGhostFrame, drawingGhostAnchored, drawingSelectedViewId, drawingDetailDrag, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   // Entering the drawing workspace fits the camera to the sheet — the
   // sheet is the workspace's whole content, so the default CAD framing

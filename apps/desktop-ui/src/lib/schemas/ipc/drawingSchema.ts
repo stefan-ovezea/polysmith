@@ -88,7 +88,7 @@ const titleBlockSchema = z
 
 // ── Sheet ─────────────────────────────────────────────────────────
 
-const drawingSheetSchema = z
+export const drawingSheetSchema = z
   .object({
     sheet_id: z.string().default(""),
     name: z.string().default(""),
@@ -108,6 +108,13 @@ const drawingSheetSchema = z
     }),
   })
   .passthrough();
+
+// ── Template (setup-only drawing definition) ──────────────────────
+
+export const drawingTemplateSchema = z.object({
+  name: z.string(),
+  sheets: z.array(drawingSheetSchema),
+});
 
 // ── Annotation ────────────────────────────────────────────────────
 
@@ -141,6 +148,7 @@ const annotationSchema = z
       param_range: [0, 0],
     }),
     witness_2: sourceEdgeWitnessSchema.optional(),
+    attach_param: z.number().optional(),
     text_override: z.string().optional(),
     prefix: z.string().default(""),
     extensions: z.array(annotationExtensionSchema).default([]),
@@ -148,6 +156,29 @@ const annotationSchema = z
     warning: z.string().default(""),
     text_offset: vec2Schema.optional(),
     arrow_flip: z.boolean().default(false),
+  })
+  .passthrough();
+
+const sheetNoteSchema = z
+  .object({
+    note_id: z.string().default(""),
+    sheet_id: z.string().default(""),
+    text: z.string().default(""),
+    position: vec2Schema.default([0, 0]),
+    height_mm: z.number().default(3.5),
+    angle_deg: z.number().default(0),
+    h_align: z.string().default("center"),
+  })
+  .passthrough();
+
+// ── Detail definition (ISO 128-3 §4.12 enlarged feature) ─────────
+
+const detailDefinitionSchema = z
+  .object({
+    parent_view_id: z.string().default(""),
+    center: vec2Schema.default([0, 0]),
+    radius: z.number().default(1),
+    label: z.string().default("A"),
   })
   .passthrough();
 
@@ -164,6 +195,7 @@ const drawingViewSchema = z
     sheet_position: vec2Schema.default([0, 0]),
     show_hidden: z.boolean().default(false),
     section: sectionDefinitionSchema.optional(),
+    detail: detailDefinitionSchema.optional(),
     broken_ref: z.string().optional(),
     warning: z.string().default(""),
   })
@@ -178,6 +210,7 @@ const drawingSchema = z
     sheets: z.array(drawingSheetSchema).default([]),
     views: z.array(drawingViewSchema).default([]),
     annotations: z.array(annotationSchema).default([]),
+    notes: z.array(sheetNoteSchema).default([]),
   })
   .passthrough();
 
@@ -188,7 +221,7 @@ const drawingDocumentDataShape = z.object({
   active_drawing_id: z.string().nullable().default(null),
   selected_view_id: z.string().nullable().default(null),
   selected_annotation_id: z.string().nullable().default(null),
-  decimal_separator: z.string().default(","),
+  decimal_separator: z.string().default("."),
 });
 
 export const drawingDocumentDataSchema = drawingDocumentDataShape
@@ -198,7 +231,7 @@ export const drawingDocumentDataSchema = drawingDocumentDataShape
     active_drawing_id: null,
     selected_view_id: null,
     selected_annotation_id: null,
-    decimal_separator: ",",
+    decimal_separator: ".",
   }));
 
 // ── View preview result (drawing_view_preview_result event) ───────

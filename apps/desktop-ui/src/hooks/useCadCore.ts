@@ -9,6 +9,9 @@ import {
   makeDrawingViewCreateCommand,
   makeDrawingViewDeleteCommand,
   makeDrawingViewMoveCommand,
+  makeDrawingViewUpdateCommand,
+  makeDrawingTemplateSaveCommand,
+  makeDrawingTemplateLoadCommand,
   makeDrawingSectionUpdateCommand,
   makeDrawingTitleBlockUpdateCommand,
   makeDrawingExportCommand,
@@ -17,6 +20,13 @@ import {
   makeDrawingDimensionDeleteCommand,
   makeDrawingDimensionPreviewCommand,
   makeDrawingViewPreviewCommand,
+  makeDrawingNoteCreateCommand,
+  makeDrawingNoteUpdateCommand,
+  makeDrawingNoteDeleteCommand,
+  makeDrawingAnnotationCreateCommand,
+  makeDrawingAnnotationUpdateCommand,
+  makeDrawingAnnotationDeleteCommand,
+  makeDrawingAnnotationPreviewCommand,
   makeCamSetupCreateCommand,
   makeCamSetupUpdateCommand,
   makeCamSetupDeleteCommand,
@@ -236,12 +246,17 @@ import {
   writeLogToConsole,
 } from "@/lib";
 import type {
+  AnnotationExtension,
   CamOperation,
   CamOperationPayload,
   CamSetup,
   CoreCommand,
   Drawing,
+  DrawingAnnotationKind,
+  DrawingAnnotationPreviewPayload,
   DrawingDimensionPreviewPayload,
+  DrawingSheet,
+  DrawingTemplate,
   DrawingView,
   DrawingViewPreviewPayload,
   SectionDefinition,
@@ -267,7 +282,10 @@ import type {
 
 import { useCadCoreStore } from "@/state";
 import { SketchTool } from "@/types";
-import { drawingViewPreviewResultSchema } from "@/lib/schemas/ipc/drawingSchema";
+import {
+  drawingTemplateSchema,
+  drawingViewPreviewResultSchema,
+} from "@/lib/schemas/ipc/drawingSchema";
 import {
   sendAndRefreshSessionViewport,
   sendAndRefreshViewport,
@@ -1751,6 +1769,58 @@ export function useCadCore() {
         makeDrawingViewMoveCommand(drawingId, viewId, sheetPosition),
       );
     },
+    drawingViewUpdate: async (drawingId: string, view: DrawingView) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingViewUpdateCommand(drawingId, view),
+      );
+    },
+    drawingTemplateSave: async (
+      filePath: string,
+      template: { name: string; sheets: DrawingSheet[] },
+    ) => {
+      // Awaited: drawing_template_save_result carries { file_path }.
+      // Error events RESOLVE the pending promise — inspect the type.
+      const response = await sendCoreCommandAwaited(
+        makeDrawingTemplateSaveCommand(filePath, template) as CoreCommand & {
+          id: string;
+        },
+      );
+      if (response.type === "error") {
+        throw new Error(
+          String(
+            (response as { payload?: { message?: string } }).payload?.message ??
+              "drawing template save failed",
+          ),
+        );
+      }
+      const payload = (
+        response as { payload?: { file_path?: string } }
+      ).payload;
+      return payload?.file_path ?? filePath;
+    },
+    drawingTemplateLoad: async (filePath: string): Promise<DrawingTemplate> => {
+      // Awaited: drawing_template_load_result carries { template } —
+      // zod-validated here so the dialog never sees a bad template.
+      const response = await sendCoreCommandAwaited(
+        makeDrawingTemplateLoadCommand(filePath) as CoreCommand & {
+          id: string;
+        },
+      );
+      if (response.type === "error") {
+        throw new Error(
+          String(
+            (response as { payload?: { message?: string } }).payload?.message ??
+              "drawing template load failed",
+          ),
+        );
+      }
+      const template = (
+        response as { payload?: { template?: unknown } }
+      ).payload?.template;
+      // Runtime-validated by zod; the cast bridges zod's `string`
+      // inference to the literal-union PaperSize/Orientation types.
+      return drawingTemplateSchema.parse(template) as unknown as DrawingTemplate;
+    },
     drawingSheetUpdate: async (
       drawingId: string,
       sheetId: string,
@@ -1868,6 +1938,94 @@ export function useCadCore() {
       return parsed.success
         ? (parsed.data as DrawingViewPreviewPayload)
         : null;
+    },
+    // ── Sheet notes (ANNOTATE → Text) ──────────────────────────────
+    drawingNoteCreate: async (params: {
+      drawingId: string;
+      sheetId: string;
+      text: string;
+      position: [number, number];
+      heightMm?: number;
+      angleDeg?: number;
+      hAlign?: "left" | "center" | "right";
+    }) => {
+      await sendAndRefreshSessionViewport(makeDrawingNoteCreateCommand(params));
+    },
+    drawingNoteUpdate: async (params: {
+      drawingId: string;
+      noteId: string;
+      text?: string;
+      position?: [number, number];
+      heightMm?: number;
+      angleDeg?: number;
+      hAlign?: "left" | "center" | "right";
+    }) => {
+      await sendAndRefreshSessionViewport(makeDrawingNoteUpdateCommand(params));
+    },
+    drawingNoteDelete: async (drawingId: string, noteId: string) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingNoteDeleteCommand(drawingId, noteId),
+      );
+    },
+    // ── Annotations (GEOMETRY / SYMBOLS / ANNOTATE tabs) ───────────
+    drawingAnnotationCreate: async (params: {
+      drawingId: string;
+      viewId: string;
+      kind: DrawingAnnotationKind;
+      pick: [number, number];
+      pick2?: [number, number];
+      textOverride?: string;
+      prefix?: string;
+      extensions?: AnnotationExtension[];
+      placement?: [number, number];
+    }) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingAnnotationCreateCommand(params),
+      );
+    },
+    drawingAnnotationUpdate: async (params: {
+      drawingId: string;
+      annotationId: string;
+      textOverride?: string;
+      prefix?: string;
+      arrowFlip?: boolean;
+      textOffset?: [number, number];
+      extensions?: AnnotationExtension[];
+      attachParam?: number;
+    }) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingAnnotationUpdateCommand(params),
+      );
+    },
+    drawingAnnotationDelete: async (drawingId: string, annotationId: string) => {
+      await sendAndRefreshSessionViewport(
+        makeDrawingAnnotationDeleteCommand(drawingId, annotationId),
+      );
+    },
+    drawingAnnotationPreview: async (params: {
+      drawingId: string;
+      viewId: string;
+      kind: DrawingAnnotationKind;
+      pick: [number, number];
+      pick2?: [number, number];
+      textOverride?: string;
+      prefix?: string;
+    }): Promise<DrawingAnnotationPreviewPayload | null> => {
+      // Awaited: the reply is the drawing_annotation_preview event
+      // (never mutates).  Error events RESOLVE the pending promise —
+      // treat them as a failed preview rather than a payload.
+      const response = await sendCoreCommandAwaited(
+        makeDrawingAnnotationPreviewCommand(params) as CoreCommand & {
+          id: string;
+        },
+      );
+      if (response.type === "error") {
+        return null;
+      }
+      const payload = (
+        response as { payload?: DrawingAnnotationPreviewPayload }
+      ).payload;
+      return payload ?? null;
     },
     camSetupUpdate: async (camSetup: CamSetup) => {
       await sendAndRefreshSessionViewport(makeCamSetupUpdateCommand(camSetup));

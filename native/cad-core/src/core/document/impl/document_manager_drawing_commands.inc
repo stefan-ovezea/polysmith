@@ -97,3 +97,57 @@
       const std::optional<std::array<double, 2>>& text_offset);
   DocumentState drawing_dimension_delete(const std::string& drawing_id,
                                          const std::string& annotation_id);
+
+  // ── Sheet notes (ANNOTATE → Text) ──────────────────────────────
+  // Free text on a sheet: NOT model-anchored (no witness) — the
+  // position is direct sheet-mm state, so a note survives body/view
+  // edits untouched.  Mutators follow the canonical shape; the create
+  // mints "drawing-note-N" and rounds the position to 0.01.
+  DocumentState drawing_note_create(
+      const std::string& drawing_id, const std::string& sheet_id,
+      const std::string& text, const std::array<double, 2>& position,
+      const std::optional<double>& height_mm,
+      const std::optional<double>& angle_deg,
+      const std::optional<std::string>& h_align);
+  // Cosmetic-only: never re-projects, never re-resolves.
+  DocumentState drawing_note_update(
+      const std::string& drawing_id, const std::string& note_id,
+      const std::optional<std::string>& text,
+      const std::optional<std::array<double, 2>>& position,
+      const std::optional<double>& height_mm,
+      const std::optional<double>& angle_deg,
+      const std::optional<std::string>& h_align);
+  DocumentState drawing_note_delete(const std::string& drawing_id,
+                                    const std::string& note_id);
+
+  // ── Annotations (GEOMETRY / SYMBOLS / ANNOTATE tabs) ───────────
+  // The generic family for non-dimension annotations (leader_text,
+  // center_mark, centerline, edge_extension, surface_finish, welding,
+  // tolerance_frame, datum, balloon).  Like dimensions, the core
+  // resolves the pick against the view's CURRENT projection and mints
+  // the witness (never a stored ordinal — the TNP mantra).  `pick_2`
+  // is the second attachment (centerline); `attach_param` is computed
+  // from the pick position when the kind needs a point attachment;
+  // `placement` (leader_text) makes the core compute text_offset so
+  // the text lands exactly where the user clicked.  Content is
+  // `text_override`; `extensions` is accepted + persisted for the
+  // structured future (TED etc.) but not rendered yet.
+  DocumentState drawing_annotation_create(
+      const std::string& drawing_id, const std::string& view_id,
+      const std::string& kind, const std::array<double, 2>& pick,
+      const std::optional<std::array<double, 2>>& pick_2,
+      const std::optional<std::string>& text_override,
+      const std::optional<std::string>& prefix,
+      const std::vector<AnnotationExtension>& extensions,
+      const std::optional<std::array<double, 2>>& placement);
+  // Cosmetic edits only — never re-projects, never re-resolves.
+  DocumentState drawing_annotation_update(
+      const std::string& drawing_id, const std::string& annotation_id,
+      const std::optional<std::string>& text_override,
+      const std::optional<std::string>& prefix,
+      const std::optional<bool>& arrow_flip,
+      const std::optional<std::array<double, 2>>& text_offset,
+      const std::optional<std::vector<AnnotationExtension>>& extensions,
+      const std::optional<double>& attach_param);
+  DocumentState drawing_annotation_delete(const std::string& drawing_id,
+                                          const std::string& annotation_id);

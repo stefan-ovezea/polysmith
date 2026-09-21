@@ -45,6 +45,42 @@ export const HATCH_ANGLES = ["30", "45", "60"];
 /** Gap between adjacent views on the sheet (mm). */
 export const VIEW_GAP_MM = 20;
 
+/** Gap between adjacent sheets in the scene (mm) — the drawing
+ *  renderer lays sheets out side by side at this spacing. */
+export const SHEET_GAP_MM = 24;
+
+/** Scene-space x offset of sheet `index` (sheets are laid out at
+ *  cumulative width_mm + SHEET_GAP_MM in drawingSceneObjects.ts).
+ *  Single source of truth shared by the renderer and the dimension
+ *  text hit test. */
+export function sheetSceneOffsetX(
+  sheets: ReadonlyArray<{ width_mm: number }>,
+  index: number,
+): number {
+  let x = 0;
+  for (let i = 0; i < index; i += 1) {
+    x += sheets[i].width_mm + SHEET_GAP_MM;
+  }
+  return x;
+}
+
+/** Largest ISO 5455 scale s ∈ ISO_SCALES with content·s fitting
+ *  availW×availH (both axes must fit); floors at 0.1.  Used by the
+ *  CREATE DRAWING Automatic mode to best-fit the auto-placed view. */
+export function bestFitIsoScale(
+  contentW: number,
+  contentH: number,
+  availW: number,
+  availH: number,
+): number {
+  const candidates = [...ISO_SCALES].reverse().map(Number); // 5, 2, 1, 0.5, 0.2, 0.1
+  return (
+    candidates.find(
+      (scale) => contentW * scale <= availW && contentH * scale <= availH,
+    ) ?? 0.1
+  );
+}
+
 // ── Vector helpers ────────────────────────────────────────────────
 
 export type Vec3 = [number, number, number];

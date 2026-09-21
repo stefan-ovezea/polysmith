@@ -47,7 +47,7 @@ json to_payload(const polysmith::core::ViewportDrawingView& view) {
 }
 
 json to_payload(const polysmith::core::ViewportDrawingText& text) {
-  return {
+  json j{
       {"text", text.text},
       {"position", drawing_vec2(text.position)},
       {"height_mm", text.height_mm},
@@ -56,6 +56,10 @@ json to_payload(const polysmith::core::ViewportDrawingText& text) {
       {"purpose", text.purpose},
       {"stale", text.stale},
   };
+  if (text.annotation_id.has_value()) {
+    j["annotation_id"] = text.annotation_id.value();
+  }
+  return j;
 }
 
 json to_payload(const polysmith::core::ViewportDrawingSheet& sheet) {

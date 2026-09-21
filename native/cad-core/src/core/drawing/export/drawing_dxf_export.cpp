@@ -43,7 +43,9 @@ const char* layer_for(const SheetPrimitive& p) {
   if (p.purpose == "cutting_plane") {
     return "CUTTING";
   }
-  if (p.purpose == "dimension" || p.purpose == "section_label") {
+  if (p.purpose == "dimension" || p.purpose == "section_label" ||
+      p.purpose == "annotation" || p.purpose == "detail_boundary" ||
+      p.purpose == "detail_label") {
     return "ANNOTATION";
   }
   if (p.purpose == "view_geometry") {

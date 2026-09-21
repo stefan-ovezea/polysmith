@@ -27,7 +27,10 @@
         "cam_tool_parse_result",
         "cam_face_attestation_result",
         "drawing_dimension_preview",
+        "drawing_annotation_preview",
         "drawing_view_preview_result",
+        "drawing_template_save_result",
+        "drawing_template_load_result",
         "log",
         "trim_preview_result",
         "error"

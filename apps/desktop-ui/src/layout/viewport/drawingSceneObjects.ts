@@ -1,7 +1,9 @@
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+import { sheetSceneOffsetX } from "@/lib/drawingViewMath";
 import type {
+  DrawingAnnotationPreviewPayload,
   DrawingDimensionPreviewPayload,
   DrawingViewPreviewPayload,
   ViewportDrawingCurve,
@@ -329,11 +331,11 @@ function addTextObject(group: THREE.Group, text: ViewportDrawingText,
   }
 }
 
-/** Draws a set of curves + an optional text record (the dimension
- *  preview payload shape mirrors the sheet curves). */
+/** Draws a set of curves + an optional text record — the dimension
+ *  and annotation preview payloads share this shape. */
 function addPreviewObjects(
   group: THREE.Group,
-  preview: DrawingDimensionPreviewPayload,
+  preview: Pick<DrawingDimensionPreviewPayload, "curves" | "text">,
 ) {
   const color = sheetColor("--cad-drawing-visible-line", "#1c1b1b");
   for (const curve of preview.curves ?? []) {
@@ -582,15 +584,16 @@ export function addDrawingSheetObjects({
   overlayGroups.preview.current = null;
   overlayGroups.drag.current = null;
   const sheets = viewport?.drawing_sheets ?? [];
-  let offsetX = 0;
-  for (const sheet of sheets) {
+  for (let index = 0; index < sheets.length; index += 1) {
+    const sheet = sheets[index];
+    const offsetX = sheetSceneOffsetX(sheets, index);
     const sheetGroup = new THREE.Group();
     sheetGroup.name = `drawing-sheet-${sheet.sheet_id}`;
     sheetGroup.position.set(offsetX, 0, 0);
     addSheetGroup(sheetGroup, sheet, selectedViewId ?? null);
     drawingGroup.add(sheetGroup);
     // The overlays belong to the FIRST sheet (the active one).
-    if (offsetX === 0) {
+    if (index === 0) {
       const previewGroup = new THREE.Group();
       previewGroup.name = "drawing-overlay-preview";
       sheetGroup.add(previewGroup);
@@ -600,7 +603,6 @@ export function addDrawingSheetObjects({
       sheetGroup.add(dragGroup);
       overlayGroups.drag.current = dragGroup;
     }
-    offsetX += sheet.width_mm + 24;
   }
 }
 
@@ -632,20 +634,26 @@ function subGroup(parent: THREE.Group, name: string): THREE.Group {
 export function syncDrawingOverlays({
   overlayGroups,
   preview,
+  annotationPreview,
   viewPreview,
   viewDrag,
+  dimTextDrag,
   ghostFrame,
   ghostAnchored,
+  detailDrag,
 }: {
   overlayGroups: {
     preview: { current: THREE.Group | null };
     drag: { current: THREE.Group | null };
   };
   preview?: DrawingDimensionPreviewPayload | null;
+  annotationPreview?: DrawingAnnotationPreviewPayload | null;
   viewPreview?: DrawingViewPreviewPayload | null;
   viewDrag?: { min: [number, number]; max: [number, number]; label: string } | null;
+  dimTextDrag?: { id: string; text: string; heightMm: number; current: [number, number] } | null;
   ghostFrame?: { min: [number, number]; max: [number, number]; label: string; scale: number } | null;
   ghostAnchored?: boolean;
+  detailDrag?: { center: [number, number]; cursor: [number, number]; label: string } | null;
 }) {
   const previewGroup = overlayGroups.preview.current;
   if (previewGroup) {
@@ -668,6 +676,28 @@ export function syncDrawingOverlays({
       dimGroup.userData.signature = dimSignature;
       if (preview && !preview.error) {
         addPreviewObjects(dimGroup, preview);
+      }
+    }
+
+    // Annotation preview (GEOMETRY/SYMBOLS/ANNOTATE) — same contract,
+    // its own sub-group so the two tools never clobber each other.
+    const annGroup = subGroup(previewGroup, "drawing-overlay-annotation");
+    const annSignature = annotationPreview && !annotationPreview.error
+      ? [
+          annotationPreview.view_id,
+          annotationPreview.kind,
+          annotationPreview.pick?.join(",") ?? "",
+          annotationPreview.pick_2?.join(",") ?? "",
+          annotationPreview.error ?? "",
+          annotationPreview.text_value ?? "",
+          annotationPreview.curves?.length ?? 0,
+        ].join("|")
+      : "none";
+    if (annGroup.userData.signature !== annSignature) {
+      disposeGroup(annGroup);
+      annGroup.userData.signature = annSignature;
+      if (annotationPreview && !annotationPreview.error) {
+        addPreviewObjects(annGroup, annotationPreview);
       }
     }
 
@@ -759,6 +789,110 @@ export function syncDrawingOverlays({
         addViewDragGhost(dragGroup, viewDrag);
       }
     }
+    // Dimension-text drag ghost — its own sub-group so the view-frame
+    // ghost's signature disposal above never touches it.  The content
+    // signature is position-independent (text + height); the sprite
+    // is built once at the local origin and the group translation
+    // below rides the cursor with zero rebuilds.
+    const dimTextGroup = subGroup(dragGroup, "drawing-overlay-dimtext");
+    const dimTextSignature = dimTextDrag
+      ? [dimTextDrag.id, dimTextDrag.text, dimTextDrag.heightMm].join("|")
+      : "none";
+    if (dimTextGroup.userData.signature !== dimTextSignature) {
+      disposeGroup(dimTextGroup);
+      dimTextGroup.userData.signature = dimTextSignature;
+      if (dimTextDrag) {
+        const sprite = makeLabelSprite(
+          dimTextDrag.text,
+          sheetColor("--cad-drawing-preview", "#4f8df7"),
+          0,
+          0,
+          dimTextDrag.heightMm,
+        );
+        if (sprite) {
+          dimTextGroup.add(sprite);
+        }
+      }
+    }
+    if (dimTextDrag) {
+      dimTextGroup.position.set(
+        dimTextDrag.current[0],
+        dimTextDrag.current[1],
+        0,
+      );
+    }
+    dimTextGroup.visible = dimTextDrag != null;
+    // Detail View circle-drag ghost — dashed circle + center cross +
+    // the upcoming label letter.  The content depends only on the
+    // radius (quantized to 0.1 mm so cursor moves rebuild nothing
+    // between steps) and the label; the group position rides the
+    // press point (the circle center) every sync.
+    const detailGroup = subGroup(dragGroup, "drawing-overlay-detail");
+    const detailRadius = detailDrag
+      ? Math.hypot(
+          detailDrag.cursor[0] - detailDrag.center[0],
+          detailDrag.cursor[1] - detailDrag.center[1],
+        )
+      : 0;
+    const detailSignature = detailDrag
+      ? `${detailRadius.toFixed(1)}|${detailDrag.label}`
+      : "none";
+    if (detailGroup.userData.signature !== detailSignature) {
+      disposeGroup(detailGroup);
+      detailGroup.userData.signature = detailSignature;
+      if (detailDrag && detailRadius > 0) {
+        addDetailDragGhost(detailGroup, detailRadius, detailDrag.label);
+      }
+    }
+    if (detailDrag) {
+      detailGroup.position.set(detailDrag.center[0], detailDrag.center[1], 0);
+    }
+    detailGroup.visible = detailDrag != null;
+  }
+}
+
+/** The Detail View circle-drag ghost (local coords, center at 0,0):
+ *  a dashed circle + center cross + the label letter beside it. */
+function addDetailDragGhost(
+  group: THREE.Group,
+  radius: number,
+  label: string,
+) {
+  const color = sheetColor("--cad-drawing-preview", "#7c3aed");
+  const segments = 96;
+  const circlePoints: Array<[number, number]> = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    circlePoints.push([radius * Math.cos(angle), radius * Math.sin(angle)]);
+  }
+  const circle = buildDashedRibbon(
+    circlePoints,
+    ISO_THIN_LINE_MM,
+    color,
+    3,
+    2,
+    0.8,
+  );
+  if (circle) {
+    group.add(circle);
+  }
+  const cross = buildDashedRibbon(
+    [
+      [-radius * 0.25, 0], [radius * 0.25, 0],
+      [0, -radius * 0.25], [0, radius * 0.25],
+    ],
+    ISO_THIN_LINE_MM,
+    color,
+    2,
+    1.5,
+    0.8,
+  );
+  if (cross) {
+    group.add(cross);
+  }
+  const sprite = makeLabelSprite(label, color, radius + 2.5, radius + 1.5, 3.5);
+  if (sprite) {
+    group.add(sprite);
   }
 }
 

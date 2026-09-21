@@ -62,10 +62,20 @@ json make_cam_tool_export_file_result_event(const std::string& id,
 // and computes the graphics; the UI renders it until Enter commits.
 json make_drawing_dimension_preview_event(const std::string& id,
                                           const json& payload);
+// Non-mutating drawing annotation preview (GEOMETRY/SYMBOLS/ANNOTATE)
+// — the same contract as the dimension preview, with `kind` instead
+// of `dim_type`.
+json make_drawing_annotation_preview_event(const std::string& id,
+                                           const json& payload);
 // Non-mutating drawing VIEW preview — the core projects + flattens an
 // uncommitted view definition; the UI renders the ghost until Enter
 // commits the real drawing_view_create.
 json make_drawing_view_preview_event(const std::string& id,
                                      const json& payload);
+// Drawing template file I/O replies (the CREATE DRAWING dialog).
+json make_drawing_template_save_result_event(const std::string& id,
+                                             const json& payload);
+json make_drawing_template_load_result_event(const std::string& id,
+                                             const json& payload);
 
 }  // namespace polysmith::protocol

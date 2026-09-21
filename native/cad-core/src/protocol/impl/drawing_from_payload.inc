@@ -223,6 +223,10 @@ polysmith::core::Annotation annotation_from_payload(const json& payload) {
     annotation.witness_2 =
         source_edge_witness_from_payload(payload.at("witness_2"));
   }
+  if (payload.contains("attach_param") &&
+      !payload.at("attach_param").is_null()) {
+    annotation.attach_param = payload.at("attach_param").get<double>();
+  }
   if (payload.contains("text_override") &&
       payload.at("text_override").is_string()) {
     annotation.text_override =
@@ -250,6 +254,17 @@ polysmith::core::Annotation annotation_from_payload(const json& payload) {
 
 // ── DrawingView ───────────────────────────────────────────────────
 
+polysmith::core::DetailDefinition detail_definition_from_payload(
+    const json& payload) {
+  polysmith::core::DetailDefinition detail;
+  detail.parent_view_id =
+      drawing_read_string(payload, "parent_view_id", "");
+  detail.center = drawing_read_array2(payload, "center", {0.0, 0.0});
+  detail.radius = drawing_read_number(payload, "radius", 1.0);
+  detail.label = drawing_read_string(payload, "label", "A");
+  return detail;
+}
+
 polysmith::core::DrawingView drawing_view_from_payload(const json& payload) {
   polysmith::core::DrawingView view;
   view.view_id = drawing_read_string(payload, "view_id", "");
@@ -268,11 +283,28 @@ polysmith::core::DrawingView drawing_view_from_payload(const json& payload) {
   if (payload.contains("section") && payload.at("section").is_object()) {
     view.section = section_definition_from_payload(payload.at("section"));
   }
+  if (payload.contains("detail") && payload.at("detail").is_object()) {
+    view.detail = detail_definition_from_payload(payload.at("detail"));
+  }
   if (payload.contains("broken_ref") && payload.at("broken_ref").is_string()) {
     view.broken_ref = payload.at("broken_ref").get<std::string>();
   }
   view.warning = drawing_read_string(payload, "warning", "");
   return view;
+}
+
+// ── SheetNote ──────────────────────────────────────────────────────
+
+polysmith::core::SheetNote sheet_note_from_payload(const json& payload) {
+  polysmith::core::SheetNote note;
+  note.note_id = drawing_read_string(payload, "note_id", "");
+  note.sheet_id = drawing_read_string(payload, "sheet_id", "");
+  note.text = drawing_read_string(payload, "text", "");
+  note.position = drawing_read_array2(payload, "position", {0.0, 0.0});
+  note.height_mm = drawing_read_number(payload, "height_mm", 3.5);
+  note.angle_deg = drawing_read_number(payload, "angle_deg", 0.0);
+  note.h_align = drawing_read_string(payload, "h_align", "center");
+  return note;
 }
 
 // ── Drawing ───────────────────────────────────────────────────────
@@ -295,6 +327,11 @@ polysmith::core::Drawing drawing_from_payload(const json& payload) {
       payload.at("annotations").is_array()) {
     for (const auto& annotation : payload.at("annotations")) {
       drawing.annotations.push_back(annotation_from_payload(annotation));
+    }
+  }
+  if (payload.contains("notes") && payload.at("notes").is_array()) {
+    for (const auto& note : payload.at("notes")) {
+      drawing.notes.push_back(sheet_note_from_payload(note));
     }
   }
   return drawing;
@@ -326,6 +363,11 @@ polysmith::core::DrawingDocumentData drawing_document_data_from_payload(
         payload.at("selected_annotation_id").get<std::string>();
   }
   drawing.decimal_separator =
-      drawing_read_string(payload, "decimal_separator", ",");
+      drawing_read_string(payload, "decimal_separator", ".");
+  // Legacy migration: the field was never user-settable, so every
+  // stored "," is the pre-dot DEFAULT, not a user choice — map it.
+  if (drawing.decimal_separator == ",") {
+    drawing.decimal_separator = ".";
+  }
   return drawing;
 }

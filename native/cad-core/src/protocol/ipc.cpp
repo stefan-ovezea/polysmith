@@ -286,11 +286,38 @@ json make_drawing_dimension_preview_event(const std::string& id,
   };
 }
 
+json make_drawing_annotation_preview_event(const std::string& id,
+                                           const json& payload) {
+  return {
+      {"id", id},
+      {"type", "drawing_annotation_preview"},
+      {"payload", payload},
+  };
+}
+
 json make_drawing_view_preview_event(const std::string& id,
                                      const json& payload) {
   return {
       {"id", id},
       {"type", "drawing_view_preview_result"},
+      {"payload", payload},
+  };
+}
+
+json make_drawing_template_save_result_event(const std::string& id,
+                                             const json& payload) {
+  return {
+      {"id", id},
+      {"type", "drawing_template_save_result"},
+      {"payload", payload},
+  };
+}
+
+json make_drawing_template_load_result_event(const std::string& id,
+                                             const json& payload) {
+  return {
+      {"id", id},
+      {"type", "drawing_template_load_result"},
       {"payload", payload},
   };
 }

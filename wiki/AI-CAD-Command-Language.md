@@ -3507,15 +3507,33 @@ cache, the toolpath contract) — they never appear in document payloads.
 - `drawing_view_create` — payload `{drawing_id, sheet_id, view}`.
   View kinds: `"projection"` (needs `standard_view` `"front" | "right"
   | "left" | "top" | "bottom" | "back"` or a `custom_frame`),
-  `"axonometric"` (needs `custom_frame`), or `"section"` (needs
+  `"axonometric"` (needs `custom_frame`), `"section"` (needs
   `view.section` — the frame derives from the cutting plane; a
-  standard view or custom frame must NOT override it). The bump
+  standard view or custom frame must NOT override it), or `"detail"`
+  (needs `view.detail` — see below). The bump
   re-projects the view (HLR, cached in `drawing_runtime` —
   memory-only).
 - `drawing_view_update` — payload `{drawing_id, view}`. Same
   validation; annotations keep their attachments.
 - `drawing_view_delete` — payload `{drawing_id, view_id}`. Removes the
-  view, its annotations, and its id from every sheet's `view_ids`.
+  view, its annotations, its DETAIL-VIEW CHILDREN (cascade), and its
+  id from every sheet's `view_ids`.
+
+  Detail views (ISO 128-3 §4.12): `view.detail` =
+  `{parent_view_id, center: [x, y], radius, label}` with center and
+  radius in the PARENT's view-mm (pre-scale). The detail keeps its
+  own `scale`, `sheet_position`, `source_body_ids`, `show_hidden`.
+  Refresh passes: the main loop skips details; a second pass clips
+  the parent's cached projection to the circle and stores it under
+  the detail's id. A broken parent degrades the detail
+  (`dependency_broken`, `broken_ref` = parent id, stale last-known
+  content). Flatten emits the detail's own boundary circle + label
+  `"<letter> (<scale>)"` (purposes `detail_boundary` /
+  `detail_label`) and the parent's marker circle + bare letter.
+  Validation: parent must exist and be kind `"projection"`, radius >
+  0. Dimensions/annotations refuse detail views (V1: no section
+  parents, no detail-of-detail; crossing ellipses dropped by the
+  clip).
 - `drawing_view_move` — payload `{drawing_id, view_id, sheet_position:
   [x, y]}`. Cosmetic only — never re-projects.
 - `drawing_view_preview` — payload `{drawing_id, sheet_id, view}`.
@@ -3556,6 +3574,19 @@ cache, the toolpath contract) — they never appear in document payloads.
   line) and HATCH entities (ANSI31 at the section's angle/spacing,
   boundary loops as LINE edges).  Errors (unknown
   drawing/sheet/format/mode, I/O) throw structured errors.
+- `drawing_template_save` — payload `{file_path, template}`.
+  `template` = setup-only `{name, sheets: [{name, paper_size,
+  orientation, projection_angle, title_block}]}` (no ids/views/
+  annotations). Validates like drawing_sheet_update before writing
+  pretty JSON; replies with `drawing_template_save_result`
+  `{file_path}`. Errors → `error` events (`DRAWING_TEMPLATE_SAVE_FAILED`).
+- `drawing_template_load` — payload `{file_path}`. Reads + validates a
+  template file (lenient defaults, enum validation); replies with
+  `drawing_template_load_result` `{template: {name, sheets[]}}` (full
+  sheet payloads, ids empty — feed it back through `drawing_create`).
+  Errors → `error` events (`DRAWING_TEMPLATE_LOAD_FAILED`). The
+  templates directory is `POLYSMITH_TEMPLATES_DIR`
+  (`<app_data>/templates`).
 - `drawing_sheet_update` — payload `{drawing_id, sheet_id, paper_size,
   orientation, projection_angle, name}`. `paper_size` A0–A4,
   `orientation` portrait/landscape (landscape swaps the trimmed ISO
@@ -3574,11 +3605,48 @@ cache, the toolpath contract) — they never appear in document payloads.
 - `drawing_dimension_update` — payload `{drawing_id, annotation_id,
   text_override?, prefix?, arrow_flip?, text_offset?}` — cosmetic
   only: never re-projects, never re-resolves (the bump re-flattens).
+  `text_offset` is the dimension's PLACEMENT POINT (sheet-mm): the
+  text lands at default + offset, and the dimension line / extension
+  lines / leader / arc derive from it (linear single: perpendicular
+  component moves the dimension line, parallel slides the text;
+  radius/diameter: leader/line re-aims through the text, center
+  fixed; angular: arc radius follows the text, clamped to 12 mm).
+  The mouse drag commits one update per drop.
 - `drawing_dimension_delete` — payload `{drawing_id, annotation_id}`.
 - `drawing_dimension_preview` — payload `{drawing_id, view_id,
   dim_type, pick, pick_2?}` — NON-mutating; replies with a
   `drawing_dimension_preview` event `{value, text_value, curves[],
   text, error?}` (value + sheet-mm graphics for the live preview).
+- `drawing_note_create` — payload `{drawing_id, sheet_id, text,
+  position, height_mm?, angle_deg?, h_align?}` — sheet-anchored free
+  text; `position` is the text CENTER in sheet-mm (rounded to 0.01).
+  Id minted as `drawing-note-N`.
+- `drawing_note_update` — payload `{drawing_id, note_id, text?,
+  position?, height_mm?, angle_deg?, h_align?}` — edits the note; the
+  mouse drag commits one absolute `position` per drop.
+- `drawing_note_delete` — payload `{drawing_id, note_id}`;
+  `drawing_sheet_delete` cascades to its notes.
+- `drawing_annotation_create` — payload `{drawing_id, view_id, kind,
+  pick, pick_2?, text_override?, prefix?, extensions?, placement?}`.
+  `kind` `"leader_text" | "center_mark" | "centerline" |
+  "edge_extension" | "surface_finish" | "welding" |
+  "tolerance_frame" | "datum" | "balloon"`; `pick`/`pick_2` are
+  SHEET-mm points resolved like dimensions (TNP mantra) — the core
+  mints the witness plus `attach_param` (0..1 fraction over the
+  witness param range). Per-kind geometry rules (center_mark needs a
+  circular witness, centerline two, edge_extension a straight edge —
+  fraction snapped to the picked end) throw before the undo push.
+  `placement` (leader_text) → `text_offset = placement − default
+  text anchor`.
+- `drawing_annotation_update` — payload `{drawing_id, annotation_id,
+  text_override?, prefix?, arrow_flip?, text_offset?, extensions?,
+  attach_param?}` — cosmetic only, never re-projects.
+- `drawing_annotation_delete` — payload `{drawing_id, annotation_id}`.
+- `drawing_annotation_preview` — payload `{drawing_id, view_id, kind,
+  pick, pick_2?, text_override?, prefix?}` — NON-mutating; replies
+  with a `drawing_annotation_preview` event `{text_value, curves[],
+  text, error?}` (same contract as the dimension preview, `kind`
+  instead of `dim_type`).
 
 Section views (P4): the refresh cuts every source body with a
 half-space when `section.cut_away` is true (material on the normal
@@ -3622,6 +3690,29 @@ primitives), the unbroken dimension line, and a `texts[]` record
 (3.5 mm lettering, unidirectional, ⌀/R prefixes, the decimal
 separator, ° on angles).  Cosmetic updates never re-project — they
 only re-flatten.
+
+Notes and annotations (ANNOTATE/GEOMETRY/SYMBOLS tabs): sheet notes
+flatten as `texts[]` records (purpose `"note"`, `annotation_id` = note
+id, absolute position).  Annotations ride the same witness ladder and
+runtime-cache pattern as dimensions → broken means `dependency_broken`
++ warning + last-known placement kept (stale), and the broken
+annotation's graphics are suppressed.  The refresh/flatten pass
+branches on `is_annotation_kind()` so new kinds never enter the
+dimension measurer.  Annotation graphics are primitives with purpose
+`"annotation"` (emitted after the dimension primitives), their texts
+purpose `"annotation"`; the DXF exporter layers purpose `"annotation"`
+on ANNOTATION.
+
+Kind semantics (sheet-mm offsets, view-scale free): center_mark =
+cross ±2.5 mm on the circle center (no attach_param); centerline =
+pre-dashed ISO 128-2 chain line through both circle centers ±3 mm
+(concentric circles refuse); edge_extension = 5 mm outward from the
+picked end (attach_param snaps to 0/1, the root is the snapped end);
+surface_finish/welding/tolerance_frame/datum/balloon draw the ISO
+1302/2553/1101/5459/reference-circle symbols at the attachment point
+with `text_override` as their content.  Annotation picks prefer a
+REAL edge over a coincident silhouette (axis-view rim circles); the
+ambiguity refusal still applies between two real edges.
 
 A view whose source body disappears degrades with `broken_ref` +
 `warning` and holds its last-known projection (marked `stale`) — never

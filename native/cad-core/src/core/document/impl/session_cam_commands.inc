@@ -176,6 +176,10 @@ DocumentState DocumentManager::load_document_from_path(
             trailing_integer(annotation.source_edge_id) + 1);
       }
     }
+    for (const auto& note : drawing.notes) {
+      next_drawing_note_id_ =
+          std::max(next_drawing_note_id_, trailing_integer(note.note_id) + 1);
+    }
   }
 
   // Rebuild sketch derived state (solver + profile regions) for every

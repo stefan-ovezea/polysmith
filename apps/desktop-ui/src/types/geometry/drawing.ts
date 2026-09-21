@@ -47,9 +47,26 @@ export interface SectionDefinition {
   construction_plane_id?: string;
 }
 
+// ── Detail definition ────────────────────────────────────────────
+
+/** ISO 128-3 §4.12 detail (enlarged feature) view: a circular window
+ *  on a parent projection view, re-projected at a larger scale.
+ *  center/radius are in the PARENT's view-mm (its projection plane). */
+export interface DetailDefinition {
+  parent_view_id: string;
+  center: [number, number];
+  radius: number;
+  /** Capital letter minted by the UI at create time ("A", "B", …). */
+  label: string;
+}
+
 // ── View ─────────────────────────────────────────────────────────
 
-export type DrawingViewKind = "projection" | "section" | "axonometric";
+export type DrawingViewKind =
+  | "projection"
+  | "section"
+  | "axonometric"
+  | "detail";
 
 export interface DrawingView {
   view_id: string;
@@ -57,7 +74,7 @@ export interface DrawingView {
   /**
    * "front" | "top" | "right" | "bottom" | "left" | "back" — UI
    * convenience only; the refresh derives the frame.  Empty for
-   * custom frames / sections / axonometric views.
+   * custom frames / sections / axonometric / detail views.
    */
   standard_view: string;
   /** Resolved custom frame — authoritative when standard_view is empty. */
@@ -69,6 +86,8 @@ export interface DrawingView {
   sheet_position: [number, number];
   show_hidden: boolean;
   section?: SectionDefinition;
+  /** Present only on kind "detail" views (parent + window). */
+  detail?: DetailDefinition;
   /** Reference whose resolution failed — present only while degraded. */
   broken_ref?: string;
   /** Human-readable dependency warning while holding last-known state. */
@@ -116,7 +135,18 @@ export type AnnotationKind =
   | "diameter"
   | "ordinate"
   | "baseline"
-  | "leader";
+  | "leader"
+  // GEOMETRY / SYMBOLS / ANNOTATE tabs (R4+R5): content is the user
+  // text (text_override), never a measured value.
+  | "center_mark"
+  | "centerline"
+  | "edge_extension"
+  | "leader_text"
+  | "surface_finish"
+  | "welding"
+  | "tolerance_frame"
+  | "datum"
+  | "balloon";
 
 /** Extension payload for future ISO dimensions (tolerance frames,
  *  datums, surface texture, TED, auxiliary) — ordered key/value
@@ -138,8 +168,14 @@ export interface Annotation {
   /** Persistent edge reference id minted by the core at pick time. */
   source_edge_id: string;
   witness: SourceEdgeWitness;
-  /** Second attachment (distance/angular between two edges). */
+  /** Second attachment (distance/angular between two edges, or the
+   *  second circle of a centerline). */
   witness_2?: SourceEdgeWitness;
+  /** Point attachments (leader_text, surface_finish, welding,
+   *  tolerance_frame, datum, balloon, edge-extension end choice):
+   *  the attachment's param fraction (0..1) over the witness
+   *  param_range — follows the edge across recomputes. */
+  attach_param?: number;
   /** User text override; empty = measured value. */
   text_override?: string;
   /** "" | "⌀" | "R" — ⌀ omittable only when unambiguous. */
@@ -152,6 +188,23 @@ export interface Annotation {
   arrow_flip: boolean;
 }
 
+// ── Sheet note ─────────────────────────────────────────────────────
+
+/** A free text note on a sheet (ANNOTATE → Text).  Not model-anchored:
+ *  the position is direct sheet-mm state (anchor = text CENTER). */
+export interface SheetNote {
+  note_id: string;
+  sheet_id: string;
+  text: string;
+  /** Anchor position (sheet-mm) — the text CENTER. */
+  position: [number, number];
+  /** ISO 3098 letter height in mm. */
+  height_mm: number;
+  angle_deg: number;
+  /** "left" | "center" | "right" */
+  h_align: string;
+}
+
 // ── Drawing ───────────────────────────────────────────────────────
 
 export interface Drawing {
@@ -160,6 +213,16 @@ export interface Drawing {
   sheets: DrawingSheet[];
   views: DrawingView[];
   annotations: Annotation[];
+  /** Free sheet notes (ANNOTATE → Text). */
+  notes: SheetNote[];
+}
+
+/** A setup-only drawing template (the CREATE DRAWING dialog's
+ *  save/load format): sheets carry settings + title block, never ids,
+ *  view ids, views or annotations — those are minted at create time. */
+export interface DrawingTemplate {
+  name: string;
+  sheets: DrawingSheet[];
 }
 
 // ── Document-level drawing data ───────────────────────────────────
@@ -169,7 +232,7 @@ export interface DrawingDocumentData {
   active_drawing_id: string | null;
   selected_view_id: string | null;
   selected_annotation_id: string | null;
-  /** ISO 129-1: decimal comma. */
+  /** Decimal separator for dimension values ("." or ","). */
   decimal_separator: string;
 }
 
@@ -220,6 +283,9 @@ export interface ViewportDrawingText {
   /** "left" | "center" | "right" */
   h_align: string;
   purpose: string;
+  /** Owning annotation — set only for dimension texts (the hit test
+   *  maps a picked text back to its annotation). */
+  annotation_id?: string;
   /** true when the dimension is degraded (last-known value shown). */
   stale: boolean;
 }

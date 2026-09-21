@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "core/document/document_state.h"
+#include "core/drawing/drawing_annotation_geometry.h"
 #include "core/drawing/drawing_dimension_geometry.h"
 #include "core/drawing/drawing_projection.h"
 #include "core/drawing/drawing_runtime.h"
@@ -26,6 +27,41 @@ constexpr double kLeftMarginMm = 20.0; // ISO 5457: left margin incl. frame
 constexpr double kMarginMm = 10.0;     // other margins incl. frame
 
 double quant(double v) { return std::round(v * 1e6) / 1e6; }
+
+/// ISO 5455 scale as a label ("1:1", "2:1", "1:2" …) — mirrors the
+/// canonical `format_scale` in drawing_title_block.cpp (file-local
+/// convention), for the detail-view label "A (2:1)".
+std::string format_scale(double scale) {
+  if (std::abs(scale - 1.0) < 1e-9) {
+    return "1:1";
+  }
+  const double n = scale > 1.0 ? scale : 1.0 / scale;
+  std::string digits = std::to_string(std::round(n * 100.0) / 100.0);
+  while (digits.size() > 1 && digits.back() == '0') {
+    digits.pop_back();
+  }
+  if (!digits.empty() && digits.back() == '.') {
+    digits.pop_back();
+  }
+  return (scale > 1.0 ? digits + ":1" : "1:" + digits);
+}
+
+/// A full-circle primitive (start == end, the record_sweep 2π
+/// convention), thin continuous.
+SheetPrimitive full_circle(const std::array<double, 2>& center, double radius,
+                           const std::string& purpose) {
+  SheetPrimitive p;
+  p.kind = "circle_arc";
+  p.center = center;
+  p.radius = radius;
+  p.p0 = {center[0] + radius, center[1]};
+  p.p1 = p.p0;
+  p.start_angle = 0.0;
+  p.end_angle = 2.0 * kPi;
+  p.style = {"continuous", kThinLineMm};
+  p.purpose = purpose;
+  return p;
+}
 
 // ── Coincidence priority (ISO 128-2) ──────────────────────────────
 // When two primitives share geometry, the highest-priority line wins:
@@ -620,6 +656,7 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
   std::vector<SheetPrimitive> hatch_primitives;
   std::vector<SheetHatchRegion> hatch_regions;
   std::vector<SheetPrimitive> dimension_primitives;
+  std::vector<SheetPrimitive> annotation_primitives;
   int view_index = 0;
   for (const auto& view_id : sheet->view_ids) {
     ++view_index;
@@ -635,9 +672,13 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
     }
     SheetViewBounds bounds;
     bounds.view_id = view->view_id;
-    bounds.label = !view->standard_view.empty()
-                       ? view->standard_view
-                       : "View " + std::to_string(view_index);
+    bounds.label =
+        !view->standard_view.empty()
+            ? view->standard_view
+            : (view->kind == "detail" && view->detail.has_value()
+                   ? view->detail.value().label + " (" +
+                         format_scale(view->scale) + ")"
+                   : "View " + std::to_string(view_index));
     bounds.scale = view->scale;
     bounds.origin = view->sheet_position;
 
@@ -667,7 +708,29 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
         bounds.max[0] = std::max({bounds.max[0], p.p0[0], p.p1[0]});
         bounds.max[1] = std::max({bounds.max[1], p.p0[1], p.p1[1]});
       }
-      // ── Dimensions (P6) ──────────────────────────────────────
+      // ── Detail views (ISO 128-3) ─────────────────────────────
+      // The clipped projection is the parent's geometry inside the
+      // window; the view's own bounds are the CIRCLE extent, and the
+      // boundary circle + label ("A (2:1)") draw with the content.
+      if (view->kind == "detail" && view->detail.has_value()) {
+        const auto& detail = view->detail.value();
+        const double cx = detail.center[0] * view->scale +
+                          view->sheet_position[0];
+        const double cy = detail.center[1] * view->scale +
+                          view->sheet_position[1];
+        const double cr = detail.radius * view->scale;
+        bounds.min = {cx - cr, cy - cr};
+        bounds.max = {cx + cr, cy + cr};
+        annotation_primitives.push_back(
+            full_circle({cx, cy}, cr, "detail_boundary"));
+        SheetText label;
+        label.text = detail.label + " (" + format_scale(view->scale) + ")";
+        label.position = {cx, cy - cr - 3.5};
+        label.height_mm = 3.5;
+        label.purpose = "detail_label";
+        stream.texts.push_back(std::move(label));
+      }
+      // ── Dimensions (P6) + annotations (R4/R5) ────────────────
       // The refresh pass resolved this view's annotations against
       // the fresh projection; the flatten consumes the resolved
       // attachment geometry (memory-only, like the projections).
@@ -675,6 +738,28 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
       // they draw on top, after hatching.
       for (const auto& annotation : drawing->annotations) {
         if (annotation.view_id != view->view_id) {
+          continue;
+        }
+        // Non-dimension kinds (leader_text, center_mark, ...) resolve
+        // through the same ladder into their own cache.
+        if (is_annotation_kind(annotation.kind)) {
+          const ResolvedAttachment* resolved_attachment =
+              drawing_runtime::cached_attachment(document,
+                                                 annotation.annotation_id);
+          if (resolved_attachment == nullptr || resolved_attachment->broken) {
+            continue;  // no geometry (the panel shows the warning)
+          }
+          AnnotationGraphics graphics = build_annotation_graphics(
+              *resolved_attachment, annotation, *view,
+              resolved_attachment->stale);
+          annotation_primitives.insert(annotation_primitives.end(),
+                                       graphics.primitives.begin(),
+                                       graphics.primitives.end());
+          if (graphics.text.has_value()) {
+            SheetText text = graphics.text.value();
+            text.annotation_id = annotation.annotation_id;
+            stream.texts.push_back(std::move(text));
+          }
           continue;
         }
         const ResolvedDimension* resolved = drawing_runtime::cached_dimension(
@@ -689,7 +774,9 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
                                     graphics.primitives.begin(),
                                     graphics.primitives.end());
         if (graphics.text.has_value()) {
-          stream.texts.push_back(graphics.text.value());
+          SheetText text = graphics.text.value();
+          text.annotation_id = annotation.annotation_id;
+          stream.texts.push_back(std::move(text));
         }
         if (graphics.semantic.has_value()) {
           stream.dimensions.push_back(graphics.semantic.value());
@@ -697,6 +784,63 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
       }
     }
     stream.views.push_back(std::move(bounds));
+  }
+
+  // ── Detail markers on the PARENT (ISO 128-3 §4.12) ──────────────
+  // Every detail view whose parent lives on THIS sheet draws its
+  // boundary circle + letter on the parent's projection.  Emitted
+  // after the view loop (on top of the parent's geometry, like the
+  // section labels) — never into the coincidence pass.
+  for (const auto& view : drawing->views) {
+    if (view.kind != "detail" || !view.detail.has_value()) {
+      continue;
+    }
+    const DrawingView* parent = nullptr;
+    for (const auto& candidate : drawing->views) {
+      if (candidate.view_id == view.detail.value().parent_view_id) {
+        parent = &candidate;
+        break;
+      }
+    }
+    if (parent == nullptr ||
+        std::find(sheet->view_ids.begin(), sheet->view_ids.end(),
+                  parent->view_id) == sheet->view_ids.end()) {
+      continue;  // the parent is on another sheet
+    }
+    const auto& detail = view.detail.value();
+    const double cx = detail.center[0] * parent->scale +
+                      parent->sheet_position[0];
+    const double cy = detail.center[1] * parent->scale +
+                      parent->sheet_position[1];
+    const double cr = detail.radius * parent->scale;
+    annotation_primitives.push_back(
+        full_circle({cx, cy}, cr, "detail_boundary"));
+    SheetText letter;
+    letter.text = detail.label;
+    letter.position = {cx + cr + 2.5, cy + cr + 1.5};
+    letter.height_mm = 3.5;
+    letter.h_align = "left";
+    letter.purpose = "detail_label";
+    stream.texts.push_back(std::move(letter));
+  }
+
+  // ── Sheet notes (ANNOTATE → Text) ──────────────────────────────
+  // Free text notes are sheet-anchored data — they emit as SheetText
+  // records (the glyph pass below turns them into primitives for the
+  // viewport/SVG/PDF backends; the DXF backend renders the DATA).
+  for (const auto& note : drawing->notes) {
+    if (note.sheet_id != sheet_id) {
+      continue;
+    }
+    SheetText text;
+    text.text = note.text;
+    text.position = note.position;
+    text.height_mm = note.height_mm;
+    text.angle_deg = note.angle_deg;
+    text.h_align = note.h_align;
+    text.purpose = "note";
+    text.annotation_id = note.note_id;
+    stream.texts.push_back(std::move(text));
   }
 
   // ── Coincidence priority (ISO 128-2) + section labels ────────────
@@ -720,6 +864,10 @@ std::optional<SheetPrimitiveStream> flatten_sheet(
   stream.hatch_regions = std::move(hatch_regions);
   // Dimensions last — annotations draw on top of the sheet content.
   for (auto& p : dimension_primitives) {
+    stream.primitives.push_back(std::move(p));
+  }
+  // Non-dimension annotations on top of the dimensions.
+  for (auto& p : annotation_primitives) {
     stream.primitives.push_back(std::move(p));
   }
   // Section labels on top — the filled arrow terminates the chain

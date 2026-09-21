@@ -250,8 +250,8 @@ bool test_scale_auto_fill_from_first_view() {
   const auto flat_odd = polysmith::core::flatten_sheet(
       fixture.document, fixture.drawing_id, fixture.sheet_id);
   return flat_odd.has_value() &&
-         expect(has_text(flat_odd.value(), "1:2,5", "title_block"),
-                "scale 0.4 formats as 1:2,5 (decimal comma)");
+         expect(has_text(flat_odd.value(), "1:2.5", "title_block"),
+                "scale 0.4 formats as 1:2.5 (decimal dot)");
 }
 
 bool test_sheet_x_of_y() {

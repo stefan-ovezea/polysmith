@@ -244,12 +244,15 @@ set(CAD_CORE_SOURCES
   src/core/cam/cam_runtime.cpp
   src/core/cam/cam_stock.cpp
   src/core/cam/contour_2d.cpp
+  src/core/drawing/drawing_annotation_geometry.cpp
+  src/core/drawing/drawing_detail_clip.cpp
   src/core/drawing/drawing_dimension_geometry.cpp
   src/core/drawing/drawing_projection.cpp
   src/core/drawing/drawing_refresh.cpp
   src/core/drawing/drawing_resolution.cpp
   src/core/drawing/drawing_runtime.cpp
   src/core/drawing/drawing_sheet.cpp
+  src/core/drawing/drawing_templates.cpp
   src/core/drawing/drawing_text.cpp
   src/core/drawing/drawing_title_block.cpp
   src/core/drawing/export/drawing_export.cpp
@@ -597,10 +600,14 @@ polysmith_add_core_test(cad_core_text_test tests/text_test.cpp)
 # drawing edges to source topology.
 polysmith_add_core_test(cad_core_hlr_provenance_test tests/hlr_provenance_test.cpp)
 polysmith_add_core_test(cad_core_drawing_save_load_test tests/cad_core_drawing_save_load_test.cpp)
+polysmith_add_core_test(cad_core_drawing_template_test tests/cad_core_drawing_template_test.cpp)
 polysmith_add_core_test(cad_core_drawing_projection_test tests/cad_core_drawing_projection_test.cpp)
 polysmith_add_core_test(cad_core_drawing_section_test tests/cad_core_drawing_section_test.cpp)
+polysmith_add_core_test(cad_core_drawing_detail_test tests/cad_core_drawing_detail_test.cpp)
 polysmith_add_core_test(cad_core_drawing_sheet_test tests/cad_core_drawing_sheet_test.cpp)
 polysmith_add_core_test(cad_core_drawing_dimension_test tests/cad_core_drawing_dimension_test.cpp)
 polysmith_add_core_test(cad_core_drawing_title_block_test tests/cad_core_drawing_title_block_test.cpp)
 polysmith_add_core_test(cad_core_drawing_export_test tests/cad_core_drawing_export_test.cpp)
 polysmith_add_core_test(cad_core_drawing_pdf_export_test tests/cad_core_drawing_pdf_export_test.cpp)
+polysmith_add_core_test(cad_core_drawing_note_test tests/cad_core_drawing_note_test.cpp)
+polysmith_add_core_test(cad_core_drawing_annotation_test tests/cad_core_drawing_annotation_test.cpp)

@@ -2,6 +2,205 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-21
+
+### Detail views (ISO 128-3 §4.12) — core complete + UI implemented (feature/ISO-drawing-fix, in progress)
+
+The last real feature of the Drawing-Workspace-UI-Study (R3): circle-drag
+a committed projection view and an enlarged view of that region appears
+beside it, labeled `A (2:1)`, with a thin boundary circle + letter marker
+on the parent.
+
+- **Core:** `DetailDefinition {parent_view_id, center, radius, label}`
+  (`center`/`radius` in the PARENT's view-mm) + `DrawingView.kind`
+  `"detail"`. Refresh runs a second pass after the main view loop that
+  clips the parent's cached projection to the circle
+  (`drawing_detail_clip.{h,cpp}` — analytic line∩circle, sampled +
+  bisected circle-arc spans with the seam unwrap, keep-inside heuristic
+  for ellipses/bsplines) and stores it under the detail's own id;
+  broken parents degrade the detail (`dependency_broken` + stale
+  last-known, the shared TNP ladder). Flatten emits the detail's
+  boundary circle + `"<letter> (<scale>)"` label (purposes
+  `detail_boundary`/`detail_label`) with bounds = circle extent, and
+  the parent's marker circle + bare letter; the viewport view label
+  reuses the existing `label` field (no payload change). Validation:
+  parent must be a plain projection, radius > 0, before the undo push;
+  deleting a parent cascade-deletes detail children; dimensions/
+  annotations refuse detail views (V1: no section parents, no
+  detail-of-detail).
+- **Tests:** new `cad_core_drawing_detail_test` — 9 tests (clip math
+  incl. both arc-crossing sub-arcs with consistent angles+endpoints,
+  create→refresh→flatten with boundary/marker/labels/bounds, 4
+  validation throws, cascade delete, body-delete staleness + undo
+  restore, save/load, golden `drawing_detail_box.txt`). The clip
+  caught three real bugs before they shipped (seam-wrapped span
+  claiming a 283° arc instead of 77°; wrong cosine sign in the
+  two-circle early-outs; unbisected outside→inside transitions).
+  Full gate: **67/67 core suites**.
+- **UI:** `detail_view` tool in the hook's state machine (local
+  gesture state, no core round-trip until the drop, tool stays armed);
+  VIEWS ribbon tab += Detail View + strip hint; ViewportPanel
+  press-drag on a projection view's CONTENT bounds (frames keep their
+  drag, texts keep theirs) → dashed circle + center cross + label
+  ghost in a new `drawing-overlay-detail` sub-group; release ≥ 2 mm
+  commits: label letter from the detail count, scale = smallest ISO
+  5455 ≥ parent×2 (Fusion 2:1 default), slot right of the parent
+  bottom-aligned via `clampSheetPosition`, one `drawingViewCreate`.
+  tsc clean.
+
+## 2026-09-20
+
+### Create Drawing dialog (Fusion-style) + templates (feature/ISO-drawing-fix, in progress)
+
+The user's Fusion screenshot became the spec: the New Drawing panel is now
+a CREATE DRAWING dialog — Drawing Type Automatic/Manual, Contents
+(All/Selected/Pick…), a collapsible Destination section (Standard ISO,
+Units mm, Sheet Size with derived Width/Height, Orientation, Sheet Count,
+Projection angle), an info tooltip footer with OK/Cancel, and drawing
+TEMPLATE create/load.
+
+- **Automatic mode** auto-places a FRONT base view: `drawing_create` (N
+  sheets in one payload — Sheet Count 1–99) → `drawing_view_create`
+  (front, scale 1, provisional position) → `awaitViewportChange` for the
+  fresh viewport_state → `bestFitIsoScale` (largest ISO 5455 scale
+  fitting the sheet minus 20 mm margins, floor 0.1) → ONE
+  `drawing_view_update` sets scale + centered position together (the
+  command replaces the whole view definition). Manual = empty drawing;
+  Pick… = R1 arm-the-Base-View-tool behavior.
+- **Templates** (setup-only JSON `{name, sheets[]}` — title blocks
+  included, ids stripped): new core commands `drawing_template_save` /
+  `drawing_template_load` (the core owns the file I/O — the CAM tool
+  table precedent; validation mirrors drawing_sheet_update's enums),
+  result events, `POLYSMITH_TEMPLATES_DIR` (`<app_data>/templates`)
+  exported by the Tauri shell as the picker default, and a
+  `cad_core_drawing_template_test` suite (round-trip, enum rejections,
+  missing-key defaults, file round-trip). Loaded templates flow back
+  through the normal `drawing_create` (ids minted, per-sheet variance
+  kept). The dialog cannot edit title blocks — templates saved from it
+  carry empty ones, loaded ones keep theirs.
+- **Plumbing**: `drawingViewUpdate` + `drawingTemplateSave/Load` hooks
+  (awaited replies — the hooks THROW on `error` events, which resolve
+  rather than reject), `awaitViewportChange` store waiter,
+  `bestFitIsoScale`/`sheetSceneOffsetX` pure helpers, template event
+  zod schemas, `common.ok` footer.
+- **Gates**: 64/64 core suites (incl. the new template suite), goldens
+  unchanged, `tsc --noEmit` clean, `cargo check` clean. In-app
+  verification pending (never-commit-untested rule).
+
+### Drawing: whole-dimension mouse drag + decimal dot (feature/ISO-drawing-fix, in progress)
+
+The ISO drawing fix the user asked for: dimensions are draggable with the
+mouse, and dimension values use the decimal DOT (33.74) instead of the
+comma (33,74).
+
+- **Placement-point semantics:** `Annotation.text_offset` is now the
+  dimension's PLACEMENT POINT — the text lands at default + offset, and
+  the dimension line / extension lines / leader / arc derive from it
+  (linear single: the perpendicular component moves the dimension line
+  and stretches the extension lines, the parallel component slides the
+  text along the line; radius/diameter: the leader re-aims through the
+  dragged text with the center fixed; angular: the arc radius follows
+  the text, clamped to the 12 mm minimum). The no-offset path stays
+  bit-identical (goldens unchanged); all seven emitters in
+  `drawing_dimension_geometry.cpp` reworked with `has_value()` branches /
+  delta formulation for that contract.
+- **Drag interaction (UI):** a press on a dimension text hit-tests the
+  sheet `texts[]` records (now carrying `annotation_id` through
+  `SheetText` → viewport payload → zod) within 5 sheet-mm, drags a
+  label-sprite ghost (`drawing-overlay-dimtext` sub-group, zero
+  core round-trips per move), and commits ONE `drawing_dimension_update`
+  per drop (≥ 0.5 mm guard, 0.01 mm rounding, one undo step) — the same
+  pattern as the view-frame drag. The scene build key now includes
+  dimension text positions so a committed drag re-renders.
+- **Decimal separator:** core + UI defaults are now `"."`; on load a
+  stored `","` is migrated (the field was never user-settable, so every
+  stored comma is the old default). Consumers verified: DXF `dimdsep`,
+  title-block Scale cell, dimension formatting.
+- **Tests:** `cad_core_drawing_dimension_test` grew
+  `whole_dimension_drag` (perpendicular/parallel linear, radius,
+  diameter, angular incl. the 12 mm clamp); save/load gained a
+  legacy-comma migration test; title-block test expects `1:2.5`.
+  All 63 core suites green, goldens unchanged; UI type-check clean.
+  In-app verification pending (per the never-commit-untested rule).
+
+### Drawing ANNOTATE/GEOMETRY/SYMBOLS tabs — Phase 1: Text + Leader Text (feature/ISO-drawing-fix, in progress)
+
+The user reported the GEOMETRY, SYMBOLS and ANNOTATE ribbon tabs as dead
+(R1 placeholders). Phase 1 makes ANNOTATE functional and builds the shared
+annotation infrastructure the other two tabs ride on (leader_text as the
+pilot kind of the generic command family).
+
+- **Data model:** `SheetNote` (sheet-anchored free text, absolute position,
+  id `drawing-note-N`) + `Drawing.notes`; nine new `Annotation` kinds
+  (`center_mark`, `centerline`, `edge_extension`, `leader_text`,
+  `surface_finish`, `welding`, `tolerance_frame`, `datum`, `balloon`) with
+  `attach_param` (0..1 fraction over the witness param range).
+- **Resolution:** the witness ladder (identity → strict 0.01 mm → relaxed
+  0.1 mm → broken) is extracted from `resolve_annotation` into a shared
+  helper — dimensions and annotations share it; refresh/flatten branch on
+  `is_annotation_kind()` so new kinds never enter the dimension measurer;
+  broken annotations keep their last-known placement (stale) with
+  `dependency_broken` + warning, graphics suppressed.
+- **Commands:** `drawing_note_create/update/delete` +
+  `drawing_annotation_create/update/delete/preview` — the pick→preview→
+  Enter panel UX identical to dimensions; `placement` on create probes the
+  graphics builder for the default text anchor and stores the delta as
+  `text_offset`; the dimension text-drag now dispatches by owner
+  (dimension/annotation/note, sheet-index-aware absolute drops for notes).
+- **Graphics:** new `drawing_annotation_geometry.h/.cpp`
+  (`build_annotation_graphics` — P1 dispatches leader_text: arrow + leader
+  line + text at the offset anchor, default direction radial (circle) /
+  edge-perpendicular (line), leader stops 2.75 mm short of the text);
+  annotation primitives purpose `"annotation"` emitted after the dimension
+  primitives; note texts purpose `"note"`; DXF layers `"annotation"` on
+  ANNOTATION.
+- **Tests:** new `cad_core_drawing_note_test` (10 tests) +
+  `cad_core_drawing_annotation_test` (9 tests) incl. goldens
+  `drawing_note_text` / `drawing_annotation_leader_text`; all prior
+  drawing suites green (goldens unchanged). UI type-check clean. In-app
+  verification pending (per the never-commit-untested rule).
+
+### Drawing GEOMETRY + SYMBOLS tabs — Phases 2+3 (feature/ISO-drawing-fix, in progress)
+
+The GEOMETRY tab (Center Mark / Centerline / Edge Extension) and the
+SYMBOLS tab (Surface Finish / Welding / Tolerance Frame / Datum /
+Balloon) are live — all eight ride the Phase 1 annotation pipeline
+(no new commands).
+
+- **Emitters** (`drawing_annotation_geometry.cpp`): the shared
+  default-direction helper + `emit_chain_line` (ISO 128-2 chain,
+  pre-dashed — annotation primitives bypass the view-geometry dashing
+  pass; mirrors the flatten's Annex-A span math).  center_mark = cross
+  ±2.5 mm; centerline = chain through both centers ±3 mm;
+  edge_extension = 5 mm outward from the snapped end (attach_param
+  0/1); surface_finish = ISO 1302 check + value; welding = arrow +
+  ISO 2553 reference line + text above; tolerance_frame = ISO 1101
+  14×7 frame + centered text; datum = filled triangle + letter box;
+  balloon = circle r3.5 + leader + centered number.
+- **Resolution** (`drawing_resolution.cpp`): centerline rejects
+  concentric circles; edge_extension's preview root is the SNAPPED
+  end (not the raw pick — preview/commit parity); `resolve_pick`
+  gained `prefer_witness_source` — annotation picks take the REAL
+  edge over a coincident silhouette (axis-view rim circles), the
+  dimension measurer keeps the strict refusal.
+- **UI:** GEOMETRY/SYMBOLS ribbon tools arm the shared annotation
+  panel (`armAnnotationTool`); balloon prefills the next number (max
+  numeric balloon text + 1); the centerline panel hints the second
+  pick.  Symbol texts drag like dimensions (leader re-aims).
+- **Tests:** `cad_core_drawing_annotation_test` 9 → 18 tests (center
+  mark end-to-end on a cylinder top view incl. broken-on-delete,
+  kind rejections, centerline validation + chain-span math, extension
+  end-snapping, symbol create/flatten per kind, extensions round-trip)
+  + 7 new goldens (`drawing_annotation_center_mark/_centerline/
+  _edge_extension/_surface_finish/_welding/_tolerance_frame/_datum/
+  _balloon`).  Full suite **66/66** green; tsc clean. In-app
+  verification pending (per the never-commit-untested rule).
+- **Deviation (noted):** centerline has no two-circle end-to-end
+  mutator test (no fixture produces two circles in one view) — its
+  validation + emitter are pinned at the resolution/graphics level
+  and its graphics golden; the create mutator's second-witness mint
+  is 3 lines shared with the covered witness path.
+
 ## 2026-09-17
 
 ### Undo/redo redesign — CAD-standard history (feature/undo-redo, in progress)

@@ -3,9 +3,10 @@
 // existing sub-tab nav (drawingWorkspaces); this component renders
 // the tools of the ACTIVE tab, the contextual toolbar strip while a
 // tool is armed (the SketchToolbar project-strip precedent), and the
-// export buttons.  GEOMETRY / SYMBOLS / ANNOTATE show their planned
-// tools disabled with a "next phase" hint — they light up as R2–R5
-// land.
+// export buttons.  ANNOTATE (Text / Leader Text), GEOMETRY (Center
+// Mark / Centerline / Edge Extension) and SYMBOLS (Surface Finish /
+// Welding / Tolerance Frame / Datum / Balloon) are live as of R5 —
+// each arms the annotation panel with its kind.
 
 import { useTranslation } from "react-i18next";
 
@@ -46,6 +47,11 @@ export interface DrawingRibbonProps {
   projectedParentLabel: string | null;
   projectionAngle: "first_angle" | "third_angle";
   dimensionPanelOpen: boolean;
+  /** The ANNOTATE → Text tool is armed (click-to-place a free note). */
+  noteToolArmed: boolean;
+  /** The armed annotation-panel kind ("leader_text" in P1; the
+   *  GEOMETRY/SYMBOLS kinds join in P2/P3) — drives the active state. */
+  annotationPanelKind: string | null;
   /** A CAD camera snapshot exists (the user oriented the 3D viewport)
    *  — gates the "Current 3D view" strip button. */
   cameraAvailable: boolean;
@@ -54,8 +60,19 @@ export interface DrawingRibbonProps {
   onBaseView: () => void;
   onProjectedView: () => void;
   onSection: () => void;
+  onDetailView: () => void;
   onDeleteView: () => void;
   onDimension: () => void;
+  onText: () => void;
+  onLeaderText: () => void;
+  onCenterMark: () => void;
+  onCenterline: () => void;
+  onEdgeExtension: () => void;
+  onSurfaceFinish: () => void;
+  onWelding: () => void;
+  onToleranceFrame: () => void;
+  onDatum: () => void;
+  onBalloon: () => void;
   onMove: () => void;
   onSheetSettings: () => void;
   onDeleteDrawing: () => void;
@@ -81,14 +98,27 @@ export function DrawingRibbon({
   projectedParentLabel,
   projectionAngle,
   dimensionPanelOpen,
+  noteToolArmed,
+  annotationPanelKind,
   cameraAvailable,
   availableBodies,
   onNewDrawing,
   onBaseView,
   onProjectedView,
   onSection,
+  onDetailView,
   onDeleteView,
   onDimension,
+  onText,
+  onLeaderText,
+  onCenterMark,
+  onCenterline,
+  onEdgeExtension,
+  onSurfaceFinish,
+  onWelding,
+  onToleranceFrame,
+  onDatum,
+  onBalloon,
   onMove,
   onSheetSettings,
   onDeleteDrawing,
@@ -114,12 +144,25 @@ export function DrawingRibbon({
     {
       tool,
       dimensionPanelOpen,
+      noteToolArmed,
+      annotationPanelKind,
       onNewDrawing,
       onBaseView,
       onProjectedView,
       onSection,
+      onDetailView,
       onDeleteView,
       onDimension,
+      onText,
+      onLeaderText,
+      onCenterMark,
+      onCenterline,
+      onEdgeExtension,
+      onSurfaceFinish,
+      onWelding,
+      onToleranceFrame,
+      onDatum,
+      onBalloon,
       onMove,
       onSheetSettings,
       onDeleteDrawing,
@@ -220,12 +263,25 @@ interface TabContext {
 interface TabActions {
   tool: DrawingTool;
   dimensionPanelOpen: boolean;
+  noteToolArmed: boolean;
+  annotationPanelKind: string | null;
   onNewDrawing: () => void;
   onBaseView: () => void;
   onProjectedView: () => void;
   onSection: () => void;
+  onDetailView: () => void;
   onDeleteView: () => void;
   onDimension: () => void;
+  onText: () => void;
+  onLeaderText: () => void;
+  onCenterMark: () => void;
+  onCenterline: () => void;
+  onEdgeExtension: () => void;
+  onSurfaceFinish: () => void;
+  onWelding: () => void;
+  onToleranceFrame: () => void;
+  onDatum: () => void;
+  onBalloon: () => void;
   onMove: () => void;
   onSheetSettings: () => void;
   onDeleteDrawing: () => void;
@@ -272,6 +328,14 @@ function buildToolsForTab(
           onSelect: actions.onSection,
         },
         {
+          id: "detailView",
+          labelKey: "drawing.ribbon.tools.detailView",
+          titleKey: "drawing.ribbon.tools.detailViewTitle",
+          enabled: hasViews,
+          active: actions.tool === "detail_view",
+          onSelect: actions.onDetailView,
+        },
+        {
           id: "deleteView",
           labelKey: "drawing.ribbon.tools.deleteView",
           titleKey: "drawing.ribbon.tools.deleteViewTitle",
@@ -281,11 +345,32 @@ function buildToolsForTab(
         },
       ];
     case "geometry":
-      return placeholderTools([
-        "centerMark",
-        "centerline",
-        "edgeExtension",
-      ]);
+      return [
+        {
+          id: "centerMark",
+          labelKey: "drawing.ribbon.tools.centerMark",
+          titleKey: "drawing.ribbon.tools.centerMarkTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "center_mark",
+          onSelect: actions.onCenterMark,
+        },
+        {
+          id: "centerline",
+          labelKey: "drawing.ribbon.tools.centerline",
+          titleKey: "drawing.ribbon.tools.centerlineTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "centerline",
+          onSelect: actions.onCenterline,
+        },
+        {
+          id: "edgeExtension",
+          labelKey: "drawing.ribbon.tools.edgeExtension",
+          titleKey: "drawing.ribbon.tools.edgeExtensionTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "edge_extension",
+          onSelect: actions.onEdgeExtension,
+        },
+      ];
     case "dimension":
       return [
         {
@@ -298,15 +383,67 @@ function buildToolsForTab(
         },
       ];
     case "symbols":
-      return placeholderTools([
-        "surfaceFinish",
-        "welding",
-        "toleranceFrame",
-        "datum",
-        "balloon",
-      ]);
+      return [
+        {
+          id: "surfaceFinish",
+          labelKey: "drawing.ribbon.tools.surfaceFinish",
+          titleKey: "drawing.ribbon.tools.surfaceFinishTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "surface_finish",
+          onSelect: actions.onSurfaceFinish,
+        },
+        {
+          id: "welding",
+          labelKey: "drawing.ribbon.tools.welding",
+          titleKey: "drawing.ribbon.tools.weldingTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "welding",
+          onSelect: actions.onWelding,
+        },
+        {
+          id: "toleranceFrame",
+          labelKey: "drawing.ribbon.tools.toleranceFrame",
+          titleKey: "drawing.ribbon.tools.toleranceFrameTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "tolerance_frame",
+          onSelect: actions.onToleranceFrame,
+        },
+        {
+          id: "datum",
+          labelKey: "drawing.ribbon.tools.datum",
+          titleKey: "drawing.ribbon.tools.datumTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "datum",
+          onSelect: actions.onDatum,
+        },
+        {
+          id: "balloon",
+          labelKey: "drawing.ribbon.tools.balloon",
+          titleKey: "drawing.ribbon.tools.balloonTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "balloon",
+          onSelect: actions.onBalloon,
+        },
+      ];
     case "annotate":
-      return placeholderTools(["text", "leaderText"]);
+      return [
+        {
+          id: "text",
+          labelKey: "drawing.ribbon.tools.text",
+          titleKey: "drawing.ribbon.tools.textTitle",
+          enabled: hasDrawing,
+          active: actions.noteToolArmed,
+          onSelect: actions.onText,
+        },
+        {
+          id: "leaderText",
+          labelKey: "drawing.ribbon.tools.leaderText",
+          titleKey: "drawing.ribbon.tools.leaderTextTitle",
+          enabled: hasViews,
+          active: actions.annotationPanelKind === "leader_text",
+          onSelect: actions.onLeaderText,
+        },
+      ];
     case "modify":
       return [
         {
@@ -341,16 +478,6 @@ function buildToolsForTab(
         },
       ];
   }
-}
-
-function placeholderTools(ids: string[]): ToolDef[] {
-  return ids.map((id) => ({
-    id,
-    labelKey: `drawing.ribbon.tools.${id}`,
-    titleKey: `drawing.ribbon.tools.${id}`,
-    enabled: false,
-    placeholder: true,
-  }));
 }
 
 // ── The contextual strip ───────────────────────────────────────────
@@ -513,9 +640,11 @@ function DrawingToolStrip({
             ? t("drawing.strip.projectedHint")
             : tool === "section"
               ? t("drawing.strip.sectionHint")
-              : tool === "move"
-                ? t("drawing.strip.moveHint")
-                : t("drawing.strip.deleteHint")}
+              : tool === "detail_view"
+                ? t("drawing.strip.detailHint")
+                : tool === "move"
+                  ? t("drawing.strip.moveHint")
+                  : t("drawing.strip.deleteHint")}
       </span>
     </>
   );

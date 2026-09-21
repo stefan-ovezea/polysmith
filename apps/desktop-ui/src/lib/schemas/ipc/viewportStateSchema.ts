@@ -30,6 +30,7 @@ export const viewportDrawingTextShape = z.object({
   angle_deg: z.number().default(0),
   h_align: z.string().default("center"),
   purpose: z.string().default("dimension"),
+  annotation_id: z.string().optional(),
   stale: z.boolean().default(false),
 });
 
