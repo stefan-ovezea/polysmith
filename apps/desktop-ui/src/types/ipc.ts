@@ -219,6 +219,18 @@ import type {
   DrawingDimensionDeleteCommand,
   DrawingDimensionPreviewCommand,
   DrawingDimensionPreviewPayload,
+  DrawingTemplateSaveCommand,
+  DrawingTemplateLoadCommand,
+  DrawingTemplateSaveResultPayload,
+  DrawingTemplateLoadResultPayload,
+  DrawingNoteCreateCommand,
+  DrawingNoteUpdateCommand,
+  DrawingNoteDeleteCommand,
+  DrawingAnnotationCreateCommand,
+  DrawingAnnotationUpdateCommand,
+  DrawingAnnotationDeleteCommand,
+  DrawingAnnotationPreviewCommand,
+  DrawingAnnotationPreviewPayload,
 } from "./ipc/drawingCommands";
 import type {
   FeatureEntry,
@@ -475,7 +487,8 @@ export interface ViewportVertexPrimitive {
 
 export interface DocumentExportResult {
   file_path: string;
-  format: "step" | "stl" | "gcode";
+  // Model exports plus the drawing-sheet exports (svg/dxf/pdf).
+  format: "step" | "stl" | "dxf" | "iges" | "gcode" | "svg" | "pdf";
   exported_feature_count: number;
 }
 
@@ -720,6 +733,24 @@ export interface DrawingViewPreviewResultEvent {
   payload: DrawingViewPreviewPayload;
 }
 
+export interface DrawingTemplateSaveResultEvent {
+  id: string;
+  type: "drawing_template_save_result";
+  payload: DrawingTemplateSaveResultPayload;
+}
+
+export interface DrawingTemplateLoadResultEvent {
+  id: string;
+  type: "drawing_template_load_result";
+  payload: DrawingTemplateLoadResultPayload;
+}
+
+export interface DrawingAnnotationPreviewEvent {
+  id: string;
+  type: "drawing_annotation_preview";
+  payload: DrawingAnnotationPreviewPayload;
+}
+
 export type CoreMessage =
   | HelloEvent
   | PongEvent
@@ -733,7 +764,10 @@ export type CoreMessage =
   | TrimPreviewResultEvent
   | CornerTrimPreviewResultEvent
   | DrawingDimensionPreviewEvent
+  | DrawingAnnotationPreviewEvent
   | DrawingViewPreviewResultEvent
+  | DrawingTemplateSaveResultEvent
+  | DrawingTemplateLoadResultEvent
   | CamGenerationProgressEvent
   | CamGenerationResultEvent
   | CamPostListResultEvent
@@ -1080,6 +1114,15 @@ export type CoreCommand =
   | DrawingDimensionUpdateCommand
   | DrawingDimensionDeleteCommand
   | DrawingDimensionPreviewCommand
+  | DrawingTemplateSaveCommand
+  | DrawingTemplateLoadCommand
+  | DrawingNoteCreateCommand
+  | DrawingNoteUpdateCommand
+  | DrawingNoteDeleteCommand
+  | DrawingAnnotationCreateCommand
+  | DrawingAnnotationUpdateCommand
+  | DrawingAnnotationDeleteCommand
+  | DrawingAnnotationPreviewCommand
   | RemoveSketchProjectionsCommand
   | RedefineSketchPlaneCommand
   | ProjectFaceIntoSketchCommand

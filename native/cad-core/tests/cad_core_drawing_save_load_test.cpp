@@ -279,7 +279,7 @@ bool test_document_round_trip() {
   document.drawing.active_drawing_id = "drawing-1";
   document.drawing.selected_view_id = "drawing-view-1";
   document.drawing.selected_annotation_id = "drawing-annotation-1";
-  document.drawing.decimal_separator = ",";
+  document.drawing.decimal_separator = ".";
 
   const auto payload = polysmith::protocol::to_payload(document, true);
   const auto drawing_payload = payload.at("drawing");
@@ -537,9 +537,24 @@ bool test_missing_drawing_key_defaults_empty() {
 
   return expect(restored.drawing.drawings.empty() &&
                     !restored.drawing.active_drawing_id.has_value() &&
-                    restored.drawing.decimal_separator == ",",
+                    restored.drawing.decimal_separator == ".",
                 "missing drawing key must default to empty "
                 "DrawingDocumentData");
+}
+
+bool test_legacy_comma_separator_migrates() {
+  // The separator was never user-settable: a stored "," is the old
+  // default, so the load path maps it to ".".
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.get_document().value();
+  document.drawing.decimal_separator = ",";
+
+  auto payload = polysmith::protocol::to_payload(document, true);
+  const auto restored = polysmith::protocol::document_from_payload(payload);
+
+  return expect(restored.drawing.decimal_separator == ".",
+                "a stored ',' separator must load as '.'");
 }
 
 }  // namespace
@@ -582,6 +597,14 @@ int main() {
 
   std::cout << "  Test 5: missing drawing key defaults empty... ";
   if (test_missing_drawing_key_defaults_empty()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 6: legacy ',' separator migrates to '.'... ";
+  if (test_legacy_comma_separator_migrates()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

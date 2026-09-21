@@ -5,6 +5,7 @@ import type {
   ArmedSketchConstraint,
   ConstraintType,
   DocumentState,
+  DrawingAnnotationPreviewPayload,
   DrawingDimensionPreviewPayload,
   DrawingViewPreviewPayload,
   GhostFrame,
@@ -73,6 +74,9 @@ export interface ViewportPanelProps {
   // P6: the non-mutating dimension preview drawn on the sheet (the
   // core computes value + graphics per pick).
   drawingDimensionPreview?: DrawingDimensionPreviewPayload | null;
+  // Annotation tools (GEOMETRY/SYMBOLS/ANNOTATE): the same live-preview
+  // contract, keyed by annotation kind.
+  drawingAnnotationPreview?: DrawingAnnotationPreviewPayload | null;
   // Insert View ghost (drawing_view_preview_result) — translucent
   // geometry + placement frame on the active sheet.
   drawingViewPreview?: DrawingViewPreviewPayload | null;
@@ -125,6 +129,50 @@ export interface ViewportPanelProps {
   // workspace delivers the clicked sheet-mm point.
   drawingPickArmed?: boolean;
   onDrawingPick?: (point: [number, number]) => void;
+  // Whole-dimension / annotation / note text drag: a press on a
+  // dimension, annotation, or note text starts a drag whose ghost is
+  // a label sprite; pointer-up commits the placement (the owner
+  // selects the update command).  Active in every drawing mode
+  // except Insert-armed and pick-armed.
+  drawingDimensionTextDrag?: {
+    id: string;
+    text: string;
+    heightMm: number;
+    current: [number, number];
+  } | null;
+  onDrawingDimensionTextDragStart?: (
+    hit: {
+      owner: "dimension" | "annotation" | "note";
+      drawingId: string;
+      id: string;
+      /** The note's sheet index (absolute-position drops shift the
+       *  first-sheet pointer frame back by the scene offset). */
+      sheetIndex: number;
+      text: string;
+      heightMm: number;
+    },
+    point: [number, number],
+  ) => void;
+  onDrawingDimensionTextDragMove?: (point: [number, number]) => void;
+  onDrawingDimensionTextDrop?: (point: [number, number]) => void;
+  // Detail View (ISO 128-3 §4.12): while armed, a press inside a
+  // projection view's CONTENT bounds starts a circle drag (center =
+  // press point, radius follows the cursor); a release ≥ 2 mm
+  // commits.  The ghost is a local overlay — no core round-trip
+  // until the drop.
+  drawingDetailDragArmed?: boolean;
+  drawingDetailDrag?: {
+    center: [number, number];
+    cursor: [number, number];
+    /** The label letter the commit will mint ("A", "B", …). */
+    label: string;
+  } | null;
+  onDrawingDetailDragStart?: (
+    viewId: string,
+    center: [number, number],
+  ) => void;
+  onDrawingDetailDragMove?: (point: [number, number]) => void;
+  onDrawingDetailDragFinish?: (point: [number, number]) => void;
   wcsOrientation?: string;
   // CAM setup the viewport renders (WCS marker, stock box, origin
   // snap candidates) — falls back to the first setup.

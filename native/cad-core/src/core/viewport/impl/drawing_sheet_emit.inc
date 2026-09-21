@@ -80,6 +80,7 @@
         out_text.angle_deg = t.angle_deg;
         out_text.h_align = t.h_align;
         out_text.purpose = t.purpose;
+        out_text.annotation_id = t.annotation_id;
         out_text.stale = t.stale;
         out_sheet.texts.push_back(std::move(out_text));
       }

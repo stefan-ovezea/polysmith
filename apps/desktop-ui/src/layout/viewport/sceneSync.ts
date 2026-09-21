@@ -3,6 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type {
   DocumentState,
+  DrawingAnnotationPreviewPayload,
   DrawingDimensionPreviewPayload,
   DrawingViewPreviewPayload,
   GhostFrame,
@@ -146,6 +147,9 @@ interface SyncViewportSceneParams {
   /** P6: the non-mutating dimension preview (drawn on the sheet) —
    *  part of the rebuild key so every preview reply repaints it. */
   drawingDimensionPreview: DrawingDimensionPreviewPayload | null;
+  /** Annotation tools (GEOMETRY/SYMBOLS/ANNOTATE): the same live-preview
+   *  contract, keyed by annotation kind. */
+  drawingAnnotationPreview: DrawingAnnotationPreviewPayload | null;
   /** Insert View ghost (drawing_view_preview_result) — the uncommitted
    *  view's translucent geometry + placement frame, also part of the
    *  rebuild key. */
@@ -153,6 +157,15 @@ interface SyncViewportSceneParams {
   /** In-progress mouse drag of a committed view — a dashed frame
    *  ghost following the cursor until the drop commits the move. */
   drawingViewDrag: { min: [number, number]; max: [number, number]; label: string } | null;
+  /** In-progress mouse drag of a dimension/annotation/note text — a
+   *  label ghost following the cursor until the drop commits the
+   *  placement. */
+  drawingDimensionTextDrag: {
+    id: string;
+    text: string;
+    heightMm: number;
+    current: [number, number];
+  } | null;
   /** R1 delete tool's selection — the frame renders highlighted. */
   drawingSelectedViewId: string | null;
   /** R1 local ghost frame (cursor-derived, no core round-trip): the
@@ -163,6 +176,13 @@ interface SyncViewportSceneParams {
    *  the local frame owns the placement frame, and the content hides
    *  when the ghost hides (dead zone, cursor off-sheet). */
   drawingGhostAnchored: boolean;
+  /** Detail View circle drag (center + cursor + upcoming label) — a
+   *  dashed circle ghost following the cursor until the drop. */
+  drawingDetailDrag: {
+    center: [number, number];
+    cursor: [number, number];
+    label: string;
+  } | null;
   wcsOrientation: string;
   activeCamSetupId?: string | null;
   /** True while the CAM origin pick is armed — draws the snap-target
@@ -223,10 +243,13 @@ export function syncViewportScene(params: SyncViewportSceneParams) {
       drag: params.refs.drawingDragGroupRef,
     },
     preview: params.drawingDimensionPreview,
+    annotationPreview: params.drawingAnnotationPreview,
     viewPreview: params.drawingViewPreview,
     viewDrag: params.drawingViewDrag,
+    dimTextDrag: params.drawingDimensionTextDrag,
     ghostFrame: params.drawingGhostFrame,
     ghostAnchored: params.drawingGhostAnchored,
+    detailDrag: params.drawingDetailDrag,
   });
 
   releaseEndpointDragPreview({
@@ -425,6 +448,15 @@ function viewportSceneBuildKey({
         sheet.views.map((v) =>
           [v.view_id, v.stale, v.min.join(","), v.max.join(",")].join("|"),
         ).join("~"),
+        // Committed dimension/annotation/note placements: a drag
+        // commit changes text positions (and glyphs) — they must
+        // invalidate the sheet.
+        sheet.texts
+          .filter((t) =>
+            ["dimension", "annotation", "note"].includes(t.purpose),
+          )
+          .map((t) => `${t.annotation_id ?? ""}@${t.position.join(",")}`)
+          .join("~"),
       ].join(":"),
     )
     .join(";") ?? "nosheets";

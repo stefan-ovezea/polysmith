@@ -76,9 +76,29 @@ struct SectionDefinition {
   std::optional<std::string> construction_plane_id;
 };
 
+// ── Detail definition (ISO 128-3 enlarged features) ───────────────
+
+/// A detail view enlarges a circular region of a PARENT view.  The
+/// region is anchored in the parent's projection plane (view-mm at
+/// 1:1) — the refresh clips the parent's cached projection to the
+/// circle, so the detail follows the parent through every recompute
+/// (the TNP mantra: no stored topology, only the parent link + a
+/// view-space anchor).
+struct DetailDefinition {
+  std::string parent_view_id;
+  /// Circle center in the PARENT's view coordinates (view-mm).
+  std::array<double, 2> center = {0.0, 0.0};
+  /// Circle radius in the parent's view-mm.
+  double radius = 1.0;
+  /// The identification letter ("A", "B", ...) — the enlarged view
+  /// is labeled "<label> (<scale>)", the parent carries the circle
+  /// marker + the bare letter.
+  std::string label = "A";
+};
+
 // ── View ──────────────────────────────────────────────────────────
 
-/// "projection" | "section" | "axonometric"
+/// "projection" | "section" | "axonometric" | "detail"
 using DrawingViewKind = std::string;
 
 /// A single view on a sheet.  Views belong to exactly one sheet; the
@@ -90,7 +110,7 @@ struct DrawingView {
   DrawingViewKind kind = "projection";
   /// "front" | "top" | "right" | "bottom" | "left" | "back" — UI
   /// convenience only; the refresh derives the frame.  Empty for
-  /// custom frames / sections / axonometric views.
+  /// custom frames / sections / axonometric / detail views.
   std::string standard_view;
   /// Resolved custom frame — authoritative when standard_view is
   /// empty and kind != "section".
@@ -103,6 +123,9 @@ struct DrawingView {
   std::array<double, 2> sheet_position = {0.0, 0.0};
   bool show_hidden = false;
   std::optional<SectionDefinition> section;
+  /// Detail views reference their parent view (the clip window is
+  /// anchored in the parent's projection plane).
+  std::optional<DetailDefinition> detail;
   /// Reference whose resolution failed (a body id, an edge witness
   /// body id, ...).  Present only while the view is degraded.
   std::optional<std::string> broken_ref;
@@ -156,6 +179,15 @@ struct DrawingSheet {
   TitleBlock title_block;
 };
 
+/// A setup-only drawing template (the CREATE DRAWING dialog's
+/// save/load format): sheets carry sheet settings + title block,
+/// never ids, view ids, views or annotations — those are minted at
+/// drawing_create time.
+struct DrawingTemplate {
+  std::string name;
+  std::vector<DrawingSheet> sheets;
+};
+
 // ── Annotation ────────────────────────────────────────────────────
 
 /// ISO 129-1 dimension kinds (the semantic vocabulary mirrors
@@ -163,6 +195,13 @@ struct DrawingSheet {
 /// stays open).
 ///   "linear" | "aligned" | "angular" | "radius" | "diameter" |
 ///   "ordinate" | "baseline" | "leader"
+///
+/// Plus the annotation kinds added by the GEOMETRY / SYMBOLS /
+/// ANNOTATE tabs (R4+R5).  Unlike dimensions they carry no measured
+/// value — their content is the user text (text_override):
+///   "center_mark" | "centerline" | "edge_extension" |
+///   "leader_text" | "surface_finish" | "welding" |
+///   "tolerance_frame" | "datum" | "balloon"
 using AnnotationKind = std::string;
 
 /// Extension payload for future ISO dimensions (tolerance frames
@@ -185,8 +224,16 @@ struct Annotation {
   /// ("drawing-edge-N", the cam_capture_edge_reference precedent).
   std::string source_edge_id;
   SourceEdgeWitness witness;
-  /// Second attachment (distance/angular between two edges).
+  /// Second attachment (distance/angular between two edges, or the
+  /// second circle of a centerline).
   std::optional<SourceEdgeWitness> witness_2;
+  /// Point attachments (leader_text, surface_finish, welding,
+  /// tolerance_frame, datum, balloon, edge_extension end choice):
+  /// the attachment's param fraction (0..1) over the witness
+  /// param_range.  Re-mapped onto the fresh record's parameter span at
+  /// resolve time — it follows the edge across recomputes, never a
+  /// stored coordinate.
+  std::optional<double> attach_param;
   /// User text override; empty = measured value.
   std::optional<std::string> text_override;
   /// Dimension prefix: "" | "⌀" | "R".  ⌀ is omittable only when the
@@ -197,11 +244,34 @@ struct Annotation {
   /// Human-readable degradation message while the last-known value
   /// is shown.
   std::string warning;
-  /// Cosmetic placement override (offset of the dimension text from
-  /// its default position, sheet-mm).  Cosmetic edits never
-  /// re-project.
+  /// Cosmetic placement override (sheet-mm) — the dimension's
+  /// PLACEMENT POINT: the text lands at its default position plus
+  /// this offset and the dimension line / extension lines / leader /
+  /// arc derive from that final text position (see
+  /// build_dimension_graphics).  Cosmetic edits never re-project.
   std::optional<std::array<double, 2>> text_offset;
   bool arrow_flip = false;
+};
+
+// ── Sheet note ─────────────────────────────────────────────────────
+
+/// A free text note on a sheet (the ANNOTATE → Text tool).  Unlike
+/// Annotation, a note is NOT model-anchored: its position is direct
+/// sheet-mm state (the anchor is the text CENTER) and it survives
+/// view/body edits untouched.  Leader text is a separate Annotation
+/// kind ("leader_text") — that one IS model-anchored.
+struct SheetNote {
+  std::string note_id;
+  std::string sheet_id;
+  std::string text;
+  /// Anchor position (sheet-mm) — the text CENTER, matching SheetText.
+  std::array<double, 2> position = {0.0, 0.0};
+  /// ISO 3098 letter height in mm.
+  double height_mm = 3.5;
+  double angle_deg = 0.0;
+  /// "left" | "center" | "right" — stored for the future; the P1
+  /// emitters render center-anchored only.
+  std::string h_align = "center";
 };
 
 // ── Drawing ───────────────────────────────────────────────────────
@@ -215,6 +285,8 @@ struct Drawing {
   std::vector<DrawingSheet> sheets;
   std::vector<DrawingView> views;
   std::vector<Annotation> annotations;
+  /// Free sheet notes (ANNOTATE → Text).
+  std::vector<SheetNote> notes;
 };
 
 // ── Document-level drawing data ───────────────────────────────────
@@ -226,9 +298,10 @@ struct DrawingDocumentData {
   std::optional<std::string> active_drawing_id;
   std::optional<std::string> selected_view_id;
   std::optional<std::string> selected_annotation_id;
-  /// ISO 129-1: decimal comma.  One formatting knob, honored by
-  /// every dimension renderer and export backend.
-  std::string decimal_separator = ",";
+  /// Decimal separator for dimension values ("." or ",") — one
+  /// formatting knob, honored by every dimension renderer and export
+  /// backend.
+  std::string decimal_separator = ".";
 };
 
 // ══════════════════════════════════════════════════════════════════

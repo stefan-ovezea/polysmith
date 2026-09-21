@@ -1,5 +1,6 @@
 #include "core/document/document.h"
 #include "core/cam/cam_runtime.h"
+#include "core/drawing/drawing_annotation_geometry.h"
 #include "core/drawing/drawing_projection.h"
 #include "core/drawing/drawing_refresh.h"
 #include "core/drawing/drawing_resolution.h"

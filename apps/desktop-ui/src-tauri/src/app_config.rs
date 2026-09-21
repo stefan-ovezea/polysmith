@@ -71,6 +71,30 @@ pub fn bootstrap_app_config(
         let theme_path = themes_path.join(theme.file_name);
         if !theme_path.exists() {
             write_json(&theme_path, &theme.contents)?;
+            continue;
+        }
+        // The stored file may predate tokens added to the bundled theme
+        // (e.g. --cad-muted) — backfill the missing color keys so the
+        // UI never renders against an unresolved CSS variable.  Only
+        // MISSING keys are added: user edits to existing values stay.
+        let stored = fs::read_to_string(&theme_path).map_err(|error| error.to_string())?;
+        let mut stored_value: Value =
+            serde_json::from_str(&stored).map_err(|error| error.to_string())?;
+        let Some(stored_colors) = stored_value.get_mut("colors").and_then(|v| v.as_object_mut())
+        else {
+            continue;
+        };
+        let mut changed = false;
+        if let Some(bundled_colors) = theme.contents.get("colors").and_then(|v| v.as_object()) {
+            for (key, value) in bundled_colors {
+                if !stored_colors.contains_key(key) {
+                    stored_colors.insert(key.clone(), value.clone());
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            write_json(&theme_path, &stored_value)?;
         }
     }
 

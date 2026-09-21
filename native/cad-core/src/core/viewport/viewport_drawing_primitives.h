@@ -65,6 +65,9 @@ struct ViewportDrawingText {
   /// "left" | "center" | "right"
   std::string h_align = "center";
   std::string purpose = "dimension";
+  /// Owning annotation — set only for dimension texts (the UI hit
+  /// test maps a picked text back to its annotation).
+  std::optional<std::string> annotation_id;
   /// true when the dimension is degraded (last-known value shown).
   bool stale = false;
 };

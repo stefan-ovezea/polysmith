@@ -54,8 +54,9 @@ struct SheetPrimitive {
   /// Why the primitive exists: "view_geometry" | "hatch" |
   /// "cutting_plane" | "frame" | "centring_mark" | "grid_ref" |
   /// "projection_symbol" | "title_block" | "dimension" |
-  /// "section_label" | "text_glyph" — the backends and the UI can
-  /// filter on it (e.g. the DXF layer split).
+  /// "section_label" | "annotation" | "text_glyph" — the backends
+  /// and the UI can filter on it (e.g. the DXF layer split).
+  /// "annotation" is the GEOMETRY/SYMBOLS/ANNOTATE graphics.
   std::string purpose = "view_geometry";
   /// "visible" | "hidden" — kept for coloring even though dash
   /// patterns are already applied.
@@ -82,9 +83,14 @@ struct SheetText {
   /// "left" | "center" | "right"
   std::string h_align = "center";
   /// Why the text exists: "dimension" | "title_block" |
-  /// "section_label".
+  /// "section_label" | "annotation" | "note".
   std::string purpose = "dimension";
-  /// true when the dimension is degraded (last-known value shown).
+  /// Owning record — the annotation id for dimension/annotation
+  /// texts, the note id for free notes; empty for title-block and
+  /// section-label texts.
+  std::optional<std::string> annotation_id;
+  /// true when the owning dimension/annotation is degraded
+  /// (last-known value/placement shown).
   bool stale = false;
 };
 
@@ -161,7 +167,7 @@ struct SheetPrimitiveStream {
   std::vector<SheetHatchRegion> hatch_regions;
   /// The document's dimension decimal separator — the annotated-DXF
   /// DIMSTYLE dimdsep mirrors it.
-  std::string decimal_separator = ",";
+  std::string decimal_separator = ".";
 };
 
 /// ISO 5457 trimmed sheet sizes (portrait): A0..A4.

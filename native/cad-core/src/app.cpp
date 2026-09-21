@@ -36,9 +36,11 @@
 #include "core/cam/tool_library.h"
 #include "core/cam/tool_table_io.h"
 #include "core/document/document.h"
+#include "core/drawing/drawing_annotation_geometry.h"
 #include "core/drawing/drawing_dimension_geometry.h"
 #include "core/drawing/drawing_resolution.h"
 #include "core/drawing/drawing_runtime.h"
+#include "core/drawing/drawing_templates.h"
 #include "core/sketch/formula_eval.h"
 #include "core/diagnostics/logger.h"
 #include "core/sketch/trim_engine.h"
@@ -109,6 +111,7 @@ void CadCoreApp::handle_command_line(const CommandMessage& command) {
 #include "app/impl/trim_preview_commands.inc"
 #include "app/impl/cam_commands.inc"
 #include "app/impl/drawing_commands.inc"
+#include "app/impl/drawing_template_commands.inc"
 }
 
 void CadCoreApp::run() {

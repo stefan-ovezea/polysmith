@@ -67,6 +67,33 @@ export function awaitDocumentChange(
   });
 }
 
+// The viewport twin of awaitDocumentChange — waits for a fresh
+// viewport_state (the drawing auto-fit needs the sheet view bounds,
+// which live only in the viewport payload, not the document).
+export function awaitViewportChange(
+  predicate: (next: ViewportState, previous: ViewportState | null) => boolean,
+  timeoutMs = 4000,
+): Promise<ViewportState> {
+  return new Promise((resolve, reject) => {
+    const initial = useCadCoreStore.getState().viewport;
+    const timer = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error("awaitViewportChange: timed out"));
+    }, timeoutMs);
+    const unsubscribe = useCadCoreStore.subscribe((state) => {
+      const vp = state.viewport;
+      if (!vp || vp === initial) {
+        return;
+      }
+      if (predicate(vp, initial)) {
+        window.clearTimeout(timer);
+        unsubscribe();
+        resolve(vp);
+      }
+    });
+  });
+}
+
 export function awaitDocumentExport(
   predicate: (next: DocumentExportResult) => boolean,
   timeoutMs = 10000,

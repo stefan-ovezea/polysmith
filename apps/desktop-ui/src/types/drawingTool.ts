@@ -14,7 +14,8 @@ export type DrawingTool =
   | "projected_view"
   | "section"
   | "move"
-  | "delete_view";
+  | "delete_view"
+  | "detail_view";
 
 export type StandardViewName =
   | "front"

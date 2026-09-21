@@ -82,10 +82,14 @@ Communication is via a JSON IPC protocol over `stdin`/`stdout`. The CAD core is 
   streaming over serial (connect, ok-handshake streaming, status polling,
   jog/home, pause/resume)
 - ISO drawing workbench: drawings with ISO 5457 sheets (A0–A4, centring
-  marks, grid-reference ticks) and an ISO 7200 title block; base, projected
-  (first/third-angle), and section views with HLR projection, ISO 128 line
-  styles, and ISO 128-3 hatching; Fusion-style ribbon with a base→projected→
-  section tool flow and cursor-following ghost views
+  marks, grid-reference ticks) and an ISO 7200 title block; a Fusion-style
+  CREATE DRAWING dialog + saveable templates; base, projected
+  (first/third-angle), section, and detail views (ISO 128-3 §4.12 enlarged
+  features) with HLR projection, ISO 128 line styles, and ISO 128-3
+  hatching; dimensions (linear/distance/angular/radius/diameter, mouse
+  drag), free notes, and the ANNOTATE (text/leader), GEOMETRY (center
+  mark/centerline/edge extension), and SYMBOLS (surface finish, welding,
+  tolerance frame, datum, balloon) tools; cursor-following ghost views
 - Drawing export: SVG, DXF, and PDF (libharu); the osifont LGPL font is
   bundled for drawing text
 
@@ -348,14 +352,15 @@ dimensions, trim, project, fillets, sketched text), the interaction layer
 (snap, drag, selection, view cube, draft dimensions), and the full CAM
 workspace (mill + laser operations, post processors, machine library,
 LaserGRBL integration, direct GRBL streaming — verified on the user's real
-machine), and the ISO drawing workbench (sheets, base/projected/section
-views, SVG/DXF/PDF export; the geometry/symbols/annotate ribbon tabs are
-the next phase).
+machine), and the ISO drawing workbench (CREATE DRAWING dialog +
+templates, base/projected/section/detail views, dimensions, notes,
+the ANNOTATE/GEOMETRY/SYMBOLS tools, and SVG/DXF/PDF export).
 
 Current focus:
 
 - the last remaining v1 feature: the measure tool
-- drawing workbench: user in-app verification, then the geometry/symbols/annotate tabs
+- drawing workbench: user verification of the latest round (detail views),
+  then the merge to `dev`
 - laser workflow polish from real-machine feedback
 
 ## Wiki

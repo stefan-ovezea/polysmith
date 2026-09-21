@@ -42,6 +42,7 @@ namespace {
 
 using polysmith::core::Annotation;
 using polysmith::core::BoxFeatureParameters;
+using polysmith::core::DimensionGraphics;
 using polysmith::core::DocumentManager;
 using polysmith::core::DocumentState;
 using polysmith::core::Drawing;
@@ -496,8 +497,10 @@ bool test_ambiguity_refuses() {
   });
   DrawingView view = simple_view();
   std::string error;
+  // Dimensions keep the strict ambiguity rule — prefer_witness_source
+  // is false (that relaxation belongs to the annotation tools).
   const auto pick = polysmith::core::resolve_pick(projection, {10.0, 10.0},
-                                                  5.0, &error);
+                                                  5.0, false, &error);
   return expect(!pick.has_value() && !error.empty(),
                 "coincident edges from different bodies refuse the pick");
 }
@@ -621,7 +624,266 @@ bool test_formatting() {
   return expect(angle == "45\xC2\xB0", "angles carry °");
 }
 
-// ── Test 11: golden (A4 sheet with one linear dimension) ───────────
+// ── Test 11: text_offset drags the whole dimension ─────────────────
+
+bool test_whole_dimension_drag() {
+  // ── Linear single: perpendicular drag moves the dimension line ──
+  {
+    DimensionFixture fixture = make_fixture();
+    DocumentState document = fixture.manager.drawing_dimension_create(
+        fixture.drawing_id, fixture.view_id, "linear", {40.0, 50.0},
+        std::nullopt, std::nullopt);
+    const std::string annotation_id =
+        document.drawing.drawings[0].annotations[0].annotation_id;
+    document = fixture.manager.drawing_dimension_update(
+        fixture.drawing_id, annotation_id, std::nullopt, std::nullopt,
+        std::nullopt, std::array<double, 2>{0.0, 5.0});
+    const auto flat = polysmith::core::flatten_sheet(
+        document, fixture.drawing_id, fixture.sheet_id);
+    if (!expect(flat.has_value(), "perpendicular drag flattens")) {
+      return false;
+    }
+    // The horizontal dimension line moves from y 58 to y 63; the
+    // extension lines stretch from y 52 to y 65.
+    double dim_line_y = 0.0;
+    int ext_lines = 0;
+    bool ext_ok = true;
+    for (const auto& p : flat->primitives) {
+      if (p.purpose != "dimension" || p.kind != "line") {
+        continue;
+      }
+      if (near(p.p0[1], p.p1[1]) && !near(p.p0[0], p.p1[0])) {
+        dim_line_y = p.p0[1];
+      } else if (near(p.p0[0], p.p1[0])) {
+        ++ext_lines;
+        ext_ok = ext_ok &&
+                 near(std::min(p.p0[1], p.p1[1]), 52.0) &&
+                 near(std::max(p.p0[1], p.p1[1]), 65.0);
+      }
+    }
+    if (!expect(near(dim_line_y, 63.0),
+                "perpendicular drag moves the dim line to y 63")) {
+      return false;
+    }
+    if (!expect(ext_lines == 2 && ext_ok,
+                "extension lines stretch to the moved dim line")) {
+      return false;
+    }
+    const SheetText* text = find_text(flat.value(), "dimension");
+    if (!expect(text != nullptr && near(text->position[0], 40.0) &&
+                    near(text->position[1], 65.75),
+                "text follows to (40, 65.75)")) {
+      return false;
+    }
+    if (!expect(text->annotation_id.has_value() &&
+                    text->annotation_id.value() == annotation_id,
+                "dimension text carries its annotation_id")) {
+      return false;
+    }
+
+    // ── Linear single: parallel drag slides only the text ──
+    document = fixture.manager.drawing_dimension_update(
+        fixture.drawing_id, annotation_id, std::nullopt, std::nullopt,
+        std::nullopt, std::array<double, 2>{5.0, 0.0});
+    const auto flat_parallel = polysmith::core::flatten_sheet(
+        document, fixture.drawing_id, fixture.sheet_id);
+    if (!expect(flat_parallel.has_value(), "parallel drag flattens")) {
+      return false;
+    }
+    bool dim_line_default = false;
+    for (const auto& p : flat_parallel->primitives) {
+      if (p.purpose != "dimension" || p.kind != "line") {
+        continue;
+      }
+      if (near(p.p0[1], p.p1[1]) && !near(p.p0[0], p.p1[0]) &&
+          near(p.p0[1], 58.0)) {
+        dim_line_default = true;
+      }
+    }
+    if (!expect(dim_line_default,
+                "parallel drag keeps the dim line at the default y 58")) {
+      return false;
+    }
+    const SheetText* parallel_text =
+        find_text(flat_parallel.value(), "dimension");
+    if (!expect(parallel_text != nullptr &&
+                    near(parallel_text->position[0], 45.0) &&
+                    near(parallel_text->position[1], 60.75),
+                "parallel drag slides the text to (45, 60.75)")) {
+      return false;
+    }
+  }
+
+  // ── Radius: leader re-aims through the dragged text ──
+  {
+    ProjectionResult projection = make_projection(
+        {make_circle_record(10.0, 10.0, 7.5, 0.0, 2.0 * 3.141592653589793,
+                            "body-a")});
+    DrawingView view = simple_view();
+    std::string error;
+    const auto measured = polysmith::core::measure_from_picks(
+        projection, view, "radius", {10.0, 17.5}, std::nullopt, 5.0, ".",
+        nullptr, &error);
+    if (!expect(measured.has_value(), "radius resolves")) {
+      return false;
+    }
+    // Default: the leader points at the picked arc point.
+    Annotation plain;
+    DimensionGraphics default_g = polysmith::core::build_dimension_graphics(
+        *measured, plain, view, false);
+    if (!expect(default_g.semantic.has_value() &&
+                    near(default_g.semantic->arc_point.value()[0], 10.0) &&
+                    near(default_g.semantic->arc_point.value()[1], 17.5),
+                "default radius leader keeps the picked arc point")) {
+      return false;
+    }
+    // With an offset the leader re-aims at the dragged text.
+    Annotation dragged;
+    dragged.text_offset = std::array<double, 2>{0.0, 10.0};
+    DimensionGraphics g = polysmith::core::build_dimension_graphics(
+        *measured, dragged, view, false);
+    if (!expect(g.text.has_value() && g.semantic.has_value(),
+                "radius graphics complete")) {
+      return false;
+    }
+    const auto t = g.text->position;               // final text anchor
+    const auto c = g.semantic->def_point;          // center (10, 10)
+    const double r_len = g.semantic->leader_length.value();
+    const auto dir = std::array<double, 2>{
+        (t[0] - c[0]) / std::hypot(t[0] - c[0], t[1] - c[1]),
+        (t[1] - c[1]) / std::hypot(t[0] - c[0], t[1] - c[1])};
+    if (!expect(near(r_len, 7.5), "leader length stays the radius")) {
+      return false;
+    }
+    if (!expect(near(g.semantic->arc_point.value()[0], c[0] + dir[0] * r_len,
+                     1e-6) &&
+                    near(g.semantic->arc_point.value()[1],
+                         c[1] + dir[1] * r_len, 1e-6),
+                "leader re-aims toward the dragged text")) {
+      return false;
+    }
+  }
+
+  // ── Diameter: line stays through the center, re-aimed ──
+  {
+    ProjectionResult projection = make_projection(
+        {make_circle_record(10.0, 10.0, 7.5, 0.0, 2.0 * 3.141592653589793,
+                            "body-a")});
+    DrawingView view = simple_view();
+    std::string error;
+    const auto measured = polysmith::core::measure_from_picks(
+        projection, view, "diameter", {10.0, 17.5}, std::nullopt, 5.0, ".",
+        nullptr, &error);
+    if (!expect(measured.has_value(), "diameter resolves")) {
+      return false;
+    }
+    // Default: the line keeps the picked direction (vertical here).
+    Annotation plain;
+    DimensionGraphics default_g = polysmith::core::build_dimension_graphics(
+        *measured, plain, view, false);
+    const SheetPrimitive& default_line = default_g.primitives[0];
+    if (!expect(near(default_line.p0[0], 10.0) &&
+                    near(default_line.p1[0], 10.0),
+                "default diameter line keeps the picked direction")) {
+      return false;
+    }
+    Annotation dragged;
+    dragged.text_offset = std::array<double, 2>{0.0, 10.0};
+    DimensionGraphics g = polysmith::core::build_dimension_graphics(
+        *measured, dragged, view, false);
+    if (!expect(g.text.has_value() && g.semantic.has_value() &&
+                    !g.primitives.empty(), "diameter graphics complete")) {
+      return false;
+    }
+    const auto t = g.text->position;
+    const double r_len = g.semantic->leader_length.value();
+    // The re-aimed line runs through the center: its endpoints are
+    // opposite points of the circle.
+    const SheetPrimitive& line = g.primitives[0];
+    const double mid_x = (line.p0[0] + line.p1[0]) / 2.0;
+    const double mid_y = (line.p0[1] + line.p1[1]) / 2.0;
+    if (!expect(near(mid_x, 10.0) && near(mid_y, 10.0) &&
+                    near(std::hypot(line.p0[0] - line.p1[0],
+                                    line.p0[1] - line.p1[1]),
+                         2.0 * r_len, 1e-6),
+                "re-aimed diameter line passes through the center")) {
+      return false;
+    }
+    // The line direction is the text direction.
+    const auto dir = std::array<double, 2>{
+        (t[0] - 10.0) / std::hypot(t[0] - 10.0, t[1] - 10.0),
+        (t[1] - 10.0) / std::hypot(t[0] - 10.0, t[1] - 10.0)};
+    if (!expect(near(line.p1[0], 10.0 + dir[0] * r_len, 1e-6) &&
+                    near(line.p1[1], 10.0 + dir[1] * r_len, 1e-6),
+                "diameter line aims at the dragged text")) {
+      return false;
+    }
+  }
+
+  // ── Angular: arc radius follows the dragged text, clamped ──
+  {
+    ProjectionResult angled = make_projection({
+        make_line_record(0.0, 0.0, 20.0, 0.0, "body-a"),
+        make_line_record(0.0, 0.0, 20.0, 20.0, "body-a"),
+    });
+    DrawingView view = simple_view();
+    std::string error;
+    const auto measured = polysmith::core::measure_from_picks(
+        angled, view, "angular", {10.0, 0.0},
+        std::array<double, 2>{10.0, 10.0}, 5.0, ".", nullptr, &error);
+    if (!expect(measured.has_value(), "angular resolves")) {
+      return false;
+    }
+    const double mid_ang = 3.141592653589793 / 8.0;
+    const std::array<double, 2> mid_dir{std::cos(mid_ang), std::sin(mid_ang)};
+    const auto arc_radius = [](const DimensionGraphics& graphics) {
+      for (const auto& p : graphics.primitives) {
+        if (p.kind == "circle_arc") {
+          return p.radius.value();
+        }
+      }
+      return -1.0;
+    };
+    // Default: the fixed 12 mm angular arc.
+    Annotation plain;
+    DimensionGraphics default_g = polysmith::core::build_dimension_graphics(
+        *measured, plain, view, false);
+    if (!expect(near(arc_radius(default_g), 12.0),
+                "default angular arc radius is 12")) {
+      return false;
+    }
+    // Outward: the text lands 28 mm from the apex → radius 22.
+    Annotation outward;
+    outward.text_offset = std::array<double, 2>{mid_dir[0] * 10.0,
+                                                mid_dir[1] * 10.0};
+    DimensionGraphics out_g = polysmith::core::build_dimension_graphics(
+        *measured, outward, view, false);
+    if (!expect(out_g.text.has_value(),
+                "angular text present")) {
+      return false;
+    }
+    const double dist_out = std::hypot(out_g.text->position[0],
+                                       out_g.text->position[1]);
+    if (!expect(near(dist_out, 28.0, 1e-6) &&
+                    near(arc_radius(out_g), dist_out - 6.0, 1e-6),
+                "outward drag grows the arc (dist − 6)")) {
+      return false;
+    }
+    // Inward: the text lands 8 mm from the apex → clamped to 12.
+    Annotation inward;
+    inward.text_offset = std::array<double, 2>{mid_dir[0] * -10.0,
+                                               mid_dir[1] * -10.0};
+    DimensionGraphics in_g = polysmith::core::build_dimension_graphics(
+        *measured, inward, view, false);
+    if (!expect(near(arc_radius(in_g), 12.0),
+                "inward drag clamps the arc to 12")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// ── Test 12: golden (A4 sheet with one linear dimension) ───────────
 
 bool test_golden() {
   DimensionFixture fixture = make_fixture();
@@ -672,7 +934,7 @@ bool test_golden() {
 
 int main() {
   int passed = 0;
-  const int total = 11;
+  const int total = 12;
   struct Test {
     const char* name;
     bool (*fn)();
@@ -688,6 +950,7 @@ int main() {
       {"save_load", test_save_load},
       {"undo_redo", test_undo_redo},
       {"formatting", test_formatting},
+      {"whole_dimension_drag", test_whole_dimension_drag},
       {"golden", test_golden},
   };
   for (const auto& test : tests) {

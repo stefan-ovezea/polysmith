@@ -1,6 +1,12 @@
 # Drawing Workspace UI Study — the Fusion-style rework (2026-09-19)
 
-> **Status:** study complete; R1 implemented and merged (PR #90, `aa9c4ba`). This is the
+> **Status:** study complete; R1 implemented and merged (PR #90, `aa9c4ba`).
+> R2–R5 + ANNOTATE implemented on `feature/ISO-drawing-fix` (2026-09-20/21,
+> user-verified in-app, awaiting merge): dimension mouse drag, the
+> ANNOTATE (text/leader), GEOMETRY (center mark/centerline/edge
+> extension) and SYMBOLS (surface finish/welding/tolerance frame/datum/
+> balloon) tabs, the CREATE DRAWING dialog + templates, and Section +
+> Detail views (ISO 128-3 §4.12). This is the
 > blueprint for the drawing-workspace UI rework requested by the user:
 > a 2026-feel, toolbar-driven workspace in the spirit of Fusion 360's
 > Drawing workspace — tools on the ribbon, direct manipulation on the
@@ -213,14 +219,19 @@ move here from the floating Sheet panel.
   view drag.
 - **R2 — Dimension rework:** hover highlight, drag-and-place with
   live offset (core preview offset + create placement point), chain.
+  *(Done: whole-dimension mouse drag + decimal-dot default.)*
 - **R3 — Section & Detail tools:** line-drag section + preview trace,
   detail view fields in core (data model + payload + refresh + tests).
+  *(Done: Section panel flow + Detail View circle-drag tool;
+  `drawing_detail_clip` + `cad_core_drawing_detail_test`.)*
 - **R4 — Symbols:** core annotation extensions → per-kind graphics +
   commands + tests; SYMBOLS tab with surface finish / welding / GD&T /
-  datum / balloon.
+  datum / balloon. *(Done: 8 emitters, 7 commands, SYMBOLS tab live.)*
 - **R5 — Geometry + polish:** center marks/lines, text/leaders,
   browser tree, double-click edit, cursors/hovers/Esc semantics,
   perf pass (1000-curve sheet < 100 ms scene build).
+  *(Done: GEOMETRY + ANNOTATE tabs; browser tree + double-click edit
+  + the perf pass remain open.)*
 
 Gates per phase: `pnpm core:build` + `pnpm test:core` + `tsc
 --noEmit`; new core commands ship with schema + IPC doc + regression

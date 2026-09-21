@@ -90,6 +90,25 @@ interface PendingDefinition {
   ghost: GhostFrame | null;
 }
 
+/** In-progress Detail View circle drag — the hook's local gesture
+ *  state (the ghost is a local overlay; there is no pending def and
+ *  no core round-trip until the drop commits). */
+export interface DetailDrag {
+  /** The parent projection view the circle is drawn on. */
+  viewId: string;
+  /** Press point (sheet-mm) — the circle center. */
+  center: [number, number];
+  /** Current cursor (sheet-mm) — the circle's radius end. */
+  cursor: [number, number];
+}
+
+/** A finished detail drag worth committing (radius ≥ 2 mm). */
+export interface DetailDragCommit {
+  viewId: string;
+  center: [number, number];
+  radius: number;
+}
+
 export interface DrawingToolApi {
   tool: DrawingTool;
   base: BaseViewSettings;
@@ -108,15 +127,24 @@ export interface DrawingToolApi {
   ghostFrame: GhostFrame | null;
   /** The live sector in projected mode (null = dead zone / no ghost). */
   activeSector: SectorInfo | null;
+  /** The in-progress Detail View circle drag (null when idle). */
+  detailDrag: DetailDrag | null;
   armBaseView: () => void;
   armProjectedView: () => void;
   /** Arms the projected tool bound to a caller-composed parent (the
    *  App composes it from fresh store state after a base commit). */
   armProjectedFrom: (parent: ProjectedParent) => void;
   armSection: () => void;
+  armDetailView: () => void;
   armMove: () => void;
   armDeleteView: () => void;
   cancel: () => void;
+  /** Detail View circle drag: press starts it, the cursor is the
+   *  radius end, and the finish returns the commit payload (the tool
+   *  stays armed for the next detail). */
+  beginDetailDrag: (viewId: string, center: [number, number]) => void;
+  updateDetailDrag: (cursor: [number, number]) => void;
+  finishDetailDrag: (cursor: [number, number]) => DetailDragCommit | null;
   setOrientation: (orientation: BaseOrientation) => void;
   setCurrent3dFrame: (frame: DrawingViewFrame | null) => void;
   setScale: (scale: number) => void;
@@ -134,6 +162,9 @@ export interface DrawingToolApi {
 
 const DEAD_ZONE_MM = 10;
 const OFFSET_TOLERANCE_MM = 0.5;
+/** The minimum Detail View circle radius (sheet-mm) a release
+ *  commits — anything smaller is a click, not a circle. */
+const DETAIL_MIN_RADIUS_MM = 2;
 
 /** The projected parent's own origin→min offset — the seed estimate
  *  for a child's slot correction. */
@@ -202,6 +233,9 @@ export function useDrawingTool(inputs: UseDrawingToolInputs): DrawingToolApi {
   const [projectedParent, setProjectedParent] =
     useState<ProjectedParent | null>(null);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
+  // Detail View circle drag (tool "detail_view") — cleared by cancel
+  // and by the finish (which keeps the tool armed).
+  const [detailDrag, setDetailDrag] = useState<DetailDrag | null>(null);
   // Bumped when a learned offset corrects a slot — forces one re-send.
   const [correctionTick, setCorrectionTick] = useState(0);
   const placementCacheRef = useRef<Map<string, LearnedPlacement>>(new Map());
@@ -214,6 +248,7 @@ export function useDrawingTool(inputs: UseDrawingToolInputs): DrawingToolApi {
     setTool("idle");
     setProjectedParent(null);
     setSelectedViewId(null);
+    setDetailDrag(null);
     // A cancelled placement session re-learns its placements from
     // scratch on the next arm (also drops the last preview's content
     // so a re-armed orientation always re-requests its curves).
@@ -271,6 +306,12 @@ export function useDrawingTool(inputs: UseDrawingToolInputs): DrawingToolApi {
     setSelectedViewId(null);
   }, []);
 
+  const armDetailView = useCallback(() => {
+    setTool("detail_view");
+    setProjectedParent(null);
+    setSelectedViewId(null);
+  }, []);
+
   const armMove = useCallback(() => {
     setTool("move");
     setProjectedParent(null);
@@ -282,6 +323,46 @@ export function useDrawingTool(inputs: UseDrawingToolInputs): DrawingToolApi {
     setProjectedParent(null);
     setSelectedViewId(null);
   }, []);
+
+  // ── Detail View circle drag ──────────────────────────────────────
+  //
+  // The drag is pure local gesture state: begin on press (center =
+  // press point), update follows the cursor, and finish returns the
+  // commit payload when the radius clears the minimum — a smaller
+  // release is a click and commits nothing.  The tool itself stays
+  // armed through the finish so the user can place more details.
+
+  const beginDetailDrag = useCallback(
+    (viewId: string, center: [number, number]) => {
+      setDetailDrag({ viewId, center, cursor: center });
+    },
+    [],
+  );
+
+  const updateDetailDrag = useCallback((cursor: [number, number]) => {
+    setDetailDrag((previous) =>
+      previous ? { ...previous, cursor } : previous,
+    );
+  }, []);
+
+  const finishDetailDrag = useCallback(
+    (cursor: [number, number]): DetailDragCommit | null => {
+      const drag = detailDrag;
+      setDetailDrag(null);
+      if (!drag) {
+        return null;
+      }
+      const radius = Math.hypot(
+        cursor[0] - drag.center[0],
+        cursor[1] - drag.center[1],
+      );
+      if (radius < DETAIL_MIN_RADIUS_MM) {
+        return null;
+      }
+      return { viewId: drag.viewId, center: drag.center, radius };
+    },
+    [detailDrag],
+  );
 
   // ── Settings ─────────────────────────────────────────────────────
 
@@ -770,13 +851,18 @@ export function useDrawingTool(inputs: UseDrawingToolInputs): DrawingToolApi {
     previewNeeded,
     ghostFrame: pending?.ghost ?? null,
     activeSector: pending?.sector ?? null,
+    detailDrag,
     armBaseView,
     armProjectedView,
     armProjectedFrom,
     armSection,
+    armDetailView,
     armMove,
     armDeleteView,
     cancel,
+    beginDetailDrag,
+    updateDetailDrag,
+    finishDetailDrag,
     setOrientation,
     setCurrent3dFrame,
     setScale,

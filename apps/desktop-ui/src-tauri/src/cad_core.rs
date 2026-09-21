@@ -138,6 +138,18 @@ pub fn start_cad_core_process(
         }
     }
 
+    // Drawing templates: setup-only JSON files written by the CREATE
+    // DRAWING dialog (drawing_template_save/load — the core owns the
+    // file I/O; the UI uses this dir as the picker default).
+    if let Ok(app_data) = app.path().app_data_dir() {
+        let templates_dir = app_data.join("templates");
+        if let Err(error) = std::fs::create_dir_all(&templates_dir) {
+            eprintln!("failed to create templates directory: {error}");
+        } else {
+            cmd.env("POLYSMITH_TEMPLATES_DIR", templates_dir);
+        }
+    }
+
     // Prepend OCCT and 3rdparty DLL directories to PATH so the child
     // process finds TKernel.dll, freetype.dll, zlib.dll etc.
     #[cfg(target_os = "windows")]

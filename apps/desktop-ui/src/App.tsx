@@ -3,13 +3,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   awaitDocumentChange,
+  awaitViewportChange,
   useCadCoreStore,
 } from "./state";
 import { useToastStore } from "./state/toastStore";
 import { useCadCore } from "./hooks";
 import { useAppConfig } from "./lib";
 import { useDrawingTool } from "./app/drawing/useDrawingTool";
-import { bodyCenterForChoice, viewBasisOf } from "./lib/drawingViewMath";
+import {
+  bestFitIsoScale,
+  bodyCenterForChoice,
+  clampSheetPosition,
+  ISO_SCALES,
+  sheetSceneOffsetX,
+  viewBasisOf,
+} from "./lib/drawingViewMath";
 import {
   AiAssistantPanel,
   CamGenerationResultPopup,
@@ -23,12 +31,14 @@ import {
 } from "./layout";
 import type { CategoryId } from "./layout";
 import type { DrillPickTarget } from "./layout/viewport/viewportPanelTypes";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
+import { appDataDir, join } from "@tauri-apps/api/path";
 import { launchLaserGrbl } from "./lib/laserGrblClient";
 import { ArmedSketchConstraint } from "./types";
 import type {
   DocumentState,
+  DrawingTemplate,
   ExtrudeAdvancedParameters,
   ExtrudeFeatureParameters,
   ExtrudeMode,
@@ -37,6 +47,7 @@ import type {
   PostProcessorType,
   SketchFeatureParameters,
   SketchTool,
+  TitleBlock,
 } from "./types";
 import type { RecentProjectsDocument } from "./lib";
 import {
@@ -105,12 +116,15 @@ import {
 } from "./app/bodyModifierActions";
 import { CamFloatingPanels } from "./app/CamFloatingPanels";
 import {
+  AnnotationPanel,
   DimensionPanel,
   NewDrawingPanel,
+  NotePanel,
   SectionPanel,
   SectionViewPanel,
   SheetPanel,
   TitleBlockPanel,
+  type CreateDrawingSettings,
 } from "./app/DrawingFloatingPanels";
 import { ConstructionPendingPanels } from "./app/ConstructionPendingPanels";
 import { PrimitiveFeatureEditPanel } from "./app/PrimitiveFeatureEditPanel";
@@ -622,11 +636,17 @@ function App() {
     string | null
   >(null);
   const [isCamSetupPanelOpen, setIsCamSetupPanelOpen] = useState(false);
-  // New Drawing setup dialog (name + paper + orientation + angle) —
-  // the "new drawing" ribbon button opens it instead of creating a
-  // silent default.  After it commits, the Base View tool auto-arms.
+  // CREATE DRAWING dialog (Fusion-style: type + contents + sheet
+  // settings + templates) — the ribbon button opens it.  Automatic
+  // auto-places a front base view; Pick… arms the Base View tool.
   const [isNewDrawingPanelOpen, setIsNewDrawingPanelOpen] =
     useState(false);
+  // The dialog's template picker default directory (appdata/templates).
+  const [drawingTemplatesDirValue, setDrawingTemplatesDirValue] =
+    useState("");
+  useEffect(() => {
+    void drawingTemplatesDir().then(setDrawingTemplatesDirValue);
+  }, []);
   // R1 "Current 3D view" capture: ViewportPanel populates this ref
   // with a function returning the LAST CAD-viewport camera frame
   // vectors (never the drawing workspace's sheet camera).
@@ -676,6 +696,25 @@ function App() {
     label: string;
     current: [number, number];
   } | null>(null);
+  // Mouse-first dimension/annotation/note text reposition: an
+  // in-progress text drag (the ghost label follows the cursor until
+  // the drop commits the placement).  `owner` selects the drop
+  // command: "dimension" → drawing_dimension_update (text_offset
+  // delta), "annotation" → drawing_annotation_update (same),
+  // "note" → drawing_note_update (absolute position).
+  const [dimensionTextDrag, setDimensionTextDrag] = useState<{
+    owner: "dimension" | "annotation" | "note";
+    drawingId: string;
+    id: string;
+    /** The note's sheet index — note drops shift the first-sheet
+     *  pointer frame back into the note's own sheet frame. */
+    sheetIndex: number;
+    baseOffset: [number, number];
+    startPoint: [number, number];
+    current: [number, number];
+    text: string;
+    heightMm: number;
+  } | null>(null);
   // Sheet settings panel (P5: paper, orientation, projection angle).
   const [isDrawingSheetPanelOpen, setIsDrawingSheetPanelOpen] =
     useState(false);
@@ -694,6 +733,29 @@ function App() {
   const [drawingDimPreview, setDrawingDimPreview] = useState<
     import("@/types").DrawingDimensionPreviewPayload | null
   >(null);
+  // Annotation tool (GEOMETRY/SYMBOLS/ANNOTATE tabs): the armed kind
+  // (P1: "leader_text"); picks accumulate (max 2) and the core
+  // preview replies with the attachment graphics until Enter commits.
+  const [annotationPanelKind, setAnnotationPanelKind] = useState<
+    import("@/types").DrawingAnnotationKind | null
+  >(null);
+  const [annotationPicks, setAnnotationPicks] = useState<
+    Array<[number, number]>
+  >([]);
+  const [annotationPreview, setAnnotationPreview] = useState<
+    import("@/types").DrawingAnnotationPreviewPayload | null
+  >(null);
+  // The annotation's rendered text (leader_text content etc.) — the
+  // panel drafts it, the preview and the create carry it as
+  // text_override.
+  const [annotationTextDraft, setAnnotationTextDraft] = useState("");
+  // ANNOTATE → Text tool: armed = click-to-place a free note (the
+  // panel holds the draft text + height).  noteEditId = the note being
+  // edited (a click on an existing note while the tool is NOT armed).
+  const [noteToolArmed, setNoteToolArmed] = useState(false);
+  const [noteEditId, setNoteEditId] = useState<string | null>(null);
+  const [noteTextDraft, setNoteTextDraft] = useState("");
+  const [noteHeightDraft, setNoteHeightDraft] = useState(3.5);
   // The section view bound to the SectionPanel after insertion (P4) —
   // stays open so label / cut-away / hatch edits commit live.
   const [sectionPanelViewId, setSectionPanelViewId] = useState<string | null>(
@@ -874,42 +936,80 @@ function App() {
     return [30 + (count % 3) * 80, 40 + Math.floor(count / 3) * 90];
   }, [activeDrawing]);
 
-  const drawingNewAction = async (settings?: {
-    name: string;
-    paper_size: "A0" | "A1" | "A2" | "A3" | "A4";
-    orientation: "portrait" | "landscape";
-    projection_angle: "first_angle" | "third_angle";
-  }) => {
+  // Drawing templates (CREATE DRAWING dialog): the core owns the file
+  // I/O (drawing_template_save/load); these pick the paths and hand
+  // the dialog settings through.
+  const drawingTemplatesDir = async () => {
+    try {
+      return join(await appDataDir(), "templates");
+    } catch {
+      return "";
+    }
+  };
+
+  const drawingTemplateLoadAction = async (
+    filePath: string,
+  ): Promise<DrawingTemplate> => {
+    const template = await drawingTemplateLoad(filePath);
+    addMessage(t("drawing.newPanel.templateLoaded", { name: template.name }));
+    return template;
+  };
+
+  const drawingTemplateSaveAction = async (template: DrawingTemplate) => {
+    const path = await save({
+      title: t("drawing.newPanel.createTemplate"),
+      defaultPath: await join(
+        await drawingTemplatesDir(),
+        `${template.name || "drawing-template"}.json`,
+      ),
+      filters: [{ name: "PolySmith drawing template", extensions: ["json"] }],
+    });
+    if (!path) {
+      return;
+    }
+    await drawingTemplateSave(path, template);
+    addMessage(t("drawing.newPanel.templateSaved", { path }));
+  };
+
+  const drawingNewAction = async (settings: CreateDrawingSettings) => {
     await runAction(async () => {
       if (document?.drawing.drawings.length) {
         addMessage(t("drawing.toolbar.exists"));
         return;
       }
+      // A loaded template's sheets ride through verbatim (per-sheet
+      // variance + title blocks); dialog-built sheets need their
+      // empty title blocks filled in.
+      const sheets = (settings.template_sheets ?? settings.sheets).map(
+        (sheet) => ({
+          sheet_id: "",
+          name: sheet.name,
+          paper_size: sheet.paper_size,
+          orientation: sheet.orientation,
+          projection_angle: sheet.projection_angle,
+          view_ids: [],
+          title_block:
+            "title_block" in sheet && sheet.title_block != null
+              ? (sheet.title_block as TitleBlock)
+              : {
+                  legal_owner: "",
+                  identification: "",
+                  date: "",
+                  title: "",
+                  approver: "",
+                  creator: "",
+                  document_type: "",
+                  revision_rows: [],
+                },
+        }),
+      );
       await drawingCreate({
         drawing_id: "",
-        name: settings?.name.trim() || t("drawing.defaultName"),
-        sheets: [
-          {
-            sheet_id: "",
-            name: t("drawing.defaultSheet"),
-            paper_size: settings?.paper_size ?? "A4",
-            orientation: settings?.orientation ?? "landscape",
-            projection_angle: settings?.projection_angle ?? "first_angle",
-            view_ids: [],
-            title_block: {
-              legal_owner: "",
-              identification: "",
-              date: "",
-              title: "",
-              approver: "",
-              creator: "",
-              document_type: "",
-              revision_rows: [],
-            },
-          },
-        ],
+        name: settings.name.trim() || t("drawing.defaultName"),
+        sheets,
         views: [],
         annotations: [],
+        notes: [],
       });
       const updated = await awaitDocumentChange(
         (next) => next.drawing.drawings.length === 1,
@@ -918,12 +1018,95 @@ function App() {
       if (!drawing || drawing.sheets.length === 0) {
         return;
       }
-      // Fusion-style: the setup dialog finishes and the Base View
-      // tool arms with a front-view ghost following the cursor —
-      // the first view is placed by a click, not auto-created.
-      if (drawingBodyIds.length > 0) {
-        drawingToolApiRef.current?.armBaseView();
+      // Manual: an empty drawing, nothing armed.
+      if (settings.drawing_type === "manual") {
+        return;
       }
+      // Pick…: the Base View tool arms with a front-view ghost
+      // (R1 behavior — body choice + placement by hand).
+      if (settings.contents === "pick") {
+        if (drawingBodyIds.length > 0) {
+          drawingToolApiRef.current?.armBaseView();
+        }
+        return;
+      }
+      // Automatic: auto-place a FRONT base view of the chosen bodies,
+      // best-fit ISO scale, centered on the first sheet.
+      const bodyIds = viewport?.bodies.map((body) => body.id) ?? [];
+      const sourceBodyIds =
+        settings.contents === "selected" ? drawingBodyIds : bodyIds;
+      if (sourceBodyIds.length === 0) {
+        return;  // no bodies — the empty drawing stays (a view needs ≥1)
+      }
+      const sheet = drawing.sheets[0];
+      const previousViewCount = drawing.views.length;
+      await drawingViewCreate(drawing.drawing_id, sheet.sheet_id, {
+        view_id: "",
+        kind: "projection",
+        standard_view: "front",
+        source_body_ids: sourceBodyIds,
+        scale: 1,
+        sheet_position: [30, 40],
+        show_hidden: false,
+        warning: "",
+      });
+      const updated2 = await awaitDocumentChange((next) => {
+        const active = next.drawing.drawings.find(
+          (d) => d.drawing_id === next.drawing.active_drawing_id,
+        );
+        return (active?.views.length ?? 0) > previousViewCount;
+      });
+      const drawing2 = updated2.drawing.drawings.find(
+        (d) => d.drawing_id === updated2.drawing.active_drawing_id,
+      );
+      const view = drawing2?.views[drawing2.views.length - 1];
+      if (!drawing2 || !view) {
+        return;
+      }
+      // The projected bounds live in the viewport payload (memory-only
+      // like the projections) — wait for the fresh one the view create
+      // requested, then best-fit + center in ONE update.
+      const vp = await awaitViewportChange(
+        (next) =>
+          next.drawing_sheets?.some(
+            (candidate) =>
+              candidate.sheet_id === sheet.sheet_id &&
+              candidate.views.some((v) => v.view_id === view.view_id),
+          ) ?? false,
+      );
+      const vpSheet = vp.drawing_sheets?.find(
+        (candidate) => candidate.sheet_id === sheet.sheet_id,
+      );
+      const entry = vpSheet?.views.find((v) => v.view_id === view.view_id);
+      if (!vpSheet || !entry) {
+        return;
+      }
+      const contentW = entry.max[0] - entry.min[0];
+      const contentH = entry.max[1] - entry.min[1];
+      const margin = 20;
+      const scale = bestFitIsoScale(
+        contentW,
+        contentH,
+        vpSheet.width_mm - 2 * margin,
+        vpSheet.height_mm - 2 * margin,
+      );
+      const offset: [number, number] = [
+        entry.min[0] - entry.origin[0],
+        entry.min[1] - entry.origin[1],
+      ];
+      const centered: [number, number] = [
+        Math.round(
+          (vpSheet.width_mm / 2 - (offset[0] + contentW / 2) * scale) * 100,
+        ) / 100,
+        Math.round(
+          (vpSheet.height_mm / 2 - (offset[1] + contentH / 2) * scale) * 100,
+        ) / 100,
+      ];
+      await drawingViewUpdate(drawing2.drawing_id, {
+        ...view,
+        scale,
+        sheet_position: centered,
+      });
     });
   };
 
@@ -1231,6 +1414,248 @@ function App() {
     }
   };
 
+  // ── Detail View circle drag (ISO 128-3 §4.12) ────────────────────
+  //
+  // The gesture state lives in the tool hook (no core round-trip
+  // until the drop): press starts the circle, the ghost follows, the
+  // drop commits an enlarged view right of the parent.  The commit
+  // mints the label letter and the ISO scale (Fusion's 2:1 default).
+
+  // Label letter: A, B, C… — one per existing detail view (the
+  // SectionDefinition.label precedent: minted UI-side).
+  const detailViewLetter = (
+    drawing: import("@/types").Drawing | undefined,
+  ): string => {
+    const count =
+      drawing?.views.filter((view) => view.kind === "detail").length ?? 0;
+    return String.fromCharCode(65 + Math.min(count, 25));
+  };
+
+  const drawingDetailDragStartAction = (
+    viewId: string,
+    center: [number, number],
+  ) => {
+    drawingToolApiRef.current?.beginDetailDrag(viewId, center);
+  };
+
+  const drawingDetailDragMoveAction = (point: [number, number]) => {
+    drawingToolApiRef.current?.updateDetailDrag(point);
+  };
+
+  const drawingDetailDragFinishAction = async (point: [number, number]) => {
+    const drag = drawingToolApiRef.current?.finishDetailDrag(point);
+    if (!drag || !activeDrawing || activeDrawing.sheets.length === 0) {
+      return;  // sub-2-mm radius (a click) or nothing to draw on
+    }
+    const parent = activeDrawing.views.find(
+      (view) => view.view_id === drag.viewId,
+    );
+    if (!parent || parent.kind !== "projection") {
+      return;  // sections/details cannot parent (the core validates too)
+    }
+    const sheet = viewport?.drawing_sheets?.find((candidate) =>
+      candidate.views.some((entry) => entry.view_id === drag.viewId),
+    );
+    const parentBounds = sheet?.views.find(
+      (entry) => entry.view_id === drag.viewId,
+    );
+    if (!sheet || !parentBounds) {
+      return;
+    }
+    // The circle was drawn in SHEET-mm over the parent; the
+    // definition stores it in the PARENT's view-mm (center and
+    // radius divide by the parent scale).
+    const center: [number, number] = [
+      (drag.center[0] - parentBounds.origin[0]) / parent.scale,
+      (drag.center[1] - parentBounds.origin[1]) / parent.scale,
+    ];
+    const radius = drag.radius / parent.scale;
+    if (!(radius > 0)) {
+      return;
+    }
+    // The smallest ISO 5455 scale at least twice the parent's (a
+    // parent already at 5:1 falls back to the raw doubling — the
+    // ISO_SCALES series caps at 5 in V1).
+    const target = parent.scale * 2;
+    const candidates = ISO_SCALES.map(Number).filter((s) => s >= target);
+    const scale =
+      candidates.length > 0
+        ? Math.min(...candidates)
+        : Math.round(target * 100) / 100;
+    const label = detailViewLetter(activeDrawing);
+    // The detail's flatten bounds are its boundary circle: content
+    // size = the circle's diameter at the detail scale, centered on
+    // sheet_position + center·scale.  Slot right of the parent
+    // (20 mm gap), bottom-aligned, clamped onto the sheet.
+    const contentSize = radius * 2 * scale;
+    const slotMin = clampSheetPosition(
+      [parentBounds.max[0] + 20, parentBounds.min[1]],
+      contentSize,
+      contentSize,
+      drawingSheetSize.width_mm,
+      drawingSheetSize.height_mm,
+    );
+    const sheetPosition: [number, number] = [
+      Math.round(
+        (slotMin[0] - center[0] * scale + contentSize / 2) * 100,
+      ) / 100,
+      Math.round(
+        (slotMin[1] - center[1] * scale + contentSize / 2) * 100,
+      ) / 100,
+    ];
+    await runAction(async () => {
+      await drawingViewCreate(
+        activeDrawing.drawing_id,
+        activeDrawing.sheets[0].sheet_id,
+        {
+          view_id: "",
+          kind: "detail",
+          standard_view: "",
+          source_body_ids: parent.source_body_ids,
+          scale,
+          sheet_position: sheetPosition,
+          show_hidden: parent.show_hidden,
+          detail: {
+            parent_view_id: parent.view_id,
+            center,
+            radius,
+            label,
+          },
+          warning: "",
+        },
+      );
+    });
+    // The tool stays armed for the next detail — the hook's finish
+    // ended only the drag.
+  };
+
+  // Text drag: press starts it (the ghost label follows), the drop
+  // commits the placement rounded to 0.01 sheet-mm.  The hit's owner
+  // selects the drop command — dimensions/annotations carry a
+  // text_offset DELTA, free notes an ABSOLUTE position (frame-shifted
+  // from the first-sheet pointer frame by the sheet's scene offset).
+  const drawingDimensionTextDragStartAction = (
+    hit: {
+      owner: "dimension" | "annotation" | "note";
+      drawingId: string;
+      id: string;
+      sheetIndex: number;
+      text: string;
+      heightMm: number;
+    },
+    point: [number, number],
+  ) => {
+    const drawing = document?.drawing.drawings.find(
+      (d) => d.drawing_id === hit.drawingId,
+    );
+    if (!drawing) {
+      return;
+    }
+    if (hit.owner === "note") {
+      const note = drawing.notes.find((n) => n.note_id === hit.id);
+      if (!note) {
+        return;
+      }
+      setDimensionTextDrag({
+        owner: "note",
+        drawingId: hit.drawingId,
+        id: hit.id,
+        sheetIndex: hit.sheetIndex,
+        baseOffset: note.position,
+        startPoint: point,
+        current: point,
+        text: hit.text,
+        heightMm: hit.heightMm,
+      });
+      return;
+    }
+    const annotation = drawing.annotations.find(
+      (a) => a.annotation_id === hit.id,
+    );
+    if (!annotation) {
+      return;
+    }
+    setDimensionTextDrag({
+      owner: hit.owner,
+      drawingId: hit.drawingId,
+      id: hit.id,
+      sheetIndex: hit.sheetIndex,
+      baseOffset: annotation.text_offset ?? [0, 0],
+      startPoint: point,
+      current: point,
+      text: hit.text,
+      heightMm: hit.heightMm,
+    });
+  };
+
+  const drawingDimensionTextDragMoveAction = (point: [number, number]) => {
+    setDimensionTextDrag((previous) =>
+      previous ? { ...previous, current: point } : previous,
+    );
+  };
+
+  const drawingDimensionTextDropAction = async (point: [number, number]) => {
+    const drag = dimensionTextDrag;
+    setDimensionTextDrag(null);
+    if (!drag) {
+      return;
+    }
+    const next: [number, number] = [
+      Math.round((drag.baseOffset[0] + point[0] - drag.startPoint[0]) * 100) /
+        100,
+      Math.round((drag.baseOffset[1] + point[1] - drag.startPoint[1]) * 100) /
+        100,
+    ];
+    // A click without real movement must not mint a no-op undo step.
+    const moved =
+      Math.hypot(
+        point[0] - drag.startPoint[0],
+        point[1] - drag.startPoint[1],
+      ) >= 0.5;
+    if (!moved) {
+      // A click on a note (no drag) opens the edit panel — a press on
+      // committed text wins over an armed Text-tool placement, so
+      // disarm the tool or the panel would stay in place-hint mode.
+      if (drag.owner === "note") {
+        const note = document?.drawing.drawings
+          .find((d) => d.drawing_id === drag.drawingId)
+          ?.notes.find((n) => n.note_id === drag.id);
+        if (note) {
+          setNoteToolArmed(false);
+          setNoteEditId(note.note_id);
+          setNoteTextDraft(note.text);
+          setNoteHeightDraft(note.height_mm);
+        }
+      }
+      return;
+    }
+    if (drag.owner === "note") {
+      // The pointer frame is the FIRST sheet's mm; the note's position
+      // is its own sheet's mm — shift back by the scene offset.
+      const sheets = viewport?.drawing_sheets ?? [];
+      const offsetX = sheetSceneOffsetX(sheets, drag.sheetIndex);
+      await drawingNoteUpdate({
+        drawingId: drag.drawingId,
+        noteId: drag.id,
+        position: [next[0] - offsetX, next[1]],
+      });
+      return;
+    }
+    if (drag.owner === "annotation") {
+      await drawingAnnotationUpdate({
+        drawingId: drag.drawingId,
+        annotationId: drag.id,
+        textOffset: next,
+      });
+      return;
+    }
+    await drawingDimensionUpdate({
+      drawingId: drag.drawingId,
+      annotationId: drag.id,
+      textOffset: next,
+    });
+  };
+
   const drawingDeleteAction = async () => {
     await runAction(async () => {
       const id = document?.drawing.active_drawing_id;
@@ -1443,6 +1868,183 @@ function App() {
     drawingDimPreviewRequestRef.current += 1;  // drop in-flight replies
   };
 
+  // ── Annotation tool (GEOMETRY/SYMBOLS/ANNOTATE tabs) ──────────────
+  // The pick flow mirrors the dimension tool: picks accumulate (max 2),
+  // the non-mutating core preview replies with the attachment
+  // graphics, Enter commits drawing_annotation_create.
+  const drawingAnnotationPreviewRequestRef = useRef(0);
+
+  const drawingAnnotationPickAction = async (point: [number, number]) => {
+    const kind = annotationPanelKind;
+    if (!activeDrawing || !kind || annotationPicks.length >= 2) {
+      return;
+    }
+    const viewId = drawingPickTargetViewId(point);
+    if (!viewId) {
+      return;
+    }
+    const picks = [...annotationPicks, point];
+    setAnnotationPicks(picks);
+    const requestId = ++drawingAnnotationPreviewRequestRef.current;
+    const payload = await drawingAnnotationPreview({
+      drawingId: activeDrawing.drawing_id,
+      viewId,
+      kind,
+      pick: point,
+      pick2: picks.length > 1 ? picks[0] : undefined,
+      textOverride: annotationTextDraft,
+    });
+    if (requestId !== drawingAnnotationPreviewRequestRef.current) {
+      return;  // a newer request superseded this reply
+    }
+    setAnnotationPreview(payload);
+  };
+
+  // Typing the annotation text re-requests the preview so the sheet
+  // shows the content live (picks already made).
+  useEffect(() => {
+    if (
+      annotationPanelKind === null ||
+      annotationPicks.length === 0 ||
+      !activeDrawing
+    ) {
+      return;
+    }
+    const viewId = drawingPickTargetViewId(annotationPicks[0]);
+    if (!viewId) {
+      return;
+    }
+    const requestId = ++drawingAnnotationPreviewRequestRef.current;
+    void drawingAnnotationPreview({
+      drawingId: activeDrawing.drawing_id,
+      viewId,
+      kind: annotationPanelKind,
+      pick: annotationPicks[0],
+      pick2: annotationPicks.length > 1 ? annotationPicks[1] : undefined,
+      textOverride: annotationTextDraft,
+    }).then((payload) => {
+      if (requestId === drawingAnnotationPreviewRequestRef.current) {
+        setAnnotationPreview(payload);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotationTextDraft]);
+
+  // Enter: commit the annotation (the core mints the witness +
+  // attach_param from the picks) and stay armed for the next one.
+  const drawingAnnotationCommitAction = async () => {
+    const kind = annotationPanelKind;
+    if (
+      annotationPicks.length === 0 ||
+      !activeDrawing ||
+      !kind ||
+      !annotationPreview ||
+      annotationPreview.error
+    ) {
+      return;
+    }
+    await runAction(async () => {
+      await drawingAnnotationCreate({
+        drawingId: activeDrawing.drawing_id,
+        viewId: annotationPreview.view_id,
+        kind,
+        pick: annotationPicks[0],
+        pick2: annotationPicks.length > 1 ? annotationPicks[1] : undefined,
+        textOverride: annotationTextDraft,
+      });
+    });
+    setAnnotationPicks([]);
+    setAnnotationPreview(null);
+  };
+
+  const closeAnnotationTool = () => {
+    setAnnotationPanelKind(null);
+    setAnnotationPicks([]);
+    setAnnotationPreview(null);
+    setAnnotationTextDraft("");
+    drawingAnnotationPreviewRequestRef.current += 1;  // drop in-flight
+  };
+
+  // ── ANNOTATE → Text (free note) ──────────────────────────────────
+  // Armed: a click on the sheet creates a note with the panel's draft
+  // text + height.  The tool then DISARMS and the panel flips to
+  // editing the just-placed note (the Fusion flow: place once, refine,
+  // done — a second note re-arms the tool).  Editing: clicking an
+  // existing note's text opens the edit panel (noteEditId) — Enter
+  // commits the update, Escape closes.
+
+  const drawingNotePlaceAction = async (point: [number, number]) => {
+    if (!noteToolArmed || !activeDrawing) {
+      return;
+    }
+    const sheetId = activeDrawing.sheets[0]?.sheet_id;
+    if (!sheetId) {
+      return;
+    }
+    await runAction(async () => {
+      await drawingNoteCreate({
+        drawingId: activeDrawing.drawing_id,
+        sheetId,
+        text: noteTextDraft,
+        position: point,
+        heightMm: noteHeightDraft,
+      });
+    });
+    // The create minted the id core-side — find the fresh note in the
+    // updated store (position is the create's rounded anchor).
+    const fresh = useCadCoreStore
+      .getState()
+      .document?.drawing.drawings.find(
+        (d) => d.drawing_id === activeDrawing.drawing_id,
+      )
+      ?.notes.find(
+        (n) =>
+          Math.abs(n.position[0] - point[0]) < 0.02 &&
+          Math.abs(n.position[1] - point[1]) < 0.02,
+      );
+    setNoteToolArmed(false);
+    if (fresh) {
+      setNoteEditId(fresh.note_id);
+      setNoteTextDraft(fresh.text);
+      setNoteHeightDraft(fresh.height_mm);
+    }
+  };
+
+  const drawingNoteEditCommitAction = async () => {
+    if (!noteEditId || !activeDrawing) {
+      return;
+    }
+    const note = activeDrawing.notes.find((n) => n.note_id === noteEditId);
+    if (!note) {
+      closeNoteTool();
+      return;
+    }
+    // An unchanged confirm must not mint a no-op undo step.
+    if (
+      note.text === noteTextDraft &&
+      note.height_mm === noteHeightDraft
+    ) {
+      closeNoteTool();
+      return;
+    }
+    await runAction(async () => {
+      await drawingNoteUpdate({
+        drawingId: activeDrawing.drawing_id,
+        noteId: noteEditId,
+        text: noteTextDraft,
+        heightMm: noteHeightDraft,
+      });
+    });
+    closeNoteTool();
+  };
+
+  const closeNoteTool = () => {
+    setNoteToolArmed(false);
+    setNoteEditId(null);
+    setNoteTextDraft("");
+    setNoteHeightDraft(3.5);
+  };
+
   // ── R1 drawing tool state machine ────────────────────────────────
   // The UI-side armed-tool state (Core-UI: interaction state stays in
   // the UI; the core knows nothing about the armed tool).  The hook
@@ -1470,6 +2072,40 @@ function App() {
     },
   });
   drawingToolApiRef.current = drawingToolApi;
+
+  // Arms an annotation tool (GEOMETRY/SYMBOLS/ANNOTATE): the kind
+  // drives the panel; the pick→preview→Enter flow is shared.  Balloon
+  // prefills the next number (max numeric balloon text + 1, UI-side).
+  const armAnnotationTool = (
+    kind: import("@/types").DrawingAnnotationKind,
+  ) => {
+    drawingToolApi.cancel();
+    setInsertCursorPoint(null);
+    drawingViewPreviewRequestRef.current += 1;
+    setDrawingViewPreviewPayload(null);
+    closeDimensionTool();
+    closeNoteTool();
+    setAnnotationPicks([]);
+    setAnnotationPreview(null);
+    if (kind === "balloon") {
+      let next = 1;
+      for (const drawing of document?.drawing.drawings ?? []) {
+        for (const annotation of drawing.annotations) {
+          if (annotation.kind !== "balloon") {
+            continue;
+          }
+          const n = Number(annotation.text_override ?? "");
+          if (Number.isFinite(n) && n >= next) {
+            next = Math.floor(n) + 1;
+          }
+        }
+      }
+      setAnnotationTextDraft(String(next));
+    } else {
+      setAnnotationTextDraft("");
+    }
+    setAnnotationPanelKind(kind);
+  };
 
   // The ghost preview: the tool's uncommitted definition is debounced
   // into drawing_view_preview — but ONLY once per orientation/sector
@@ -1837,8 +2473,17 @@ function App() {
     drawingExport,
     drawingDimensionCreate,
     drawingDimensionPreview,
+    drawingDimensionUpdate,
     drawingViewPreview,
     drawingViewMove,
+    drawingViewUpdate,
+    drawingTemplateSave,
+    drawingTemplateLoad,
+    drawingNoteCreate,
+    drawingNoteUpdate,
+    drawingAnnotationCreate,
+    drawingAnnotationUpdate,
+    drawingAnnotationPreview,
   } = useCadCore();
 
   // Completes an armed "Pick a face…" sketch-plane redefinition: the
@@ -3500,6 +4145,8 @@ function App() {
             projectionAngle:
               activeDrawing?.sheets[0]?.projection_angle ?? "first_angle",
             dimensionPanelOpen: isDimensionPanelOpen,
+            noteToolArmed,
+            annotationPanelKind,
             cameraAvailable: drawingCameraCaptureRef.current !== null,
             availableBodies: drawingAvailableBodies.map(({ id, label }) => ({
               id,
@@ -3520,6 +4167,9 @@ function App() {
             onSection: () => {
               drawingToolApi.armSection();
             },
+            onDetailView: () => {
+              drawingToolApi.armDetailView();
+            },
             onDeleteView: () => {
               drawingToolApi.armDeleteView();
             },
@@ -3532,7 +4182,47 @@ function App() {
               setDrawingViewPreviewPayload(null);
               setDrawingDimPicks([]);
               setDrawingDimPreview(null);
+              closeAnnotationTool();
+              closeNoteTool();
               setIsDimensionPanelOpen(true);
+            },
+            onText: () => {
+              // The free-note tool places by click — the same shared
+              // sheet pointer, so opening it disarms the rest.
+              drawingToolApi.cancel();
+              setInsertCursorPoint(null);
+              drawingViewPreviewRequestRef.current += 1;
+              setDrawingViewPreviewPayload(null);
+              closeDimensionTool();
+              closeAnnotationTool();
+              setNoteToolArmed(true);
+            },
+            onLeaderText: () => {
+              armAnnotationTool("leader_text");
+            },
+            onCenterMark: () => {
+              armAnnotationTool("center_mark");
+            },
+            onCenterline: () => {
+              armAnnotationTool("centerline");
+            },
+            onEdgeExtension: () => {
+              armAnnotationTool("edge_extension");
+            },
+            onSurfaceFinish: () => {
+              armAnnotationTool("surface_finish");
+            },
+            onWelding: () => {
+              armAnnotationTool("welding");
+            },
+            onToleranceFrame: () => {
+              armAnnotationTool("tolerance_frame");
+            },
+            onDatum: () => {
+              armAnnotationTool("datum");
+            },
+            onBalloon: () => {
+              armAnnotationTool("balloon");
             },
             onMove: () => {
               drawingToolApi.armMove();
@@ -3855,6 +4545,11 @@ function App() {
               drawingDimensionPreview={
                 workspaceView === "drawing" ? drawingDimPreview : null
               }
+              // Annotation tool (GEOMETRY/SYMBOLS/ANNOTATE): the same
+              // live-preview contract with the annotation kind.
+              drawingAnnotationPreview={
+                workspaceView === "drawing" ? annotationPreview : null
+              }
               // Insert View ghost: the uncommitted view's translucent
               // projection + placement frame on the active sheet.
               drawingViewPreview={
@@ -3905,10 +4600,19 @@ function App() {
                 workspaceView === "drawing" &&
                 (drawingToolApi.tool === "base_view" ||
                   drawingToolApi.tool === "projected_view" ||
-                  drawingToolApi.tool === "section")
+                  drawingToolApi.tool === "section" ||
+                  noteToolArmed)
               }
               onDrawingInsertMove={drawingInsertMoveAction}
-              onDrawingInsertCommit={drawingInsertCommitAction}
+              onDrawingInsertCommit={(point) => {
+                // The free-note tool places by click; the placement
+                // tools commit through the state machine.
+                if (noteToolArmed) {
+                  void drawingNotePlaceAction(point);
+                } else {
+                  drawingInsertCommitAction(point);
+                }
+              }}
               // View frames are draggable in EVERY drawing mode: a
               // press + movement drags; a stationary press in the
               // frame-pick modes (projected/delete) dispatches the
@@ -3925,12 +4629,57 @@ function App() {
                   drawingToolApi.tool === "delete_view")
               }
               onDrawingFramePick={drawingFramePickAction}
+              // Detail View circle drag: press-drag inside a
+              // projection view's content, release ≥ 2 mm to place
+              // the enlarged view (the hook owns the gesture state).
+              drawingDetailDragArmed={
+                workspaceView === "drawing" &&
+                drawingToolApi.tool === "detail_view"
+              }
+              drawingDetailDrag={
+                workspaceView === "drawing" && drawingToolApi.detailDrag
+                  ? {
+                      center: drawingToolApi.detailDrag.center,
+                      cursor: drawingToolApi.detailDrag.cursor,
+                      label: detailViewLetter(activeDrawing),
+                    }
+                  : null
+              }
+              onDrawingDetailDragStart={drawingDetailDragStartAction}
+              onDrawingDetailDragMove={drawingDetailDragMoveAction}
+              onDrawingDetailDragFinish={(point) => {
+                void drawingDetailDragFinishAction(point);
+              }}
               cameraFrameCaptureRef={drawingCameraCaptureRef}
               drawingPickArmed={
-                workspaceView === "drawing" && isDimensionPanelOpen
+                workspaceView === "drawing" &&
+                (isDimensionPanelOpen || annotationPanelKind !== null)
               }
               onDrawingPick={(point) => {
-                void drawingDimensionPickAction(point);
+                if (annotationPanelKind !== null) {
+                  void drawingAnnotationPickAction(point);
+                } else {
+                  void drawingDimensionPickAction(point);
+                }
+              }}
+              drawingDimensionTextDrag={
+                workspaceView === "drawing" && dimensionTextDrag
+                  ? {
+                      id: dimensionTextDrag.id,
+                      text: dimensionTextDrag.text,
+                      heightMm: dimensionTextDrag.heightMm,
+                      current: dimensionTextDrag.current,
+                    }
+                  : null
+              }
+              onDrawingDimensionTextDragStart={
+                drawingDimensionTextDragStartAction
+              }
+              onDrawingDimensionTextDragMove={
+                drawingDimensionTextDragMoveAction
+              }
+              onDrawingDimensionTextDrop={(point) => {
+                void drawingDimensionTextDropAction(point);
               }}
               wcsOrientation={wcsOrientation}
               activeCamSetupId={activeCamSetupId}
@@ -5863,6 +6612,15 @@ function App() {
                 <NewDrawingPanel
                   disabled={status !== "connected"}
                   defaultName={t("drawing.defaultName")}
+                  selectedBodyId={
+                    document?.selected_feature_id &&
+                    (viewport?.bodies.some(
+                      (body) => body.id === document?.selected_feature_id,
+                    )
+                      ? document.selected_feature_id
+                      : null)
+                  }
+                  templatesDir={drawingTemplatesDirValue}
                   onCommit={(settings) => {
                     setIsNewDrawingPanelOpen(false);
                     void drawingNewAction(settings);
@@ -5870,6 +6628,12 @@ function App() {
                   onClose={() => {
                     setIsNewDrawingPanelOpen(false);
                   }}
+                  onSaveTemplate={(template) =>
+                    drawingTemplateSaveAction(template)
+                  }
+                  onLoadTemplate={(filePath) =>
+                    drawingTemplateLoadAction(filePath)
+                  }
                 />
               ) : null}
               {drawingToolApi.tool === "section" ? (
@@ -5957,6 +6721,40 @@ function App() {
                     void drawingDimensionCommitAction();
                   }}
                   onClose={closeDimensionTool}
+                />
+              ) : null}
+              {annotationPanelKind !== null && activeDrawing != null ? (
+                <AnnotationPanel
+                  disabled={status !== "connected"}
+                  kind={annotationPanelKind}
+                  picks={annotationPicks}
+                  preview={annotationPreview}
+                  text={annotationTextDraft}
+                  onTextChange={setAnnotationTextDraft}
+                  onClearPicks={() => {
+                    setAnnotationPicks([]);
+                    setAnnotationPreview(null);
+                    drawingAnnotationPreviewRequestRef.current += 1;
+                  }}
+                  onCommit={() => {
+                    void drawingAnnotationCommitAction();
+                  }}
+                  onClose={closeAnnotationTool}
+                />
+              ) : null}
+              {(noteToolArmed || noteEditId !== null) &&
+              activeDrawing != null ? (
+                <NotePanel
+                  disabled={status !== "connected"}
+                  armed={noteToolArmed}
+                  text={noteTextDraft}
+                  heightMm={noteHeightDraft}
+                  onTextChange={setNoteTextDraft}
+                  onHeightChange={setNoteHeightDraft}
+                  onCommit={() => {
+                    void drawingNoteEditCommitAction();
+                  }}
+                  onClose={closeNoteTool}
                 />
               ) : null}
               {sectionPanelViewId != null && activeDrawing != null

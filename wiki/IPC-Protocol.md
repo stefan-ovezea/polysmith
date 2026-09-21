@@ -746,15 +746,17 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
   on the sheet (mints the view id, appends it to the sheet's ordering).
   `view.kind` is `"projection"` (with `standard_view` — front/right/
   left/top/bottom/back — or a `custom_frame`), `"axonometric"`
-  (requires `custom_frame`), or `"section"` (requires `view.section` —
+  (requires `custom_frame`), `"section"` (requires `view.section` —
   the frame derives from the cutting plane; a standard view or custom
-  frame must NOT override it).  The bump inside the command
+  frame must NOT override it), or `"detail"` (requires `view.detail` —
+  see the Detail Views paragraph below).  The bump inside the command
   re-projects the view through the drawing refresh pass.
 - `drawing_view_update { drawing_id, view }` — replaces the view's
   definition (same id, same sheet); annotations keep their
   attachments and re-resolve on the next refresh.
 - `drawing_view_delete { drawing_id, view_id }` — removes the view,
-  its annotations, and its id from every sheet's ordering list.
+  its annotations, its detail-view CHILDREN (cascade, Fusion
+  behavior), and its id from every sheet's ordering list.
 - `drawing_view_move { drawing_id, view_id, sheet_position: [x, y] }`
   — moves the view origin on its sheet (sheet-mm).  Purely cosmetic —
   never re-projects.
@@ -773,6 +775,41 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
   `cut_away`, label, hatch angle/spacing).  The view must be kind
   `"section"`; a degenerate normal or non-positive hatch spacing is
   rejected before the undo push.  The bump re-cuts and re-projects.
+
+### Detail views (ISO 128-3 §4.12)
+
+- A `"detail"` view carries `view.detail` — `{parent_view_id, center:
+  [x, y], radius, label}` where `center` and `radius` are in the
+  PARENT's view-mm (its projection plane, before the parent scale).
+  The detail stores its own `scale`, `sheet_position`,
+  `source_body_ids`, and `show_hidden` (the UI copies them from the
+  parent); it has no standard view or custom frame.
+- The refresh derives the detail's projection in a SECOND pass after
+  the main view loop: the parent's cached projection (at the target
+  revision) is clipped to the circle (`clip_projection_to_circle`)
+  and stored under the detail's own view id.  A missing / broken
+  parent degrades the detail with `dependency_broken` + `broken_ref =
+  <parent_view_id>` + a warning while holding its last-known content
+  — the same TNP ladder as every other reference (deleting the
+  source body degrades parent AND detail together).  Witnesses ride
+  the clip verbatim; ellipses/bsplines crossing the window are
+  dropped (documented V1 limit).
+- Flatten emits on the DETAIL's sheet: a thin boundary circle at the
+  detail's scale+position (purpose `detail_boundary`) and the label
+  text `"<label> (<scale>)"` below it (purpose `detail_label`); the
+  view's content bounds are the circle's extent.  On the PARENT's
+  sheet (cross-sheet parents included): a marker circle over the
+  window (purpose `detail_boundary`) + the bare letter (purpose
+  `detail_label`).  The viewport view list and its hit tests reuse
+  the existing `label` field — no viewport payload change.  DXF puts
+  both purposes on the ANNOTATION layer (SVG/PDF are
+  purpose-agnostic).
+- Validation (before the undo push): the parent must exist and be a
+  plain `"projection"` view, and `radius > 0`.  Deleting a parent
+  cascade-deletes its detail children.  `drawing_dimension_create`
+  and `drawing_annotation_create` refuse `"detail"` views (dimension
+  the parent instead) — V1 limits: no section parents, no
+  detail-of-detail.
 - `drawing_title_block_update { drawing_id, sheet_id, title_block }`
   — replaces the sheet's ISO 7200 title block data: the eight
   mandatory fields (legal owner, identification number, date of
@@ -808,7 +845,16 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
 - `drawing_dimension_update { drawing_id, annotation_id,
   text_override?, prefix?, arrow_flip?, text_offset? }` — cosmetic
   edits only (never re-projects, never re-resolves); the bump
-  re-flattens.
+  re-flattens.  `text_offset` is the dimension's PLACEMENT POINT
+  (sheet-mm, from the default text anchor): the text lands at
+  default + offset, and the dimension line / extension lines /
+  leader / arc derive from that final text position (linear single:
+  the perpendicular component moves the dimension line and stretches
+  the extension lines, the parallel component slides the text along
+  the line; radius/diameter: the leader/dimension line re-aims
+  through the dragged text, the center stays fixed; angular: the arc
+  radius follows the text distance, clamped to the 12 mm minimum).
+  The mouse drag commits one `text_offset` update per drop.
 - `drawing_dimension_delete { drawing_id, annotation_id }` — removes
   the annotation and its cached value.
 - `drawing_dimension_preview { drawing_id, view_id, dim_type, pick,
@@ -816,6 +862,41 @@ angle, ISO 5455 scales, and ISO 129-1 decimal separator.
   `drawing_dimension_preview` event `{value, text_value, curves[],
   text, error?}` — the core-computed value plus the sheet-mm graphics
   the UI renders until Enter commits the create.
+- `drawing_note_create { drawing_id, sheet_id, text, position,
+  height_mm?, angle_deg?, h_align? }` — creates a sheet-anchored free
+  text note (`SheetNote`, id `drawing-note-N`); `position` is the
+  text CENTER in sheet-mm (rounded to 0.01).
+- `drawing_note_update { drawing_id, note_id, text?, position?,
+  height_mm?, angle_deg?, h_align? }` — edits the note (the mouse
+  drag commits one absolute `position` per drop, sheet-index offset
+  subtracted UI-side).
+- `drawing_note_delete { drawing_id, note_id }` — removes the note.
+  `drawing_sheet_delete` cascades to its notes.
+- `drawing_annotation_create { drawing_id, view_id, kind, pick,
+  pick_2?, text_override?, prefix?, extensions?, placement? }` —
+  creates a model-anchored annotation: `kind` one of `leader_text`,
+  `center_mark`, `centerline`, `edge_extension`, `surface_finish`,
+  `welding`, `tolerance_frame`, `datum`, `balloon`.  `pick`/`pick_2`
+  are SHEET-mm points resolved against the view's CURRENT projection
+  like dimensions (the TNP mantra) — the core mints the
+  `SourceEdgeWitness` plus `attach_param` (0..1 fraction over the
+  witness's param range).  Per-kind geometry rules (center_mark needs
+  a circular witness, centerline two, edge_extension a straight edge
+  with the fraction snapped to the picked end) throw BEFORE the undo
+  push.  `placement` (leader_text) is the text's absolute anchor —
+  the core computes `text_offset = placement − default anchor`.
+- `drawing_annotation_update { drawing_id, annotation_id,
+  text_override?, prefix?, arrow_flip?, text_offset?, extensions?,
+  attach_param? }` — cosmetic edits only (never re-projects); the
+  drag commits one `text_offset` per drop (the leader re-aims through
+  the dragged text).
+- `drawing_annotation_delete { drawing_id, annotation_id }` — removes
+  the annotation and its cached attachment.
+- `drawing_annotation_preview { drawing_id, view_id, kind, pick,
+  pick_2?, text_override?, prefix? }` — NON-mutating: replies with a
+  `drawing_annotation_preview` event `{text_value, curves[], text,
+  error?}` — the same live-preview contract as dimensions, keyed by
+  `kind` instead of `dim_type`.
 
 Section views (P4): the refresh cuts every source body with a
 half-space when `section.cut_away` is true (material on the normal
@@ -856,9 +937,42 @@ runtime cache (memory-only, the projection contract).  The flatten
 emits the ISO 129-1 graphics: extension lines (8×d gap/overshoot),
 closed filled arrowheads (sheet-mm `filled_poly` primitives), the
 unbroken dimension line, and a `texts[]` record (3.5 mm lettering,
-unidirectional, ⌀/R prefixes, decimal separator, ° on angles).  A
-cosmetic `drawing_dimension_update` never re-projects — it only
-re-flattens.
+unidirectional, ⌀/R prefixes, decimal separator — "." default, a
+stored "," from before the dot default is migrated on load — ° on
+angles).  Dimension `texts[]` records carry the owning
+`annotation_id` (title-block and section-label texts do not) so the
+UI can hit-test a picked text back to its annotation.  A cosmetic
+`drawing_dimension_update` never re-projects — it only re-flattens.
+
+Notes and annotations (ANNOTATE/GEOMETRY/SYMBOLS tabs): sheet notes
+flatten as `texts[]` records (purpose `"note"`, `annotation_id` =
+note id, absolute position).  Annotations ride the SAME witness ladder
+and runtime-cache pattern as dimensions — identity → strict 0.01 mm →
+relaxed 0.1 mm → broken (`dependency_broken` + warning + last-known
+placement kept, marked stale; a broken annotation's graphics are
+suppressed, its text only).  The refresh/flatten pass branches on
+`is_annotation_kind()` so the new kinds never enter the dimension
+measurer.  Annotation graphics (thin lines, arrows, symbol geometry)
+are emitted as primitives with purpose `"annotation"` after the
+dimension primitives, and their texts with purpose `"annotation"`;
+the DXF exporter layers purpose `"annotation"` on ANNOTATION.
+
+Kind semantics (all sheet-mm offsets, view-scale free): leader_text =
+arrow + leader + text (drag re-aims the leader); center_mark = thin
+cross ±2.5 mm on a circular witness's center (no text, no
+attach_param); centerline = ISO 128-2 chain line through two circles'
+centers ±3 mm overshoot (the emitter pre-dashes — annotation
+primitives bypass the view-geometry dashing pass; concentric circles
+refuse); edge_extension = thin line 5 mm outward from the picked end
+(attach_param snaps to 0/1 and the extension roots on the SNAPPED
+end); surface_finish = ISO 1302 check mark + value text; welding =
+arrow + ISO 2553 reference line + symbol text above its left end;
+tolerance_frame = ISO 1101 two-compartment frame (14×7 mm) + centered
+text; datum = filled triangle + letter box; balloon = circle r3.5 +
+leader + centered number.  Annotation picks prefer the REAL edge when
+a silhouette coincides with it (a rim circle in an axis view) — the
+ambiguity rule relaxes by source TYPE only, never between two real
+edges.
 
 Title block + drawing text (P7): the flatten fills the 180×63 mm
 ISO 7200 block bottom-right inside the frame — the eight mandatory
@@ -942,6 +1056,29 @@ projections (HLR output) are **memory-only** — they live in the
 core's `drawing_runtime` cache, keyed by document + view and
 validated against the document revision, and never enter the
 serialized document (the CAM toolpath contract).
+
+Templates (CREATE DRAWING dialog): setup-only JSON files —
+`{ name, sheets: [{ name, paper_size, orientation, projection_angle,
+title_block }] }` — with no ids, view ids, views or annotations (those
+are minted at `drawing_create` time).  The core owns the file I/O
+(the cam_tool_import_file precedent); the UI picks paths and feeds a
+loaded template back through the normal `drawing_create` path.
+
+- `drawing_template_save { file_path, template }` — validates the
+  template (non-empty name, ≥1 sheet, the exact A0–A4 / portrait /
+  landscape / first_angle / third_angle enums — the drawing_sheet_update
+  rules) and writes it as pretty JSON; replies with a
+  `drawing_template_save_result` event `{file_path}`.  Validation and
+  I/O failures reply with `error` events (`DRAWING_TEMPLATE_SAVE_FAILED`).
+- `drawing_template_load { file_path }` — reads + parses the file,
+  applies the same lenient defaults as the drawing payload parser
+  (missing keys never fail) and the same validation; replies with a
+  `drawing_template_load_result` event `{template: {name, sheets[]}}`
+  (full sheet payloads including title blocks, ids empty).  Errors
+  reply with `error` events (`DRAWING_TEMPLATE_LOAD_FAILED`).
+- The Tauri shell exports the user templates directory as
+  `POLYSMITH_TEMPLATES_DIR` (`<app_data>/templates`) — the dialog's
+  picker default.
 
 ## Philosophy
 

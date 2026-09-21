@@ -79,6 +79,9 @@
   int next_drawing_sheet_id_ = 1;
   int next_drawing_view_id_ = 1;
   int next_drawing_annotation_id_ = 1;
+  // Counter for sheet notes ("drawing-note-N"), restored on load by
+  // scanning trailing integers like the annotation counter.
+  int next_drawing_note_id_ = 1;
   // Independent counter for dimension edge references
   // ("drawing-edge-N") minted at pick time — the cam_capture_point
   // precedent.

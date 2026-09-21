@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "core/diagnostics/logger.h"
+#include "core/drawing/drawing_detail_clip.h"
 #include "core/drawing/drawing_projection.h"
 #include "core/drawing/drawing_resolution.h"
 #include "core/drawing/drawing_runtime.h"
@@ -41,6 +42,18 @@ void store_broken_result(DocumentState& document, Drawing& drawing,
     }
     annotation.dependency_broken = true;
     annotation.warning = warning;
+    if (is_annotation_kind(annotation.kind)) {
+      if (const ResolvedAttachment* last = drawing_runtime::last_known_attachment(
+              document, annotation.annotation_id)) {
+        ResolvedAttachment stale_copy = *last;
+        stale_copy.stale = true;
+        stale_copy.warning = warning;
+        drawing_runtime::store_attachment_at(document, annotation.annotation_id,
+                                             std::move(stale_copy),
+                                             target_revision);
+      }
+      continue;
+    }
     if (const ResolvedDimension* last = drawing_runtime::last_known_dimension(
             document, annotation.annotation_id)) {
       ResolvedDimension stale_copy = *last;
@@ -63,6 +76,43 @@ void refresh_view_annotations(DocumentState& document, Drawing& drawing,
                               int target_revision) {
   for (auto& annotation : drawing.annotations) {
     if (annotation.view_id != view.view_id) {
+      continue;
+    }
+    // Annotation kinds (GEOMETRY/SYMBOLS/ANNOTATE) resolve through
+    // the same ladder into their own cache — the ladder itself is
+    // shared (resolve_one), only the outcome struct differs.
+    if (is_annotation_kind(annotation.kind)) {
+      ResolvedAttachment resolved = resolve_annotation_attachment(
+          fresh, annotation, document.drawing.decimal_separator);
+      const std::string warning = resolved.warning;
+      if (resolved.broken) {
+        if (const ResolvedAttachment* last =
+                drawing_runtime::last_known_attachment(
+                    document, annotation.annotation_id)) {
+          ResolvedAttachment stale_copy = *last;
+          stale_copy.stale = true;
+          stale_copy.warning = warning;
+          drawing_runtime::store_attachment_at(
+              document, annotation.annotation_id, std::move(stale_copy),
+              target_revision);
+        } else {
+          // No last-known attachment: cache the broken marker (no
+          // geometry — the flatten skips it; the panel shows the
+          // warning).
+          resolved.stale = true;
+          drawing_runtime::store_attachment_at(
+              document, annotation.annotation_id, std::move(resolved),
+              target_revision);
+        }
+        annotation.dependency_broken = true;
+        annotation.warning = warning;
+      } else {
+        drawing_runtime::store_attachment_at(
+            document, annotation.annotation_id, std::move(resolved),
+            target_revision);
+        annotation.dependency_broken = false;
+        annotation.warning.clear();
+      }
       continue;
     }
     ResolvedDimension resolved = resolve_annotation(
@@ -126,6 +176,11 @@ void refresh_drawing_dependencies(DocumentState& document,
       if (drawing_runtime::cached_projection_at(
               document, view.view_id, target_revision) != nullptr) {
         continue;  // already computed for this revision
+      }
+      // Detail views derive from their PARENT's projection — the
+      // second pass below handles them after every parent is done.
+      if (view.kind == "detail") {
+        continue;
       }
 
       // ── Frame resolution (shared with the live view preview) ──
@@ -223,6 +278,70 @@ void refresh_drawing_dependencies(DocumentState& document,
         refresh_view_annotations(document, drawing, view, *fresh,
                                  target_revision);
       }
+    }
+
+    // ── Detail views (ISO 128-3): second pass — every parent is
+    //    cached at this revision by now.  The detail's projection is
+    //    the parent's CLIPPED to the detail circle (same coordinate
+    //    frame — the detail is a magnified window, not a re-projection).
+    for (auto& view : drawing.views) {
+      if (view.kind != "detail") {
+        continue;
+      }
+      if (drawing_runtime::cached_projection_at(
+              document, view.view_id, target_revision) != nullptr) {
+        continue;  // already computed for this revision
+      }
+      if (!view.detail.has_value()) {
+        store_broken_result(
+            document, drawing, view,
+            "The detail view has no detail definition — the view holds "
+            "its last-known state.",
+            std::nullopt, target_revision);
+        continue;
+      }
+      const DrawingView* parent = nullptr;
+      for (const auto& candidate : drawing.views) {
+        if (candidate.view_id == view.detail.value().parent_view_id) {
+          parent = &candidate;
+          break;
+        }
+      }
+      if (parent == nullptr) {
+        store_broken_result(
+            document, drawing, view,
+            "The detail view's parent view no longer exists — the view "
+            "holds its last-known state.",
+            view.detail.value().parent_view_id, target_revision);
+        continue;
+      }
+      if (parent->broken_ref.has_value()) {
+        // The parent is degraded — the detail degrades WITH it (the
+        // parent's stale result is cached at this revision, so the
+        // clip still yields last-known content, marked stale).
+        store_broken_result(document, drawing, view, parent->warning,
+                            parent->broken_ref, target_revision);
+        continue;
+      }
+      const ProjectionResult* parent_projection =
+          drawing_runtime::cached_projection_at(document, parent->view_id,
+                                                target_revision);
+      if (parent_projection == nullptr) {
+        store_broken_result(
+            document, drawing, view,
+            "The detail view's parent projection is unavailable — the "
+            "view holds its last-known state.",
+            view.detail.value().parent_view_id, target_revision);
+        continue;
+      }
+      ProjectionResult clipped = clip_projection_to_circle(
+          *parent_projection, view.detail.value().center,
+          view.detail.value().radius);
+      clipped.source_revision = target_revision;
+      view.broken_ref.reset();
+      view.warning.clear();
+      drawing_runtime::store_projection_at(
+          document, view.view_id, std::move(clipped), target_revision);
     }
   }
 }

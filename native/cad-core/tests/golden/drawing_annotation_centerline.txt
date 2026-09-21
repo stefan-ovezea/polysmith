@@ -1,0 +1,7 @@
+annotation line 7,10 13,10
+annotation line 13.75,10 14,10
+annotation line 14.75,10 20.75,10
+annotation line 21.5,10 21.75,10
+annotation line 22.5,10 28.5,10
+annotation line 29.25,10 29.5,10
+annotation line 30.25,10 33,10

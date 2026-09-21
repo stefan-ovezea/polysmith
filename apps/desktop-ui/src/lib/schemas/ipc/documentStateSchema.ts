@@ -974,6 +974,6 @@ export const documentStateSchema = z.object({
     active_drawing_id: null,
     selected_view_id: null,
     selected_annotation_id: null,
-    decimal_separator: ",",
+    decimal_separator: ".",
   }),
 }).passthrough();

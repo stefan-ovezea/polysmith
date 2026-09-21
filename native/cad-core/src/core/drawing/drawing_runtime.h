@@ -39,6 +39,13 @@ struct DimensionEntry {
   ResolvedDimension dimension;
 };
 
+/// A resolved annotation attachment (non-dimension kinds) — the same
+/// memory-only contract.
+struct AttachmentEntry {
+  int revision = -1;
+  ResolvedAttachment attachment;
+};
+
 struct PerDocument {
   int last_revision = -1;
   std::unordered_map<std::string, Entry> projections;  // view_id -> result
@@ -51,6 +58,10 @@ struct PerDocument {
   // last-known retention for broken annotations.
   std::unordered_map<std::string, DimensionEntry> dimensions;
   std::unordered_map<std::string, DimensionEntry> last_known_dimensions;
+  // Resolved annotation attachments (non-dimension kinds), same
+  // discipline.
+  std::unordered_map<std::string, AttachmentEntry> attachments;
+  std::unordered_map<std::string, AttachmentEntry> last_known_attachments;
   // The last UNCOMMITTED preview's projection, keyed by every input
   // that affects project() EXCEPT the sheet position (a flatten
   // offset) and the scale (applied by the flatten) — a cursor-follow
@@ -136,6 +147,26 @@ const ResolvedDimension* last_known_dimension(const DocumentState& document,
 /// Removes a deleted annotation's cached state (both maps).
 void erase_dimension(const std::string& document_id,
                      const std::string& annotation_id);
+
+// ── Resolved annotation attachments (GEOMETRY/SYMBOLS/ANNOTATE) ────
+// Same revision discipline as dimensions: resolved at refresh time
+// against the fresh projection, validated on read, pruned into
+// last_known by drop_stale so broken annotations keep their
+// placement.
+
+const ResolvedAttachment* cached_attachment(const DocumentState& document,
+                                            const std::string& annotation_id);
+const ResolvedAttachment* cached_attachment_at(
+    const DocumentState& document, const std::string& annotation_id,
+    int revision);
+void store_attachment_at(const DocumentState& document,
+                         const std::string& annotation_id,
+                         ResolvedAttachment attachment, int target_revision);
+const ResolvedAttachment* last_known_attachment(
+    const DocumentState& document, const std::string& annotation_id);
+/// Removes a deleted annotation's cached attachment (both maps).
+void erase_attachment(const std::string& document_id,
+                      const std::string& annotation_id);
 
 }  // namespace drawing_runtime
 

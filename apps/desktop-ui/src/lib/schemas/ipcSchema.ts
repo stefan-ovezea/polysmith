@@ -61,7 +61,9 @@ const documentExportedEventSchema = z.object({
   type: z.literal("document_exported"),
   payload: z.object({
     file_path: z.string(),
-    format: z.enum(["step", "stl", "dxf", "iges", "gcode"]),
+    // Model exports (step/stl/dxf/iges/gcode) plus the drawing-sheet
+    // exports (svg/dxf/pdf — dxf_mode "annotated" still reports dxf).
+    format: z.enum(["step", "stl", "dxf", "iges", "gcode", "svg", "pdf"]),
     exported_feature_count: z.number(),
   }),
 });
@@ -295,6 +297,25 @@ const camToolExportFileResultEventSchema = z.object({
   }),
 });
 
+// Drawing template file I/O replies (the CREATE DRAWING dialog).  The
+// loaded template is lenient here — the hook re-parses it with the
+// strict drawingTemplateSchema.
+const drawingTemplateSaveResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("drawing_template_save_result"),
+  payload: z.object({
+    file_path: z.string(),
+  }),
+});
+
+const drawingTemplateLoadResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("drawing_template_load_result"),
+  payload: z.object({
+    template: z.record(z.string(), z.unknown()),
+  }),
+});
+
 const cornerTrimPreviewResultEventSchema = z.object({
   id: z.string(),
   type: z.literal("corner_trim_preview_result"),
@@ -347,6 +368,24 @@ const drawingDimensionPreviewEventSchema = z.object({
   }),
 });
 
+// Non-mutating drawing annotation preview (GEOMETRY/SYMBOLS/ANNOTATE)
+// — the dimension preview contract with `kind` instead of `dim_type`.
+const drawingAnnotationPreviewEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("drawing_annotation_preview"),
+  payload: z.object({
+    drawing_id: z.string(),
+    view_id: z.string(),
+    kind: z.string(),
+    pick: z.tuple([z.number(), z.number()]),
+    pick_2: z.tuple([z.number(), z.number()]).optional(),
+    error: z.string().optional(),
+    text_value: z.string().optional(),
+    curves: z.array(viewportDrawingCurveShape).optional(),
+    text: viewportDrawingTextShape.optional(),
+  }),
+});
+
 // Non-mutating Insert View ghost — the core projects an uncommitted
 // view definition and replies with its geometry + a view-shaped
 // record (empty view_id marks the ghost; warning = degraded).
@@ -381,7 +420,10 @@ export const coreMessageSchema = z.union([
   camEdgeAttestationResultEventSchema,
   camAttestationResultEventSchema,
   drawingDimensionPreviewEventSchema,
+  drawingAnnotationPreviewEventSchema,
   drawingViewPreviewResultEventSchema,
+  drawingTemplateSaveResultEventSchema,
+  drawingTemplateLoadResultEventSchema,
   errorEventSchema,
 ]);
 

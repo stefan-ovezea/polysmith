@@ -343,6 +343,104 @@ bool measure_records(const AnnotationKind& kind, const ProjectedEdgeRecord* rec1
   return false;
 }
 
+// ── The witness ladder (shared by dimensions + annotations) ────────
+// Extracted from resolve_annotation so resolve_annotation_attachment
+// resolves through the IDENTICAL rungs — a ladder divergence between
+// the two families would show up as one resolving an edge the other
+// loses after the same model edit.
+
+/// Rung 2/3 candidate search: witness_matches with a tolerance.
+std::vector<const ProjectedEdgeRecord*> find_candidates(
+    const ProjectionResult& projection, const SourceEdgeWitness& target,
+    bool require_body, double tol) {
+  std::vector<const ProjectedEdgeRecord*> matches;
+  for (const auto& rec : projection.edges) {
+    if (rec.line_class != "visible" || rec.curve_class == "smooth" ||
+        rec.curve_class == "cutting_plane") {
+      continue;
+    }
+    const auto* witness = std::get_if<SourceEdgeWitness>(&rec.source);
+    if (witness == nullptr || witness->body_id.empty()) {
+      continue;
+    }
+    if (witness_matches(target, *witness, tol, require_body)) {
+      matches.push_back(&rec);
+    }
+  }
+  return matches;
+}
+
+/// One witness → best matching record: identity pass (body + edge
+/// index + kind — topology-stable, follows parametric edits) → strict
+/// geometry + body (0.01 mm) → relaxed geometry (0.1 mm, no body) →
+/// not found.  Distinct sources among the candidates → ambiguous;
+/// records from the SAME source are pieces of one HLR-split edge and
+/// merge (longest piece wins).  `noun` + `last_known_phrase` tailor
+/// the degradation warning ("dimension" vs "annotation").
+bool resolve_one(const ProjectionResult& projection,
+                 const SourceEdgeWitness& target,
+                 std::vector<const ProjectedEdgeRecord*>* out_matches,
+                 const char* noun, const char* last_known_phrase,
+                 std::string* warning) {
+  // Identity pass: body + edge index + kind (topology-stable).
+  if (!target.body_id.empty() && target.src_edge_index >= 0) {
+    for (const auto& rec : projection.edges) {
+      if (rec.line_class != "visible" || rec.curve_class == "smooth" ||
+          rec.curve_class == "cutting_plane") {
+        continue;
+      }
+      const auto* witness = std::get_if<SourceEdgeWitness>(&rec.source);
+      if (witness != nullptr &&
+          witness->body_id == target.body_id &&
+          witness->src_edge_index == target.src_edge_index &&
+          witness->curve_kind == target.curve_kind) {
+        out_matches->push_back(&rec);
+      }
+    }
+  }
+  if (out_matches->empty()) {
+    *out_matches =
+        find_candidates(projection, target, /*require_body=*/true, 0.01);
+  }
+  if (out_matches->empty()) {
+    *out_matches =
+        find_candidates(projection, target, /*require_body=*/false, 0.1);
+  }
+  if (out_matches->empty()) {
+    *warning = std::string("The edge referenced by this ") + noun +
+               " was not found — the " + noun + " " + last_known_phrase + ".";
+    return false;
+  }
+  // Distinct sources among the candidates → ambiguous; records from
+  // the SAME source are pieces of one HLR-split edge and merge.
+  const ProjectedEdgeRecord* first = out_matches->front();
+  for (const auto* other : *out_matches) {
+    if (!same_source(*first, *other)) {
+      *warning = std::string("The ") + noun +
+                 "'s edge is ambiguous after the model changed — the " +
+                 noun + " " + last_known_phrase + ".";
+      return false;
+    }
+  }
+  // Longest piece of the split edge wins (the dominant span).
+  const ProjectedEdgeRecord* best = first;
+  for (const auto* other : *out_matches) {
+    const double other_span = dist2(other->p_start, other->p_end) +
+                              (other->circle_radius.has_value()
+                                   ? 2.0 * kPi * other->circle_radius.value()
+                                   : 0.0);
+    const double best_span = dist2(best->p_start, best->p_end) +
+                             (best->circle_radius.has_value()
+                                  ? 2.0 * kPi * best->circle_radius.value()
+                                  : 0.0);
+    if (other_span > best_span) {
+      best = other;
+    }
+  }
+  out_matches->assign(1, best);
+  return true;
+}
+
 }  // namespace
 
 // ── Formatting ────────────────────────────────────────────────────
@@ -381,6 +479,7 @@ std::string format_dimension_value(double value, bool angle,
 std::optional<PickResolution> resolve_pick(const ProjectionResult& projection,
                                            const std::array<double, 2>& pick_viewmm,
                                            double tolerance_mm,
+                                           bool prefer_witness_source,
                                            std::string* error) {
   const ProjectedEdgeRecord* best = nullptr;
   double best_dist = 1e300;
@@ -409,8 +508,21 @@ std::optional<PickResolution> resolve_pick(const ProjectionResult& projection,
   // them apart — refuse rather than guess (never silently substitute).
   if (second != nullptr && second_dist <= best_dist + 1e-3 &&
       !same_source(*best, *second)) {
-    *error = "The pick is ambiguous — several coincident edges overlap here.";
-    return std::nullopt;
+    const bool best_has_witness =
+        std::holds_alternative<SourceEdgeWitness>(best->source);
+    const bool second_has_witness =
+        std::holds_alternative<SourceEdgeWitness>(second->source);
+    if (prefer_witness_source && best_has_witness != second_has_witness) {
+      // A rim circle + its coincident silhouette (axis view): the
+      // REAL edge is the annotation anchor.
+      if (!best_has_witness) {
+        std::swap(best, second);
+        best_dist = second_dist;
+      }
+    } else {
+      *error = "The pick is ambiguous — several coincident edges overlap here.";
+      return std::nullopt;
+    }
   }
   return PickResolution{best, nearest_point_on_record(*best, pick_viewmm)};
 }
@@ -445,14 +557,16 @@ std::optional<ResolvedDimension> measure_from_picks(
         (p[1] - view.sheet_position[1]) / s};
   };
   const auto pick1 = resolve_pick(projection, to_view(pick_sheetmm),
-                                  pick_tolerance_sheetmm / s, error);
+                                  pick_tolerance_sheetmm / s,
+                                  /*prefer_witness_source=*/false, error);
   if (!pick1.has_value()) {
     return std::nullopt;
   }
   std::optional<PickResolution> pick2;
   if (pick_2_sheetmm.has_value()) {
     pick2 = resolve_pick(projection, to_view(pick_2_sheetmm.value()),
-                         pick_tolerance_sheetmm / s, error);
+                         pick_tolerance_sheetmm / s,
+                         /*prefer_witness_source=*/false, error);
     if (!pick2.has_value()) {
       return std::nullopt;
     }
@@ -515,88 +629,11 @@ ResolvedDimension resolve_annotation(const ProjectionResult& projection,
   // keeps it stable — the dimension follows the model.  Rung 2:
   // strict geometry + body within 0.01 mm.  Rung 3: relaxed geometry
   // within 0.1 mm (the feature was re-created — a fillet broke the
-  // body id).  Rung 4: not found → broken.
-  auto find_candidates = [&](const SourceEdgeWitness& target,
-                             bool require_body, double tol) {
-    std::vector<const ProjectedEdgeRecord*> matches;
-    for (const auto& rec : projection.edges) {
-      if (rec.line_class != "visible" || rec.curve_class == "smooth" ||
-          rec.curve_class == "cutting_plane") {
-        continue;
-      }
-      const auto* witness = std::get_if<SourceEdgeWitness>(&rec.source);
-      if (witness == nullptr || witness->body_id.empty()) {
-        continue;
-      }
-      if (witness_matches(target, *witness, tol, require_body)) {
-        matches.push_back(&rec);
-      }
-    }
-    return matches;
-  };
-
-  auto resolve_one = [&](const SourceEdgeWitness& target,
-                         std::vector<const ProjectedEdgeRecord*>* out_matches,
-                         std::string* warning) {
-    // Identity pass: body + edge index + kind (topology-stable).
-    if (!target.body_id.empty() && target.src_edge_index >= 0) {
-      for (const auto& rec : projection.edges) {
-        if (rec.line_class != "visible" || rec.curve_class == "smooth" ||
-            rec.curve_class == "cutting_plane") {
-          continue;
-        }
-        const auto* witness = std::get_if<SourceEdgeWitness>(&rec.source);
-        if (witness != nullptr &&
-            witness->body_id == target.body_id &&
-            witness->src_edge_index == target.src_edge_index &&
-            witness->curve_kind == target.curve_kind) {
-          out_matches->push_back(&rec);
-        }
-      }
-    }
-    if (out_matches->empty()) {
-      *out_matches = find_candidates(target, /*require_body=*/true, 0.01);
-    }
-    if (out_matches->empty()) {
-      *out_matches = find_candidates(target, /*require_body=*/false, 0.1);
-    }
-    if (out_matches->empty()) {
-      *warning = "The edge referenced by this dimension was not found — "
-                 "the dimension shows its last-known value.";
-      return false;
-    }
-    // Distinct sources among the candidates → ambiguous; records from
-    // the SAME source are pieces of one HLR-split edge and merge.
-    const ProjectedEdgeRecord* first = out_matches->front();
-    for (const auto* other : *out_matches) {
-      if (!same_source(*first, *other)) {
-        *warning =
-            "The dimension's edge is ambiguous after the model changed — "
-            "the dimension shows its last-known value.";
-        return false;
-      }
-    }
-    // Longest piece of the split edge wins (the dominant span).
-    const ProjectedEdgeRecord* best = first;
-    for (const auto* other : *out_matches) {
-      const double other_span = dist2(other->p_start, other->p_end) +
-                                (other->circle_radius.has_value()
-                                     ? 2.0 * kPi * other->circle_radius.value()
-                                     : 0.0);
-      const double best_span = dist2(best->p_start, best->p_end) +
-                               (best->circle_radius.has_value()
-                                    ? 2.0 * kPi * best->circle_radius.value()
-                                    : 0.0);
-      if (other_span > best_span) {
-        best = other;
-      }
-    }
-    out_matches->assign(1, best);
-    return true;
-  };
-
+  // body id).  Rung 4: not found → broken.  (The ladder itself lives
+  // in the shared resolve_one above.)
   std::vector<const ProjectedEdgeRecord*> matches1;
-  if (!resolve_one(annotation.witness, &matches1, &out.warning)) {
+  if (!resolve_one(projection, annotation.witness, &matches1, "dimension",
+                   "shows its last-known value", &out.warning)) {
     return out;
   }
   const ProjectedEdgeRecord* rec1 = matches1[0];
@@ -607,7 +644,9 @@ ResolvedDimension resolve_annotation(const ProjectionResult& projection,
   std::array<double, 2> nearest2 = {0.0, 0.0};
   if (annotation.witness_2.has_value()) {
     std::vector<const ProjectedEdgeRecord*> matches2;
-    if (!resolve_one(annotation.witness_2.value(), &matches2, &out.warning)) {
+    if (!resolve_one(projection, annotation.witness_2.value(), &matches2,
+                     "dimension", "shows its last-known value",
+                     &out.warning)) {
       return out;
     }
     rec2 = matches2[0];
@@ -630,6 +669,253 @@ ResolvedDimension resolve_annotation(const ProjectionResult& projection,
                format_dimension_value(out.value, angle, decimal_separator);
   }
   out.broken = false;
+  return out;
+}
+
+// ── Annotation attachments (GEOMETRY / SYMBOLS / ANNOTATE) ─────────
+
+bool is_annotation_kind(const AnnotationKind& kind) {
+  return kind == "leader_text" || kind == "center_mark" ||
+         kind == "centerline" || kind == "edge_extension" ||
+         kind == "surface_finish" || kind == "welding" ||
+         kind == "tolerance_frame" || kind == "datum" ||
+         kind == "balloon";
+}
+
+std::array<double, 2> point_at_param(const ProjectedEdgeRecord& rec,
+                                     double fraction) {
+  const double f = std::clamp(fraction, 0.0, 1.0);
+  if (rec.curve_kind == "circle" && rec.circle_center.has_value() &&
+      rec.circle_radius.has_value()) {
+    const auto& c = rec.circle_center.value();
+    const double a = rec.start_angle + f * record_sweep(rec);
+    return {c[0] + rec.circle_radius.value() * std::cos(a),
+            c[1] + rec.circle_radius.value() * std::sin(a)};
+  }
+  // Lines (and anything else): lerp the endpoints.
+  const auto& a = rec.p_start;
+  const auto& b = rec.p_end;
+  return {a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])};
+}
+
+double param_fraction_of(const ProjectedEdgeRecord& rec,
+                         const std::array<double, 2>& point) {
+  if (rec.curve_kind == "circle" && rec.circle_center.has_value()) {
+    const auto& c = rec.circle_center.value();
+    const double sweep = record_sweep(rec);
+    if (sweep < 1e-6) {
+      return 0.0;
+    }
+    double a = std::atan2(point[1] - c[1], point[0] - c[0]);
+    // Normalize into [start_angle, start_angle + sweep).
+    while (a < rec.start_angle - 1e-12) {
+      a += 2.0 * kPi;
+    }
+    while (a >= rec.start_angle + sweep - 1e-12) {
+      a -= 2.0 * kPi;
+    }
+    return std::clamp((a - rec.start_angle) / sweep, 0.0, 1.0);
+  }
+  const auto& a = rec.p_start;
+  const auto& b = rec.p_end;
+  const double dx = b[0] - a[0];
+  const double dy = b[1] - a[1];
+  const double len2 = dx * dx + dy * dy;
+  if (len2 < 1e-18) {
+    return 0.0;
+  }
+  return std::clamp(((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / len2,
+                    0.0, 1.0);
+}
+
+ResolvedAttachment resolve_annotation_attachment(
+    const ProjectionResult& projection, const Annotation& annotation,
+    const std::string& decimal_separator) {
+  (void)decimal_separator;  // annotation text is verbatim user content
+  ResolvedAttachment out;
+  out.kind = annotation.kind;
+  out.broken = true;
+
+  std::vector<const ProjectedEdgeRecord*> matches1;
+  if (!resolve_one(projection, annotation.witness, &matches1, "annotation",
+                   "keeps its last-known placement", &out.warning)) {
+    return out;
+  }
+  const ProjectedEdgeRecord* rec1 = matches1[0];
+  // Attachment geometry, mirroring measure_records' attach_line.
+  if (rec1->curve_kind == "circle" && rec1->circle_center.has_value() &&
+      rec1->circle_radius.has_value()) {
+    out.a_kind = "circle";
+    out.a_p0 = rec1->circle_center.value();
+    out.a_center = rec1->circle_center;
+    out.a_radius = rec1->circle_radius;
+    out.a_p1 = point_at_param(*rec1, annotation.attach_param.value_or(0.0));
+  } else {
+    out.a_kind = "line";
+    out.a_p0 = rec1->p_start;
+    out.a_p1 = rec1->p_end;
+  }
+  out.attach_point = annotation.attach_param.has_value()
+                         ? point_at_param(*rec1, annotation.attach_param.value())
+                         : rec1->p_start;
+
+  if (annotation.witness_2.has_value()) {
+    std::vector<const ProjectedEdgeRecord*> matches2;
+    if (!resolve_one(projection, annotation.witness_2.value(), &matches2,
+                     "annotation", "keeps its last-known placement",
+                     &out.warning)) {
+      return out;
+    }
+    const ProjectedEdgeRecord* rec2 = matches2[0];
+    if (rec2->curve_kind == "circle" && rec2->circle_center.has_value() &&
+        rec2->circle_radius.has_value()) {
+      out.b_p0 = rec2->circle_center.value();
+      out.b_p1 = point_at_param(*rec2, 0.0);
+      out.b_center = rec2->circle_center;
+      out.b_radius = rec2->circle_radius;
+    } else {
+      out.b_p0 = rec2->p_start;
+      out.b_p1 = rec2->p_end;
+    }
+  }
+
+  out.text = annotation.prefix +
+             annotation.text_override.value_or(std::string());
+  out.broken = false;
+  return out;
+}
+
+std::optional<ResolvedAttachment> resolve_annotation_picks(
+    const ProjectionResult& projection, const DrawingView& view,
+    const AnnotationKind& kind,
+    const std::array<double, 2>& pick_sheetmm,
+    const std::optional<std::array<double, 2>>& pick_2_sheetmm,
+    double pick_tolerance_sheetmm,
+    const std::optional<std::string>& text_override,
+    const std::string& prefix, std::string* error,
+    std::vector<const ProjectedEdgeRecord*>* out_records,
+    std::optional<double>* out_attach_param) {
+  if (!is_annotation_kind(kind)) {
+    *error = "Unknown annotation kind '" + kind + "'.";
+    return std::nullopt;
+  }
+  const double s = view.scale;
+  const auto to_view = [&](const std::array<double, 2>& p) {
+    return std::array<double, 2>{
+        (p[0] - view.sheet_position[0]) / s,
+        (p[1] - view.sheet_position[1]) / s};
+  };
+  const auto pick1 = resolve_pick(projection, to_view(pick_sheetmm),
+                                  pick_tolerance_sheetmm / s,
+                                  /*prefer_witness_source=*/true, error);
+  if (!pick1.has_value()) {
+    return std::nullopt;
+  }
+  std::optional<PickResolution> pick2;
+  if (pick_2_sheetmm.has_value()) {
+    pick2 = resolve_pick(projection, to_view(pick_2_sheetmm.value()),
+                         pick_tolerance_sheetmm / s,
+                         /*prefer_witness_source=*/true, error);
+    if (!pick2.has_value()) {
+      return std::nullopt;
+    }
+    if (same_source(*pick1->record, *pick2->record)) {
+      *error = "Pick two different edges for the second attachment.";
+      return std::nullopt;
+    }
+  }
+
+  // Kind geometry validation (before anything is committed).
+  const auto is_circle = [](const ProjectedEdgeRecord& rec) {
+    return rec.curve_kind == "circle" && rec.circle_center.has_value() &&
+           rec.circle_radius.has_value();
+  };
+  const bool first_is_circle = is_circle(*pick1->record);
+  if (kind == "center_mark" && !first_is_circle) {
+    *error = "A center mark needs a circle or arc.";
+    return std::nullopt;
+  }
+  if (kind == "centerline") {
+    if (!pick2.has_value()) {
+      *error = "A centerline needs two circles — pick a second one.";
+      return std::nullopt;
+    }
+    if (!first_is_circle || !is_circle(*pick2->record)) {
+      *error = "A centerline needs two circles or arcs.";
+      return std::nullopt;
+    }
+    const double dc = std::hypot(
+        pick1->record->circle_center.value()[0] -
+            pick2->record->circle_center.value()[0],
+        pick1->record->circle_center.value()[1] -
+            pick2->record->circle_center.value()[1]);
+    if (dc < 1e-6) {
+      *error = "A centerline needs two circles with different centers.";
+      return std::nullopt;
+    }
+  }
+  if (kind == "edge_extension" && pick1->record->curve_kind != "line") {
+    *error = "An edge extension needs a straight edge.";
+    return std::nullopt;
+  }
+
+  ResolvedAttachment out;
+  out.kind = kind;
+  // Attachment geometry, mirroring resolve_annotation_attachment.
+  const ProjectedEdgeRecord* rec1 = pick1->record;
+  if (first_is_circle) {
+    out.a_kind = "circle";
+    out.a_p0 = rec1->circle_center.value();
+    out.a_center = rec1->circle_center;
+    out.a_radius = rec1->circle_radius;
+    out.a_p1 = pick1->nearest;
+  } else {
+    out.a_kind = "line";
+    out.a_p0 = rec1->p_start;
+    out.a_p1 = rec1->p_end;
+  }
+  out.attach_point = pick1->nearest;
+  if (pick2.has_value()) {
+    const ProjectedEdgeRecord* rec2 = pick2->record;
+    if (is_circle(*rec2)) {
+      out.b_p0 = rec2->circle_center.value();
+      out.b_p1 = pick2->nearest;
+      out.b_center = rec2->circle_center;
+      out.b_radius = rec2->circle_radius;
+    } else {
+      out.b_p0 = rec2->p_start;
+      out.b_p1 = rec2->p_end;
+    }
+  }
+
+  // The stored attachment fraction: point-attachment kinds follow the
+  // pick along the edge; edge_extension snaps to the nearest end.
+  // center_mark/centerline anchor on the circle center — no fraction.
+  if (kind != "center_mark" && kind != "centerline") {
+    double fraction = param_fraction_of(*rec1, pick1->nearest);
+    if (kind == "edge_extension") {
+      fraction = fraction < 0.5 ? 0.0 : 1.0;
+    }
+    if (out_attach_param != nullptr) {
+      *out_attach_param = fraction;
+    }
+    if (kind == "edge_extension") {
+      // The extension's root is the SNAPPED end, not the raw pick
+      // point — the preview must match the committed (refresh-path)
+      // geometry exactly.
+      out.attach_point = point_at_param(*rec1, fraction);
+    }
+  }
+
+  if (out_records != nullptr) {
+    out_records->clear();
+    out_records->push_back(rec1);
+    if (pick2.has_value()) {
+      out_records->push_back(pick2->record);
+    }
+  }
+
+  out.text = prefix + text_override.value_or(std::string());
   return out;
 }
 
