@@ -3,8 +3,9 @@
 // The C++ suites are the project's regression safety net for profile
 // detection, sketching, and extrusion logic — run them before
 // committing any native change (`pnpm test:core`).  On Windows the
-// OCCT DLLs are picked up from the build directory by prepending it
-// to PATH; on POSIX the same directory is added to LD_LIBRARY_PATH.
+// OCCT DLL dirs are prepended to PATH (see below); on Linux the build
+// directory is added to LD_LIBRARY_PATH, on macOS to
+// DYLD_LIBRARY_PATH (macOS ignores LD_LIBRARY_PATH).
 //
 // Suites run concurrently (bounded by CAD_CORE_TEST_JOBS, default CPU
 // count; CAD_CORE_TEST_JOBS=1 reproduces the old serial run).  Each
@@ -49,6 +50,23 @@ if (tests.length === 0) {
 const baseEnv = { ...process.env };
 if (isWindows) {
   baseEnv.PATH = `${buildRoot}${delimiter}${baseEnv.PATH ?? ""}`;
+  // The test exes link the OCCT import libs from the OCCT build dir;
+  // the matching DLLs live in its sibling bin/ (and in the install
+  // dir — the same one Tauri prepends when spawning the core).  The
+  // vcpkg z-applocal post-build step normally copies them next to
+  // each exe, but that step is machine-fragile (it fails on machines
+  // with a stale vcpkg) — pointing PATH at the bin dirs makes the
+  // tests independent of it.
+  const occtBinDirs = [
+    join(root, "third_party", "occt8-build", "win64", "vc14", "bin"),
+    join(root, "third_party", "occt8-install", "win64", "vc14", "bin"),
+  ];
+  baseEnv.PATH = [...occtBinDirs.filter((dir) => existsSync(dir)), baseEnv.PATH].join(delimiter);
+} else if (process.platform === "darwin") {
+  // macOS ignores LD_LIBRARY_PATH — dylibs resolve via DYLD_LIBRARY_PATH.
+  baseEnv.DYLD_LIBRARY_PATH = [buildRoot, baseEnv.DYLD_LIBRARY_PATH]
+    .filter(Boolean)
+    .join(delimiter);
 } else {
   baseEnv.LD_LIBRARY_PATH = [buildRoot, baseEnv.LD_LIBRARY_PATH]
     .filter(Boolean)

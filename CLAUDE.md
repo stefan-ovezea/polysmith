@@ -43,7 +43,7 @@ work to avoid redoing or breaking completed features.
 ## Build & Development Commands
 
 ```bash
-# First-time bootstrap (submodules → JS deps → OCCT → CAD core)
+# First-time bootstrap (preflight env check → submodules → JS deps → OCCT → CAD core)
 pnpm bootstrap
 
 # Run the desktop app (Vite + Tauri + CAD core)

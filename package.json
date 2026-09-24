@@ -3,7 +3,7 @@
   "private": true,
   "author": "Stefan Ovezea <sovezea@gmail.com>",
   "license": "AGPL-3.0-or-later",
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@9.15.9",
   "workspaces": [
     "apps/*"
   ],
@@ -21,9 +21,9 @@
     "test": "pnpm test:core",
     "deps:sync": "git submodule update --init --recursive",
     "occt:configure": "node scripts/configure-occt.mjs",
-    "occt:build": "cmake --build third_party/occt8-build --config Release --parallel 2",
-    "occt:install": "cmake --install third_party/occt8-build --config Release",
+    "occt:build": "node scripts/cmake-run.mjs --build third_party/occt8-build --config Release --parallel 2",
+    "occt:install": "node scripts/cmake-run.mjs --install third_party/occt8-build --config Release",
     "occt:rebuild": "pnpm deps:sync && pnpm occt:configure && pnpm occt:build && pnpm occt:install",
-    "bootstrap": "pnpm deps:sync && pnpm install && pnpm occt:configure && pnpm occt:build && pnpm occt:install && pnpm core:configure && pnpm core:build"
+    "bootstrap": "node scripts/preflight.mjs && pnpm deps:sync && pnpm install && pnpm occt:configure && pnpm occt:build && pnpm occt:install && pnpm core:configure && pnpm core:build"
   }
 }

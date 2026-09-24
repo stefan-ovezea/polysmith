@@ -13,10 +13,9 @@
  */
 
 import os from "node:os";
-import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cmake } from "./find-cmake.mjs";
+import { runCmake } from "./cmake-utils.mjs";
 
 // ---------------------------------------------------------------------------
 // paths
@@ -24,47 +23,6 @@ import { cmake } from "./find-cmake.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const coreBuild = join(root, "native", "cad-core", "build");
-const isWindows = process.platform === "win32";
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-function run(command, args, opts = {}) {
-  const { cwd = root, env: extraEnv, silent = false } = opts;
-  const env = { ...process.env, ...extraEnv };
-
-  if (isWindows) {
-    // Quote the command too: the resolved cmake path may contain spaces
-    // (e.g. the Visual Studio installation directory).
-    const quoted = [command, ...args].map((a) => (a.includes(" ") ? `"${a}"` : a));
-    const cmdline = quoted.join(" ");
-    console.log(`\n> ${cmdline}`);
-    const result = spawnSync(cmdline, [], {
-      cwd,
-      env,
-      stdio: silent ? "pipe" : "inherit",
-      shell: true,
-    });
-    if (result.status !== 0) {
-      console.error(`\n❌  Command failed with exit code ${result.status}`);
-      process.exit(result.status ?? 1);
-    }
-    return result;
-  }
-
-  console.log(`\n> ${command} ${args.join(" ")}`);
-  const result = spawnSync(command, args, {
-    cwd,
-    env,
-    stdio: silent ? "pipe" : "inherit",
-  });
-  if (result.status !== 0) {
-    console.error(`\n❌  Command failed with exit code ${result.status}`);
-    process.exit(result.status ?? 1);
-  }
-  return result;
-}
 
 // ---------------------------------------------------------------------------
 // main
@@ -79,10 +37,10 @@ const jobs = Number.isFinite(requested) && requested > 0
   : Math.max(1, os.cpus().length);
 console.log(`Jobs     : ${jobs}`);
 
-run(cmake, [
+runCmake([
   "--build", coreBuild,
   "--config", "Release",
   "--parallel", String(jobs),
-]);
+], { cwd: root });
 
 console.log("\n✅  CAD core built successfully.");

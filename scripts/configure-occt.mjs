@@ -18,6 +18,7 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cmake } from "./find-cmake.mjs";
+import { run } from "./cmake-utils.mjs";
 
 // ---------------------------------------------------------------------------
 // paths
@@ -37,46 +38,42 @@ const freetypeInstall = join(root, "third_party", "freetype-install");
 // helpers
 // ---------------------------------------------------------------------------
 
-function run(command, args, opts = {}) {
-  const { cwd = root, env: extraEnv, silent = false } = opts;
-  const env = { ...process.env, ...extraEnv };
+/**
+ * Pick the Visual Studio generator for the OCCT configure step.
+ *
+ * Re-configures must reuse the generator recorded in an existing cache
+ * (a machine that first built with VS 2022 must keep using it even if a
+ * newer VS is installed side by side — CMake refuses a generator change
+ * on a populated build dir).  On a fresh build dir, ask vswhere which
+ * VS is actually installed instead of assuming 2022.
+ */
+function visualStudioGenerator() {
+  const cacheFile = join(occtBuild, "CMakeCache.txt");
+  if (existsSync(cacheFile)) {
+    const cached = /^CMAKE_GENERATOR:INTERNAL=(.*)$/m.exec(readFileSync(cacheFile, "utf-8"));
+    if (cached && cached[1]) return cached[1];
+  }
 
-  if (isWindows) {
-    // Manual quoting for cmd.exe: arguments with spaces need double-quotes.
-    // Quote the command too: the resolved cmake path may contain spaces
-    // (e.g. the Visual Studio installation directory).
-    const quoted = [command, ...args].map((a) => (a.includes(" ") ? `"${a}"` : a));
-    const cmdline = quoted.join(" ");
-    console.log(`\n> ${cmdline}`);
-    const result = spawnSync(cmdline, [], {
-      cwd,
-      env,
-      stdio: silent ? "pipe" : "inherit",
-      shell: true,
+  const vswhere = "C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe";
+  if (existsSync(vswhere)) {
+    const version = spawnSync(vswhere, ["-latest", "-products", "*", "-property", "installationVersion"], {
+      encoding: "utf8",
     });
-    if (result.status !== 0) {
-      console.error(`\n❌  Command failed with exit code ${result.status}`);
-      process.exit(result.status ?? 1);
+    const year = spawnSync(vswhere, ["-latest", "-products", "*", "-property", "catalog_productLineVersion"], {
+      encoding: "utf8",
+    });
+    const major = (version.stdout ?? "").trim().split(".")[0];
+    const productYear = (year.stdout ?? "").trim();
+    if (version.status === 0 && /^\d+$/.test(major) && productYear) {
+      return `Visual Studio ${major} ${productYear}`;
     }
-    return result;
   }
 
-  console.log(`\n> ${command} ${args.join(" ")}`);
-
-  const result = spawnSync(command, args, {
-    cwd,
-    env,
-    stdio: silent ? "pipe" : "inherit",
-  });
-
-  if (result.status !== 0) {
-    console.error(`\n❌  Command failed with exit code ${result.status}`);
-    process.exit(result.status ?? 1);
-  }
-  return result;
+  // Last-resort default for machines where vswhere is missing.
+  return "Visual Studio 17 2022";
 }
 
-function cmake(srcDir, buildDir, defines = {}, extraArgs = []) {
+function cmakeConfigure(srcDir, buildDir, defines = {}, extraArgs = []) {
   // Nuke stale cache from a different generator to avoid "does not match"
   // errors when switching between NMake and Visual Studio.
   const cacheFile = join(buildDir, "CMakeCache.txt");
@@ -96,7 +93,7 @@ function cmake(srcDir, buildDir, defines = {}, extraArgs = []) {
   // generator — Visual Studio on Windows (produces .lib + .dll),
   // default (Unix Makefiles) elsewhere
   if (isWindows) {
-    args.push("-G", "Visual Studio 17 2022");
+    args.push("-G", visualStudioGenerator());
     args.push("-A", "x64");
   }
 
@@ -105,15 +102,15 @@ function cmake(srcDir, buildDir, defines = {}, extraArgs = []) {
   }
 
   args.push(...extraArgs);
-  run(cmake, args);
+  run(cmake, args, { cwd: root });
 }
 
 function cmakeBuild(buildDir, config = "Release") {
-  run(cmake, ["--build", buildDir, "--config", config, "--parallel"]);
+  run(cmake, ["--build", buildDir, "--config", config, "--parallel"], { cwd: root });
 }
 
 function cmakeInstall(buildDir, config = "Release") {
-  run(cmake, ["--install", buildDir, "--config", config]);
+  run(cmake, ["--install", buildDir, "--config", config], { cwd: root });
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +172,7 @@ if (systemFreetypeAvailable()) {
 
   mkdirSync(freetypeBuild, { recursive: true });
 
-  cmake(freetypeSrc, freetypeBuild, {
+  cmakeConfigure(freetypeSrc, freetypeBuild, {
     CMAKE_BUILD_TYPE: "Release",
     CMAKE_INSTALL_PREFIX: freetypeInstall,
     // static lib — OCCT can link against it on both Windows and Linux
@@ -229,7 +226,7 @@ if (freetypeDir) {
   occtExtraArgs.push(`-D3RDPARTY_FREETYPE_DIR=${freetypeDir}`);
 }
 
-cmake(occtSrc, occtBuild, occtDefines, occtExtraArgs);
+cmakeConfigure(occtSrc, occtBuild, occtDefines, occtExtraArgs);
 
 console.log("\n✅  OCCT configured successfully.");
 console.log("    Next: pnpm occt:build");

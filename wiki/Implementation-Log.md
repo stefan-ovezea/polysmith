@@ -2,6 +2,57 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-09-24
+
+### Bootstrap chain hardening — cross-platform build scripts (dev, uncommitted)
+
+Fresh installs failed at different steps on different machines (a
+`pnpm install` native crash — exit 3221226505, the Windows fail-fast
+code — on one, and a guaranteed SyntaxError at `occt:configure` on
+every machine), so the build chain got a robustness pass:
+
+- **`occt:configure` was broken everywhere since `b1fd335`:** the
+  find-cmake import (`import { cmake }`) collided with the script's
+  own `cmake()` helper — an ESM duplicate-declaration SyntaxError, so
+  every fresh bootstrap died at step 4. The local helper is now
+  `cmakeConfigure()`.
+- **No more `shell:true` + manual cmd.exe quoting** in the build
+  scripts — a path containing `&`, `^`, `%` or `!` silently corrupted
+  the command line. Shared `run()` / `runCmake()` / `findVcpkgRoot()`
+  live in the new `scripts/cmake-utils.mjs`; node's own CreateProcess
+  quoting handles the VS/CMake paths with spaces
+  (configure-core / configure-occt / build-core all use it).
+- **`occt:build` / `occt:install` no longer call bare `cmake`** —
+  they run through the new `scripts/cmake-run.mjs` with the
+  find-cmake resolution (VS-bundled CMake when none is on PATH), like
+  every other CMake step.
+- **The VS generator is no longer hardcoded to 2022**:
+  configure-occt reuses the generator recorded in an existing
+  CMakeCache, otherwise asks vswhere which VS is actually installed —
+  VS-2026-only machines now configure instead of failing.
+- **configure-core fails fast with install instructions when no vcpkg
+  is found** instead of generating
+  `-DCMAKE_TOOLCHAIN_FILE=/scripts/...` and dying mid-configure.
+- **Test runner no longer depends on the vcpkg z-applocal post-build
+  step on Windows**: run-core-tests now prepends the OCCT bin dirs
+  (build, then install — the same dir Tauri uses when spawning the
+  core) to PATH, so the suites find the OCCT DLLs even where applocal
+  fails (after a fresh configure+build on this machine 59/65 suites
+  died with DLL-not-found before this fix).  And on macOS it now uses
+  `DYLD_LIBRARY_PATH` (macOS ignores `LD_LIBRARY_PATH` — the suites
+  could not load the OCCT dylibs).
+- **New `scripts/preflight.mjs` runs first in bootstrap**: reports
+  platform, node, pnpm (warns on a mismatch with the packageManager
+  pin), git, per-submodule init state, the resolved CMake path, and
+  on Windows vcpkg + Visual Studio — hard blockers exit 1 BEFORE the
+  ~40-minute chain starts, so environment failures are
+  self-describing instead of surfacing as crashes or mid-build CMake
+  errors.
+- **packageManager pin 9.0.0 → 9.15.9** (last 9.x): two years of
+  Windows crash fixes for the install step; stays on lockfile v9 and
+  keeps dependency build scripts running (pnpm 10 would silently skip
+  esbuild's postinstall on fresh installs without extra config).
+
 ## 2026-09-21
 
 ### Detail views (ISO 128-3 §4.12) — core complete + UI implemented (feature/ISO-drawing-fix, in progress)
