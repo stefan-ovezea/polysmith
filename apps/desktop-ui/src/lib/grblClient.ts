@@ -20,6 +20,8 @@ export type GrblStreamEventKind =
   | "resumed"
   | "reset"
   | "zeroed"
+  /** Informational worker notice (Logs panel only — no toast, no state). */
+  | "note"
   | "settings";
 
 /** One GRBL $ setting (`key` keeps the dollar prefix, e.g. "$20"). */

@@ -139,6 +139,13 @@ export const useGrblStore = create<GrblStoreState>((set) => ({
           lastMessage: event.message,
         }));
         break;
+      case "note":
+        // Informational worker notice — e.g. the test-fire path
+        // unlocking an alarm-locked board before sending M3.  Logs
+        // panel only: no toast, no job or DRO state change.
+        log("info", event.message);
+        set({ lastMessage: event.message });
+        break;
       case "paused":
         set({ paused: true, lastMessage: event.message });
         break;

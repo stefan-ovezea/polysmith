@@ -498,6 +498,23 @@ fn prepare_job_lines(text: &str) -> Result<Vec<String>, String> {
     Ok(lines)
 }
 
+/// The exact lines a laser test-fire request sends: an `$X` unlock
+/// preamble followed by the beam command.  `$X` only acts when the
+/// board is in ALARM (GRBL 1.1 `system.c`: "Otherwise, no effect.") and
+/// it does not touch the G92 work offset, so it is sent
+/// unconditionally instead of gating on the cached status — the status
+/// is unknown before the first report, and FluidNC's `ConfigAlarm` /
+/// `Critical` states are not in our state mapping but lock G-code just
+/// the same.  `scale_power` keeps a 0 % request from meaning "laser
+/// off" by accident.
+fn laser_power_lines(percent: Option<f64>) -> Vec<String> {
+    let beam = match percent {
+        Some(percent) => format!("M3 S{}", crate::grbl_utilities::scale_power(percent)),
+        None => "M5".to_string(),
+    };
+    vec!["$X".to_string(), beam]
+}
+
 impl Worker {
     fn emit(&self, mut payload: GrblStreamEvent) {
         payload.port_name = self.port_name.clone();
@@ -869,13 +886,25 @@ impl Worker {
             }
             WorkerMsg::SendFile { file_path } => self.start_job(&file_path),
             WorkerMsg::SendProgram { text } => self.start_program(&text),
-            WorkerMsg::LaserPower { percent } => match percent {
-                Some(percent) => {
-                    let scaled = crate::grbl_utilities::scale_power(percent);
-                    self.write_line(&format!("M3 S{scaled}"));
+            WorkerMsg::LaserPower { percent } => {
+                // The test-fire pair must work on a board that is
+                // alarm-locked.  GRBL/FluidNC reject every G-code line
+                // in ALARM with `error:9` ("G-code locked out during
+                // alarm or jog state"), so M3/M5 used to bounce and the
+                // beam never fired — and a soft reset (0x18) does not
+                // clear the lock, it re-locks the board on boot.  `$X`
+                // is the documented unlock, so it always precedes the
+                // beam command (see laser_power_lines).
+                if self.last_state == Some(GrblMachineState::Alarm) {
+                    self.emit(event(
+                        "note",
+                        "Board was alarm-locked — $X unlock sent before the laser command",
+                    ));
                 }
-                None => self.write_line("M5"),
-            },
+                for line in laser_power_lines(percent) {
+                    self.write_line(&line);
+                }
+            }
             WorkerMsg::WriteByte { byte } => {
                 // Real-time override commands are bare bytes — NO
                 // newline, and they bypass the RX window (the
@@ -1336,6 +1365,28 @@ mod tests {
         assert!(prepare_job_lines(&fits).is_ok());
         let error = prepare_job_lines(&too_long).expect_err("must reject");
         assert!(error.contains("127"), "message names the limit: {error}");
+    }
+
+    // The fire button must be self-sufficient on an alarm-locked board:
+    // GRBL/FluidNC reject plain G-code with `error:9` until `$X` clears
+    // the lock, and a reset leaves the lock in place.  Losing this
+    // preamble silently brings back "test fire does nothing".
+    #[test]
+    fn laser_power_always_unlocks_before_the_beam_command() {
+        assert_eq!(
+            laser_power_lines(Some(50.0)),
+            vec!["$X".to_string(), "M3 S128".to_string()]
+        );
+        assert_eq!(
+            laser_power_lines(Some(100.0)),
+            vec!["$X".to_string(), "M3 S255".to_string()]
+        );
+        // Holding the button then releasing it must also get through:
+        // GRBL blocks a bare M5 in alarm exactly like the M3.
+        assert_eq!(
+            laser_power_lines(None),
+            vec!["$X".to_string(), "M5".to_string()]
+        );
     }
 
     #[test]

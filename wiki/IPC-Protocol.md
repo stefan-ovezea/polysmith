@@ -459,7 +459,14 @@ and produce toolpaths, never B-rep. All CAM commands reply with
   commands) drive a worker that owns
   the port; state returns as `grbl-stream` Tauri events
   (`connected|disconnected|progress|status|error|completed|paused|
-  resumed|reset|zeroed` with lines/percent/state/MPos/WPos).  Sending respects
+  resumed|reset|zeroed|note` with lines/percent/state/MPos/WPos).
+  `note` is an informational worker line (Logs panel only).
+  Test fire (`grbl_laser_power {percent}`) sends `$X` before the
+  `M3 S../M5` pair: GRBL/FluidNC reject bare G-code with `error:9`
+  while the board is alarm-locked, and a soft reset re-locks it, so
+  the unlock preamble is what makes the fire button work on a locked
+  board (`$X` is a no-op otherwise and leaves the G92 origin alone).
+  Sending respects
   GRBL's 128-byte RX buffer via a 127-byte window and the ok/error:N
   handshake; the status poll runs at 500 ms, emitted ≤ 5 Hz.
   FluidNC quirks handled: `WCO:` reports the work-coordinate offset
