@@ -110,9 +110,40 @@ plus the format layer.
   uncaught exception (0xC0000409), and stdout to a pipe is block-buffered, so a
   case name must be flushed or a crash hides its own location.  Both fixed in
   `pcb_layer_test`.
-- **Next:** P2b — `pcb_*` IPC commands + protocol schema + TS types, then the
-  thin `pcb` workspace (import + layer table + "create laser operation") for
-  in-app verification, then `PcbRegionAttestation` + the CAM operations.
+- **P2b — `pcb_*` IPC commands + the thin PCB workspace:**
+  `pcb_import_layer` / `pcb_update_layer` / `pcb_remove_layer`
+  (`app/impl/pcb_command_handlers.inc`, schema names, TS types, command
+  factories and senders), then a `pcb` workspace page
+  (`app/PcbWorkspace.tsx`) with import, a layer table (role override,
+  contents, polarity, mirror, warnings, remove) and the workspace switcher,
+  label and render branch wired.  The workspace produces no G-code and no
+  toolpaths: its only output is `pcb_layer` features, and the page says so.
+- **One trap worth remembering:** the UI's feature schema is an explicit zod
+  object, and zod strips unknown keys — so `pcb_layer_parameters` had to be
+  declared in `documentStateSchema.ts` or the layer table would have rendered
+  **empty with no error at all**.
+- **USER-VERIFIED IN-APP** against the full EDM set (13 files, 1–2 s): all 12
+  Gerber + drill files resolved their role **from the file's own attributes**
+  (no filename guesses), both solder-mask rows came out **Negative** polarity,
+  bottom-side layers defaulted to **Mirrored**, `Edge_Cuts` reported the
+  99.9 × 99.9 mm board, `F_Cu` reported **2017 rings — the exact figure the
+  polygonizer suite pins for that file**, and `NPTH.drl` came in as 0 tools /
+  0 holes.
+- **Navigation bug found by the same session:** the `pcb` entry landed on the
+  Slicer page.  `AppTopBar`'s `onSetWorkspaceView` was an if-chain over the
+  five known views with `showSlicerView()` as the **fallback**, so an
+  unrecognised view silently became the slicer.  Fixed with an exhaustive
+  `switch` plus a `never` assertion, so the next workspace added cannot land
+  on someone else's page.  (A second, unrelated real bug was fixed on the way:
+  leaving the Slicer workspace for CAM/drawing/GRBL/PCB left the *native*
+  OrcaSlicer window mapped over the next page — only `showCadView()` ever
+  unmapped it.)
+- **Next:** P2c — `PcbRegionAttestation` (witness-based, re-resolved every
+  recompute) + the CAM operations (`pcb_layer_cut`, `pcb_isolation`,
+  `pcb_drill`) so a layer can go through CAM → post → the GRBL workspace.
+  Known small wart to fix with it: the two inner-copper rows read "Inner
+  copper" identically — the layer ordinal (L2/L3) is only visible in the
+  `from Copper,L2,Inr` line.
 
 ## 2026-09-24
 

@@ -452,9 +452,27 @@ the polarity is assumed and labelled when the file does not state it.
 The feature also keeps a bounded warning list (32 entries plus a suppressed
 count), so one pathological file cannot grow the saved document without bound.
 
-**Next — P2b:** the `pcb_*` IPC commands + protocol schema + TS types, then the
-thin `pcb` workspace (import + layer table + "create laser operation") so this
-can be exercised in the app; then `PcbRegionAttestation` and the CAM ops.
+**P2b — IPC + the thin `pcb` workspace: done, USER-VERIFIED in-app.**
+`pcb_import_layer` / `pcb_update_layer` / `pcb_remove_layer` plus the workspace
+page (import, layer table with role override / contents / polarity / mirror /
+warnings / remove).  The workspace emits no G-code and no toolpaths — its only
+output is `pcb_layer` features, and the page says so.
+
+Verified against the full EDM set (13 files, 1–2 s): **every file resolved its
+role from its own attributes** (zero filename guesses), both mask rows came out
+**Negative**, bottom-side layers defaulted to **Mirrored**, `Edge_Cuts` reported
+the 99.9 × 99.9 mm board, `F_Cu` reported **2017 rings** — the same figure the
+polygonizer suite pins — and `NPTH.drl` imported as 0 tools / 0 holes.
+
+Two things the session taught, both recorded in the implementation log: the UI's
+zod feature schema strips unknown keys, so `pcb_layer_parameters` must be
+declared there or the table silently renders empty; and `AppTopBar`'s workspace
+dispatcher used `showSlicerView()` as its fallback, so the new `pcb` view landed
+on the Slicer page — now an exhaustive switch with a `never` assertion.
+
+**Next — P2c:** `PcbRegionAttestation` + the CAM operations
+(`pcb_layer_cut`, `pcb_isolation`, `pcb_drill`), which is what turns a layer
+into something the CAM → post → GRBL pipeline can run.
 
 Committed-fixture coverage is in place: `copper_trimmed.gbr` polygonizes to
 **1964 rings, 1215 macro-pad parts, 1 pour, 0 skipped, 0 diagnostics**, so both
