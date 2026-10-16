@@ -17,6 +17,10 @@ about Gerber.
 `cad | cam | drawing | grbl | slicer`** (`WorkspaceView`, `App.tsx`), with a
 strict producer/consumer boundary:
 
+**Naming:** the id is `pcb`, not `gerber`.  The workspace will also own
+Excellon drill files, role/polarity resolution and board registration, and the
+name should describe the job the way `grbl` does — not one file format.
+
 | Workspace | Owns |
 |---|---|
 | **PCB** (new) | Importing fabrication data, layer roles/polarity, board registration, PCB job parameters. **Never generates G-code.** |
@@ -148,12 +152,36 @@ unit-testable without a document, an OCCT context, or a Tauri event loop.
 
 ### Geometry engine
 
-2D polygon booleans/offsets use **Clipper2** (Boost Software License 1.0 —
-permissive, AGPL-compatible), vendored in `third_party/clipper2` like
-zlib/libharu/nlohmann, with an integer scale coarser than the 1 µm Gerber
-resolution. OCCT stays on the B-rep side: 2D wire offsetting on
-self-intersecting input is where it is weakest, and the isolation workload
-(~17k polygons per outer layer) is exactly Clipper2's shape.
+**Offsetting needs no new dependency.** The core already owns an
+arc-preserving 2D loop offsetter used in production for the laser kerf and the
+face-milling inset — `cam2d::offset_closed_loop` (round/miter joins, arc
+segments preserved) plus segment cleanup, Douglas-Peucker simplification,
+segment clipping and loop-containment/nesting, all in
+`src/core/cam/cam2d.h`. Isolation routing is exactly "offset the net copper
+rings outward by tool radius + clearance, once per pass", so P4 builds on that
+rather than on a polygon-clipping library — and it keeps arcs exact instead of
+tessellating them.
+
+What that library does **not** cover is set booleans for polarity assembly
+(`union(dark) − union(clear)`).  Two observations keep that from being a
+blocker:
+
+- **Cutting does not need booleans.** Every ring is a closed loop to cut,
+  independent of polarity; holes are simply more rings.  Only the *side* the
+  kerf lands on and fill/engrave parity depend on polarity, and both can be
+  derived from per-ring orientation plus the existing containment/nesting
+  helpers (`loop_contains`, `clip_segment_*`).
+- **The hard case is narrow.** True set booleans are unavoidable where offsets
+  from neighbouring traces overlap and must be trimmed, and where a negative
+  plane must be assembled.  If a real board proves that necessary, **Clipper2**
+  (Boost Software License 1.0 — permissive, AGPL-compatible) is the candidate,
+  vendored in `third_party/clipper2` like zlib/libharu/nlohmann, with an
+  integer scale coarser than the 1 µm Gerber resolution.  That decision is
+  deliberately deferred to P4 and needs board evidence *before* a dependency is
+  taken on.
+
+OCCT stays on the B-rep side: 2D wire offsetting on self-intersecting input is
+where it is weakest, and it has no place in a ~17k-polygon-per-layer loop.
 
 ---
 
@@ -165,7 +193,7 @@ a layer (polarity already applied). They differ only in what they emit.
 | | Isolation (`pcb_isolation`) | Laser layer (`pcb_layer_cut`) | Drill (`pcb_drill`) |
 |---|---|---|---|
 | Input | copper layer | any layer (silk/mask/paste/copper) | Excellon |
-| Geometry | offset out by `tool_radius + clearance`, once per pass; subtract copper; tabs | contours of the net polygons; optional hatch fill for filled areas | point hits per tool |
+| Geometry | offset out by `tool_radius + clearance` (via `cam2d::offset_closed_loop`), once per pass; tab and trim logic | contours of the net polygons; optional hatch fill for filled areas | point hits per tool |
 | Extras | keep-clear around drills, pass ordering (inside→out), lead-ins | kerf width compensation, hatch angle/spacing, air assist | via vs component classes, spot/peck option |
 
 Registration/origin comes from the `profile` layer bbox (centre or lower-left,
@@ -249,7 +277,7 @@ binding rules.
 | **P1** | Gerber X1 + Excellon parsers (pure) + unit tests | tests green |
 | **P2** | `pcb_layer` feature + `PcbRegionAttestation` + IPC commands | **your approval — architectural** |
 | **P3** | Laser `pcb_layer_cut` end to end (import → op → post → GRBL) | in-app verification |
-| **P4** | `pcb_isolation` (Clipper2 offsets, passes, tabs) + `pcb_drill` | in-app verification |
+| **P4** | `pcb_isolation` (cam2d loop offsets, passes, tabs) + `pcb_drill` | in-app verification |
 | **P5** | PCB workspace UI (layer table, board view, job pane, handoff) | in-app verification |
 | **P6** | DXF layer + SOLID/HATCH polish in the existing importer (independent) | in-app verification |
 
@@ -279,7 +307,7 @@ P1 does not depend on the P2 review, which is why it can proceed in parallel.
   normative source for the subset in §3.
 - Excellon drill format (KiCad's plot output is the de-facto target here).
 - [Clipper2](https://github.com/AngusJohnson/Clipper2) — Boost Software License
-  1.0, the polygon boolean/offset engine.
+  1.0; *candidate* set-boolean engine, not yet a dependency (see §4).
 - [FlatCAM isolation routing manual](https://flatcam.org/manual/iso.html) and
   `pcb2gcode` — reference implementations and test oracles for the isolation
   workflow (`pcb2gcode` itself is GPL: use as an oracle, not a dependency).
@@ -312,7 +340,23 @@ Two findings worth keeping:
   into role + modifiers (`Profile` / `NP`) belongs to the P2 role resolver, not
   the parser.
 
-**Next (P1b):** `gerber_polygonize` (strokes → capsules, flashes → aperture
-polygons, macro primitives → outlines, in-order dark/clear booleans) and
-`excellon_parser` (tool table, plated/non-plated, decimal coordinates).
+**P1b — polygonizer: done** (`src/core/pcb/gerber_polygonize.{h,cpp}`, suite
+`cad_core_pcb_polygonize_test`, 10 cases).
+
+Command stream → closed rings in millimetres, each tagged with the polarity in
+effect: circle/rect/obround/polygon flashes, capsule strokes for round
+apertures, exact flat-ended sweeps for rectangular ones, macro flashes expanded
+into their primitives (circle / outline / vector line / rect / obround /
+polygon), region contours, and tolerance-based arc sampling.  **No set
+booleans** — by design (§4); clear rings are tagged, never dropped.
+
+Validated against the real board: F_Cu polygonizes to **2017 rings with 0
+skipped operations and 0 diagnostics**, which also corrected an assumption in
+this document — the bulk of F_Cu's ~15.6k `D01` commands are *region outline
+vertices* (two pours of several thousand points), not independent traces, so
+ring count is far below command count.
+
+**Next (P1c):** the Excellon drill parser (tool table, plated/non-plated,
+decimal coordinates — the fixture's `PTH.drl` has 13 tools and the NPTH file
+is header-only with zero holes).  Then P2, which needs the review below.
 

@@ -33,10 +33,24 @@ plus the format layer.
   `AD` + code, silently rejecting every aperture).
 - **Gates:** `pnpm core:build` + `pnpm test:core` — 68/68 suites green
   (including the new one), no UI change.
-- **Next:** P1b polygonizer (strokes → capsules, flashes → aperture polygons,
-  macro primitives → outlines, in-order dark/clear booleans) + Excellon.
-  **P2** (`pcb_layer` feature + `PcbRegionAttestation` + IPC commands) needs
-  explicit approval before any document-model code.
+- **Polygonizer** (`gerber_polygonize.{h,cpp}`, suite
+  `cad_core_pcb_polygonize_test`): command stream → closed rings in mm, each
+  tagged with the polarity in effect — circle/rect/obround/polygon flashes,
+  capsule strokes for round apertures, exact flat-ended sweeps for rectangular
+  ones, macro flashes expanded into their primitives, region contours, and
+  tolerance-based arc sampling.  **Deliberately no set booleans**: cutting
+  treats every ring as a loop regardless of polarity, and clear rings are
+  tagged rather than dropped (§4 of the design doc).
+- **Geometry engine decision revised:** the core already owns an arc-preserving
+  loop offsetter (`cam2d::offset_closed_loop`, used for the laser kerf and
+  face-milling inset) plus containment/clipping helpers, so isolation routing
+  needs **no polygon-clipping dependency**; Clipper2 is demoted to a *candidate*
+  for the narrow dense-copper trim case, pending board evidence.
+  On the real board F_Cu polygonizes to 2017 rings with **0 skipped operations
+  and 0 diagnostics**.
+- **Next:** P1c Excellon drill parser, then **P2** (`pcb_layer` feature +
+  `PcbRegionAttestation` + IPC commands), which needs explicit approval before
+  any document-model code.
 
 ## 2026-09-24
 
