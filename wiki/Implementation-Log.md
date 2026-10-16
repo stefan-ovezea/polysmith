@@ -180,10 +180,31 @@ plus the format layer.
   switches to CAM so the new operation's panel is in front of the user.  The
   chain is now complete end to end: import a Gerber set → Laser cut on a layer
   → CAM operation → post → GRBL workspace.
-- **Next:** in-app verification of that chain, then `pcb_isolation` (2.5D
-  milling, V-bit width from tip ⌀ + included angle + depth) and `pcb_drill`.
-  The shared-helper extraction for the laser loop planning stays queued as its
-  own test-backed change.
+- **Region assembly with Clipper2 (the §4 decision, forced by evidence):** the
+  committed copper layer is 1,964 drawn primitives, 1,215 of them macro parts —
+  a KiCad `RoundRect` pad is nine overlapping primitives, so cutting it as drawn
+  traced each pad nine times *including lines inside it*.  `third_party/clipper2`
+  (vendored in-tree, BSL-1.0, commit f9c5eb6e / v2.0.1) now unions dark draws and
+  subtracts clear draws **in file order** in `core/pcb/pcb_region_assembly`, so
+  `PcbLayerGeometry` carries both views: `rings` (cuttable) and `drawn_rings`
+  (as drawn).  Rings: copper 1,964 → **573**, full-board F_Cu 2,017 → **254**,
+  Edge_Cuts 20 → **8**; rapid travel on the copper layer 3,533 → **1,833 mm**.
+  Paths are normalized to one winding first: Clipper2 unions under NonZero, so
+  mixed windings make an overlapping pad cancel instead of merge.
+- **A silent geometry-destroying bug, found by the ring count:** the laser
+  generator's duplicate-contour healing pass (legacy *sketch* captures) pairs
+  loops whose centroids are within 0.05 mm and areas within 25 %.  The two sides
+  of a thin ribbon satisfy both, so it deleted real contours on every hairline
+  layer (8 profile rings cut as 5).  Layer loops now carry
+  `PlannedLoop::from_layer` and are never paired.
+- **Open: hairline layers want a centre-line cut.**  Edge_Cuts is drawn with a
+  0.1 mm aperture, so assembly yields 0.1 mm-wide ribbons and a laser traces both
+  sides.  A per-layer cut mode (regions vs stroke centre-lines) is the next
+  piece; the stroke paths are already in `drawn_rings`.
+- **Next:** that cut mode, then `pcb_isolation` (2.5D milling with the V-bit
+  width from tip ⌀ + included angle + depth, `cam2d::offset_closed_loop` +
+  `plan_stepdown_levels`) and `pcb_drill`.  The shared-helper extraction for the
+  laser loop planning stays queued as its own test-backed change.
 
 ## 2026-09-24
 

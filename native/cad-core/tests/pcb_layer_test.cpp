@@ -134,13 +134,15 @@ bool test_committed_layers_load_with_honest_summaries() {
   ok &= expect(copper.format == PcbLayerFormat::Gerber, "detected as Gerber");
   ok &= expect(copper.role == PcbRole::CopperTop, "role from the file attribute");
   ok &= expect(copper.role_from_attributes, "the role is not a guess");
-  ok &= expect(copper.ring_count == 1964, "1964 rings, matching the polygonizer suite");
+  ok &= expect(copper.ring_count == 573,
+                   "573 cuttable contours after region assembly (1964 as drawn)");
   ok &= expect(copper.geometry.skipped_operations == 0, "nothing skipped");
   ok &= expect(copper.bounds.valid && copper.bounds.max_x > 90.0, "board-sized bounds");
 
   const auto profile = load_pcb_layer(fixture("edge_cuts.gbr"));
   ok &= expect(profile.ok && profile.role == PcbRole::Profile, "profile layer");
-  ok &= expect(profile.ring_count == 20, "20 stroked profile rings");
+  ok &= expect(profile.ring_count == 8,
+                   "8 assembled profile contours (20 strokes as drawn)");
 
   const auto drills = load_pcb_layer(fixture("pth.drl"));
   ok &= expect(drills.ok, "plated drill file loads");
@@ -188,7 +190,7 @@ bool test_import_creates_a_pcb_layer_feature() {
   const auto& params = *layer->pcb_layer_parameters;
   ok &= expect(params.role == PcbRole::CopperTop, "role stored");
   ok &= expect(params.format == PcbLayerFormat::Gerber, "format stored");
-  ok &= expect(params.ring_count == 1964, "ring count stored");
+  ok &= expect(params.ring_count == 573, "assembled contour count stored");
   // Range rather than an exact figure: the value is the source file's own
   // extents, and pinning a made-up constant here would just be a second copy
   // of the fixture.
@@ -419,7 +421,7 @@ bool test_save_load_round_trip_preserves_layer_parameters() {
   ok &= expect(restored_copper->pcb_layer_parameters->file_polarity == copper_polarity &&
                    !copper_polarity.empty(),
                "the Gerber layer keeps its polarity");
-  ok &= expect(restored_copper->pcb_layer_parameters->ring_count == 1964,
+  ok &= expect(restored_copper->pcb_layer_parameters->ring_count == 573,
                "the Gerber layer keeps its ring count");
   std::error_code remove_error;
   std::filesystem::remove(part_path, remove_error);

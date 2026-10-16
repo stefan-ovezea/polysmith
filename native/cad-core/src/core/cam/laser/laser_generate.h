@@ -44,6 +44,12 @@ struct PlannedLoop {
   // map through the sketch plane frame.
   bool isWorldXY = false;
   double worldZ = 0.0;  // cut-plane Z for world-XY loops
+  // The loop is one boundary of an imported PCB layer.  Every such boundary is
+  // an independent contour — including the two sides of a thin ribbon, which
+  // sit 0.1 mm apart with near-identical areas — so the duplicate-contour
+  // healing pass (which exists for legacy sketch captures) must never pair
+  // them up.  See the dedupe block in laser_generate.cpp.
+  bool from_layer = false;
 };
 
 CamGenerateResult generate_laser_cut_toolpath(

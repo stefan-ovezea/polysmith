@@ -21,9 +21,11 @@ third_party/occt8-install/
 third_party/freetype-build/
 third_party/freetype-install/
 third_party/*
-# Vendored copies (not submodules): libharu 2.4.4 + zlib 1.3.1 (P9 PDF).
+# Vendored copies (not submodules): libharu 2.4.4 + zlib 1.3.1 (P9 PDF),
+# Clipper2 2.0.1 (PCB region assembly, see third_party/clipper2/README.md).
 !third_party/libharu/
 !third_party/zlib/
+!third_party/clipper2/
 .env
 claude-ds.sh
 wiki/.git-wiki/

@@ -92,7 +92,8 @@ bool test_healthy_layer_resolves_unchanged() {
   const auto resolved = polysmith::core::resolve_pcb_layer_attestation(
       attestation_for(*layer), document);
   bool ok = expect(resolved.found, "a healthy layer resolves");
-  ok &= expect(resolved.ring_count == 20, "20 rings re-derived from the source");
+  ok &= expect(resolved.ring_count == 8,
+               "8 assembled contours re-derived from the source");
   ok &= expect(!resolved.changed, "the witness still matches");
   // The re-derived bounds must agree with what the import recorded.  This plot
   // starts at negative X, so no positive-only assumption is safe here.

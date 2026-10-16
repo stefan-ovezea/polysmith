@@ -37,7 +37,15 @@ struct PcbRing {
 };
 
 struct PcbLayerGeometry {
+  /// The contours to CUT: non-overlapping region boundaries with polarity
+  /// already applied, so a macro pad's nine overlapping primitives arrive as
+  /// the single rounded rectangle a machine should trace (`pcb_region_assembly`).
   std::vector<PcbRing> rings;
+  /// The primitives AS DRAWN, before assembly — one per flash, stroke, region
+  /// and macro part.  Kept for diagnostics and for tests that pin macro
+  /// expansion; `aperture_code`, `from_region` and `macro_primitive` are only
+  /// meaningful here, since an assembled boundary can be a union of several.
+  std::vector<PcbRing> drawn_rings;
   std::vector<PcbDiagnostic> diagnostics;
   GerberBounds bounds;
   /// Operations that produced nothing (unsupported aperture on a stroke,

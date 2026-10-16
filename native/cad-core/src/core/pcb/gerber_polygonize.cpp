@@ -4,6 +4,8 @@
 #include <cmath>
 #include <string>
 
+#include "core/pcb/pcb_region_assembly.h"
+
 namespace polysmith::core::pcb {
 namespace {
 
@@ -336,6 +338,27 @@ class Polygonizer {
       geometry.diagnostics.push_back(
           {region_line, "region never closed (missing G37) — contour kept"});
     }
+
+    // Assemble what was drawn into what can be cut: macro parts union into
+    // their pad, and %LPC erases in draw order (pcb_region_assembly).
+    geometry.drawn_rings = std::move(geometry.rings);
+    geometry.rings = assemble_region_rings(geometry.drawn_rings);
+    // Bounds describe the material that will actually be cut, which is the
+    // assembled result — a clear region at the edge shrinks it correctly.
+    geometry.bounds = GerberBounds{};
+    for (const PcbRing& ring : geometry.rings) {
+      for (const cam2d::XY& point : ring.points) {
+        if (!geometry.bounds.valid) {
+          geometry.bounds = GerberBounds{point.x, point.y, point.x, point.y, true};
+          continue;
+        }
+        geometry.bounds.min_x = std::min(geometry.bounds.min_x, point.x);
+        geometry.bounds.min_y = std::min(geometry.bounds.min_y, point.y);
+        geometry.bounds.max_x = std::max(geometry.bounds.max_x, point.x);
+        geometry.bounds.max_y = std::max(geometry.bounds.max_y, point.y);
+      }
+    }
+
     geometry.skipped_operations = skipped_operations;
     return geometry;
   }

@@ -528,10 +528,58 @@ face and sketch paths.  The extraction into a shared helper is its own
 change, with tests on both paths, to be proposed separately — approved in
 advance by the user.
 
-**Known limitation, by design for now:** fill mode on a layer hatches each ring
-independently and does **not** apply polarity or boolean assembly, so a
-negative mask fills the openings rather than the material.  Contour cutting is
-exact; the fill case waits for the set-boolean decision in §4.
+**§4.1 Region assembly — Clipper2 (done).**
+
+The §4 question is settled by evidence rather than by preference: the committed
+copper layer is **1,964 drawn primitives**, of which **1,215 are macro parts** —
+KiCad's `RoundRect` pad expands to nine overlapping primitives, so the layer as
+drawn cuts every such pad nine times, including lines that lie *inside* the pad.
+That is wrong output, not merely slow output, and it forced the dependency the
+doc had deferred.
+
+`third_party/clipper2` (vendored in-tree, BSL-1.0, commit `f9c5eb6e`, version
+2.0.1) now assembles drawn primitives into cuttable regions in
+`core/pcb/pcb_region_assembly.{h,cpp}`:
+
+- **union of dark draws, difference of clear draws, applied in file order**
+  (`%LPD`/`%LPC` are not tags to carry around — they are operations);
+- paths are normalized to one winding first, because Clipper2 unions under the
+  NonZero fill rule and mixed windings would make an overlapping pad cancel
+  itself instead of merging;
+- a region with holes comes back as several rings — outer boundary plus one per
+  hole, distinguished by signed area — which is exactly what a cutter needs.
+
+`PcbLayerGeometry` therefore has two views: `rings` (what to cut) and
+`drawn_rings` (the primitives as drawn, for diagnostics and for the tests that
+pin macro expansion — `aperture_code`, `from_region` and `macro_primitive` are
+only meaningful there).
+
+Measured on the committed layers:
+
+| | Drawn | Assembled |
+|---|---|---|
+| `copper_trimmed.gbr` | 1,964 | **573** |
+| full-board `F_Cu` (local fixture) | 2,017 | **254** |
+| `edge_cuts.gbr` | 20 | **8** |
+
+Rapid travel on the copper layer fell from 3,533 mm to **1,833 mm** (36.7 → 19.0
+board spans) on top of the ordering work, because the contour count itself is
+what drives it.
+
+**A real bug this uncovered:** the laser generator's duplicate-contour healing
+pass (written for legacy *sketch* captures) pairs any two loops whose centroids
+are within 0.05 mm and whose areas are within 25 %. The two boundaries of a thin
+ribbon satisfy both, so it was **silently deleting real contours** on every
+hairline layer — 8 assembled profile rings cut as 5. Layer loops now carry
+`PlannedLoop::from_layer` and are never paired by that pass.
+
+**Open decision — hairline layers want a centre-line cut.** `Edge_Cuts` is drawn
+with a 0.1 mm aperture, so assembly turns the outline into 0.1 mm-wide ribbons:
+8 rings = 4 ribbons × 2 sides, and a laser traces *both* sides of every ribbon.
+A board outline wants **one pass down the centre line**. The drawn strokes are
+already available (`drawn_rings`), so a per-layer cut mode — *regions* (union of
+filled geometry, right for copper/mask/paste) vs *centre-lines* (stroke paths,
+right for the profile and for silkscreen) — is the next piece of work.
 
 **P2c (last mile) — create the cut from the layer table: done.**
 

@@ -112,6 +112,20 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(planegcs PRIVATE -Wno-register)
 endif()
 
+# --- Vendored Clipper2 (PCB region assembly: polygon union/difference) ---
+# Integer polygon clipping turns a layer's drawn primitives into non-overlapping
+# cut contours (a macro pad is nine overlapping primitives).  Vendored in-tree
+# like zlib/libharu; see third_party/clipper2/README.md.  Only the units the
+# core uses are compiled, but the whole library is kept so a future need
+# (offsetting for isolation routing, triangulation) needs no re-vendoring.
+set(CLIPPER2_DIR "${CMAKE_SOURCE_DIR}/../../third_party/clipper2")
+add_library(clipper2 STATIC
+  ${CLIPPER2_DIR}/src/clipper.engine.cpp
+  ${CLIPPER2_DIR}/src/clipper.offset.cpp
+  ${CLIPPER2_DIR}/src/clipper.rectclip.cpp
+)
+target_include_directories(clipper2 PUBLIC ${CLIPPER2_DIR}/include)
+
 # --- Vendored zlib + libharu (PDF export, P9) --------------------------
 # libharu's only hard dependency is zlib; both are vendored so the
 # core stays self-contained (the libdxfrw precedent).  The hpdf
@@ -299,6 +313,7 @@ set(CAD_CORE_SOURCES
   src/core/pcb/gerber_polygonize.cpp
   src/core/pcb/excellon_parser.cpp
   src/core/pcb/pcb_layer_io.cpp
+  src/core/pcb/pcb_region_assembly.cpp
   src/core/pcb/pcb_role.cpp
   src/core/plugin/plugin_feature.cpp
   src/core/primitive/box_feature.cpp
@@ -333,7 +348,7 @@ target_include_directories(cad_core_lib PUBLIC
   ${CMAKE_SOURCE_DIR}/../../third_party
 )
 
-target_link_libraries(cad_core_lib PUBLIC ${OpenCASCADE_LIBRARIES} planegcs dxfrw hpdf)
+target_link_libraries(cad_core_lib PUBLIC ${OpenCASCADE_LIBRARIES} planegcs dxfrw hpdf clipper2)
 
 add_executable(cad_core
   src/app.cpp

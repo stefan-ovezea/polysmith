@@ -96,7 +96,8 @@ bool test_obround_pad_area() {
 
 bool test_round_rect_macro_flash_is_a_compound() {
   // The fixture's real macro: one 4-corner outline, four corner circles
-  // and four edge lines per pad.
+  // and four edge lines per pad.  The primitives are the DRAWN view; the
+  // assembled view must be the single pad a machine can cut.
   const std::string macro =
       "%AMRoundRect*\n"
       "4,1,4,$2,$3,$4,$5,$6,$7,$8,$9,$2,$3,0*\n"
@@ -122,7 +123,7 @@ bool test_round_rect_macro_flash_is_a_compound() {
   double outline_area = 0.0;
   double circle_area = 0.0;
   double longest_line_area = 0.0;
-  for (const PcbRing& ring : geometry.rings) {
+  for (const PcbRing& ring : geometry.drawn_rings) {
     if (ring.macro_primitive == 4) {
       ++outlines;
       outline_area = area(ring);
@@ -134,13 +135,28 @@ bool test_round_rect_macro_flash_is_a_compound() {
       longest_line_area = std::max(longest_line_area, area(ring));
     }
   }
-  bool ok = expect(geometry.rings.size() == 9, "outline + 4 circles + 4 lines");
+  bool ok = expect(geometry.drawn_rings.size() == 9,
+                   "drawn: outline + 4 circles + 4 lines");
   ok &= expect(outlines == 1 && circles == 4 && lines == 4, "primitive mix");
   ok &= expect(near(outline_area, 3.0 * 1.8), "outline spans the two corners");
   ok &= expect(near(circle_area, 3.14159265358979 * 0.25 * 0.25, 1e-2),
                "corner circle diameter is $1+$1");
   ok &= expect(near(longest_line_area, 3.0 * 0.5), "edge line is width x span");
   ok &= expect(geometry.diagnostics.empty(), "no diagnostics for a clean macro");
+
+  // Assembled: the nine primitives are one pad.  The four 0.5 mm-wide edge
+  // lines extend the 3.0 x 1.8 outline by 0.25 on every side, and the four
+  // corner circles (r = 0.25, centred on the original corners) fall inside
+  // that expanded rectangle -- so the union is a 3.5 x 2.3 rectangle, cut
+  // ONCE instead of nine overlapping passes.
+  if (!expect(geometry.rings.size() == 1,
+              "assembled: the nine primitives are one pad (got " +
+                  std::to_string(geometry.rings.size()) + ")")) {
+    return false;
+  }
+  ok &= expect(near(area(geometry.rings[0]), 3.5 * 2.3, 1e-2),
+               "the union is the expanded pad, not its parts");
+  ok &= expect(geometry.rings[0].dark, "the assembled pad is material");
   return ok;
 }
 
@@ -188,7 +204,9 @@ bool test_region_becomes_one_ring() {
   if (!expect(geometry.rings.size() == 1, "one region ring")) {
     return false;
   }
-  bool ok = expect(geometry.rings[0].from_region, "ring is flagged as a region");
+  bool ok = expect(!geometry.drawn_rings.empty() &&
+                       geometry.drawn_rings[0].from_region,
+                   "the drawn ring is flagged as a region");
   ok &= expect(near(area(geometry.rings[0]), 1.0), "1x1 mm region area");
   ok &= expect(geometry.rings[0].dark, "region inherits LPD");
   return ok;
@@ -211,35 +229,77 @@ bool test_arc_is_sampled_on_the_true_radius() {
   }
   const PcbRing& ring = geometry.rings[0];
   bool ok = expect(ring.points.size() > 8, "the arc is sampled, not a chord");
-  double worst_radius_error = 0.0;
+  // The contour must stay inside the stroked capsule's envelope: no point
+  // further than the 0.05 mm aperture radius from the 1.0 mm centre line.  A
+  // chord approximation would dip well inside 0.95 near the middle and fail.
+  double worst_outside = 0.0;
+  double worst_inside = 0.0;
   for (const auto& point : ring.points) {
-    // The capsule is offset by the 0.05 mm aperture radius, so the centre
-    // line sits at 1.0 mm from the origin.
     const double distance = std::hypot(point.x, point.y);
-    worst_radius_error = std::max(worst_radius_error, std::abs(distance - 1.05));
-    worst_radius_error = std::min(worst_radius_error, std::abs(distance - 0.95));
+    worst_outside = std::max(worst_outside, distance - 1.05);
+    worst_inside = std::max(worst_inside, 0.95 - distance);
   }
-  ok &= expect(worst_radius_error < 0.02, "sampled points stay on the arc");
+  ok &= expect(worst_outside < 0.02 && worst_inside < 0.02,
+               "every point stays within the aperture radius of the true arc "
+               "(outside " +
+                   std::to_string(worst_outside) + ", inside " +
+                   std::to_string(worst_inside) + ")");
   return ok;
 }
 
-bool test_clear_polarity_is_tagged_not_dropped() {
+bool test_clear_polarity_erases_material() {
+  // Polarity is APPLIED, not merely tagged: a clear pad subtracts from what the
+  // earlier dark draws added.  A dark 2 mm pad with a concentric clear 1 mm pad
+  // is an annulus, so the assembled region has an outer boundary AND a hole —
+  // which is exactly what the cutter needs (two closed contours).
   const GerberFile file = parse_gerber(file_with(
-      "%ADD10C,1.000000*%\n"
+      "%ADD10C,2.000000*%\n"
+      "%ADD11C,1.000000*%\n"
       "D10*\n"
       "X0Y0D03*\n"
       "%LPC*%\n"
-      "X2000000Y0D03*\n"
+      "D11*\n"
+      "X0Y0D03*\n"
       "%LPD*%\n"
+      "D10*\n"
       "X4000000Y0D03*\n"));
   const PcbLayerGeometry geometry = polygonize_gerber(file, 0.001);
-  bool ok = expect(geometry.rings.size() == 3, "clear rings are kept, not removed");
+  bool ok = expect(geometry.rings.size() == 3,
+                   "annulus (outer + hole) plus the later dark pad");
   if (geometry.rings.size() != 3) {
     return false;
   }
-  ok &= expect(geometry.rings[0].dark, "first pad is dark");
-  ok &= expect(!geometry.rings[1].dark, "second pad is clear");
-  ok &= expect(geometry.rings[2].dark, "third pad is dark again");
+  // Signed area tells outer boundaries from holes: Clipper2 emits positive
+  // (counter-clockwise) outers and negative holes.
+  int outers = 0;
+  int holes = 0;
+  double hole_area = 0.0;
+  double outer_area = 0.0;
+  for (const PcbRing& ring : geometry.rings) {
+    const double signed_area =
+        polysmith::core::cam2d::xy_signed_area(ring.points);
+    if (signed_area < 0.0) {
+      ++holes;
+      hole_area = -signed_area;
+    } else {
+      ++outers;
+      outer_area = std::max(outer_area, signed_area);
+    }
+  }
+  ok &= expect(outers == 2 && holes == 1, "two outers and one hole");
+  // 1 % tolerance: the rings are polygons inscribed in the true circles at the
+  // 10 um chord tolerance, so their area sits just under the analytic value.
+  ok &= expect(near(outer_area, 3.14159265, 1e-2),
+               "the dark pad survives at its size");
+  ok &= expect(near(hole_area, 3.14159265 * 0.25, 1e-2),
+               "the clear 1 mm pad left a hole of its own size");
+  // Every assembled boundary is material to cut, so the polarity tag is gone
+  // by design: what remains IS the material.
+  for (const PcbRing& ring : geometry.rings) {
+    if (!ring.dark) {
+      return expect(false, "assembled boundaries are all material");
+    }
+  }
   return ok;
 }
 
@@ -297,7 +357,12 @@ bool test_real_board_fixture_when_present() {
   // count.  The invariant that matters is that nothing was skipped.
   bool ok = expect(geometry.skipped_operations == 0,
                    "every stroke, flash and region on the real layer produced geometry");
-  ok &= expect(geometry.rings.size() >= 1000, "the layer produces its ring set");
+  // Two views: the primitives as drawn, and the regions actually cut.  A full
+  // layer's macro parts and overlapping traces collapse heavily in assembly.
+  ok &= expect(geometry.drawn_rings.size() >= 1000,
+               "the layer produces its drawn ring set");
+  ok &= expect(geometry.rings.size() < geometry.drawn_rings.size(),
+               "assembly removes overlapping duplicate boundaries");
   ok &= expect(geometry.bounds.valid && geometry.bounds.max_x > 90.0,
                "bounds cover the board");
   size_t dark = 0;
@@ -336,7 +401,7 @@ bool test_committed_copper_fixture_polygonizes() {
 
   int macro_rings = 0;
   int region_rings = 0;
-  for (const PcbRing& ring : geometry.rings) {
+  for (const PcbRing& ring : geometry.drawn_rings) {
     if (ring.macro_primitive != 0) {
       ++macro_rings;
     }
@@ -344,15 +409,21 @@ bool test_committed_copper_fixture_polygonizes() {
       ++region_rings;
     }
   }
-  std::cout << "  rings=" << geometry.rings.size() << " macro_parts=" << macro_rings
-            << " regions=" << region_rings << " skipped=" << geometry.skipped_operations
+  std::cout << "  rings=" << geometry.rings.size()
+            << " drawn=" << geometry.drawn_rings.size()
+            << " macro_parts=" << macro_rings << " regions=" << region_rings
+            << " skipped=" << geometry.skipped_operations
             << " diagnostics=" << geometry.diagnostics.size() << "\n";
 
   bool ok = expect(geometry.skipped_operations == 0,
                    "every command in the trimmed layer produces geometry");
-  ok &= expect(geometry.rings.size() >= 900, "strokes, pads and the pour all emit rings");
+  ok &= expect(geometry.drawn_rings.size() >= 1900,
+               "strokes, pads and the pour all emit drawn primitives");
+  ok &= expect(geometry.rings.size() < geometry.drawn_rings.size() * 2 / 3,
+               "assembling macro parts and overlapping traces removes at least "
+               "a third of the contours");
   ok &= expect(macro_rings > 0, "macro pads expand into their primitives");
-  ok &= expect(region_rings == 1, "the copper pour is one ring");
+  ok &= expect(region_rings == 1, "the copper pour is one drawn ring");
   ok &= expect(geometry.bounds.valid && geometry.bounds.max_x > 90.0,
                "bounds follow the source layer");
   return ok;
@@ -367,7 +438,15 @@ bool test_committed_profile_fixture_polygonizes() {
   const GerberFile file = parse_gerber(profile);
   const PcbLayerGeometry geometry = polygonize_gerber(file);
   bool ok = expect(geometry.skipped_operations == 0, "the profile strokes into rings");
-  ok &= expect(geometry.rings.size() == 20, "20 profile draws produce 20 stroked rings");
+  // The profile is DRAWN as 20 separate strokes whose ends meet.  Assembly
+  // joins them into connected loops — one contour around the board instead of
+  // twenty abutting segments — which is what a cutter should follow.
+  std::cout << "  drawn=" << geometry.drawn_rings.size()
+            << " assembled=" << geometry.rings.size() << "\n";
+  ok &= expect(geometry.drawn_rings.size() == 20,
+               "20 profile draws produce 20 drawn strokes");
+  ok &= expect(geometry.rings.size() >= 2 && geometry.rings.size() < 20,
+               "assembly joins the abutting strokes into connected loops");
   ok &= expect(!geometry.rings.empty() && geometry.rings.front().dark,
                "the profile is a dark layer");
   return ok;
@@ -389,7 +468,7 @@ int main() {
        test_rectangle_aperture_stroke_sweeps_flat_ends},
       {"region_becomes_one_ring", test_region_becomes_one_ring},
       {"arc_is_sampled_on_the_true_radius", test_arc_is_sampled_on_the_true_radius},
-      {"clear_polarity_is_tagged_not_dropped", test_clear_polarity_is_tagged_not_dropped},
+      {"clear_polarity_erases_material", test_clear_polarity_erases_material},
       {"unsupported_shapes_degrade_with_diagnostics",
        test_unsupported_shapes_degrade_with_diagnostics},
       {"real_board_fixture_when_present", test_real_board_fixture_when_present},

@@ -723,6 +723,7 @@ CamGenerateResult generate_laser_cut_toolpath(
       note_kerf_side(loop, kerf);
       loop.isWorldXY = true;
       loop.worldZ = laser.cut_plane_offset_mm;
+      loop.from_layer = true;
       loop.group = groups.size();
       std::vector<PlannedLoop> layerGroup;
       layerGroup.push_back(std::move(loop));
@@ -810,6 +811,14 @@ CamGenerateResult generate_laser_cut_toolpath(
     for (size_t i = 0; i < ordered.size(); ++i) {
       for (size_t j = i + 1; j < ordered.size(); ++j) {
         if (ordered[i].group == ordered[j].group) {
+          continue;
+        }
+        // Never pair up a layer's boundaries.  They are all independent
+        // contours, and the heuristic below cannot tell a duplicate from the
+        // two sides of a thin ribbon: those share a centroid and differ in area
+        // by well under the 25 % ratio, so this pass used to DELETE real
+        // contours on every hairline layer.
+        if (ordered[i].from_layer || ordered[j].from_layer) {
           continue;
         }
         const double radius = std::sqrt(
