@@ -136,6 +136,11 @@ struct GerberBounds {
   bool valid = false;
 };
 
+/// Neutral name for the shared planar bounds type, so drill files and
+/// Gerber layers can be reported (and registered against each other)
+/// without borrowing the Gerber vocabulary.
+using PcbBounds = GerberBounds;
+
 struct GerberFile {
   GerberFormat format;
   std::map<int, GerberAperture> apertures;

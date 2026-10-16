@@ -68,8 +68,25 @@ plus the format layer.
   vocabulary — `Paste,Bot` in the Gerber attribute vs `SolderPaste,Bot` in the
   `.gbrjob`, `Legend` vs `Silkscreen` — so the P2 resolver needs an alias
   table, not string equality.
-- **Next:** P1c Excellon drill parser, then **P2** (`pcb_layer` feature +
-  `PcbRegionAttestation` + IPC commands), which needs explicit approval before
+- **Excellon drill parser** (`excellon_parser.{h,cpp}`, suite
+  `cad_core_pcb_excellon_test`): `M48`/`FMAT,2`/`METRIC`/`INCH` headers,
+  `TnC<diameter>` tool tables with KiCad's per-tool `TA.AperFunction`
+  comments (via vs component drills), `TF.FileFunction` plated/non-plated,
+  `G90`/`G91`, `G05`, `M71`/`M72`, `M30`, decimal **and** fixed-point
+  coordinates, and `R<n>[X…][Y…]` repeats.  Against the committed fixtures:
+  `pth.drl` → 13 tools / 511 holes / no diagnostics; `npth.drl` → a valid
+  empty program (zero holes is not an error).
+- **Three parser defects the tests caught before commit:** (1) `R<n>` repeats
+  the *previous* hole `n` more times **stepping** by its `X`/`Y` — KiCad's own
+  regression test documents `R07X5000` as 8 holes 5 mm apart — whereas the
+  first implementation repeated in place and ignored the step (wrong holes
+  drilled, pattern holes missing); (2) a file that writes one explicit decimal
+  point is a decimal file, so a whole-millimetre hole appears as `X10`, not as
+  a fixed-point `0.01 mm`; (3) the committed fixtures contain no point-less
+  coordinates at all, so only the synthetic cases exercised that path.
+- **P1 is complete** (parser, polygonizer, drill parser — all pure, tested and
+  dependency-free).  **Next:** P2 (`pcb_layer` feature +
+  `PcbRegionAttestation` + IPC commands), gated on explicit approval before
   any document-model code.
 
 ## 2026-09-24

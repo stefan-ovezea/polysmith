@@ -1,8 +1,9 @@
 # PCB / Gerber Workspace
 
-**Status: planning + P1 in progress** — branch `gerber`. Nothing in this document
-is user-verified in the app yet; the design below is the review gate for the
-document-model part (P2), while the format layer (P1) is pure and independent.
+**Status: P1 complete** (Gerber parser, polygonizer, Excellon drills) — **P2
+gated on review.** Branch `gerber`. Nothing in this document is user-verified in
+the app yet; the design below is the review gate for the document-model part
+(P2), while the format layer (P1) is pure and independent.
 
 Goal: turn a PCB fabrication data set (Gerber + Excellon) into CAM operations —
 **isolation routing** on a mill and **laser cutting/engraving** — using the
@@ -384,9 +385,38 @@ this document — the bulk of F_Cu's ~15.6k `D01` commands are *region outline
 vertices* (two pours of several thousand points), not independent traces, so
 ring count is far below command count.
 
-**Next (P1c):** the Excellon drill parser (tool table, plated/non-plated,
-decimal coordinates — `tests/data/pcb/pth.drl` has 13 tools and `npth.drl` is
-header-only with zero holes).  Then P2, which needs the review below.
+**P1c — Excellon drills: done** (`src/core/pcb/excellon_parser.{h,cpp}`, suite
+`cad_core_pcb_excellon_test`, 10 cases).
+
+`M48` header with `FMAT,2` and `METRIC`/`INCH`, `TnC<diameter>` tool tables,
+KiCad's `; #@! TF.`/`TA.` comments (plated vs non-plated, per-tool
+`ViaDrill`/`ComponentDrill`), `G90`/`G91`, `G05`, `M71`/`M72`, `M30`, decimal
+**and** fixed-point coordinates, and `R<n>[X…][Y…]` repeats.  Slots (`G85`) and
+route mode are recorded and skipped; a hit whose tool was never defined is
+counted (`hits_without_tool`) rather than dropped silently.
+
+Against the committed fixtures: `pth.drl` yields **13 tools and 511 holes**
+with no diagnostics, and `npth.drl` parses as a **valid empty program**
+(zero holes is not an error).
+
+Three defects the tests caught, all fixed before commit:
+
+- **Repeat semantics.**  `R<n>` repeats the *previous* hole `n` more times,
+  stepping incrementally by its `X`/`Y` — `R07X5000` is 8 holes 5 mm apart, per
+  KiCad's own regression test.  The first implementation repeated in place and
+  ignored the step, which would have drilled real holes in the wrong place and
+  missed the pattern ones entirely.
+- **Decimal files.**  A file that writes one explicit decimal point is a
+  decimal file, so a whole-millimetre hole appears as `X10` — not as a
+  fixed-point `0.01 mm`.  Point-less coordinates are now interpreted against
+  the file's own convention (or the header's `; FORMAT={…}` hint) rather than
+  per token.
+- The fixtures contain **no** point-less coordinates, so only the synthetic
+  cases covered this path; the real files would not have caught either bug.
+
+**Next — P2** (`pcb_layer` feature + `PcbRegionAttestation` + IPC commands),
+which needs explicit approval before any document-model code.  P1 is complete:
+parser, polygonizer and drill parser are all pure, tested and dependency-free.
 
 Committed-fixture coverage is in place: `copper_trimmed.gbr` polygonizes to
 **1964 rings, 1215 macro-pad parts, 1 pour, 0 skipped, 0 diagnostics**, so both
