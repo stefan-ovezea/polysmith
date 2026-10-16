@@ -1,8 +1,10 @@
 import { useTranslation } from "react-i18next";
+import { createPortal } from "react-dom";
 
 import type { FeatureEntry, PcbLayerParameters, PcbRole } from "@/types";
 import { Dropdown } from "@/lib";
 import { PCB_ROLE_OPTIONS } from "@/app/pcbLayerDefaults";
+import { useContextMenuDismiss } from "./hooks/useContextMenuDismiss";
 
 // Properties for an imported fabrication layer, opened from the hierarchy's
 // right-click menu.  This is what the layer table used to show — and the reason
@@ -12,7 +14,12 @@ import { PCB_ROLE_OPTIONS } from "@/app/pcbLayerDefaults";
 // belong on the file.
 //
 // A fixed floating card rather than a modal: the viewport stays usable while
-// it is open, so "Mirrored" can be toggled and watched.
+// it is open, so "Mirrored" can be toggled and watched.  Portaled to
+// document.body for the same reason the context menus are — `.cad-sidebar` sets
+// `backdrop-filter`, which makes it a containing block for fixed descendants
+// and would otherwise leave the card behind an overlay that swallowed its
+// clicks.  It dismisses like a menu (Escape, or a click anywhere else), because
+// a panel with no way out is worse than no panel.
 
 interface PcbLayerPropertiesPanelProps {
   layer: FeatureEntry;
@@ -36,6 +43,8 @@ export function PcbLayerPropertiesPanel({
 }: PcbLayerPropertiesPanelProps) {
   const { t } = useTranslation();
   const params = layer.pcb_layer_parameters;
+  // Hook before any early return: an outside click or Escape closes the card.
+  useContextMenuDismiss(Boolean(params), onClose);
   if (!params) {
     return null;
   }
@@ -53,11 +62,22 @@ export function PcbLayerPropertiesPanel({
     </div>
   );
 
-  return (
+  return createPortal(
     <div
-      className="cad-context-menu fixed right-6 top-24 z-30 w-[320px] rounded-xl p-3 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+      className="cad-context-menu fixed right-6 top-24 z-40 w-[320px] rounded-xl p-3 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+      // Clicks inside the card must not reach the viewport behind it: the
+      // sketch picking listens at the window level, so a click that bubbles
+      // would select geometry through the card.  stopPropagation on the
+      // container (not just the buttons) is what keeps the card modal-ish.
       onClick={(event) => event.stopPropagation()}
-      onContextMenu={(event) => event.preventDefault()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onMouseUp={(event) => event.stopPropagation()}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -175,6 +195,7 @@ export function PcbLayerPropertiesPanel({
           {t("pcb.remove")}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
