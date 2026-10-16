@@ -144,7 +144,10 @@ export function PcbWorkspace({
                 >
                   <td className="py-1.5 pr-3">
                     <div className="font-medium">{fileName(layer.file_path)}</div>
-                    <div className="text-on-surface-dim">{feature.parameters_summary}</div>
+                    {/* The core's parameters_summary is for the timeline, where
+                        it carries the file identity next to the role label; here
+                        the filename is already the row header, so only the
+                        problems are repeated. */}
                     {feature.dependency_broken ? (
                       <div className="text-[var(--cad-danger)]">
                         {feature.dependency_warning || t("pcb.sourceMissing")}
@@ -198,15 +201,21 @@ export function PcbWorkspace({
                   </td>
                   <td className="py-1.5 pr-3">{layer.file_polarity}</td>
                   <td className="py-1.5 pr-3">
-                    <input
-                      type="checkbox"
-                      checked={layer.mirror_x}
-                      onChange={(event) => {
-                        void onUpdateLayer(feature.feature_id, {
-                          mirrorX: event.target.checked,
-                        });
-                      }}
-                    />
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={layer.mirror_x}
+                        aria-label={t("pcb.columnMirror")}
+                        onChange={(event) => {
+                          void onUpdateLayer(feature.feature_id, {
+                            mirrorX: event.target.checked,
+                          });
+                        }}
+                      />
+                      <span className="text-on-surface-dim">
+                        {layer.mirror_x ? t("pcb.mirrored") : t("pcb.notMirrored")}
+                      </span>
+                    </label>
                   </td>
                   <td className="py-1.5">
                     <button

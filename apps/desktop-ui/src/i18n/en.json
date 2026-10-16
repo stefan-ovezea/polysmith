@@ -226,6 +226,8 @@
     "columnContents": "Contents",
     "columnPolarity": "Polarity",
     "columnMirror": "Mirror",
+    "mirrored": "Mirrored",
+    "notMirrored": "As drawn",
     "contentsRings": "{{count}} ring(s)",
     "contentsDrills": "{{tools}} tool(s) · {{holes}} hole(s)",
     "bounds": "{{width}} × {{height}} mm",
