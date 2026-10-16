@@ -274,6 +274,101 @@ bool test_missing_layer_source_degrades_with_a_reason() {
   return ok;
 }
 
+/// Total travel of rapid moves (beam off) — the number "path optimisation"
+/// is trying to shrink on a layer of thousands of independent contours.
+double rapid_travel(const Toolpath& toolpath) {
+  double total = 0.0;
+  for (size_t index = 1; index < toolpath.moves.size(); ++index) {
+    const auto& previous = toolpath.moves[index - 1];
+    const auto& move = toolpath.moves[index];
+    if (move.kind != ToolpathMoveKind::Rapid) {
+      continue;
+    }
+    total += std::hypot(move.x - previous.x, move.y - previous.y);
+  }
+  return total;
+}
+
+/// Cuts the same layer with each ordering strategy and reports the rapid
+/// travel.  This is the measurement the optimisation work is judged against:
+/// on a real copper layer every ring is an independent contour, so ordering is
+/// the dominant cost.
+bool test_cut_order_reduces_travel() {
+  if (!have_fixtures()) {
+    std::cout << "  (skipped: tests/data/pcb not found)\n";
+    return true;
+  }
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.import_pcb_layer(fixture("copper_trimmed.gbr"));
+  const FeatureEntry* layer = find_layer(document);
+  if (layer == nullptr) {
+    return expect(false, "layer imported");
+  }
+  const PcbLayerAttestation attestation = attestation_for(*layer);
+  const double layer_span = layer->pcb_layer_parameters->max_x -
+                            layer->pcb_layer_parameters->min_x;
+
+  // Two operations on the same layer, one per strategy.
+  CamSetup setup;
+  setup.name = "Laser setup";
+  setup.machine_type = "laser";
+  document = manager.cam_setup_create(setup);
+  ToolEntry tool;
+  tool.name = "CO2 laser";
+  tool.type = "laser";
+  document = manager.cam_tool_add(tool);
+
+  const auto add_op = [&](const std::string& name, const std::string& order) {
+    CamOperation op;
+    op.name = name;
+    op.type = "laser_cut";
+    op.tool_id = document.cam.tool_library[0].tool_id;
+    LaserCutParameters laser;
+    laser.lead_in_mm = 0.0;
+    laser.lead_out_mm = 0.0;
+    laser.cut_order = order;
+    op.parameters.laser = laser;
+    GeometryReference reference;
+    reference.persistent_id = attestation.layer_feature_id;
+    reference.attestation = attestation;
+    op.geometry_references.machining_regions.push_back(reference);
+    document = manager.cam_operation_add(op);
+    return document.cam.operations.back().op_id;
+  };
+
+  const std::string by_area_id = add_op("by area", "inner_first");
+  const std::string nearest_id = add_op("nearest", "nearest_neighbor");
+
+  const auto by_area = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), by_area_id, /*preview=*/false);
+  const auto nearest = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), nearest_id, /*preview=*/false);
+  if (!expect(by_area.result.ok && nearest.result.ok, "both orderings generate")) {
+    return false;
+  }
+
+  const double area_travel = rapid_travel(by_area.result.toolpath);
+  const double nearest_travel = rapid_travel(nearest.result.toolpath);
+  std::cout << "  inner_first rapid travel: " << area_travel << " mm ("
+            << (area_travel / layer_span) << " board spans)\n"
+            << "  nearest_neighbor travel:  " << nearest_travel << " mm ("
+            << (nearest_travel / layer_span) << " board spans)\n";
+
+  // The layer is ~97 mm across.  What ships today: inner_first 462 board spans
+  // of travel, nearest_neighbor 38.5 — so the guard below is "must stay at
+  // least 5x better than area ordering, and must not regress materially from
+  // the shipped figure".  It is a regression guard, NOT a target: the
+  // optimisation work (2-opt refinement, start-point rotation) aims well under
+  // these numbers.
+  bool ok = expect(nearest_travel < area_travel * 0.2,
+                   "nearest-neighbour is at least 5x better than area ordering");
+  ok &= expect(nearest_travel < layer_span * 60.0,
+               "and does not regress from the shipped 38.5 board spans (now " +
+                   std::to_string(nearest_travel / layer_span) + ")");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -292,6 +387,7 @@ int main() {
        test_drill_only_layer_reports_rather_than_cuts_nothing},
       {"missing_layer_source_degrades_with_a_reason",
        test_missing_layer_source_degrades_with_a_reason},
+      {"cut_order_reduces_travel", test_cut_order_reduces_travel},
   };
 
   int failures = 0;
