@@ -115,6 +115,7 @@ import {
   createHoleParameterHandlers,
 } from "./app/bodyModifierActions";
 import { CamFloatingPanels } from "./app/CamFloatingPanels";
+import { PcbLayerPropertiesPanel } from "./layout/PcbLayerPropertiesPanel";
 import {
   AnnotationPanel,
   DimensionPanel,
@@ -164,7 +165,6 @@ import * as selectionSources from "./app/selectionSources";
 import { SketchDeleteConfirmationPanel } from "./app/SketchDeleteConfirmationPanel";
 import { SlicerWorkspace } from "./app/SlicerWorkspace";
 import { GrblWorkspace } from "./app/GrblWorkspace";
-import { PcbWorkspace } from "./app/PcbWorkspace";
 import {
   createSketchToolActions,
   type SketchConstraintVertexKind,
@@ -578,6 +578,12 @@ function App() {
     () => new Set<CategoryId>(),
   );
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("projects");
+  // Which imported layer's properties card is open, if any.  The card replaced
+  // the PCB workspace's layer table: role and its provenance, polarity,
+  // contents, mirror and warnings are facts about the imported FILE.
+  const [pcbPropertiesFeatureId, setPcbPropertiesFeatureId] = useState<
+    string | null
+  >(null);
   const [recentProjectsDocument, setRecentProjectsDocument] =
     useState<RecentProjectsDocument>(EMPTY_RECENT_PROJECTS_DOCUMENT);
   const recentProjectsDocumentRef = useRef<RecentProjectsDocument>(
@@ -3082,25 +3088,16 @@ function App() {
   // milling) and creates the operation, selecting it so its panel
   // opens.
   const triggerCamLaserCutAction = () =>
-    triggerCamLaserCut({
-      document,
-      viewport,
-      setupId: activeCamSetupId,
-      runAction,
-      camOperationCreate,
-      camCaptureFaceReference,
-      pcbCaptureLayerReference,
-      setSelectedOperationId: setSelectedCamOperationId,
-      addMessage,
-      translate: t,
-    });
+    createLaserCutWithSetupAction();
 
-  // From the PCB workspace: cut a layer's contours, then show CAM so the new
-  // operation's panel is in front of the user (the CAM → GRBL handoff shape).
-  // A laser operation cannot join a mill setup, so this asks for a laser setup
-  // first and creates one when the project has none — the user should not have
-  // to leave the PCB workspace to configure a machine.
-  const createPcbLaserCutAction = async (featureId: string) => {
+  // A laser operation cannot join a mill setup, so creating one asks for a laser
+  // setup first and makes one when the project has none: the user should not
+  // have to configure a machine before the first cut.  (This lived on the PCB
+  // workspace's "Laser cut" button until that workspace went away; the
+  // behaviour is worth keeping, and it now benefits every 2D cut.)
+  const createLaserCutWithSetupAction = async (
+    layerFeatureId?: string,
+  ): Promise<void> => {
     const setupId = await ensureLaserSetup({
       document,
       activeSetupId: activeCamSetupId,
@@ -3121,12 +3118,11 @@ function App() {
       camOperationCreate,
       camCaptureFaceReference,
       pcbCaptureLayerReference,
-      pcbLayerFeatureId: featureId,
+      pcbLayerFeatureId: layerFeatureId ?? null,
       setSelectedOperationId: setSelectedCamOperationId,
       addMessage,
       translate: t,
     });
-    setWorkspaceView("cam");
   };
 
   const triggerCamTestPatternAction = () =>
@@ -4179,9 +4175,6 @@ function App() {
           // The PCB workspace has no native window to tear down, so it needs
           // no slicer-hook wrapper — just the shared workspace setter (which
           // still closes an active sketch first).
-          showPcbView={async () => {
-            setWorkspaceView("pcb");
-          }}
           status={status}
           drawingRibbon={{
             drawingCount: document?.drawing.drawings.length ?? 0,
@@ -4467,15 +4460,6 @@ function App() {
                 setGrblHandoff(null);
               }}
             />
-          ) : workspaceView === "pcb" ? (
-            <PcbWorkspace
-              features={document?.feature_history ?? []}
-              onImportLayer={pcbImportLayer}
-              onUpdateLayer={pcbUpdateLayer}
-              onRemoveLayer={pcbRemoveLayer}
-              onCreateLaserCut={createPcbLaserCutAction}
-              addMessage={addMessage}
-            />
           ) : (
             <>
               <AppSidebar
@@ -4555,6 +4539,7 @@ function App() {
                 selectFeature={selectFeature}
                 selectReference={selectReference}
                 setFeatureSuppressed={setFeatureSuppressed}
+                onShowLayerProperties={setPcbPropertiesFeatureId}
                 setHiddenCategories={setHiddenCategories}
                 setHiddenFeatureIds={setHiddenFeatureIds}
                 setHierarchyWidth={setHierarchyWidth}
@@ -6433,7 +6418,23 @@ function App() {
                   }}
                 />
               ) : null}
-              <CamFloatingPanels
+              {pcbPropertiesFeatureId ? (
+                (() => {
+                  const layer = document?.feature_history.find(
+                    (feature) =>
+                      feature.feature_id === pcbPropertiesFeatureId &&
+                      feature.kind === "pcb_layer",
+                  );
+                  return layer ? (
+                    <PcbLayerPropertiesPanel
+                      layer={layer}
+                      onClose={() => setPcbPropertiesFeatureId(null)}
+                      onUpdate={pcbUpdateLayer}
+                      onRemove={pcbRemoveLayer}
+                    />
+                  ) : null;
+                })()
+              ) : null}              <CamFloatingPanels
                 document={document}
                 viewport={viewport}
                 disabled={status !== "connected"}

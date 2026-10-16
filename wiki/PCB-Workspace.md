@@ -573,6 +573,36 @@ ribbon satisfy both, so it was **silently deleting real contours** on every
 hairline layer — 8 assembled profile rings cut as 5. Layer loops now carry
 `PlannedLoop::from_layer` and are never paired by that pass.
 
+**There is no PCB workspace (decision, implemented).**
+
+§1 chose a sixth top-level workspace `pcb`.  It has been **retired**, on the
+user's call, because it had become a workspace whose only job was importing:
+
+- **Import lives in CAD.**  File → *Import PCB…* (multi-select; Gerber *and*
+  drill), alongside every other importer: one import path, one hierarchy, one
+  undo/save story.  Multi-select because a job is a SET and a laser or mill board
+  needs only a few of its files — importing the rest would just clutter the
+  hierarchy.
+- **The operation lives in CAM.**  A layer is an ordinary geometry source for a
+  2D cut, chosen in the operation panel's **Geometry** block: a layer and a
+  sketch scope answer the same question, so they sit together, with *None (model
+  geometry)* handing the operation back to sketches.  The CAM "2D Cut" action
+  also ensures a laser setup exists (a laser operation cannot join a mill
+  setup) — the behaviour that used to live on the workspace's button.
+- **The layer table became feature properties.**  What the table actually
+  carried is metadata about the imported FILE, so it is now a right-click →
+  **Properties** card on the feature: role *and where it came from* (the file's
+  own attribute vs a filename guess), format, polarity, contents (contours, or
+  tools/holes for drills), size, the mirror toggle, and the import warnings —
+  the part that earns its keep, since that is how a negative plot or a guessed
+  role gets caught.  Imported layers also gained their own **Imports** category in
+  the hierarchy: a `pcb_layer` has no B-rep shape, so it used to fall through
+  every category and appear only in the timeline.
+
+The core did not change shape for this: `pcb_import_layer`,
+`pcb_capture_layer_reference` (witness minted core-side) and the operation
+update that accepts `layer_feature_id` are the commands the workspace used.
+
 **Leads are off by default on a layer cut — and that is not cosmetic.**  A
 contour shorter than **twice** the lead allowance is skipped, because the lead
 cannot fit on it.  A PCB is full of small features: a 0.8 mm via ring is under

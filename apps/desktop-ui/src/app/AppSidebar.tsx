@@ -97,11 +97,14 @@ interface AppSidebarProps {
   ) => Promise<void>;
   setSidebarTab: (tab: SidebarTab) => void;
   sidebarTab: SidebarTab;
+  // Opens the imported-layer properties card from the hierarchy's menu.
+  onShowLayerProperties?: (featureId: string) => void;
   workspaceView: WorkspaceView;
 }
 
 export function AppSidebar({
   camSetups,
+  onShowLayerProperties,
   activeCamSetupId,
   onSelectCamSetup,
   onDeleteCamSetup,
@@ -180,6 +183,7 @@ export function AppSidebar({
           return next;
         });
       }}
+      onShowLayerProperties={onShowLayerProperties}
       onSelectFeature={async (featureId) => {
         await runAction(async () => {
           await selectFeature(featureId);

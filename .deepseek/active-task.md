@@ -20,13 +20,17 @@ Design + plan: **[wiki/PCB-Workspace.md](wiki/PCB-Workspace.md)**. Coming from
 - **Leads are 0 on layer cuts (fix, user-verified):** a contour shorter than
   twice the lead allowance is skipped, so the CAM default of 2 + 2 mm was
   silently dropping vias and mask openings.
-- **Next:** (a) the sketch half of open chains — a chain attestation (endpoints,
-  length, segment count, kinds; re-walked every recompute) plus an armed
-  open-chain pick in CAM, so sketch lines and text glyph lines cut the same way;
-  (b) `pcb_isolation` (2.5D milling, V-bit width from tip ⌀ + included angle +
-  depth) and `pcb_drill`; (c) queued: extract the duplicated ~40-line loop
-  planning shared by the face path and the PCB path, as its own test-backed
-  change.
+- **The PCB workspace was retired (user's call, after the flow was verified):**
+  import lives in CAD's File menu, the layer is a geometry source in the CAM
+  operation panel, and the layer table became a right-click → Properties card on
+  the feature (role + provenance, polarity, contents, size, mirror, warnings),
+  with a new **Imports** hierarchy category.  Behaviour preserved: the "2D Cut"
+  action still ensures a laser setup.
+- **Next:** (a) the layer source in the contour/engrave panels (a layer is as
+  much a milling source as a laser one); (b) the sketch half of open chains
+  (chain attestation + armed pick); (c) `pcb_isolation` (2.5D milling, V-bit
+  width from tip ⌀ + included angle + depth) and `pcb_drill`; (d) queued:
+  extract the duplicated loop planning shared by the face path and the PCB path.
 - **P6 (independent, untouched):** DXF importer polish — `addLayer` is an empty
   stub (`dxf_import.cpp`) and SOLID/HATCH are dropped, so multi-layer and filled
   DXF imports lose data.

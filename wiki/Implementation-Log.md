@@ -240,7 +240,24 @@ plus the format layer.
   generated path on the real board "looks much closer to the original KiCad with
   all the details" — region assembly, ordering and the lead rule all confirmed
   in-app on `B_Cu`.
-- **Next:** the sketch open-chain reference and pick, then `pcb_isolation`.
+- **The PCB workspace is gone (restructure, per the user's call):** it had become
+  a workspace whose only job was importing, and importing twice is how two paths
+  drift.  File → *Import PCB…* now lives with every other importer in CAD
+  (multi-select, because a job is a SET and only a few of its files are needed);
+  a layer is an ordinary geometry source in the CAM operation panel's Geometry
+  block, next to the sketch scope it replaces, with *None (model geometry)* to
+  switch back; and the layer table became a right-click → **Properties** card on
+  the feature carrying role *and its provenance*, format, polarity, contents,
+  size, mirror and the import warnings.  Two things found while doing it: a
+  `pcb_layer` was invisible in the hierarchy (it has no B-rep shape, so it fell
+  through every category and appeared only in the timeline — there is now an
+  **Imports** category), and the layer picker could come up empty because it
+  required the summary rather than the feature kind.  The laser-setup
+  auto-ensure that lived on the workspace button moved to the CAM "2D Cut"
+  action, so that behaviour survived the removal.
+- **Next:** the layer source in the contour/engrave panels (a Gerber layer is as
+  much a milling source as a laser one — isolation routing on copper is a
+  contour operation), then `pcb_isolation` and `pcb_drill`.
 
 ## 2026-09-24
 

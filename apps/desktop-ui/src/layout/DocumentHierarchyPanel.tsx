@@ -18,6 +18,8 @@ interface DocumentHierarchyPanelProps {
   hiddenCategories: ReadonlySet<CategoryId>;
   onToggleFeatureVisibility: (featureId: string) => void;
   onToggleCategoryVisibility: (category: CategoryId) => void;
+  // Opens the imported-layer properties card for a pcb_layer feature.
+  onShowLayerProperties?: (featureId: string) => void;
   onSelectFeature: (featureId: string) => Promise<void>;
   // Construction planes are *both* features and references. Clicking
   // one in the hierarchy sets selected_reference_id (so the Sketch
@@ -523,6 +525,7 @@ export function DocumentHierarchyPanel({
   hiddenCategories,
   onToggleFeatureVisibility,
   onToggleCategoryVisibility,
+  onShowLayerProperties,
   onSelectFeature,
   onSelectReference,
   onReenterSketch,
@@ -1148,6 +1151,21 @@ export function DocumentHierarchyPanel({
                       {t("common.detachProjections")}
                     </button>
                   ) : null}
+                </>
+              ) : null}
+              {contextFeature?.kind === "pcb_layer" ? (
+                <>
+                  <button
+                    type="button"
+                    className="cad-context-menu-item"
+                    onClick={() => {
+                      onShowLayerProperties?.(contextMenu.featureId);
+                      setContextMenu(null);
+                    }}
+                  >
+                    {t("pcb.properties", "Properties")}
+                  </button>
+                  <div className="cad-context-menu-separator" />
                 </>
               ) : null}
               {contextFeature?.kind === "sketch" ? (

@@ -4,6 +4,7 @@
   },
   "common": {
     "action": "Action",
+    "size": "Size",
     "active": "Active",
     "ai": "AI",
     "apply": "Apply",
@@ -238,6 +239,8 @@
     "warningCount": "{{count}} warning(s)",
     "sourceMissing": "Source file is missing",
     "remove": "Remove",
+    "properties": "Properties",
+    "polarityAssumed": "Positive (assumed)",
     "createLaserCut": "Laser cut",
     "createLaserCutHint": "Create a laser cut operation tracing every contour of this layer, then open it in CAM.",
     "captureFailed": "The layer reference could not be captured — re-import the layer.",

@@ -1,8 +1,25 @@
-import type { LaserCutParameters } from "@/types";
+import type { LaserCutParameters, PcbRole } from "@/types";
 
 // The two rules that make a PCB layer cut sensible, in one place: the layer
 // workspace, the CAM panel's layer picker and the "Laser cut" button all have
 // to agree, or the same file cuts differently depending on how it was attached.
+
+/// The roles a user can pick, in board order.  Mirrors `pcb_role_id` in the
+/// core, and is the role list the layer properties view offers.
+export const PCB_ROLE_OPTIONS: PcbRole[] = [
+  "copper_top",
+  "copper_inner",
+  "copper_bottom",
+  "solder_mask_top",
+  "solder_mask_bottom",
+  "paste_top",
+  "paste_bottom",
+  "silkscreen_top",
+  "silkscreen_bottom",
+  "profile",
+  "drill_plated",
+  "drill_non_plated",
+];
 
 /// Roles DRAWN as hairlines: the file means "cut along this line", so following
 /// the stroke centre-lines is right.  Copper, mask and paste describe AREAS.

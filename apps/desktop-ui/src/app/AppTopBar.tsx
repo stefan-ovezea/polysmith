@@ -36,7 +36,6 @@ interface AppTopBarProps {
   showDrawingView: AsyncVoid;
   showSlicerView: AsyncVoid;
   showGrblView: AsyncVoid;
-  showPcbView: AsyncVoid;
   status: string;
   canUndo: boolean;
   canRedo: boolean;
@@ -206,9 +205,6 @@ export function AppTopBar(props: AppTopBarProps) {
             return;
           case "grbl":
             void props.showGrblView();
-            return;
-          case "pcb":
-            void props.showPcbView();
             return;
           case "slicer":
             void props.showSlicerView();
