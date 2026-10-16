@@ -23,6 +23,12 @@ type LaserMode = LaserCutParameters["mode"];
 interface CamLaserCutPanelProps {
   operationName: string;
   initialParams: LaserCutParameters;
+  /** Imported PCB layers available as a geometry source, already labelled. */
+  pcbLayers: { featureId: string; label: string }[];
+  /** The layer this operation currently cuts, if any. */
+  pcbLayerFeatureId: string | null;
+  /** Attach a layer (or clear it with an empty id). */
+  onSelectPcbLayer: (featureId: string) => void;
   // Legacy operations carry no speed_mm_per_s — display their
   // feedrate as mm/s until the user types a speed.
   initialFeedrate: number;
@@ -71,6 +77,9 @@ interface CamLaserCutPanelProps {
 
 export function CamLaserCutPanel({
   operationName,
+  pcbLayers,
+  pcbLayerFeatureId,
+  onSelectPcbLayer,
   initialParams,
   initialFeedrate,
   status,
@@ -741,6 +750,32 @@ export function CamLaserCutPanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.laserCut.pcbLayer", "PCB layer")}
             </legend>
+            {pcbLayers.length > 0 ? (
+              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                {t("cam.laserCut.layerSource", "Layer")}
+                <Dropdown
+                  className="mt-2 w-full"
+                  value={pcbLayerFeatureId ?? ""}
+                  label={t("cam.laserCut.layerSource", "Layer")}
+                  options={[
+                    { value: "", label: t("cam.laserCut.layerNone", "None (model geometry)") },
+                    ...pcbLayers.map((layer) => ({
+                      value: layer.featureId,
+                      label: layer.label,
+                    })),
+                  ]}
+                  disabled={disabled}
+                  onChange={(value) => onSelectPcbLayer(value)}
+                />
+              </label>
+            ) : (
+              <p className="text-[10px] leading-relaxed text-on-surface-muted">
+                {t(
+                  "cam.laserCut.layerHintImport",
+                  "No PCB layers in this project — import a Gerber or drill file from the File menu.",
+                )}
+              </p>
+            )}
             <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.laserCut.layerMode", "Cut as")}
               <Dropdown
@@ -757,7 +792,7 @@ export function CamLaserCutPanel({
                     label: t("cam.laserCut.layerModeCenterline", "Stroke centre-lines (profile, silk)"),
                   },
                 ]}
-                disabled={disabled}
+                disabled={disabled || !pcbLayerFeatureId}
                 onChange={(value) =>
                   update({ layer_mode: value as LaserCutParameters["layer_mode"] })
                 }

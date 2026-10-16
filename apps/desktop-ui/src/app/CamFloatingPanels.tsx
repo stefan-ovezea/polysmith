@@ -49,6 +49,7 @@ import {
   DEFAULT_ENGRAVE_PARAMS,
 } from "../layout/CamEngravePanel";
 import { DEFAULT_LASER_PARAMS } from "../layout/CamLaserCutPanel";
+import { pcbLayerLaserDefaults } from "./pcbLayerDefaults";
 import { DEFAULT_TEST_PATTERN_PARAMS } from "../layout/CamTestPatternPanel";
 import { awaitDocumentChange } from "../state/cadCoreStore";
 import {
@@ -149,6 +150,14 @@ interface CamFloatingPanelsProps {
     opId: string,
     profileIds: string[],
   ) => Promise<void>;
+  // Attaches an imported PCB layer to an operation: the core mints the layer
+  // witness from the layer's own summary.  layerDefaults carries the
+  // recommended laser parameters for that layer's role.
+  camOperationSetLayer: (
+    opId: string,
+    layerFeatureId: string,
+    layerDefaults?: Partial<CamOperation["parameters"]>,
+  ) => Promise<void>;
   camOperationDelete: (opId: string) => Promise<void>;
   camOperationSetScope: (opId: string, featureId: string) => Promise<void>;
   camOperationPreview: (opId: string) => Promise<void>;
@@ -216,6 +225,7 @@ export function CamFloatingPanels({
   camMachineSettingsSet,
   camOperationUpdate,
   camOperationApplySelection,
+  camOperationSetLayer,
   camOperationDelete,
   camOperationSetScope,
   camOperationPreview,
@@ -360,6 +370,7 @@ export function CamFloatingPanels({
         onCancelDrillPick,
         onRepickSlotEdges,
         camOperationApplySelection,
+        camOperationSetLayer,
         t,
       })
     : null;
@@ -424,6 +435,7 @@ function buildOperationPanel({
   onCancelDrillPick,
   onRepickSlotEdges,
   camOperationApplySelection,
+  camOperationSetLayer,
   t,
 }: Pick<
   CamFloatingPanelsProps,
@@ -466,6 +478,13 @@ function buildOperationPanel({
   camOperationApplySelection: (
     opId: string,
     profileIds: string[],
+  ) => Promise<void>;
+  // Attaches an imported PCB layer: the core mints the witness from the layer's
+  // own summary (see cam_resolution).
+  camOperationSetLayer: (
+    opId: string,
+    layerFeatureId: string,
+    parameters?: CamOperation["parameters"],
   ) => Promise<void>;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
@@ -517,6 +536,80 @@ function buildOperationPanel({
     addMessage(t("cam.laserCut.appliedProfiles", { count: ids.length }));
     onApplyRepickGeometry();
     return true;
+  };
+
+  // Imported PCB layers are an ordinary geometry source for a 2D cut: the panel
+  // lists them, and picking one lets the CORE mint the witness from the layer's
+  // own summary (never the renderer).  Labelled by name plus role, so a project
+  // with ten layers is navigable.
+  const pcbLayers = (document?.feature_history ?? [])
+    .filter((feature) => feature.pcb_layer_parameters)
+    .map((feature) => {
+      const role = feature.pcb_layer_parameters?.role ?? "";
+      return {
+        featureId: feature.feature_id,
+        role,
+        label: `${feature.name || t("cam.laserCut.layerFallbackName")} — ${t(
+          `pcb.role.${role}`,
+          { defaultValue: role || t("pcb.role.unknown") },
+        )}`,
+      };
+    });
+
+  const pcbLayerFeatureIdOf = (op: CamOperation): string | null => {
+    for (const region of op.geometry_references.machining_regions) {
+      const attestation = region.attestation as { layer_feature_id?: string };
+      if (attestation && typeof attestation.layer_feature_id === "string") {
+        return attestation.layer_feature_id;
+      }
+    }
+    return null;
+  };
+
+  // Attaching a layer is an explicit pick, so the recommended parameters for
+  // that layer's role come with it: cut as the geometry the role describes
+  // (centre-lines for a profile or silkscreen, areas for copper/mask/paste) and
+  // no leads, because a contour shorter than twice the lead allowance is
+  // skipped and a PCB is full of small features.  All of it stays editable in
+  // the panel right beside this control.
+  const applyPcbLayer = async (op: CamOperation, featureId: string) => {
+    if (!featureId) {
+      // Clearing the source returns the operation to the model-geometry path.
+      // The old reference cannot be minted any more, so empty it explicitly.
+      await runAction(async () => {
+        await camOperationUpdate(op.op_id, {
+          geometry_references: {
+            machining_regions: [],
+            avoidance_regions: [],
+            guide_curves: [],
+            check_surfaces: [],
+          },
+        });
+      });
+      addMessage(t("cam.laserCut.layerCleared"));
+      return;
+    }
+    const layer = pcbLayers.find((candidate) => candidate.featureId === featureId);
+    const defaults = pcbLayerLaserDefaults(layer?.role ?? "");
+    try {
+      await runAction(async () => {
+        await camOperationSetLayer(op.op_id, featureId, {
+          ...op.parameters,
+          laser: { ...(op.parameters.laser ?? DEFAULT_LASER_PARAMS), ...defaults },
+        });
+      });
+      addMessage(
+        t("cam.laserCut.layerAttached", {
+          name: layer?.label ?? featureId,
+          mode:
+            defaults.layer_mode === "centerline"
+              ? t("cam.laserCut.layerModeCenterline", { defaultValue: "Stroke centre-lines" })
+              : t("cam.laserCut.layerModeRegions", { defaultValue: "Filled areas" }),
+        }),
+      );
+    } catch (error) {
+      addMessage(`action error: ${String(error)}`);
+    }
   };
 
   // Shared generate handler (laser + face milling): run the generator,
@@ -596,6 +689,11 @@ function buildOperationPanel({
         sketches={sketches}
         scopeSketchId={scopeSketchId}
         customProfileScope={operation.geometry_scope === "selected"}
+        pcbLayers={pcbLayers}
+        pcbLayerFeatureId={pcbLayerFeatureIdOf(operation)}
+        onSelectPcbLayer={(featureId) => {
+          void applyPcbLayer(operation, featureId);
+        }}
         onSetScope={(featureId) => {
           void runAction(async () => {
             await camOperationSetScope(operation.op_id, featureId);

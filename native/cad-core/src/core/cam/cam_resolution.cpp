@@ -126,6 +126,26 @@ bool layer_bounds_match(const PcbLayerAttestation& attestation,
 }
 }  // namespace
 
+std::optional<PcbLayerAttestation> pcb_layer_attestation_from_feature(
+    const DocumentState& document, const std::string& feature_id) {
+  for (const FeatureEntry& feature : document.feature_history) {
+    if (feature.id != feature_id || !feature.pcb_layer_parameters.has_value()) {
+      continue;
+    }
+    const auto& params = *feature.pcb_layer_parameters;
+    PcbLayerAttestation attestation;
+    attestation.layer_feature_id = feature.id;
+    attestation.role = polysmith::core::pcb_role_id(params.role);
+    attestation.ring_count = params.ring_count;
+    attestation.min_x = params.min_x;
+    attestation.min_y = params.min_y;
+    attestation.max_x = params.max_x;
+    attestation.max_y = params.max_y;
+    return attestation;
+  }
+  return std::nullopt;
+}
+
 ResolvedPcbLayerRef resolve_pcb_layer_attestation(
     const PcbLayerAttestation& attestation, const DocumentState& document) {
   ResolvedPcbLayerRef resolved;

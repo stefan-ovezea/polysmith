@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -89,6 +90,14 @@ ResolvedProfileRef resolve_profile_attestation(
 /// which the caller surfaces as a warning).
 ResolvedPcbLayerRef resolve_pcb_layer_attestation(
     const PcbLayerAttestation& attestation, const DocumentState& document);
+
+/// Mint the witness an operation stores for an imported PCB layer, from the
+/// layer feature's own import summary — the single implementation used by both
+/// the `pcb_capture_layer_reference` reply and the operation update that
+/// attaches a layer, so a witness is never fabricated twice in two shapes.
+/// Returns nullopt when `feature_id` is not a layer in this document.
+std::optional<PcbLayerAttestation> pcb_layer_attestation_from_feature(
+    const DocumentState& document, const std::string& feature_id);
 
 // Human-readable degradation message for a failed/ambiguous face
 // reference, following the dependency_broken doctrine: never throw,

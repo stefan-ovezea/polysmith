@@ -2458,6 +2458,7 @@ function App() {
     camOperationCreate,
     camOperationUpdate,
     camOperationApplySelection,
+    camOperationSetLayer,
     camOperationDelete,
     camOperationSetScope,
     camOperationPreview,
@@ -6484,6 +6485,7 @@ function App() {
                 onSaveMachine={saveCamMachineAction}
                 camPostProcessorSet={camPostProcessorSet}
                 camOperationApplySelection={camOperationApplySelection}
+                camOperationSetLayer={camOperationSetLayer}
                 onImportPost={() => {
                   void importCamPostAction();
                 }}

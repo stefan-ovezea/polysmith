@@ -513,36 +513,67 @@
       if (merged.geometry_references.machining_regions.empty() &&
           (merged.type == "laser_cut" || merged.type == "contour_2d" ||
            merged.type == "engrave")) {
-        // The "re-select geometry" gesture.  When the payload carries
-        // selected_profile_ids explicitly (the panel's Apply), those
-        // win — the capture must not depend on the live selection
-        // still being present when the command is processed.
-        // Otherwise fall back to the document selection (legacy
-        // callers that rely on the gesture semantics).
-        std::vector<std::string> profile_ids;
-        if (p.contains("selected_profile_ids") &&
-            p.at("selected_profile_ids").is_array()) {
-          for (const auto& value : p.at("selected_profile_ids")) {
-            if (value.is_string()) {
-              profile_ids.push_back(value.get<std::string>());
-            }
+        // A PCB layer is the other explicit geometry source: the payload names
+        // the layer FEATURE and the core mints the witness from that layer's own
+        // import summary, exactly as pcb_capture_layer_reference does (one
+        // implementation, in cam_resolution).  The renderer never fabricates
+        // what identifies a layer, and it never has to round-trip the witness
+        // through two commands either.
+        std::string layer_feature_id;
+        if (p.contains("layer_feature_id") &&
+            p.at("layer_feature_id").is_string()) {
+          layer_feature_id = p.at("layer_feature_id").get<std::string>();
+        }
+        if (!layer_feature_id.empty()) {
+          const auto attestation =
+              polysmith::core::pcb_layer_attestation_from_feature(
+                  document.value(), layer_feature_id);
+          if (!attestation.has_value()) {
+            polysmith::protocol::write_message(
+                polysmith::protocol::make_error_event(
+                    command.id, "PCB_LAYER_NOT_FOUND",
+                    "No PCB layer matches " + layer_feature_id +
+                        " in this document."));
+            return;
           }
+          polysmith::core::GeometryReference reference;
+          reference.persistent_id = layer_feature_id;
+          reference.attestation = attestation.value();
+          merged.geometry_references.machining_regions = {reference};
+          // A layer is an explicit pick, like a profile subset.
+          merged.geometry_scope = "selected";
         } else {
-          profile_ids = document->selected_sketch_profile_ids;
+          // The "re-select geometry" gesture.  When the payload carries
+          // selected_profile_ids explicitly (the panel's Apply), those
+          // win — the capture must not depend on the live selection
+          // still being present when the command is processed.
+          // Otherwise fall back to the document selection (legacy
+          // callers that rely on the gesture semantics).
+          std::vector<std::string> profile_ids;
+          if (p.contains("selected_profile_ids") &&
+              p.at("selected_profile_ids").is_array()) {
+            for (const auto& value : p.at("selected_profile_ids")) {
+              if (value.is_string()) {
+                profile_ids.push_back(value.get<std::string>());
+              }
+            }
+          } else {
+            profile_ids = document->selected_sketch_profile_ids;
+          }
+          if (profile_ids.empty() ||
+              !polysmith::core::capture_profile_references_from_profile_ids(
+                  document.value(), profile_ids, merged)) {
+            polysmith::protocol::write_message(
+                polysmith::protocol::make_error_event(
+                    command.id, "NO_PROFILE_SELECTION",
+                    "Select sketch profiles for the CAM operation first"));
+            return;
+          }
+          // Re-selected from an explicit profile pick — a custom subset
+          // by definition, persisted so the dropdown shows it after
+          // reload.
+          merged.geometry_scope = "selected";
         }
-        if (profile_ids.empty() ||
-            !polysmith::core::capture_profile_references_from_profile_ids(
-                document.value(), profile_ids, merged)) {
-          polysmith::protocol::write_message(
-              polysmith::protocol::make_error_event(
-                  command.id, "NO_PROFILE_SELECTION",
-                  "Select sketch profiles for the CAM operation first"));
-          return;
-        }
-        // Re-selected from an explicit profile pick — a custom subset
-        // by definition, persisted so the dropdown shows it after
-        // reload.
-        merged.geometry_scope = "selected";
       }
     }
     if (p.contains("parameters")) {

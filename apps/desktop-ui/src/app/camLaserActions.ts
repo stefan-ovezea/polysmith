@@ -8,6 +8,7 @@ import type {
   ViewportState,
 } from "@/types";
 import { defaultToolForOperation } from "./camToolSelection";
+import { pcbLayerLaserDefaults } from "./pcbLayerDefaults";
 import { DEFAULT_LASER_PARAMS } from "@/layout/CamLaserCutPanel";
 
 interface CamLaserCutContext {
@@ -145,7 +146,7 @@ export async function triggerCamLaserCut({
   // layer is a contour to cut.  The reference is minted core-side from the
   // layer's summary, so a re-imported file re-identifies itself.
   let layerReference: GeometryReference | null = null;
-  let layerIsLineArt = false;
+  let layerRole = "";
   if (pcbLayerFeatureId && pcbCaptureLayerReference) {
     await runAction(async () => {
       const response = await pcbCaptureLayerReference(
@@ -160,10 +161,7 @@ export async function triggerCamLaserCut({
         // A profile or silkscreen layer is DRAWN as hairlines: the file means
         // "cut along this line", so following the stroke centre-lines is the
         // right starting point.  Copper, mask and paste describe AREAS.
-        layerIsLineArt =
-          payload.attestation.role === "profile" ||
-          payload.attestation.role === "silkscreen_top" ||
-          payload.attestation.role === "silkscreen_bottom";
+        layerRole = payload.attestation.role;
       }
     });
     if (!layerReference) {
@@ -226,27 +224,10 @@ export async function triggerCamLaserCut({
         // A layer is thousands of INDEPENDENT contours, so the CAM default of
         // inner_first — which degenerates to smallest-area-first when no loop
         // encloses another — cuts them in Gerber file order and sends the head
-        // criss-crossing the board between them.  Nearest-neighbour is the
-        // right default here; it stays a per-operation setting either way.
-        ...(layerReference
-          ? {
-              cut_order: "nearest_neighbor" as const,
-              // Line art (a board profile, silkscreen) is drawn as hairlines
-              // whose meaning is "cut along this line"; areas are copper, mask
-              // and paste.  Both stay per-operation settings.
-              layer_mode: (layerIsLineArt ? "centerline" : "regions") as
-                | "centerline"
-                | "regions",
-              // No leads on a layer cut.  A contour shorter than TWICE the lead
-              // allowance is skipped (the lead cannot fit on it), and a PCB is
-              // full of small features: a 0.8 mm via ring is under 4 mm around,
-              // so the CAM default of 2 + 2 mm silently dropped vias and mask
-              // openings.  Starting on the contour is also what you want when
-              // the geometry is the file's own outline.
-              lead_in_mm: 0,
-              lead_out_mm: 0,
-            }
-          : {}),
+        // criss-crossing the board between them.  One rule for every way a layer
+        // gets attached, so the same file cuts the same way however it was
+        // picked (see pcbLayerDefaults).
+        ...(layerReference ? pcbLayerLaserDefaults(layerRole) : {}),
       },
     },
     dependencies: {

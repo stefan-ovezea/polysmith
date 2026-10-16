@@ -2198,6 +2198,37 @@ export function useCadCore() {
       }
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    camOperationSetLayer: async (
+      opId: string,
+      layerFeatureId: string,
+      parameters?: CamOperation["parameters"],
+    ): Promise<void> => {
+      // The core mints the layer witness from the layer's own import summary;
+      // the renderer only names the row.  The same call carries the layer's
+      // recommended parameters (centre-lines for line art, no leads), because
+      // attaching a layer is an explicit choice by the user and the panel right
+      // beside it shows every one of those values.
+      const response = await sendCoreCommandAwaited(
+        makeCamOperationUpdateCommand(
+          opId,
+          {
+            geometry_references: {
+              machining_regions: [],
+              avoidance_regions: [],
+              guide_curves: [],
+              check_surfaces: [],
+            },
+            ...(parameters ? { parameters } : {}),
+          },
+          { layer_feature_id: layerFeatureId },
+        ) as CoreCommand & { id: string },
+      );
+      if (response.type === "error") {
+        const payload = response.payload as { message?: string } | undefined;
+        throw new Error(payload?.message ?? "the core rejected the layer");
+      }
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     camOperationDelete: async (opId: string) => {
       await sendAndRefreshSessionViewport(makeCamOperationDeleteCommand(opId));
     },
