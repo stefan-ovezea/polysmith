@@ -1102,7 +1102,7 @@
       "layerModeRegions": "Filled areas (copper, mask)",
       "layerModeCenterline": "Stroke centre-lines (profile, silk)",
       "layerModeHint": "Layers drawn with a hairline aperture (a board profile) mean \"cut along this line\": centre-lines follow it once, while filled areas trace both sides of the drawn ribbon. Only affects imported PCB layers.",
-      "layerSource": "Layer",
+      "layerSource": "PCB layer",
       "layerNone": "None (model geometry)",
       "layerHintImport": "No PCB layers in this project - import a Gerber or drill file from the File menu.",
       "layerFallbackName": "Layer",

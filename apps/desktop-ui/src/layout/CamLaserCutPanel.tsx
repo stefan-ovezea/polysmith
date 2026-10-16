@@ -182,7 +182,98 @@ export function CamLaserCutPanel({
                   })
                 : null}
             </p>
-            {faceRegion ? (
+
+            {/* The geometry SOURCE lives here, with the sketch scope it
+                replaces: a layer and a sketch scope are two answers to the same
+                question, and splitting them across the panel is what made the
+                layer hard to find.  Choosing "None" hands the operation back to
+                model geometry. */}
+            {pcbLayers.length > 0 || pcbLayerFeatureId ? (
+              <div className="space-y-3">
+                <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                  {t("cam.laserCut.layerSource", "PCB layer")}
+                  <Dropdown
+                    className="mt-2 w-full"
+                    value={pcbLayerFeatureId ?? ""}
+                    label={t("cam.laserCut.layerSource", "PCB layer")}
+                    options={[
+                      {
+                        value: "",
+                        label: t("cam.laserCut.layerNone", "None (model geometry)"),
+                      },
+                      // The attached layer is always listed, even when the
+                      // project's layer list is momentarily empty: an operation
+                      // that references a layer must never show a blank control.
+                      ...(pcbLayerFeatureId &&
+                      !pcbLayers.some(
+                        (layer) => layer.featureId === pcbLayerFeatureId,
+                      )
+                        ? [
+                            {
+                              value: pcbLayerFeatureId,
+                              label: t(
+                                "cam.laserCut.layerMissing",
+                                "(referenced layer)",
+                              ),
+                            },
+                          ]
+                        : []),
+                      ...pcbLayers.map((layer) => ({
+                        value: layer.featureId,
+                        label: layer.label,
+                      })),
+                    ]}
+                    disabled={disabled}
+                    onChange={(value) => onSelectPcbLayer(value)}
+                  />
+                </label>
+                {pcbLayerFeatureId ? (
+                  <>
+                    <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+                      {t("cam.laserCut.layerMode", "Cut as")}
+                      <Dropdown
+                        className="mt-2 w-full"
+                        value={params.layer_mode}
+                        label={t("cam.laserCut.layerMode", "Cut as")}
+                        options={[
+                          {
+                            value: "regions",
+                            label: t(
+                              "cam.laserCut.layerModeRegions",
+                              "Filled areas (copper, mask)",
+                            ),
+                          },
+                          {
+                            value: "centerline",
+                            label: t(
+                              "cam.laserCut.layerModeCenterline",
+                              "Stroke centre-lines (profile, silk)",
+                            ),
+                          },
+                        ]}
+                        disabled={disabled}
+                        onChange={(value) =>
+                          update({
+                            layer_mode: value as LaserCutParameters["layer_mode"],
+                          })
+                        }
+                      />
+                    </label>
+                    <p className="text-[10px] leading-relaxed text-on-surface-muted">
+                      {t(
+                        "cam.laserCut.layerModeHint",
+                        "Layers drawn with a hairline aperture (a board profile) mean \"cut along this line\": centre-lines follow it once, while filled areas trace both sides of the drawn ribbon.",
+                      )}
+                    </p>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Sketch scope and face pick apply only while NO layer is the
+                source: a layer supersedes them, and showing both at once was
+                the other half of the confusion. */}
+            {pcbLayerFeatureId ? null : faceRegion ? (
               // Body-face cut: the sketch scope controls do not apply —
               // the op follows the face outline at its height.  The
               // armed pick replaces the region with the next viewport
@@ -743,84 +834,6 @@ export function CamLaserCutPanel({
                 onChange={(value) => update({ cut_order: value as LaserCutParameters["cut_order"] })}
               />
             </label>
-          </fieldset>
-
-          {/* ── Imported PCB layers ──────────────────────────────── */}
-          <fieldset className="space-y-3">
-            <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
-              {t("cam.laserCut.pcbLayer", "PCB layer")}
-            </legend>
-            {pcbLayers.length > 0 || pcbLayerFeatureId ? (
-              <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-                {t("cam.laserCut.layerSource", "Layer")}
-                <Dropdown
-                  className="mt-2 w-full"
-                  value={pcbLayerFeatureId ?? ""}
-                  label={t("cam.laserCut.layerSource", "Layer")}
-                  options={[
-                    { value: "", label: t("cam.laserCut.layerNone", "None (model geometry)") },
-                    // The attached layer is always listed, even when the
-                    // project's layer list is momentarily empty: an operation
-                    // that references a layer must never show a blank control.
-                    ...(pcbLayerFeatureId &&
-                    !pcbLayers.some(
-                      (layer) => layer.featureId === pcbLayerFeatureId,
-                    )
-                      ? [
-                          {
-                            value: pcbLayerFeatureId,
-                            label: t(
-                              "cam.laserCut.layerMissing",
-                              "(referenced layer)",
-                            ),
-                          },
-                        ]
-                      : []),
-                    ...pcbLayers.map((layer) => ({
-                      value: layer.featureId,
-                      label: layer.label,
-                    })),
-                  ]}
-                  disabled={disabled}
-                  onChange={(value) => onSelectPcbLayer(value)}
-                />
-              </label>
-            ) : (
-              <p className="text-[10px] leading-relaxed text-on-surface-muted">
-                {t(
-                  "cam.laserCut.layerHintImport",
-                  "No PCB layers in this project — import a Gerber or drill file from the File menu.",
-                )}
-              </p>
-            )}
-            <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
-              {t("cam.laserCut.layerMode", "Cut as")}
-              <Dropdown
-                className="mt-2 w-full"
-                value={params.layer_mode}
-                label={t("cam.laserCut.layerMode", "Cut as")}
-                options={[
-                  {
-                    value: "regions",
-                    label: t("cam.laserCut.layerModeRegions", "Filled areas (copper, mask)"),
-                  },
-                  {
-                    value: "centerline",
-                    label: t("cam.laserCut.layerModeCenterline", "Stroke centre-lines (profile, silk)"),
-                  },
-                ]}
-                disabled={disabled || !pcbLayerFeatureId}
-                onChange={(value) =>
-                  update({ layer_mode: value as LaserCutParameters["layer_mode"] })
-                }
-              />
-            </label>
-            <p className="text-[10px] leading-relaxed text-on-surface-muted">
-              {t(
-                "cam.laserCut.layerModeHint",
-                "Layers drawn with a hairline aperture (a board profile) mean \"cut along this line\": centre-lines follow it once, while filled areas trace both sides of the drawn ribbon. Only affects imported PCB layers.",
-              )}
-            </p>
           </fieldset>
 
           {/* ── Material ─────────────────────────────────────────── */}
