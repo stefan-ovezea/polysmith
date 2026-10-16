@@ -295,6 +295,7 @@ set(CAD_CORE_SOURCES
   src/core/geometry/step_import_helpers.cpp
   src/core/geometry/iges_import_helpers.cpp
   src/core/loft/loft_feature.cpp
+  src/core/pcb/gerber_parser.cpp
   src/core/plugin/plugin_feature.cpp
   src/core/primitive/box_feature.cpp
   src/core/primitive/cylinder_feature.cpp
@@ -569,6 +570,7 @@ polysmith_add_core_test(cad_core_stl_import_test tests/stl_import_test.cpp)
 polysmith_add_core_test(cad_core_dxf_import_export_test tests/dxf_import_export_test.cpp)
 
 polysmith_add_core_test(cad_core_step_import_test tests/step_import_test.cpp)
+polysmith_add_core_test(cad_core_pcb_gerber_test tests/pcb_gerber_test.cpp)
 
 polysmith_add_core_test(cad_core_viewport_seam_enumeration_test tests/viewport_seam_enumeration_test.cpp)
 

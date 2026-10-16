@@ -2,6 +2,42 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-10-16
+
+### PCB / Gerber workspace — design + Gerber X1 parser (branch `gerber`)
+
+Fabrication data (Gerber + Excellon) has to become CAM operations for two
+workflows: isolation routing on a mill and laser cutting.  This lands the plan
+plus the format layer.
+
+- **Workspace decision** ([PCB-Workspace](PCB-Workspace)): a sixth top-level
+  `pcb` workspace that owns import, layer roles/polarity and PCB job
+  parameters, and produces ordinary CAM operations.  It never emits G-code, so
+  the project keeps one operation model, one preview pipeline and one post
+  processor: `cad | cam | drawing | grbl | slicer | pcb`.
+- **Parser** (`src/core/pcb/gerber_parser.{h,cpp}`, suite
+  `cad_core_pcb_gerber_test`): `%FS`/`%MO` with all three zero-suppression
+  modes, the aperture table, aperture macros **with** expression evaluation
+  (`$n`, `+ - x /`, parentheses, in-order assignments), the modal command
+  stream (move/line/arc/flash, `G36`/`G37` regions, `LPD`/`LPC`, `G90`/`G91`),
+  and the X2 role attributes in both spellings (`%TF…%` and KiCad's
+  `G04 #@! TF…*` comments).  Unsupported constructs (`%SR`, `%AB`, `G74`,
+  `%IPNEG`) are recorded and skipped; malformed input returns diagnostics
+  instead of throwing, with operation/statement caps for untrusted files.
+- **Verified against a real board** (local KiCad 10.0.4 4-layer plot in
+  `projects/EDM`, deliberately *not* committed): F_Cu imports 71 apertures,
+  12 pours, 716 pad flashes and a ~16.5k-operation command stream with nothing
+  unsupported; Edge_Cuts yields 10 multi-quadrant arcs.  The fixture case is
+  path/env gated (`POLYSMITH_PCB_FIXTURE_DIR`), so the suite passes without it.
+  The suite caught a real parser bug during development (`ADD<code>` read as
+  `AD` + code, silently rejecting every aperture).
+- **Gates:** `pnpm core:build` + `pnpm test:core` — 68/68 suites green
+  (including the new one), no UI change.
+- **Next:** P1b polygonizer (strokes → capsules, flashes → aperture polygons,
+  macro primitives → outlines, in-order dark/clear booleans) + Excellon.
+  **P2** (`pcb_layer` feature + `PcbRegionAttestation` + IPC commands) needs
+  explicit approval before any document-model code.
+
 ## 2026-09-24
 
 ### Bootstrap chain hardening — cross-platform build scripts (dev, uncommitted)
