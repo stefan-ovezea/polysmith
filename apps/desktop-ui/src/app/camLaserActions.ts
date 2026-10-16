@@ -213,7 +213,15 @@ export async function triggerCamLaserCut({
       multiple_passes: false,
       coolant: "off",
       tool_axis_mode: "fixed_z",
-      laser: { ...DEFAULT_LASER_PARAMS },
+      laser: {
+        ...DEFAULT_LASER_PARAMS,
+        // A layer is thousands of INDEPENDENT contours, so the CAM default of
+        // inner_first — which degenerates to smallest-area-first when no loop
+        // encloses another — cuts them in Gerber file order and sends the head
+        // criss-crossing the board between them.  Nearest-neighbour is the
+        // right default here; it stays a per-operation setting either way.
+        ...(layerReference ? { cut_order: "nearest_neighbor" as const } : {}),
+      },
     },
     dependencies: {
       parent_operation_ids: [],
