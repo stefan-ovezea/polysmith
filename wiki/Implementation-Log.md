@@ -152,9 +152,27 @@ plus the format layer.
   fails with an explicit message when a resolved PCB layer reaches a generator
   that has no PCB branch yet, so the next slice cannot ship an operation that
   "succeeds" with no toolpath.  Removed when the laser branch lands.
-- **Next:** the cutting half — a laser generator branch for layer rings
-  (mirroring the face-outline path), operation creation for `pcb_layer_cut` /
-  `pcb_isolation` / `pcb_drill`, and the PCB workspace buttons that build them.
+- **A layer now cuts (P2c cutting half, core):** the laser generator grew a
+  PCB-layer branch (`laser_generate.cpp`).  Each ring of a layer is an
+  independent closed contour, so each becomes its own group — nesting across
+  rings is not a hole relationship, it is two separate cuts.  Layer
+  coordinates are used verbatim as world XY at the operation's plane offset.
+  Suite `cad_core_pcb_layer_cut_test` proves it on the committed profile
+  layer: **20 contours, one per ring**, kerf pushing the cut outside the drawn
+  outline by no more than the kerf, nothing straying, a **drill-only layer
+  failing with "no contours to cut"** plus a warning (never an empty
+  "successful" toolpath), and a **deleted layer** degrading with a reason.
+- **Parallel branch, not a shared helper — on purpose:** the face-outline path
+  duplicates ~40 lines of loop planning, so a defect in the new branch cannot
+  reach the production face/sketch paths.  The extraction into a shared helper
+  is its own test-backed change, agreed with the user in advance.
+- **Known limitation:** laser *fill* mode on a layer hatches each ring
+  independently and applies no polarity/boolean assembly (a negative mask would
+  fill its openings).  Contour cutting is exact; fill waits on the set-boolean
+  decision.
+- **Next:** the last mile to an in-app cut — the PCB workspace creating the
+  operation (core mints the layer reference, then `cam_operation_create` with
+  `laser_cut`), so a layer can go PCB → CAM → post → GRBL.
 
 ## 2026-09-24
 

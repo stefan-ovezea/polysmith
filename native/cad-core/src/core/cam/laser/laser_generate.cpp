@@ -14,7 +14,9 @@
 #include "core/cam/laser/laser_order.h"
 #include "core/cam/laser/laser_tabs.h"
 #include "core/diagnostics/logger.h"
+#include "core/document/feature.h"
 #include "core/geometry/body_compiler.h"
+#include "core/pcb/pcb_layer_io.h"
 #include "core/sketch/sketch_profile_types.h"
 
 #include <TopExp_Explorer.hxx>
@@ -211,10 +213,12 @@ CamGenerateResult generate_laser_cut_toolpath(
   }
   const auto& laser = op.parameters.laser.value();
   if (context.geometry.profiles.empty() &&
-      context.geometry.faces.empty()) {
+      context.geometry.faces.empty() &&
+      context.geometry.pcb_layers.empty()) {
     result.ok = false;
     result.error_message =
-        "Laser cut requires sketch profiles or a selected face.";
+        "Laser cut requires sketch profiles, a selected face, or an imported "
+        "PCB layer.";
     return result;
   }
   // v1: every selected profile must belong to the same sketch plane.
@@ -622,6 +626,107 @@ CamGenerateResult generate_laser_cut_toolpath(
         }
         groups.push_back(std::move(faceGroup));
       }
+    }
+  }
+
+  // ── PCB-layer loops (imported Gerber / Excellon) ───────────────
+  // Every ring of a fabrication layer is an INDEPENDENT closed contour: a
+  // pad, a trace outline, a pour boundary.  So each ring becomes its own
+  // group — nesting across rings is not a hole relationship, it is simply
+  // two separate cuts, which is also why the group index matters to the
+  // nesting pass downstream.
+  //
+  // The layer's coordinates are board coordinates and are used verbatim as
+  // world XY, with the cut at the operation's plane offset: registration
+  // (placing the board under the head) is the machine's job today.  A
+  // future refinement can pin the origin to the profile layer.
+  //
+  // This mirrors the face-outline path above rather than sharing it: the
+  // shared-helper extraction is its own change, so a defect here cannot
+  // reach the production face and sketch paths.
+  for (size_t layerIndex = 0; layerIndex < context.geometry.pcb_layers.size();
+       ++layerIndex) {
+    const auto& resolved = context.geometry.pcb_layers[layerIndex];
+    if (layerIndex >= context.geometry.pcb_layer_features.size() ||
+        context.geometry.pcb_layer_features[layerIndex] == nullptr) {
+      continue;
+    }
+    const FeatureEntry& feature = *context.geometry.pcb_layer_features[layerIndex];
+    if (!feature.pcb_layer_parameters.has_value()) {
+      result.ok = false;
+      result.error_message = "The referenced layer is no longer a PCB layer.";
+      return result;
+    }
+    const polysmith::core::pcb::PcbLayerLoad loaded =
+        polysmith::core::pcb::load_pcb_layer(
+            feature.pcb_layer_parameters->file_path);
+    if (!loaded.ok) {
+      result.ok = false;
+      result.error_message =
+          loaded.error.empty() ? "The PCB layer's source file could not be read."
+                               : loaded.error;
+      return result;
+    }
+    if (resolved.changed) {
+      // The file was re-plotted since the operation was created.  Cut the
+      // current copper and say so — silently cutting the old shape is
+      // impossible (it no longer exists) and silently refusing would look
+      // like a broken operation.
+      result.warnings.push_back(
+          "The layer's source changed since this operation was created; "
+          "cutting the current file.");
+    }
+    if (loaded.ring_count == 0) {
+      result.warnings.push_back(
+          "This layer carries drill data only — it has no contours to cut.");
+      continue;
+    }
+    for (const polysmith::core::pcb::PcbRing& ring : loaded.geometry.rings) {
+      if (ring.points.size() < 3) {
+        continue;
+      }
+      std::vector<BaseSegment> base;
+      base.reserve(ring.points.size());
+      for (size_t index = 0; index < ring.points.size(); ++index) {
+        BaseSegment segment;
+        segment.start = ring.points[index];
+        segment.end = ring.points[(index + 1) % ring.points.size()];
+        base.push_back(segment);
+      }
+      // Normalize exactly as the sketch and face paths do: material on the
+      // left of the walk (CCW), flipped when the machine's convention asks
+      // for it, so the kerf lands on the scrap side.
+      if (base_segments_signed_area(base) < 0) {
+        reverse_segments(base);
+      }
+      if (conventional) {
+        reverse_segments(base);
+      }
+      std::vector<XY> basePoints;
+      basePoints.reserve(base.size());
+      for (const auto& segment : base) {
+        basePoints.push_back(segment.start);
+      }
+      const XY centroid = xy_centroid(basePoints);
+
+      PlannedLoop loop;
+      std::string error;
+      const double kerf = kerf_for(/*isHole=*/false);
+      if (!plan_loop(base, kerf, /*isHole=*/false, centroid, loop,
+                     cleanupStats, simplifyStats, error)) {
+        if (firstSkipReason.empty()) {
+          firstSkipReason = error;
+        }
+        result.warnings.push_back("A layer contour was skipped: " + error);
+        continue;
+      }
+      note_kerf_side(loop, kerf);
+      loop.isWorldXY = true;
+      loop.worldZ = laser.cut_plane_offset_mm;
+      loop.group = groups.size();
+      std::vector<PlannedLoop> layerGroup;
+      layerGroup.push_back(std::move(loop));
+      groups.push_back(std::move(layerGroup));
     }
   }
 

@@ -500,10 +500,43 @@ resolved PCB layer reaches a generator, so the next slice cannot accidentally
 ship an operation that "succeeds" with no toolpath.  That guard comes out when
 the laser branch lands.
 
-**Next — P2c (cutting half):** the laser generator branch that turns a layer's
-rings into planned loops (mirroring the existing face-outline path), operation
-creation for `pcb_layer_cut` / `pcb_isolation` / `pcb_drill`, and the PCB
-workspace buttons that build them.
+**P2c (cutting half, core) — a layer cuts: done**
+(`laser_generate.cpp` PCB branch + suite `cad_core_pcb_layer_cut_test`,
+3 cases).
+
+Every ring of a layer is an independent closed contour — a pad, a trace
+outline, a pour boundary — so each ring becomes **its own group**: nesting
+across rings is not a hole relationship, it is two separate cuts.  The layer's
+coordinates are used verbatim as world XY with the cut at the operation's plane
+offset; placing the board under the head is the machine's job today (pinning
+the origin to the profile layer is a later refinement).
+
+Proven against the committed profile layer (20 rings, kerf 0.2):
+
+- **20 cut contours, one per ring** — counted as laser-on runs;
+- the kerf pushes the cut **outside** the drawn outline, by no more than the
+  kerf;
+- no move strays beyond the layer by more than the kerf;
+- a **drill-only layer** fails with *"…no contours to cut"* plus a warning
+  naming the drill data — it must never "succeed" with an empty toolpath;
+- a **deleted layer** degrades with *"…no longer in the document"*.
+
+**Deliberately a parallel branch, not a shared helper.**  The face-outline path
+above it duplicates ~40 lines of loop planning (orientation, centroid, kerf,
+`plan_loop`).  A defect in the new branch therefore cannot reach the production
+face and sketch paths.  The extraction into a shared helper is its own
+change, with tests on both paths, to be proposed separately — approved in
+advance by the user.
+
+**Known limitation, by design for now:** fill mode on a layer hatches each ring
+independently and does **not** apply polarity or boolean assembly, so a
+negative mask fills the openings rather than the material.  Contour cutting is
+exact; the fill case waits for the set-boolean decision in §4.
+
+**Next:** the last mile to an in-app cut — a way for the PCB workspace to
+create the operation (mint the layer reference in the core, then
+`cam_operation_create` with `laser_cut`), so a layer can go PCB → CAM → post →
+GRBL.
 
 Committed-fixture coverage is in place: `copper_trimmed.gbr` polygonizes to
 **1964 rings, 1215 macro-pad parts, 1 pour, 0 skipped, 0 diagnostics**, so both

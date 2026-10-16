@@ -579,6 +579,7 @@ polysmith_add_core_test(cad_core_pcb_polygonize_test tests/pcb_polygonize_test.c
 polysmith_add_core_test(cad_core_pcb_excellon_test tests/pcb_excellon_test.cpp)
 polysmith_add_core_test(cad_core_pcb_layer_test tests/pcb_layer_test.cpp)
 polysmith_add_core_test(cad_core_pcb_layer_attestation_test tests/pcb_layer_attestation_test.cpp)
+polysmith_add_core_test(cad_core_pcb_layer_cut_test tests/pcb_layer_cut_test.cpp)
 
 polysmith_add_core_test(cad_core_viewport_seam_enumeration_test tests/viewport_seam_enumeration_test.cpp)
 
