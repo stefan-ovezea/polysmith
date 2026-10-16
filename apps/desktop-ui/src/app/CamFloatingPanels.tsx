@@ -540,19 +540,21 @@ function buildOperationPanel({
 
   // Imported PCB layers are an ordinary geometry source for a 2D cut: the panel
   // lists them, and picking one lets the CORE mint the witness from the layer's
-  // own summary (never the renderer).  Labelled by name plus role, so a project
-  // with ten layers is navigable.
+  // own summary (never the renderer).  Membership is the feature KIND, not the
+  // presence of a summary: a layer whose summary did not survive a load is
+  // still attachable (the core re-derives everything from the source file), and
+  // hiding it behind a missing field is how the list went empty before.
   const pcbLayers = (document?.feature_history ?? [])
-    .filter((feature) => feature.pcb_layer_parameters)
+    .filter((feature) => feature.kind === "pcb_layer")
     .map((feature) => {
       const role = feature.pcb_layer_parameters?.role ?? "";
+      const roleLabel = role
+        ? t(`pcb.role.${role}`, { defaultValue: role })
+        : t("pcb.role.unknown");
       return {
         featureId: feature.feature_id,
         role,
-        label: `${feature.name || t("cam.laserCut.layerFallbackName")} — ${t(
-          `pcb.role.${role}`,
-          { defaultValue: role || t("pcb.role.unknown") },
-        )}`,
+        label: `${feature.name || t("cam.laserCut.layerFallbackName")} — ${roleLabel}`,
       };
     });
 

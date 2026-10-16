@@ -750,7 +750,7 @@ export function CamLaserCutPanel({
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
               {t("cam.laserCut.pcbLayer", "PCB layer")}
             </legend>
-            {pcbLayers.length > 0 ? (
+            {pcbLayers.length > 0 || pcbLayerFeatureId ? (
               <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
                 {t("cam.laserCut.layerSource", "Layer")}
                 <Dropdown
@@ -759,6 +759,23 @@ export function CamLaserCutPanel({
                   label={t("cam.laserCut.layerSource", "Layer")}
                   options={[
                     { value: "", label: t("cam.laserCut.layerNone", "None (model geometry)") },
+                    // The attached layer is always listed, even when the
+                    // project's layer list is momentarily empty: an operation
+                    // that references a layer must never show a blank control.
+                    ...(pcbLayerFeatureId &&
+                    !pcbLayers.some(
+                      (layer) => layer.featureId === pcbLayerFeatureId,
+                    )
+                      ? [
+                          {
+                            value: pcbLayerFeatureId,
+                            label: t(
+                              "cam.laserCut.layerMissing",
+                              "(referenced layer)",
+                            ),
+                          },
+                        ]
+                      : []),
                     ...pcbLayers.map((layer) => ({
                       value: layer.featureId,
                       label: layer.label,

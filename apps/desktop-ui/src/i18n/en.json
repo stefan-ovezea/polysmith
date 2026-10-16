@@ -1106,6 +1106,7 @@
       "layerNone": "None (model geometry)",
       "layerHintImport": "No PCB layers in this project - import a Gerber or drill file from the File menu.",
       "layerFallbackName": "Layer",
+      "layerMissing": "(referenced layer)",
       "layerAttached": "Cutting {{name}} as {{mode}}.",
       "layerCleared": "Layer detached - the operation is back to model geometry.",
       "passes": "Passes",
@@ -1914,6 +1915,8 @@
     "collapseHierarchyPanel": "Collapse hierarchy panel",
     "sketchPlane": "Sketch Plane",
     "sketches": "Sketches",
+    "imports": "Imports",
+    "noImports": "No imported layers",
     "units": "Units"
   },
   "documentStatus": {
