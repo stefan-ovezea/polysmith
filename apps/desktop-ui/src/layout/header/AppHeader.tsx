@@ -317,6 +317,7 @@ interface AppHeaderProps
   onLoadDocument: () => Promise<void>;
   onImportMesh: () => Promise<void>;
   onImportDxf: () => Promise<void>;
+  onImportPcb: () => Promise<void>;
   onImportStep: () => Promise<void>;
   onImportIges: () => Promise<void>;
   onExportIges: () => Promise<void>;
@@ -430,6 +431,7 @@ export function AppHeader({
   onLoadDocument,
   onImportMesh,
   onImportDxf,
+  onImportPcb,
   onImportStep,
   onImportIges,
   onExportIges,
@@ -781,6 +783,12 @@ export function AppHeader({
               {
                 label: t("header.importStep"),
                 onSelect: () => void onImportStep(),
+              },
+              {
+                // Gerber + Excellon fabrication layers. The label stays short
+                // because the File menu lists every import side by side.
+                label: t("header.importPcb"),
+                onSelect: () => void onImportPcb(),
               },
               {
                 label: t("header.importIges"),

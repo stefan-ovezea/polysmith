@@ -15,6 +15,7 @@ import {
   pickExportIgesPath,
   pickExportPath,
   pickImportDxfPath,
+  pickImportPcbPaths,
   pickImportIgesPath,
   pickImportStepPath,
   pickImportStlPath,
@@ -95,6 +96,7 @@ interface AppTopBarProps {
   exportDocumentDxf: (filePath: string) => Promise<void>;
   importStl: (filePath: string, scale?: number) => Promise<void>;
   importDxf: (filePath: string, planeId?: string) => Promise<void>;
+  importPcbLayer: (filePath: string) => Promise<void>;
   importStep: (filePath: string) => Promise<void>;
   importIges: (filePath: string) => Promise<void>;
   exportDocumentIges: (filePath: string) => Promise<void>;
@@ -323,6 +325,24 @@ export function AppTopBar(props: AppTopBarProps) {
         await props.runAction(async () => {
           await props.importDxf(filePath);
           props.addMessage(`import requested: ${filePath}`);
+        });
+      }}
+      onImportPcb={async () => {
+        // A fabrication set is imported one file at a time: each reply carries a
+        // fresh document state, so the hierarchy fills in as the set loads and
+        // one unreadable file cannot stop the rest.
+        const paths = await pickImportPcbPaths({
+          translate: props.translate,
+          addMessage: props.addMessage,
+        });
+        if (!paths) {
+          return;
+        }
+        await props.runAction(async () => {
+          for (const filePath of paths) {
+            await props.importPcbLayer(filePath);
+          }
+          props.addMessage(`import requested: ${paths.length} PCB file(s)`);
         });
       }}
       onImportStep={async () => {

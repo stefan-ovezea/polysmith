@@ -4342,6 +4342,7 @@ function App() {
           exportDocumentDxf={exportDocumentDxf}
           importStl={importStl}
           importDxf={importDxf}
+          importPcbLayer={pcbImportLayer}
           importStep={importStep}
           importIges={importIges}
           exportDocumentIges={exportDocumentIges}
