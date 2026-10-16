@@ -4138,6 +4138,12 @@ function App() {
           showDrawingView={showDrawingView}
           showSlicerView={showSlicerView}
           showGrblView={showGrblView}
+          // The PCB workspace has no native window to tear down, so it needs
+          // no slicer-hook wrapper — just the shared workspace setter (which
+          // still closes an active sketch first).
+          showPcbView={async () => {
+            setWorkspaceView("pcb");
+          }}
           status={status}
           drawingRibbon={{
             drawingCount: document?.drawing.drawings.length ?? 0,

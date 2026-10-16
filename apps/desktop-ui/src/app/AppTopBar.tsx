@@ -35,6 +35,7 @@ interface AppTopBarProps {
   showDrawingView: AsyncVoid;
   showSlicerView: AsyncVoid;
   showGrblView: AsyncVoid;
+  showPcbView: AsyncVoid;
   status: string;
   canUndo: boolean;
   canRedo: boolean;
@@ -186,23 +187,35 @@ export function AppTopBar(props: AppTopBarProps) {
       drawingRibbon={props.drawingRibbon}
       canOpenSlicerView={props.canOpenSlicerView}
       onSetWorkspaceView={(view) => {
-        if (view === "cad") {
-          void props.showCadView();
-          return;
+        // Exhaustive on purpose. This used to be an if-chain over the five
+        // known views with showSlicerView() as the fallback, so adding the
+        // `pcb` workspace silently navigated to the Slicer instead — the
+        // `never` assertion below turns that class of bug into a compile
+        // error the next time a workspace is added.
+        switch (view) {
+          case "cad":
+            void props.showCadView();
+            return;
+          case "cam":
+            void props.showCamView();
+            return;
+          case "drawing":
+            void props.showDrawingView();
+            return;
+          case "grbl":
+            void props.showGrblView();
+            return;
+          case "pcb":
+            void props.showPcbView();
+            return;
+          case "slicer":
+            void props.showSlicerView();
+            return;
+          default: {
+            const unhandled: never = view;
+            void unhandled;
+          }
         }
-        if (view === "cam") {
-          void props.showCamView();
-          return;
-        }
-        if (view === "drawing") {
-          void props.showDrawingView();
-          return;
-        }
-        if (view === "grbl") {
-          void props.showGrblView();
-          return;
-        }
-        void props.showSlicerView();
       }}
       status={props.status}
       disabled={props.status !== "connected"}
