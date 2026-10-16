@@ -407,6 +407,106 @@ bool test_cut_order_reduces_travel() {
   return ok;
 }
 
+bool test_centerline_mode_follows_the_drawn_line() {
+  if (!have_fixtures()) {
+    std::cout << "  (skipped: tests/data/pcb not found)\n";
+    return true;
+  }
+  // A board profile is drawn with a hairline aperture: the file means "cut along
+  // this line".  Regions mode traces both sides of the 0.1 mm ribbon the
+  // aperture swept; centre-line mode follows the line itself, once, with no
+  // kerf offset and no leads.
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.import_pcb_layer(fixture("edge_cuts.gbr"));
+  const FeatureEntry* layer = find_layer(document);
+  if (layer == nullptr) {
+    return expect(false, "layer imported");
+  }
+  const PcbLayerAttestation attestation = attestation_for(*layer);
+  const int assembled_rings = layer->pcb_layer_parameters->ring_count;
+  const double layer_max_x = layer->pcb_layer_parameters->max_x;
+
+  CamSetup setup;
+  setup.name = "Laser setup";
+  setup.machine_type = "laser";
+  document = manager.cam_setup_create(setup);
+  ToolEntry tool;
+  tool.name = "CO2 laser";
+  tool.type = "laser";
+  document = manager.cam_tool_add(tool);
+
+  const auto add_op = [&](const std::string& mode) {
+    CamOperation op;
+    op.name = "PCB layer cut (" + mode + ")";
+    op.type = "laser_cut";
+    op.tool_id = document.cam.tool_library[0].tool_id;
+    LaserCutParameters laser;
+    laser.kerf_width_mm = 0.2;
+    laser.lead_in_mm = 2.0;  // must be ignored in centre-line mode
+    laser.lead_out_mm = 2.0;
+    laser.layer_mode = mode;
+    op.parameters.laser = laser;
+    GeometryReference reference;
+    reference.persistent_id = attestation.layer_feature_id;
+    reference.attestation = attestation;
+    op.geometry_references.machining_regions.push_back(reference);
+    document = manager.cam_operation_add(op);
+    return document.cam.operations.back().op_id;
+  };
+
+  const std::string regions_id = add_op("regions");
+  const std::string centre_id = add_op("centerline");
+  const auto regions = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), regions_id, /*preview=*/false);
+  const auto centre = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), centre_id, /*preview=*/false);
+  if (!expect(regions.result.ok && centre.result.ok,
+              "both layer modes generate")) {
+    std::cerr << "  regions: " << regions.result.error_message
+              << "\n  centerline: " << centre.result.error_message << "\n";
+    return false;
+  }
+
+  const auto count_contours = [](const Toolpath& toolpath) {
+    int contours = 0;
+    bool previous_on = false;
+    for (const auto& move : toolpath.moves) {
+      if (move.laser_on && !previous_on) {
+        ++contours;
+      }
+      previous_on = move.laser_on;
+    }
+    return contours;
+  };
+  const int region_contours = count_contours(regions.result.toolpath);
+  const int centre_contours = count_contours(centre.result.toolpath);
+  std::cout << "  regions: " << region_contours << " contours (of "
+            << assembled_rings << " assembled rings), centre-line: "
+            << centre_contours << " contours\n";
+
+  // Four closed outlines as centre-lines (board + 3 cut-outs) instead of the
+  // eight boundaries of their ribbons.
+  bool ok = expect(centre_contours == 4,
+                   "centre-line mode cuts the 4 drawn outlines once each");
+  ok &= expect(centre_contours < region_contours,
+               "and cuts fewer contours than tracing both sides of the ribbon");
+
+  bool any_laser = false;
+  const double centre_max_x = laser_on_max_x(centre.result.toolpath, &any_laser);
+  ok &= expect(any_laser, "centre-line mode fires the laser");
+  // The discriminator: following the drawn line stays INSIDE the drawn extents
+  // (half a hairline in), while a kerf-offset ribbon boundary goes outside.
+  ok &= expect(centre_max_x < layer_max_x,
+               "the cut follows the line, not the ribbon's outside edge");
+  bool regions_laser = false;
+  const double regions_max_x =
+      laser_on_max_x(regions.result.toolpath, &regions_laser);
+  ok &= expect(regions_laser && regions_max_x > layer_max_x,
+               "while regions mode offsets outside by the kerf");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -426,6 +526,8 @@ int main() {
       {"missing_layer_source_degrades_with_a_reason",
        test_missing_layer_source_degrades_with_a_reason},
       {"cut_order_reduces_travel", test_cut_order_reduces_travel},
+      {"centerline_mode_follows_the_drawn_line",
+       test_centerline_mode_follows_the_drawn_line},
   };
 
   int failures = 0;

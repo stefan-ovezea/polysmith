@@ -415,6 +415,7 @@ polysmith::core::LaserCutParameters laser_cut_parameters_from_payload(
   laser.cut_plane_offset_mm =
       cam_read_number(payload, "cut_plane_offset_mm", 0.0);
   laser.cut_order = cam_read_string(payload, "cut_order", "inner_first");
+  laser.layer_mode = cam_read_string(payload, "layer_mode", "regions");
   laser.arc_segments_per_circle =
       cam_read_int(payload, "arc_segments_per_circle", 0);
   if (payload.contains("speed_mm_per_s") &&

@@ -251,6 +251,9 @@ export const laserCutParametersSchema = z
     cut_order: z
       .enum(["inner_first", "nearest_neighbor", "by_area"])
       .default("inner_first"),
+    // Imported PCB layers only: cut the assembled areas (copper, mask, paste)
+    // or follow the drawn strokes' centre lines (a board profile, silkscreen).
+    layer_mode: z.enum(["regions", "centerline"]).default("regions"),
   })
   .passthrough();
 

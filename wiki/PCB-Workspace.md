@@ -573,13 +573,35 @@ ribbon satisfy both, so it was **silently deleting real contours** on every
 hairline layer — 8 assembled profile rings cut as 5. Layer loops now carry
 `PlannedLoop::from_layer` and are never paired by that pass.
 
-**Open decision — hairline layers want a centre-line cut.** `Edge_Cuts` is drawn
-with a 0.1 mm aperture, so assembly turns the outline into 0.1 mm-wide ribbons:
-8 rings = 4 ribbons × 2 sides, and a laser traces *both* sides of every ribbon.
-A board outline wants **one pass down the centre line**. The drawn strokes are
-already available (`drawn_rings`), so a per-layer cut mode — *regions* (union of
-filled geometry, right for copper/mask/paste) vs *centre-lines* (stroke paths,
-right for the profile and for silkscreen) — is the next piece of work.
+**Cut mode: regions or centre-lines — per operation (done).**
+
+`Edge_Cuts` is drawn with a 0.1 mm aperture, so assembly turns the outline into
+0.1 mm-wide ribbons (8 rings = 4 ribbons × 2 sides) and regions mode traces
+*both* sides of every ribbon.  A board outline means **"cut along this line"**,
+so the interpretation is now a per-operation parameter,
+`LaserCutParameters::layer_mode` (the user's call: it belongs on the 2D cut
+operation, beside cut order, leads and kerf side — not on the layer):
+
+- **`regions`** (default) — cut the assembled filled areas, kerf-offset.  Right
+  for copper, mask and paste, where the file describes AREAS.
+- **`centerline`** — follow each drawn stroke's centre line once, **no kerf
+  offset and no leads**.  Right for the profile and silkscreen, where the
+  aperture is a hairline.
+
+Supporting work in the polygonizer: every stroke now records its centre-line
+(`PcbLayerGeometry::stroke_paths`, with the aperture width), and those
+centre-lines are **chained into closed loops** (`stroke_loops`) — a profile is
+drawn as one stroke per side, so cutting them unchained would put a pierce mark
+at every joint.  Chains that do not close are deliberately left out (cutting an
+open path needs an open cut path the emitter does not have yet) and remain
+available in `stroke_paths` for when silkscreen matters.
+
+Measured on the committed profile layer: **4 cut contours** (board + 3 cut-outs,
+one pass each) against **8** for the same layer in regions mode, and the cut
+stays *inside* the drawn extents instead of a kerf-width outside them.  The PCB
+workspace's **Laser cut** button seeds the mode from the layer's role — profile
+and silkscreen start as centre-lines, copper/mask/paste as regions — and it
+stays a normal operation setting afterwards.
 
 **P2c (last mile) — create the cut from the layer table: done.**
 

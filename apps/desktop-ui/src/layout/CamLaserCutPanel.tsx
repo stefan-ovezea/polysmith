@@ -736,6 +736,41 @@ export function CamLaserCutPanel({
             </label>
           </fieldset>
 
+          {/* ── Imported PCB layers ──────────────────────────────── */}
+          <fieldset className="space-y-3">
+            <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
+              {t("cam.laserCut.pcbLayer", "PCB layer")}
+            </legend>
+            <label className="block text-xs uppercase tracking-[0.18em] text-on-surface-muted">
+              {t("cam.laserCut.layerMode", "Cut as")}
+              <Dropdown
+                className="mt-2 w-full"
+                value={params.layer_mode}
+                label={t("cam.laserCut.layerMode", "Cut as")}
+                options={[
+                  {
+                    value: "regions",
+                    label: t("cam.laserCut.layerModeRegions", "Filled areas (copper, mask)"),
+                  },
+                  {
+                    value: "centerline",
+                    label: t("cam.laserCut.layerModeCenterline", "Stroke centre-lines (profile, silk)"),
+                  },
+                ]}
+                disabled={disabled}
+                onChange={(value) =>
+                  update({ layer_mode: value as LaserCutParameters["layer_mode"] })
+                }
+              />
+            </label>
+            <p className="text-[10px] leading-relaxed text-on-surface-muted">
+              {t(
+                "cam.laserCut.layerModeHint",
+                "Layers drawn with a hairline aperture (a board profile) mean \"cut along this line\": centre-lines follow it once, while filled areas trace both sides of the drawn ribbon. Only affects imported PCB layers.",
+              )}
+            </p>
+          </fieldset>
+
           {/* ── Material ─────────────────────────────────────────── */}
           <fieldset className="space-y-3">
             <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">

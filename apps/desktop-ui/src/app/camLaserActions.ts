@@ -145,6 +145,7 @@ export async function triggerCamLaserCut({
   // layer is a contour to cut.  The reference is minted core-side from the
   // layer's summary, so a re-imported file re-identifies itself.
   let layerReference: GeometryReference | null = null;
+  let layerIsLineArt = false;
   if (pcbLayerFeatureId && pcbCaptureLayerReference) {
     await runAction(async () => {
       const response = await pcbCaptureLayerReference(
@@ -156,6 +157,13 @@ export async function triggerCamLaserCut({
           persistent_id: payload.persistent_id,
           attestation: payload.attestation,
         };
+        // A profile or silkscreen layer is DRAWN as hairlines: the file means
+        // "cut along this line", so following the stroke centre-lines is the
+        // right starting point.  Copper, mask and paste describe AREAS.
+        layerIsLineArt =
+          payload.attestation.role === "profile" ||
+          payload.attestation.role === "silkscreen_top" ||
+          payload.attestation.role === "silkscreen_bottom";
       }
     });
     if (!layerReference) {
@@ -220,7 +228,17 @@ export async function triggerCamLaserCut({
         // encloses another — cuts them in Gerber file order and sends the head
         // criss-crossing the board between them.  Nearest-neighbour is the
         // right default here; it stays a per-operation setting either way.
-        ...(layerReference ? { cut_order: "nearest_neighbor" as const } : {}),
+        ...(layerReference
+          ? {
+              cut_order: "nearest_neighbor" as const,
+              // Line art (a board profile, silkscreen) is drawn as hairlines
+              // whose meaning is "cut along this line"; areas are copper, mask
+              // and paste.  Both stay per-operation settings.
+              layer_mode: (layerIsLineArt ? "centerline" : "regions") as
+                | "centerline"
+                | "regions",
+            }
+          : {}),
       },
     },
     dependencies: {

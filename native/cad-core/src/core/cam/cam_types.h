@@ -284,6 +284,16 @@ struct LaserCutParameters {
   std::string kerf_side = "auto";  // "auto" (holes inward, outers outward)
                                    // | "outside" | "inside" | "none"
 
+  // Imported PCB layers only (sketch/face geometry is unaffected):
+  //   "regions"    — cut the assembled filled areas, offset by the kerf.  Right
+  //                  for copper, mask and paste, where the file describes AREAS.
+  //   "centerline" — follow each drawn stroke's centre line once, with no kerf
+  //                  offset.  Right for a board profile and silkscreen, where
+  //                  the aperture is a hairline meaning "cut along this line";
+  //                  cutting those as regions traces BOTH sides of a 0.1 mm
+  //                  ribbon instead of the line itself.
+  std::string layer_mode = "regions";  // "regions" | "centerline" — VALIDATED
+
   // Leads.
   double lead_in_mm = 2.0;
   double lead_out_mm = 2.0;

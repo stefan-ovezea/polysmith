@@ -65,8 +65,87 @@ std::vector<cam2d::XY> circle_points(const cam2d::XY& center, double radius,
 }
 
 /// Stadium between two points (the swept shape of a round aperture).
-std::vector<cam2d::XY> capsule_points(const cam2d::XY& start, const cam2d::XY& end,
-                                      double radius, double tolerance) {
+/// Chains stroke centre-lines into closed loops.
+///
+/// A profile layer is DRAWN as many separate strokes whose ends meet (KiCad
+/// emits a G01 per side and an arc per corner), but it MEANS one closed
+/// outline.  Cutting those separately would leave a pierce mark at every joint,
+/// so join any stroke whose free end lands on the chain's free end — either
+/// orientation — and keep the chains that close.
+///
+/// Open chains are deliberately dropped: they are not loops, and cutting them
+/// needs an open cut path the laser emitter does not have yet.  They remain
+/// available in `stroke_paths`.
+std::vector<PcbRing> chain_stroke_loops(const std::vector<PcbStrokePath>& paths) {
+  // Plotter strokes that share a vertex share it exactly; the tolerance only
+  // absorbs the coordinate scaling applied at parse time.
+  constexpr double kJoinToleranceMm = 0.01;
+  const auto same = [](const cam2d::XY& a, const cam2d::XY& b) {
+    return std::abs(a.x - b.x) <= kJoinToleranceMm &&
+           std::abs(a.y - b.y) <= kJoinToleranceMm;
+  };
+
+  std::vector<bool> used(paths.size(), false);
+  std::vector<PcbRing> loops;
+  for (size_t seed = 0; seed < paths.size(); ++seed) {
+    if (used[seed] || paths[seed].points.size() < 2) {
+      continue;
+    }
+    used[seed] = true;
+    std::vector<cam2d::XY> chain = paths[seed].points;
+    bool closed = false;
+    for (size_t guard = 0; guard <= paths.size(); ++guard) {
+      if (chain.size() >= 3 && same(chain.front(), chain.back())) {
+        closed = true;
+        break;
+      }
+      // Find an unused stroke starting (or ending) where this chain ends.
+      size_t next = paths.size();
+      bool reverse = false;
+      for (size_t candidate = 0; candidate < paths.size(); ++candidate) {
+        if (used[candidate] || paths[candidate].points.size() < 2) {
+          continue;
+        }
+        if (same(paths[candidate].points.front(), chain.back())) {
+          next = candidate;
+          reverse = false;
+          break;
+        }
+        if (same(paths[candidate].points.back(), chain.back())) {
+          next = candidate;
+          reverse = true;
+          break;
+        }
+      }
+      if (next == paths.size()) {
+        break;  // open chain — kept out of the loops
+      }
+      used[next] = true;
+      const auto& points = paths[next].points;
+      if (reverse) {
+        chain.insert(chain.end(), points.rbegin() + 1, points.rend());
+      } else {
+        chain.insert(chain.end(), points.begin() + 1, points.end());
+      }
+    }
+    if (!closed) {
+      continue;
+    }
+    chain.pop_back();  // the closing point is implicit, as everywhere else
+    if (chain.size() < 3) {
+      continue;
+    }
+    PcbRing loop;
+    loop.points = std::move(chain);
+    loop.dark = paths[seed].dark;
+    loop.aperture_code = paths[seed].aperture_code;
+    loop.line = paths[seed].line;
+    loops.push_back(std::move(loop));
+  }
+  return loops;
+}
+
+std::vector<cam2d::XY> capsule_points(const cam2d::XY& start, const cam2d::XY& end,                                      double radius, double tolerance) {
   const cam2d::XY span = sub(end, start);
   const double span_length = length(span);
   if (span_length <= kTiny) {
@@ -343,6 +422,7 @@ class Polygonizer {
     // their pad, and %LPC erases in draw order (pcb_region_assembly).
     geometry.drawn_rings = std::move(geometry.rings);
     geometry.rings = assemble_region_rings(geometry.drawn_rings);
+    geometry.stroke_loops = chain_stroke_loops(geometry.stroke_paths);
     // Bounds describe the material that will actually be cut, which is the
     // assembled result — a clear region at the edge shrinks it correctly.
     geometry.bounds = GerberBounds{};
@@ -405,18 +485,21 @@ class Polygonizer {
       return;
     }
     std::vector<cam2d::XY> outline;
+    double stroke_width_mm = 0.0;
     switch (current->kind) {
       case ApertureKind::Circle:
-        outline = capsule_points(start, end, parameter(*current, 0) * unit_scale_ / 2.0,
-                                 tolerance_);
+        stroke_width_mm = parameter(*current, 0) * unit_scale_;
+        outline = capsule_points(start, end, stroke_width_mm / 2.0, tolerance_);
         break;
       case ApertureKind::Rectangle:
+        stroke_width_mm = parameter(*current, 0) * unit_scale_;
         outline = rectangle_sweep(start, end, parameter(*current, 0) * unit_scale_,
                                   parameter(*current, 1) * unit_scale_);
         break;
       case ApertureKind::Obround: {
         const double width = parameter(*current, 0) * unit_scale_;
         const double height = parameter(*current, 1) * unit_scale_;
+        stroke_width_mm = std::min(width, height);
         outline = capsule_points(start, end, std::min(width, height) / 2.0, tolerance_);
         geometry.diagnostics.push_back(
             {operation.line, "obround aperture stroke approximated as a round"
@@ -424,6 +507,7 @@ class Polygonizer {
         break;
       }
       case ApertureKind::Polygon: {
+        stroke_width_mm = parameter(*current, 0) * unit_scale_;
         outline = capsule_points(start, end, parameter(*current, 0) * unit_scale_ / 2.0,
                                  tolerance_);
         geometry.diagnostics.push_back(
@@ -449,6 +533,20 @@ class Polygonizer {
     ring.aperture_code = operation.aperture_code;
     ring.line = operation.line;
     push(geometry, ring);
+
+    // Keep the centre-line too: on a hairline layer (a board profile, a
+    // silkscreen) this is the cut, not the ribbon around it.
+    PcbStrokePath centre;
+    centre.aperture_code = operation.aperture_code;
+    centre.width_mm = stroke_width_mm;
+    centre.line = operation.line;
+    centre.dark = operation.dark;
+    centre.points.reserve(sampled_arc.size() + 2);
+    centre.points.push_back(start);
+    centre.points.insert(centre.points.end(), sampled_arc.begin(),
+                         sampled_arc.end());
+    centre.points.push_back(end);
+    geometry.stroke_paths.push_back(std::move(centre));
   }
 
   void flash(PcbLayerGeometry& geometry, const cam2d::XY& at,

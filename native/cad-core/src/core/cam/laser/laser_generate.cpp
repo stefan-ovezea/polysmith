@@ -275,6 +275,14 @@ CamGenerateResult generate_laser_cut_toolpath(
     return result;
   }
   const bool engrave = laser.mode == "engrave";
+  // Imported PCB layers: cut the assembled areas, or follow the drawn strokes'
+  // centre lines (see LaserCutParameters::layer_mode).  Centre-line cutting
+  // takes no kerf offset and no leads — the beam goes where the plotter drew.
+  if (laser.layer_mode != "regions" && laser.layer_mode != "centerline") {
+    result.warnings.push_back("Unknown layer mode '" + laser.layer_mode +
+                              "' — cutting regions.");
+  }
+  const bool layer_centerline = laser.layer_mode == "centerline";
   // cutting_direction: "conventional" flips the walk (and the kerf
   // sign with it); unknown values warn and behave as climb.
   bool conventional = false;
@@ -293,7 +301,7 @@ CamGenerateResult generate_laser_cut_toolpath(
   // relative to the (orientation-normalized) walk — a conventional
   // cut reverses the walk, so the sign flips with it.
   const auto kerf_for = [&](bool is_hole) -> double {
-    if (engrave || laser.kerf_side == "none") {
+    if (engrave || layer_centerline || laser.kerf_side == "none") {
       return 0.0;
     }
     const double d = laser.kerf_width_mm / 2.0;
@@ -676,12 +684,23 @@ CamGenerateResult generate_laser_cut_toolpath(
           "The layer's source changed since this operation was created; "
           "cutting the current file.");
     }
-    if (loaded.ring_count == 0) {
+    if (loaded.ring_count == 0 && loaded.geometry.stroke_loops.empty()) {
       result.warnings.push_back(
           "This layer carries drill data only — it has no contours to cut.");
       continue;
     }
-    for (const polysmith::core::pcb::PcbRing& ring : loaded.geometry.rings) {
+    // Centre-line mode follows the drawn strokes; regions mode cuts the
+    // assembled areas.  Both are the same loop pipeline, only the source rings
+    // and the kerf differ.
+    const std::vector<polysmith::core::pcb::PcbRing>& source_rings =
+        layer_centerline ? loaded.geometry.stroke_loops : loaded.geometry.rings;
+    if (layer_centerline && loaded.geometry.stroke_loops.empty()) {
+      result.warnings.push_back(
+          "This layer has no closed stroke outlines to follow — centre-line "
+          "cutting needs strokes whose ends meet.");
+      continue;
+    }
+    for (const polysmith::core::pcb::PcbRing& ring : source_rings) {
       if (ring.points.size() < 3) {
         continue;
       }
@@ -884,8 +903,8 @@ CamGenerateResult generate_laser_cut_toolpath(
   toolpath.arc_segments_per_circle = laser.arc_segments_per_circle;
   const double cut_plane_offset = laser.cut_plane_offset_mm;
 
-  const double leadIn = engrave ? 0.0 : laser.lead_in_mm;
-  const double leadOut = engrave ? 0.0 : laser.lead_out_mm;
+  const double leadIn = (engrave || layer_centerline) ? 0.0 : laser.lead_in_mm;
+  const double leadOut = (engrave || layer_centerline) ? 0.0 : laser.lead_out_mm;
   const double dwell = engrave ? 0.0 : laser.pierce_dwell_seconds;
   const int passCount = std::max(1, laser.passes);
 

@@ -2,12 +2,11 @@
 //
 // Part of the PCB / Gerber workspace (wiki/PCB-Workspace.md §4).  Turns
 // the parser's operations into closed polylines in millimetres, tagged
-// with the polarity in effect.  It deliberately does **not** run set
-// booleans: cutting treats every ring as a closed loop regardless of
-// polarity, and fill/side decisions are derived downstream from ring
-// orientation plus nesting (cam2d::loop_contains).  True booleans are
-// only needed for the dense-copper trim case, and that decision is
-// deferred until a real board demands it — see §4.
+// with the polarity in effect.  Since §4.1 the drawn primitives are also
+// assembled into non-overlapping cuttable regions (`pcb_region_assembly`),
+// and the stroke CENTRE-LINES are kept, because a layer drawn with a
+// hairline aperture (a board profile, silkscreen) means "cut along this
+// line", not "cut around this 0.1 mm ribbon" — see PcbLayerGeometry.
 //
 // Arcs stay as sampled polylines here (rings are polylines by
 // definition); the *offsetting* later re-uses cam2d, which preserves
@@ -36,6 +35,16 @@ struct PcbRing {
   int macro_primitive = 0;
 };
 
+/// One drawn STROKE's centre-line, in millimetres: where the aperture was
+/// dragged, not the area it swept.  This is what a centre-line cut follows.
+struct PcbStrokePath {
+  std::vector<cam2d::XY> points;  // start, sampled arc, end
+  int aperture_code = 0;
+  double width_mm = 0.0;  // the aperture's width, where it has one
+  int line = 0;
+  bool dark = true;
+};
+
 struct PcbLayerGeometry {
   /// The contours to CUT: non-overlapping region boundaries with polarity
   /// already applied, so a macro pad's nine overlapping primitives arrive as
@@ -46,6 +55,14 @@ struct PcbLayerGeometry {
   /// expansion; `aperture_code`, `from_region` and `macro_primitive` are only
   /// meaningful here, since an assembled boundary can be a union of several.
   std::vector<PcbRing> drawn_rings;
+  /// Every drawn stroke centre-line, one per stroke run (`PcbStrokePath`).
+  std::vector<PcbStrokePath> stroke_paths;
+  /// The stroke centre-lines CHAINED into closed loops: adjacent strokes whose
+  /// ends meet become one contour, which is what a profile layer's outline
+  /// really is.  Open chains (silkscreen text, a logo stroke) are not loops and
+  /// are left out here — they live in `stroke_paths` instead, because cutting
+  /// them needs an open cut path the laser emitter does not have yet.
+  std::vector<PcbRing> stroke_loops;
   std::vector<PcbDiagnostic> diagnostics;
   GerberBounds bounds;
   /// Operations that produced nothing (unsupported aperture on a stroke,

@@ -429,6 +429,61 @@ bool test_committed_copper_fixture_polygonizes() {
   return ok;
 }
 
+bool test_strokes_keep_their_centre_lines_and_chain() {
+  // Four strokes forming a square: as drawn they are four primitives, but they
+  // are ONE closed outline — the centre-line view has to say so, because a
+  // profile layer is drawn exactly this way (KiCad emits a G01 per side).
+  const GerberFile square = parse_gerber(file_with(
+      "%ADD10C,0.100000*%\n"
+      "D10*\n"
+      "X0Y0D02*\n"
+      "X1000000Y0D01*\n"
+      "X1000000Y1000000D01*\n"
+      "X0Y1000000D01*\n"
+      "X0Y0D01*\n"));
+  const PcbLayerGeometry geometry = polygonize_gerber(square, 0.001);
+  bool ok = expect(geometry.stroke_paths.size() == 4,
+                   "every stroke keeps its centre-line");
+  ok &= expect(!geometry.stroke_paths.empty() &&
+                   near(geometry.stroke_paths[0].width_mm, 0.1),
+               "the centre-line records the aperture width");
+  if (!expect(geometry.stroke_loops.size() == 1,
+              "the four sides chain into one closed outline (got " +
+                  std::to_string(geometry.stroke_loops.size()) + ")")) {
+    return false;
+  }
+  // The centre-line square is 1x1 mm — unlike the assembled ribbon, which
+  // encloses the 0.1 mm aperture.
+  ok &= expect(near(area(geometry.stroke_loops[0]), 1.0),
+               "the chained loop is the drawn line, not the ribbon around it");
+  // The assembly view of the same square is the ribbon the aperture swept: an
+  // outer boundary plus the hole it encloses, both larger and smaller than the
+  // centre line by half the aperture.
+  ok &= expect(geometry.rings.size() == 2,
+               "assembly describes the ribbon: outer boundary plus its hole");
+  double outer_area = 0.0;
+  for (const PcbRing& ring : geometry.rings) {
+    outer_area = std::max(outer_area, area(ring));
+  }
+  ok &= expect(outer_area > 1.0,
+               "and that ribbon is wider than the line it was drawn with");
+
+  // An open stroke is not a loop: it must stay out of stroke_loops rather than
+  // be closed by force (cutting it needs an open cut path).
+  const GerberFile open = parse_gerber(file_with(
+      "%ADD10C,0.100000*%\n"
+      "D10*\n"
+      "X0Y0D02*\n"
+      "X1000000Y0D01*\n"
+      "X1000000Y1000000D01*\n"));
+  const PcbLayerGeometry open_geometry = polygonize_gerber(open, 0.001);
+  ok &= expect(open_geometry.stroke_paths.size() == 2,
+               "the open layer keeps both strokes");
+  ok &= expect(open_geometry.stroke_loops.empty(),
+               "and produces no closed loops");
+  return ok;
+}
+
 bool test_committed_profile_fixture_polygonizes() {
   const std::string profile = committed_fixture("edge_cuts.gbr");
   if (profile.empty()) {
@@ -447,6 +502,16 @@ bool test_committed_profile_fixture_polygonizes() {
                "20 profile draws produce 20 drawn strokes");
   ok &= expect(geometry.rings.size() >= 2 && geometry.rings.size() < 20,
                "assembly joins the abutting strokes into connected loops");
+  // Centre-line view: the 20 drawn strokes chain into the loops the board
+  // outline actually is (the outline plus its cut-outs).
+  std::cout << "  stroke_loops=" << geometry.stroke_loops.size() << "\n";
+  ok &= expect(geometry.stroke_paths.size() == 20,
+               "every profile stroke keeps its centre-line");
+  ok &= expect(geometry.stroke_loops.size() == 4,
+               "the profile chains into 4 closed outlines (board + 3 cut-outs)");
+  for (const PcbRing& loop : geometry.stroke_loops) {
+    ok &= expect(area(loop) > 0.0, "every chained outline encloses area");
+  }
   ok &= expect(!geometry.rings.empty() && geometry.rings.front().dark,
                "the profile is a dark layer");
   return ok;
@@ -473,6 +538,8 @@ int main() {
        test_unsupported_shapes_degrade_with_diagnostics},
       {"real_board_fixture_when_present", test_real_board_fixture_when_present},
       {"committed_copper_fixture_polygonizes", test_committed_copper_fixture_polygonizes},
+      {"strokes_keep_their_centre_lines_and_chain",
+       test_strokes_keep_their_centre_lines_and_chain},
       {"committed_profile_fixture_polygonizes", test_committed_profile_fixture_polygonizes},
   };
 

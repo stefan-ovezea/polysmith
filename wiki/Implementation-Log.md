@@ -197,14 +197,25 @@ plus the format layer.
   of a thin ribbon satisfy both, so it deleted real contours on every hairline
   layer (8 profile rings cut as 5).  Layer loops now carry
   `PlannedLoop::from_layer` and are never paired.
-- **Open: hairline layers want a centre-line cut.**  Edge_Cuts is drawn with a
-  0.1 mm aperture, so assembly yields 0.1 mm-wide ribbons and a laser traces both
-  sides.  A per-layer cut mode (regions vs stroke centre-lines) is the next
-  piece; the stroke paths are already in `drawn_rings`.
-- **Next:** that cut mode, then `pcb_isolation` (2.5D milling with the V-bit
-  width from tip ⌀ + included angle + depth, `cam2d::offset_closed_loop` +
-  `plan_stepdown_levels`) and `pcb_drill`.  The shared-helper extraction for the
-  laser loop planning stays queued as its own test-backed change.
+- **Centre-line cut mode, per operation:** a board profile is drawn with a
+  0.1 mm hairline aperture, so region assembly turns the outline into 0.1 mm
+  ribbons and a laser traces both sides.  `LaserCutParameters::layer_mode`
+  (`regions` | `centerline`, per the user's call: it sits on the 2D cut
+  operation beside cut order and kerf side, not on the layer) now picks the
+  interpretation: regions cuts assembled areas with the kerf; centre-lines
+  follows each drawn stroke once with **no kerf and no leads**.  The polygonizer
+  records every stroke's centre-line (`stroke_paths`, with aperture width) and
+  chains the abutting ones into closed loops (`stroke_loops`), so a profile cut
+  is one contour per outline instead of a pierce mark per drawn side.  Measured:
+  the committed profile cuts as **4 contours** in centre-line mode against 8 in
+  regions mode, staying inside the drawn extents rather than a kerf outside.
+  Open chains (silkscreen text) are left out with a warning — cutting an open
+  path needs an open cut path the emitter does not have yet.
+- **Next:** `pcb_isolation` (2.5D milling with the V-bit width from tip ⌀ +
+  included angle + depth, `cam2d::offset_closed_loop` +
+  `plan_stepdown_levels`) and `pcb_drill`; then open-path cutting for
+  silkscreen.  The shared-helper extraction for the laser loop planning stays
+  queued as its own test-backed change.
 
 ## 2026-09-24
 
