@@ -25,6 +25,7 @@ namespace {
 using polysmith::core::pcb::ApertureKind;
 using polysmith::core::pcb::GerberFile;
 using polysmith::core::pcb::PcbLayerGeometry;
+using polysmith::core::pcb::PcbChain;
 using polysmith::core::pcb::PcbRing;
 using polysmith::core::pcb::parse_gerber;
 using polysmith::core::pcb::polygonize_gerber;
@@ -447,14 +448,18 @@ bool test_strokes_keep_their_centre_lines_and_chain() {
   ok &= expect(!geometry.stroke_paths.empty() &&
                    near(geometry.stroke_paths[0].width_mm, 0.1),
                "the centre-line records the aperture width");
-  if (!expect(geometry.stroke_loops.size() == 1,
-              "the four sides chain into one closed outline (got " +
-                  std::to_string(geometry.stroke_loops.size()) + ")")) {
+  if (!expect(geometry.stroke_chains.size() == 1,
+              "the four sides chain into one outline (got " +
+                  std::to_string(geometry.stroke_chains.size()) + ")")) {
     return false;
   }
+  ok &= expect(geometry.stroke_chains[0].closed,
+               "and that outline is CLOSED: the last side meets the first");
   // The centre-line square is 1x1 mm — unlike the assembled ribbon, which
   // encloses the 0.1 mm aperture.
-  ok &= expect(near(area(geometry.stroke_loops[0]), 1.0),
+  ok &= expect(near(std::abs(polysmith::core::cam2d::xy_signed_area(
+                   geometry.stroke_chains[0].points)),
+               1.0),
                "the chained loop is the drawn line, not the ribbon around it");
   // The assembly view of the same square is the ribbon the aperture swept: an
   // outer boundary plus the hole it encloses, both larger and smaller than the
@@ -468,8 +473,8 @@ bool test_strokes_keep_their_centre_lines_and_chain() {
   ok &= expect(outer_area > 1.0,
                "and that ribbon is wider than the line it was drawn with");
 
-  // An open stroke is not a loop: it must stay out of stroke_loops rather than
-  // be closed by force (cutting it needs an open cut path).
+  // Open line art is a chain too — it must not be closed by force, and it must
+  // be reported as open so the emitter follows it without wrapping around.
   const GerberFile open = parse_gerber(file_with(
       "%ADD10C,0.100000*%\n"
       "D10*\n"
@@ -479,8 +484,14 @@ bool test_strokes_keep_their_centre_lines_and_chain() {
   const PcbLayerGeometry open_geometry = polygonize_gerber(open, 0.001);
   ok &= expect(open_geometry.stroke_paths.size() == 2,
                "the open layer keeps both strokes");
-  ok &= expect(open_geometry.stroke_loops.empty(),
-               "and produces no closed loops");
+  if (!expect(open_geometry.stroke_chains.size() == 1,
+              "the two strokes chain into one line")) {
+    return false;
+  }
+  ok &= expect(!open_geometry.stroke_chains[0].closed,
+               "which is OPEN (its ends do not meet)");
+  ok &= expect(open_geometry.stroke_chains[0].points.size() == 3,
+               "and keeps both segments' points");
   return ok;
 }
 
@@ -504,14 +515,18 @@ bool test_committed_profile_fixture_polygonizes() {
                "assembly joins the abutting strokes into connected loops");
   // Centre-line view: the 20 drawn strokes chain into the loops the board
   // outline actually is (the outline plus its cut-outs).
-  std::cout << "  stroke_loops=" << geometry.stroke_loops.size() << "\n";
+  int closed_chains = 0;
+  for (const PcbChain& chain : geometry.stroke_chains) {
+    if (chain.closed) {
+      ++closed_chains;
+    }
+  }
+  std::cout << "  stroke_chains=" << geometry.stroke_chains.size()
+            << " closed=" << closed_chains << "\n";
   ok &= expect(geometry.stroke_paths.size() == 20,
                "every profile stroke keeps its centre-line");
-  ok &= expect(geometry.stroke_loops.size() == 4,
+  ok &= expect(closed_chains == 4,
                "the profile chains into 4 closed outlines (board + 3 cut-outs)");
-  for (const PcbRing& loop : geometry.stroke_loops) {
-    ok &= expect(area(loop) > 0.0, "every chained outline encloses area");
-  }
   ok &= expect(!geometry.rings.empty() && geometry.rings.front().dark,
                "the profile is a dark layer");
   return ok;

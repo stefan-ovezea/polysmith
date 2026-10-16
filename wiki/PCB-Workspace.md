@@ -573,7 +573,43 @@ ribbon satisfy both, so it was **silently deleting real contours** on every
 hairline layer — 8 assembled profile rings cut as 5. Layer loops now carry
 `PlannedLoop::from_layer` and are never paired by that pass.
 
-**Cut mode: regions or centre-lines — per operation (done).**
+**Open chains (Fusion's "open chain") — PCB half done, sketch half planned.**
+
+An open chain is geometry that simply *ends*: silkscreen text, a logo flourish,
+an engraved line, a label.  Fusion lets you select one as an "open chain" and
+cuts it as a path.  PolySmith needs the same, and both halves share one emitter
+mechanism.
+
+*Done (PCB layers).*  Stroke centre-lines are now chained into `PcbChain`s with a
+`closed` flag (`PcbLayerGeometry::stroke_chains`); centre-line mode cuts closed
+chains as loops and **open chains as open paths** — `PlannedLoop::is_open`, an
+emitter branch that rapids to the first point, fires, walks the chain and stops
+at the last.  No pierce search, no leads, no kerf, no closure, no tabs: an open
+path has no seam to hang any of that off.  A single segment is a legitimate path
+(silkscreen is full of them), so the three-sample minimum that guards the
+closed-loop machinery does not apply.
+
+*Planned (sketch geometry and text).*  Sketches already produce the right raw
+material: sketch text is expanded into plain sketch lines tagged
+`generated_by: "text:<id>"` (see `text_test.cpp`), so text is selectable geometry
+rather than a special case.  What is missing is a reference kind and a pick:
+
+- `GeometryReference` gains a **sketch-chain attestation**: the two endpoints,
+  total length, segment count and the entity kinds along the chain.  TNP-safe in
+  the same way as the profile witness — re-walk the sketch's live entities to
+  find a path between those endpoints on every recompute; if the walk fails,
+  degrade with `dependency_broken` plus a warning, never carry a stale index.
+- The CAM workspace gets an **armed open-chain pick** (the Fusion gesture):
+  click a sketch line and the core captures the chain through it, stopping at
+  junctions and endpoints.  Selecting a text entity selects its glyph lines as
+  chains — one open chain per glyph stroke.
+- Operation semantics: an operation may mix closed profiles and open chains; the
+  ordering pass already treats an open loop as area 0 with real endpoints, so
+  nearest-neighbour and the Or-opt refinement cover both.
+
+The emitter branch added for PCB strokes is exactly what the sketch half needs,
+so this is not throwaway work.
+
 
 `Edge_Cuts` is drawn with a 0.1 mm aperture, so assembly turns the outline into
 0.1 mm-wide ribbons (8 rings = 4 ribbons × 2 sides) and regions mode traces

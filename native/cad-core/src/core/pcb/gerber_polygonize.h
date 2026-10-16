@@ -45,6 +45,23 @@ struct PcbStrokePath {
   bool dark = true;
 };
 
+/// Adjacent stroke centre-lines joined end to end.
+///
+/// A profile is drawn as one stroke per side, and silkscreen text is drawn as
+/// many short strokes; in both cases the *meaning* is the continuous line, so
+/// the chains — not the individual strokes — are what a cut should follow.
+struct PcbChain {
+  std::vector<cam2d::XY> points;
+  /// True when the last point meets the first: a closed contour (a board
+  /// outline).  False for line art that simply ends (a text stroke, a logo
+  /// flourish), which needs an OPEN cut path — see `PlannedLoop::is_open`.
+  bool closed = false;
+  int aperture_code = 0;
+  double width_mm = 0.0;
+  int line = 0;
+  bool dark = true;
+};
+
 struct PcbLayerGeometry {
   /// The contours to CUT: non-overlapping region boundaries with polarity
   /// already applied, so a macro pad's nine overlapping primitives arrive as
@@ -57,12 +74,11 @@ struct PcbLayerGeometry {
   std::vector<PcbRing> drawn_rings;
   /// Every drawn stroke centre-line, one per stroke run (`PcbStrokePath`).
   std::vector<PcbStrokePath> stroke_paths;
-  /// The stroke centre-lines CHAINED into closed loops: adjacent strokes whose
-  /// ends meet become one contour, which is what a profile layer's outline
-  /// really is.  Open chains (silkscreen text, a logo stroke) are not loops and
-  /// are left out here — they live in `stroke_paths` instead, because cutting
-  /// them needs an open cut path the laser emitter does not have yet.
-  std::vector<PcbRing> stroke_loops;
+  /// Those centre-lines CHAINED end to end (`PcbChain`): a profile layer's
+  /// outline is one chain, and silkscreen text is many.  Both closed contours
+  /// and open line art live here, distinguished by `PcbChain::closed`, because
+  /// both are cut — one as a loop, one as an open path.
+  std::vector<PcbChain> stroke_chains;
   std::vector<PcbDiagnostic> diagnostics;
   GerberBounds bounds;
   /// Operations that produced nothing (unsupported aperture on a stroke,

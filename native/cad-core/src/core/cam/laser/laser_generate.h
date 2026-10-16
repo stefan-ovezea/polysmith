@@ -50,6 +50,11 @@ struct PlannedLoop {
   // healing pass (which exists for legacy sketch captures) must never pair
   // them up.  See the dedupe block in laser_generate.cpp.
   bool from_layer = false;
+  // An OPEN chain: the cut starts at the first sample and stops at the last.
+  // There is no closure, no pierce search, no kerf offset and no lead to hang
+  // off a seam — silkscreen text, a logo stroke, an open sketch chain.  The
+  // emitter branches on this before any of the closed-loop machinery.
+  bool is_open = false;
 };
 
 CamGenerateResult generate_laser_cut_toolpath(

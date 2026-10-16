@@ -211,11 +211,25 @@ plus the format layer.
   regions mode, staying inside the drawn extents rather than a kerf outside.
   Open chains (silkscreen text) are left out with a warning — cutting an open
   path needs an open cut path the emitter does not have yet.
-- **Next:** `pcb_isolation` (2.5D milling with the V-bit width from tip ⌀ +
-  included angle + depth, `cam2d::offset_closed_loop` +
-  `plan_stepdown_levels`) and `pcb_drill`; then open-path cutting for
-  silkscreen.  The shared-helper extraction for the laser loop planning stays
-  queued as its own test-backed change.
+- **Open chains cut as open paths (PCB layers):** Fusion-style "open chain"
+  support, starting with line art.  Stroke centre-lines chain into `PcbChain`s
+  with a `closed` flag, and centre-line mode cuts closed chains as loops and open
+  chains as **open paths** (`PlannedLoop::is_open`): rapid to the first point,
+  fire, walk, stop.  No pierce search, leads, kerf, closure or tabs — an open
+  path has no seam.  A one-segment path is legitimate (silkscreen is full of
+  them), so the three-sample minimum guarding the closed-loop machinery does not
+  apply, and open chains are built DIRECTLY rather than through `plan_loop` (a
+  closed-loop offsetting routine that collapses a two-point path to a single
+  sample — the test caught exactly that: a laser-on move that went nowhere).
+  Sketch geometry and text are the other half: sketch text is already expanded
+  into plain lines tagged `generated_by: "text:<id>"`, so it is selectable
+  geometry; what is missing is a chain attestation (endpoints, length, segment
+  count, kinds) plus an armed open-chain pick in CAM.  Planned in
+  `wiki/PCB-Workspace.md`; the emitter branch is shared, so it is not throwaway.
+- **Next:** that sketch-chain pick, then `pcb_isolation` (2.5D milling with the
+  V-bit width from tip ⌀ + included angle + depth, `cam2d::offset_closed_loop` +
+  `plan_stepdown_levels`) and `pcb_drill`.  The shared-helper extraction for the
+  laser loop planning stays queued as its own test-backed change.
 
 ## 2026-09-24
 

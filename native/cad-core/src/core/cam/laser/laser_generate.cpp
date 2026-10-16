@@ -684,23 +684,109 @@ CamGenerateResult generate_laser_cut_toolpath(
           "The layer's source changed since this operation was created; "
           "cutting the current file.");
     }
-    if (loaded.ring_count == 0 && loaded.geometry.stroke_loops.empty()) {
+    if (loaded.ring_count == 0 && loaded.geometry.stroke_chains.empty()) {
       result.warnings.push_back(
           "This layer carries drill data only — it has no contours to cut.");
       continue;
     }
     // Centre-line mode follows the drawn strokes; regions mode cuts the
-    // assembled areas.  Both are the same loop pipeline, only the source rings
-    // and the kerf differ.
-    const std::vector<polysmith::core::pcb::PcbRing>& source_rings =
-        layer_centerline ? loaded.geometry.stroke_loops : loaded.geometry.rings;
-    if (layer_centerline && loaded.geometry.stroke_loops.empty()) {
-      result.warnings.push_back(
-          "This layer has no closed stroke outlines to follow — centre-line "
-          "cutting needs strokes whose ends meet.");
+    // assembled areas.  Centre-line mode takes BOTH kinds of chain: a closed
+    // contour (a board outline) becomes a loop, an open one (silkscreen text, a
+    // logo stroke) becomes an open cut path.
+    if (layer_centerline) {
+      if (loaded.geometry.stroke_chains.empty()) {
+        result.warnings.push_back(
+            "This layer has no strokes to follow — centre-line cutting needs "
+            "drawn lines.");
+        continue;
+      }
+      for (const polysmith::core::pcb::PcbChain& chain :
+           loaded.geometry.stroke_chains) {
+        if (chain.points.size() < 2) {
+          continue;
+        }
+        std::vector<BaseSegment> base;
+        if (chain.closed) {
+          base.reserve(chain.points.size());
+          for (size_t index = 0; index < chain.points.size(); ++index) {
+            BaseSegment segment;
+            segment.start = chain.points[index];
+            segment.end = chain.points[(index + 1) % chain.points.size()];
+            base.push_back(segment);
+          }
+        } else {
+          base.reserve(chain.points.size() - 1);
+          for (size_t index = 0; index + 1 < chain.points.size(); ++index) {
+            BaseSegment segment;
+            segment.start = chain.points[index];
+            segment.end = chain.points[index + 1];
+            base.push_back(segment);
+          }
+        }
+        if (base.size() < 1) {
+          continue;
+        }
+        if (!chain.closed) {
+          // An open chain is built DIRECTLY, never through plan_loop: that is a
+          // closed-loop offsetting routine, and handing it a two-point path
+          // collapses the path to a single sample (a laser-on move that goes
+          // nowhere).  An open path has no interior, no kerf side and no seam to
+          // close, so there is nothing for the loop planner to decide.
+          PlannedLoop open;
+          open.samples = chain.points;
+          open.centroid = xy_centroid(chain.points);
+          open.length = 0.0;
+          for (size_t index = 0; index + 1 < chain.points.size(); ++index) {
+            OffsetSegment segment;
+            segment.start = chain.points[index];
+            segment.end = chain.points[index + 1];
+            open.length += xy_length(segment.end.x - segment.start.x,
+                                     segment.end.y - segment.start.y);
+            open.segments.push_back(segment);
+          }
+          open.is_open = true;
+          open.isWorldXY = true;
+          open.worldZ = laser.cut_plane_offset_mm;
+          open.from_layer = true;
+          open.group = groups.size();
+          std::vector<PlannedLoop> layerGroup;
+          layerGroup.push_back(std::move(open));
+          groups.push_back(std::move(layerGroup));
+          continue;
+        }
+        if (base_segments_signed_area(base) < 0 && chain.closed) {
+          reverse_segments(base);
+        }
+        std::vector<XY> basePoints;
+        basePoints.reserve(base.size());
+        for (const auto& segment : base) {
+          basePoints.push_back(segment.start);
+        }
+        PlannedLoop loop;
+        std::string error;
+        // No kerf offset on a centre line: the beam goes where the plotter
+        // drew, and an open path has no inside to tell from outside.
+        if (!plan_loop(base, /*kerf=*/0.0, /*isHole=*/false, xy_centroid(basePoints),
+                       loop, cleanupStats, simplifyStats, error)) {
+          if (firstSkipReason.empty()) {
+            firstSkipReason = error;
+          }
+          result.warnings.push_back("A layer contour was skipped: " + error);
+          continue;
+        }
+        loop.is_open = !chain.closed;
+        loop.isWorldXY = true;
+        loop.worldZ = laser.cut_plane_offset_mm;
+        loop.from_layer = true;
+        loop.group = groups.size();
+        std::vector<PlannedLoop> layerGroup;
+        layerGroup.push_back(std::move(loop));
+        groups.push_back(std::move(layerGroup));
+      }
       continue;
     }
-    for (const polysmith::core::pcb::PcbRing& ring : source_rings) {
+
+    for (const polysmith::core::pcb::PcbRing& ring : loaded.geometry.rings) {
       if (ring.points.size() < 3) {
         continue;
       }
@@ -1059,6 +1145,33 @@ CamGenerateResult generate_laser_cut_toolpath(
     };
 
     const auto& samples = loop.samples;
+    // ── Open chain ─────────────────────────────────────────────────
+    // An open path has no seam to pierce at, no inside/outside to offset, and
+    // no contour to close: the beam starts at the first point and stops at the
+    // last.  Every closed-loop decision below (the three-sample minimum, pierce
+    // placement, leads, kerf side, tabs, overcut) is meaningless here, so this
+    // is its own branch rather than a flag threaded through the loop-style ones.
+    // A single segment is a perfectly good open path — silkscreen text is full
+    // of them — hence the two-point minimum.
+    if (loop.is_open) {
+      if (samples.size() < 2) {
+        ++skippedDegenerate;
+        continue;
+      }
+      append_rapid(samples.front());
+      append_linear(samples.front(), /*laserOn=*/true, laser.power_percent,
+                    dwell);
+      for (size_t index = 1; index < samples.size(); ++index) {
+        OffsetSegment segment;
+        segment.start = samples[index - 1];
+        segment.end = samples[index];
+        append_segment(segment, laser.power_percent, /*laserOn=*/true);
+      }
+      // Beam off, at the end of the line.
+      append_linear(samples.back(), /*laserOn=*/false, laser.power_percent, 0.0);
+      continue;
+    }
+
     if (samples.size() < 3) {
       ++skippedDegenerate;
       continue;

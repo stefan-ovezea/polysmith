@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <utility>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -37,6 +39,7 @@ using polysmith::core::PcbLayerAttestation;
 using polysmith::core::ToolEntry;
 using polysmith::core::Toolpath;
 using polysmith::core::ToolpathMoveKind;
+using polysmith::core::cam2d::XY;
 
 bool expect(bool condition, const std::string& message) {
   if (condition) {
@@ -507,6 +510,123 @@ bool test_centerline_mode_follows_the_drawn_line() {
   return ok;
 }
 
+bool test_open_chains_cut_as_open_paths() {
+  // Silkscreen line art is DRAWN as strokes that do not close (text, a logo
+  // flourish).  Centre-line mode must follow them as OPEN paths: beam starts at
+  // one end and stops at the other, with no closure, no pierce search, and no
+  // leads — an open path has no seam to hang a lead off.
+  const std::filesystem::path scratch =
+      std::filesystem::temp_directory_path() / "pcb_open_chains.gbr";
+  {
+    std::ofstream file(scratch, std::ios::binary);
+    file << "%FSLAX46Y46*%\n"
+            "%MOMM*%\n"
+            "%LPD*%\n"
+            "G01*\n"
+            "%ADD10C,0.150000*%\n"
+            "D10*\n"
+            // An "L": two strokes sharing a corner — one chain.
+            "X0Y0D02*\n"
+            "X5000000Y0D01*\n"
+            "X5000000Y5000000D01*\n"
+            // A separate stroke on its own — another chain.
+            "X10000000Y0D02*\n"
+            "X12000000Y0D01*\n"
+            "M02*\n";
+  }
+
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.import_pcb_layer(scratch.string());
+  const FeatureEntry* layer = find_layer(document);
+  if (layer == nullptr) {
+    return expect(false, "layer imported");
+  }
+  const PcbLayerAttestation attestation = attestation_for(*layer);
+
+  CamSetup setup;
+  setup.name = "Laser setup";
+  setup.machine_type = "laser";
+  document = manager.cam_setup_create(setup);
+  ToolEntry tool;
+  tool.name = "CO2 laser";
+  tool.type = "laser";
+  document = manager.cam_tool_add(tool);
+
+  CamOperation op;
+  op.name = "PCB layer cut";
+  op.type = "laser_cut";
+  op.tool_id = document.cam.tool_library[0].tool_id;
+  LaserCutParameters laser;
+  laser.layer_mode = "centerline";
+  laser.lead_in_mm = 2.0;  // must be ignored: there is no seam
+  laser.lead_out_mm = 2.0;
+  op.parameters.laser = laser;
+  GeometryReference reference;
+  reference.persistent_id = attestation.layer_feature_id;
+  reference.attestation = attestation;
+  op.geometry_references.machining_regions.push_back(reference);
+  document = manager.cam_operation_add(op);
+  const std::string op_id = document.cam.operations.back().op_id;
+
+  const auto outcome = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), op_id, /*preview=*/false);
+  if (!expect(outcome.found && outcome.result.ok,
+              "open line art generates as a cut")) {
+    std::cerr << "  error: " << outcome.result.error_message << "\n";
+    return false;
+  }
+  const Toolpath& toolpath = outcome.result.toolpath;
+
+  // Collect the laser-on runs.
+  std::vector<std::pair<XY, XY>> runs;  // first and last laser-on position
+  bool in_run = false;
+  for (const auto& move : toolpath.moves) {
+    if (move.laser_on) {
+      if (!in_run) {
+        runs.emplace_back(XY{move.x, move.y}, XY{move.x, move.y});
+        in_run = true;
+      } else {
+        runs.back().second = XY{move.x, move.y};
+      }
+    } else {
+      // Any beam-off move ends the run � including a rapid, which is how the
+      // head travels between two contours.
+      in_run = false;
+    }
+  }
+  bool ok = expect(runs.size() == 2, "two chains cut, two open paths (got " +
+                                         std::to_string(runs.size()) + ")");
+  if (runs.size() == 2) {
+    // Open: the beam stops somewhere else than it started.  A closed loop cut
+    // with no leads would return to its start.
+    for (const auto& run : runs) {
+      const double span = std::hypot(run.second.x - run.first.x,
+                                     run.second.y - run.first.y);
+      std::cout << "  run: (" << run.first.x << ", " << run.first.y << ") -> ("
+                << run.second.x << ", " << run.second.y << ") span " << span
+                << "\n";
+      ok &= expect(span > 0.5,
+                   "the path is open: it ends away from where it started");
+    }
+  }
+  // No lead was emitted: with lead_in 2 mm a straight lead would have placed a
+  // laser-on move near x = -2, well outside the drawn geometry.
+  double min_laser_x = 1e9;
+  for (const auto& move : toolpath.moves) {
+    if (move.laser_on) {
+      min_laser_x = std::min(min_laser_x, move.x);
+    }
+  }
+  ok &= expect(min_laser_x >= -0.01,
+               "no lead-in was cut on an open path (min x " +
+                   std::to_string(min_laser_x) + ")");
+
+  std::error_code remove_error;
+  std::filesystem::remove(scratch, remove_error);
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -528,6 +648,7 @@ int main() {
       {"cut_order_reduces_travel", test_cut_order_reduces_travel},
       {"centerline_mode_follows_the_drawn_line",
        test_centerline_mode_follows_the_drawn_line},
+      {"open_chains_cut_as_open_paths", test_open_chains_cut_as_open_paths},
   };
 
   int failures = 0;
