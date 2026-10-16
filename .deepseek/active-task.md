@@ -3,23 +3,36 @@
 Design + plan: **[wiki/PCB-Workspace.md](wiki/PCB-Workspace.md)**. Coming from
 `dev` @ `44a8101` (GRBL test-fire `$X` fix); `dev` is untouched by this work.
 
-- **P0 done:** design doc written, linked from `wiki/Home.md`, task recorded here.
-  Decision: a **sixth top-level workspace `pcb`** (`cad|cam|drawing|grbl|slicer|pcb`)
-  that owns Gerber/Excellon import, roles/polarity and PCB job parameters, and
-  produces ordinary CAM operations. It never emits G-code — one op model, one
-  post pipeline.
-- **P1 in progress:** pure Gerber X1 + Excellon parsers in
-  `native/cad-core/src/core/pcb/` (text in → `PcbLayer` out, diagnostics as data,
-  no logging, no exceptions escaping). No document-model coupling, so it does
-  not wait on the P2 review.
-- **P2 blocked on explicit approval (architectural):** `pcb_layer` document
-  feature + `PcbRegionAttestation` (witness-based, re-resolved every recompute)
-  + the `pcb_*` IPC commands/schema.
-- **P6 (independent):** DXF importer polish — `addLayer` is an empty stub
-  (`dxf_import.cpp`) and SOLID/HATCH are dropped, so multi-layer and filled DXF
-  imports lose data. Not needed for the Gerber path.
+- **P0–P2c done, and USER-VERIFIED in-app (2026-10-16):** the whole chain works
+  on the real board — import a KiCad Gerber set (13 files, 1–2 s) → the layer
+  table reads every role from the files themselves → **Laser cut** on a layer
+  (the button ensures a laser setup and mints the reference core-side) → CAM
+  operation → post → GRBL workspace.  The user confirmed the resulting toolpath
+  "looks much closer to the original KiCad with all the details" after the lead
+  fix below.
+- **What shipped since the plan:** region assembly with vendored **Clipper2**
+  (drawn primitives → cuttable regions; copper 1,964 → 573, real `F_Cu`
+  2,017 → 254, `B_Cu` → 122, 0 skipped), a silent-geometry bug fix in the laser
+  duplicate-contour pass (`PlannedLoop::from_layer`), Or-opt ordering refinement,
+  per-operation `layer_mode` (**regions** vs **stroke centre-lines**, so a
+  hairline profile is cut once down the line instead of twice around the
+  ribbon), and **open chains cut as open paths** (silkscreen text/logos).
+- **Leads are 0 on layer cuts (fix, user-verified):** a contour shorter than
+  twice the lead allowance is skipped, so the CAM default of 2 + 2 mm was
+  silently dropping vias and mask openings.
+- **Next:** (a) the sketch half of open chains — a chain attestation (endpoints,
+  length, segment count, kinds; re-walked every recompute) plus an armed
+  open-chain pick in CAM, so sketch lines and text glyph lines cut the same way;
+  (b) `pcb_isolation` (2.5D milling, V-bit width from tip ⌀ + included angle +
+  depth) and `pcb_drill`; (c) queued: extract the duplicated ~40-line loop
+  planning shared by the face path and the PCB path, as its own test-backed
+  change.
+- **P6 (independent, untouched):** DXF importer polish — `addLayer` is an empty
+  stub (`dxf_import.cpp`) and SOLID/HATCH are dropped, so multi-layer and filled
+  DXF imports lose data.
 - Fixture: real KiCad 10.0.4 4-layer board in `projects/EDM` (local, not
-  committed; commit a trimmed subset once approved).
+  committed; a trimmed subset is committed as `tests/data/pcb/`).  The
+  polygonizer suite measures the full board when that directory is present.
 
 ---
 

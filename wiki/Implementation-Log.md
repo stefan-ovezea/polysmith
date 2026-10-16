@@ -236,6 +236,10 @@ plus the format layer.
   `B_Silkscreen` 1,493 strokes → **207 chains (19 closed, 188 open)** at
   0.1–0.254 mm widths — i.e. KiCad's stroked text becomes exactly the open paths
   centre-line mode cuts.
+- **USER-VERIFIED (2026-10-16):** after the zero-lead fix the user confirmed the
+  generated path on the real board "looks much closer to the original KiCad with
+  all the details" — region assembly, ordering and the lead rule all confirmed
+  in-app on `B_Cu`.
 - **Next:** the sketch open-chain reference and pick, then `pcb_isolation`.
 
 ## 2026-09-24
