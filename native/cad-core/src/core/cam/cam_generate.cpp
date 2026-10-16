@@ -149,6 +149,10 @@ CamGenerateOutcome generate_operation_toolpath(
         [&](const PointAttestation& point) {
           context.geometry.points.push_back(point);
         },
+        [&](const ResolvedPcbLayerRef& resolved, const FeatureEntry& layer) {
+          context.geometry.pcb_layers.push_back(resolved);
+          context.geometry.pcb_layer_features.push_back(&layer);
+        },
         message);
     if (!ok) {
       outcome.result.ok = false;
@@ -177,6 +181,10 @@ CamGenerateOutcome generate_operation_toolpath(
         [&](const PointAttestation& point) {
           context.geometry.points.push_back(point);
         },
+        [&](const ResolvedPcbLayerRef& resolved, const FeatureEntry& layer) {
+          context.geometry.pcb_layers.push_back(resolved);
+          context.geometry.pcb_layer_features.push_back(&layer);
+        },
         message);
     if (!ok) {
       outcome.result.ok = false;
@@ -187,6 +195,16 @@ CamGenerateOutcome generate_operation_toolpath(
   report(progress, 15);
 
   context.geometry.bodies = compiled ? &bodies : nullptr;
+
+  // No generator consumes PCB layers yet — the laser branch is next — and a
+  // generator that silently ignored the reference would emit an EMPTY toolpath
+  // that reads like a successful cut.  Fail loudly until that branch lands.
+  if (!context.geometry.pcb_layers.empty()) {
+    outcome.result.ok = false;
+    outcome.result.error_message =
+        "Cutting an imported PCB layer is not wired into this generator yet.";
+    return outcome;
+  }
 
   // A generator may omit its preview pass; fall back to the full
   // generate function (both are cheap in v1).

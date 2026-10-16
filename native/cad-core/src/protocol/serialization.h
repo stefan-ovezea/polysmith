@@ -41,6 +41,7 @@ json to_payload(const polysmith::core::Bounds3D& b);
 json to_payload(const polysmith::core::FaceAttestation& att);
 json to_payload(const polysmith::core::EdgeAttestation& att);
 json to_payload(const polysmith::core::SketchProfileAttestation& att);
+json to_payload(const polysmith::core::PcbLayerAttestation& att);
 json to_payload(const polysmith::core::LaserCutParameters& laser);
 json to_payload(const polysmith::core::LaserTestPatternParameters& pattern);
 json to_payload(const polysmith::core::ContourParameters& contour);

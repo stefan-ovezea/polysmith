@@ -151,7 +151,8 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
                                       /*on_profile=*/{},
                                       /*on_face=*/{},
                                       /*on_edge=*/{},
-                                      /*on_point=*/{}, message)) {
+                                      /*on_point=*/{},
+                                      /*on_pcb_layer=*/{}, message)) {
         resolved_all = false;
         break;
       }
@@ -161,7 +162,8 @@ void refresh_cam_dependencies(DocumentState& document, int target_revision) {
                                       /*on_profile=*/{},
                                       /*on_face=*/{},
                                       /*on_edge=*/{},
-                                      /*on_point=*/{}, message)) {
+                                      /*on_point=*/{},
+                                      /*on_pcb_layer=*/{}, message)) {
         resolved_all = false;
         break;
       }

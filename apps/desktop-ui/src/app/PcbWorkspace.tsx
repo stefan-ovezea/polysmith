@@ -49,6 +49,14 @@ function fileName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+// A 4-layer board has two "Inner copper" rows, so the table has to say which
+// stack-up layer each one is. The ordinal lives in the file's own attribute
+// ("Copper,L2,Inr" / "Copper,L3,Inr").
+function layerOrdinal(fileFunction: string): string | null {
+  const match = /,L(\d+),/i.exec(fileFunction);
+  return match ? `L${match[1]}` : null;
+}
+
 export function PcbWorkspace({
   features,
   onImportLayer,
@@ -176,11 +184,20 @@ export function PcbWorkspace({
                         });
                       }}
                     >
-                      {ROLE_OPTIONS.map((role) => (
-                        <option key={role} value={role}>
-                          {t(`pcb.role.${role}`)}
-                        </option>
-                      ))}
+                      {ROLE_OPTIONS.map((role) => {
+                        const ordinal =
+                          role === "copper_inner" ? layerOrdinal(layer.file_function) : null;
+                        return (
+                          <option key={role} value={role}>
+                            {ordinal
+                              ? t("pcb.roleWithOrdinal", {
+                                  role: t(`pcb.role.${role}`),
+                                  ordinal,
+                                })
+                              : t(`pcb.role.${role}`)}
+                          </option>
+                        );
+                      })}
                     </select>
                     <div className="text-on-surface-dim">
                       {layer.role_from_attributes

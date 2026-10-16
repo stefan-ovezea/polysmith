@@ -138,12 +138,23 @@ plus the format layer.
   leaving the Slicer workspace for CAM/drawing/GRBL/PCB left the *native*
   OrcaSlicer window mapped over the next page — only `showCadView()` ever
   unmapped it.)
-- **Next:** P2c — `PcbRegionAttestation` (witness-based, re-resolved every
-  recompute) + the CAM operations (`pcb_layer_cut`, `pcb_isolation`,
-  `pcb_drill`) so a layer can go through CAM → post → the GRBL workspace.
-  Known small wart to fix with it: the two inner-copper rows read "Inner
-  copper" identically — the layer ordinal (L2/L3) is only visible in the
-  `from Copper,L2,Inr` line.
+- **PCB layer reference (P2c identity half):** `PcbLayerAttestation` — a
+  CAM operation that cuts a layer references the WHOLE layer (feature id +
+  ring count + bounds), because both workflows consume the complete ring set
+  and one reference is a far smaller TNP surface than thousands of rings.
+  Rings are re-derived from the source on every recompute; a re-plotted layer
+  still cuts but reports `changed` so the user is warned, while a deleted
+  feature or vanished source degrades with a reason naming what is missing.
+  Drill layers resolve on their holes (511 hits / 13 tools for `pth.drl`).
+  Witness survives the protocol round trip.  Suite
+  `cad_core_pcb_layer_attestation_test` (5 cases).
+- **Generation is guarded rather than silently empty:** `cam_generate` now
+  fails with an explicit message when a resolved PCB layer reaches a generator
+  that has no PCB branch yet, so the next slice cannot ship an operation that
+  "succeeds" with no toolpath.  Removed when the laser branch lands.
+- **Next:** the cutting half — a laser generator branch for layer rings
+  (mirroring the face-outline path), operation creation for `pcb_layer_cut` /
+  `pcb_isolation` / `pcb_drill`, and the PCB workspace buttons that build them.
 
 ## 2026-09-24
 

@@ -233,6 +233,7 @@
     "bounds": "{{width}} × {{height}} mm",
     "roleFromFile": "from {{function}}",
     "roleGuessed": "from the filename — check this one",
+    "roleWithOrdinal": "{{role}} ({{ordinal}})",
     "warningCount": "{{count}} warning(s)",
     "sourceMissing": "Source file is missing",
     "remove": "Remove",

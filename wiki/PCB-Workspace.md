@@ -470,9 +470,40 @@ declared there or the table silently renders empty; and `AppTopBar`'s workspace
 dispatcher used `showSlicerView()` as its fallback, so the new `pcb` view landed
 on the Slicer page — now an exhaustive switch with a `never` assertion.
 
-**Next — P2c:** `PcbRegionAttestation` + the CAM operations
-(`pcb_layer_cut`, `pcb_isolation`, `pcb_drill`), which is what turns a layer
-into something the CAM → post → GRBL pipeline can run.
+**P2c (identity half) — the layer geometry reference: done**
+(`PcbLayerAttestation` in `cam_types.h` + protocol + suite
+`cad_core_pcb_layer_attestation_test`, 5 cases).
+
+An operation that cuts a layer references the **whole layer**, not individual
+rings: both workflows (laser-cut every contour of a layer, isolate all of its
+copper) consume the complete ring set, and referencing one thing instead of
+thousands keeps the re-identification surface small.  The witness is the
+feature id plus what the layer held (ring count + bounds); the rings are
+re-derived from the source file on every recompute, per the project's
+re-resolve rule.
+
+The three outcomes are deliberately distinct, and each is tested:
+
+| Situation | Result |
+|---|---|
+| Layer healthy | resolves, `changed = false` |
+| Source re-plotted (different ring count/bounds) | **still resolves**, `changed = true` → the caller warns; the fix for a re-poured board is the new copper, not a vanished toolpath |
+| Feature deleted, or source file gone/unreadable | does not resolve, with a reason naming the missing layer or file (never a crash, never a silent zero) |
+
+Drill layers resolve on their **holes**, not rings (`pth.drl` → 511 hits across
+13 tools), or a `pcb_drill` operation could never resolve at all.  The witness
+survives a save/load round trip through the protocol.
+
+**Generation is guarded, not silently empty.** `cam_generate` fails loudly
+("Cutting an imported PCB layer is not wired into this generator yet.") when a
+resolved PCB layer reaches a generator, so the next slice cannot accidentally
+ship an operation that "succeeds" with no toolpath.  That guard comes out when
+the laser branch lands.
+
+**Next — P2c (cutting half):** the laser generator branch that turns a layer's
+rings into planned loops (mirroring the existing face-outline path), operation
+creation for `pcb_layer_cut` / `pcb_isolation` / `pcb_drill`, and the PCB
+workspace buttons that build them.
 
 Committed-fixture coverage is in place: `copper_trimmed.gbr` polygonizes to
 **1964 rings, 1215 macro-pad parts, 1 pour, 0 skipped, 0 diagnostics**, so both
