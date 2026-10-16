@@ -150,6 +150,7 @@ import { triggerCamDrilling } from "./app/camDrillingActions";
 import { triggerCamSlot } from "./app/camSlotActions";
 import { triggerCamEngrave } from "./app/camEngraveActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
+import { ensureLaserSetup } from "./app/pcbCutActions";
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import {
   pickDrawingDxfPath,
@@ -3095,11 +3096,26 @@ function App() {
 
   // From the PCB workspace: cut a layer's contours, then show CAM so the new
   // operation's panel is in front of the user (the CAM → GRBL handoff shape).
+  // A laser operation cannot join a mill setup, so this asks for a laser setup
+  // first and creates one when the project has none — the user should not have
+  // to leave the PCB workspace to configure a machine.
   const createPcbLaserCutAction = async (featureId: string) => {
+    const setupId = await ensureLaserSetup({
+      document,
+      activeSetupId: activeCamSetupId,
+      runAction,
+      camSetupCreate,
+      setActiveSetupId: setActiveCamSetupId,
+      addMessage,
+      translate: t,
+    });
+    if (!setupId) {
+      return;
+    }
     await triggerCamLaserCut({
       document,
       viewport,
-      setupId: activeCamSetupId,
+      setupId,
       runAction,
       camOperationCreate,
       camCaptureFaceReference,

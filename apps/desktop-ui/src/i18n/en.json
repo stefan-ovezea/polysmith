@@ -240,6 +240,9 @@
     "createLaserCut": "Laser cut",
     "createLaserCutHint": "Create a laser cut operation tracing every contour of this layer, then open it in CAM.",
     "captureFailed": "The layer reference could not be captured — re-import the layer.",
+    "createdLaserSetup": "Created {{name}} (laser machine) for this cut.",
+    "usingLaserSetup": "Cutting on {{name}}.",
+    "laserSetupFailed": "Could not create a laser setup — add one in the CAM workspace.",
     "operationsHint": "Machining operations for these layers (laser cutting, isolation routing, drilling) come next.",
     "role": {
       "unknown": "Unclassified",
