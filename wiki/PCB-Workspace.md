@@ -573,6 +573,34 @@ ribbon satisfy both, so it was **silently deleting real contours** on every
 hairline layer — 8 assembled profile rings cut as 5. Layer loops now carry
 `PlannedLoop::from_layer` and are never paired by that pass.
 
+**Leads are off by default on a layer cut — and that is not cosmetic.**  A
+contour shorter than **twice** the lead allowance is skipped, because the lead
+cannot fit on it.  A PCB is full of small features: a 0.8 mm via ring is under
+4 mm around, so the CAM default of 2 mm in + 2 mm out silently dropped vias and
+mask openings (warned, but nothing on screen).  Layer cuts therefore start with
+`lead_in_mm = 0` and `lead_out_mm = 0`, which is also what you want when the cut
+line IS the file's own outline.  Pinned by `small_features_survive_without_leads`
+in the cut suite: 2 mm leads cut 1 of 2 pads and report the skip; no leads cut
+both.
+
+**Measured on the real board** (`projects/EDM`; the polygonizer suite prints
+these when that fixture directory is present):
+
+| Layer | Drawn | Assembled | Notes |
+|---|---|---|---|
+| `F_Cu` | 2,017 | 254 | 0 skipped, 0 diagnostics |
+| `B_Cu` | — | **122** | 0 skipped, 0 diagnostics |
+| `B_Mask` / `F_Mask` | — | 134 / 262 | openings, not material |
+| `In1_Cu` / `In2_Cu` | — | 180 / 92 | |
+| `B_Silkscreen` | 2,199 | 208 | **1,493 strokes → 207 chains: 19 closed, 188 open**, widths 0.1–0.254 mm |
+| `F_Silkscreen` | — | 792 | |
+| `Edge_Cuts` | 20 | 8 | 4 closed chains in centre-line mode |
+
+The silkscreen row is the one that matters for line art: KiCad draws its text
+with a **stroked** font, so centre-line mode follows 188 open paths plus 19
+closed component outlines — the Fusion "open chain" behaviour, on the real
+board, with nothing approximated.
+
 **Open chains (Fusion's "open chain") — PCB half done, sketch half planned.**
 
 An open chain is geometry that simply *ends*: silkscreen text, a logo flourish,

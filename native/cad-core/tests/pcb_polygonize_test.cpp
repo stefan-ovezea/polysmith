@@ -391,6 +391,52 @@ std::string committed_fixture(const std::string& name) {
                      std::istreambuf_iterator<char>());
 }
 
+bool test_real_board_silkscreen_when_present() {
+  const std::string path = fixture_directory() + "/gapstorm-retro-B_Silkscreen.gbr";
+  std::error_code error;
+  if (!std::filesystem::exists(path, error)) {
+    std::cout << "  (skipped: no fixture at " << path << ")\n";
+    return true;
+  }
+  std::ifstream stream(path, std::ios::binary);
+  const std::string text((std::istreambuf_iterator<char>(stream)),
+                         std::istreambuf_iterator<char>());
+  const GerberFile file = parse_gerber(text);
+  const PcbLayerGeometry geometry = polygonize_gerber(file);
+
+  int closed = 0;
+  int open = 0;
+  double widest = 0.0;
+  double narrowest = 1e9;
+  for (const PcbChain& chain : geometry.stroke_chains) {
+    if (chain.closed) {
+      ++closed;
+    } else {
+      ++open;
+    }
+    if (chain.width_mm > 0.0) {
+      widest = std::max(widest, chain.width_mm);
+      narrowest = std::min(narrowest, chain.width_mm);
+    }
+  }
+  std::cout << "  drawn=" << geometry.drawn_rings.size()
+            << " assembled=" << geometry.rings.size()
+            << " strokes=" << geometry.stroke_paths.size()
+            << " chains=" << geometry.stroke_chains.size()
+            << " (closed=" << closed << " open=" << open << ")"
+            << " width=" << narrowest << ".." << widest << "mm\n";
+
+  bool ok = expect(geometry.skipped_operations == 0,
+                   "every silkscreen primitive produced geometry");
+  // Line art: text and outlines are drawn as strokes, and the strokes that do
+  // not close are the ones that need an OPEN cut path (PlannedLoop::is_open).
+  ok &= expect(!geometry.stroke_chains.empty(),
+               "silkscreen strokes chain into contours");
+  ok &= expect(open > 0, "and some of them are open (text, logos)");
+  ok &= expect(!geometry.rings.empty(), "the assembled regions exist too");
+  return ok;
+}
+
 bool test_committed_copper_fixture_polygonizes() {
   const std::string copper = committed_fixture("copper_trimmed.gbr");
   if (copper.empty()) {
@@ -555,6 +601,8 @@ int main() {
       {"committed_copper_fixture_polygonizes", test_committed_copper_fixture_polygonizes},
       {"strokes_keep_their_centre_lines_and_chain",
        test_strokes_keep_their_centre_lines_and_chain},
+      {"real_board_silkscreen_when_present",
+       test_real_board_silkscreen_when_present},
       {"committed_profile_fixture_polygonizes", test_committed_profile_fixture_polygonizes},
   };
 

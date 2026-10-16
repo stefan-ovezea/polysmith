@@ -226,10 +226,17 @@ plus the format layer.
   geometry; what is missing is a chain attestation (endpoints, length, segment
   count, kinds) plus an armed open-chain pick in CAM.  Planned in
   `wiki/PCB-Workspace.md`; the emitter branch is shared, so it is not throwaway.
-- **Next:** that sketch-chain pick, then `pcb_isolation` (2.5D milling with the
-  V-bit width from tip ⌀ + included angle + depth, `cam2d::offset_closed_loop` +
-  `plan_stepdown_levels`) and `pcb_drill`.  The shared-helper extraction for the
-  laser loop planning stays queued as its own test-backed change.
+- **Leads off by default on layer cuts, and why it matters:** a contour shorter
+  than twice the lead allowance is skipped, so the CAM default of 2 mm + 2 mm was
+  silently dropping vias and mask openings on a PCB (warned in the log, invisible
+  on screen).  Layer cuts now start with zero leads — pinned by
+  `small_features_survive_without_leads` (2 mm leads cut 1 of 2 pads; no leads cut
+  both).  Real-board measurements are now in the polygonizer suite: `B_Cu` 122
+  assembled regions, `F_Cu` 254, `In1`/`In2` 180/92, masks 134/262, and
+  `B_Silkscreen` 1,493 strokes → **207 chains (19 closed, 188 open)** at
+  0.1–0.254 mm widths — i.e. KiCad's stroked text becomes exactly the open paths
+  centre-line mode cuts.
+- **Next:** the sketch open-chain reference and pick, then `pcb_isolation`.
 
 ## 2026-09-24
 

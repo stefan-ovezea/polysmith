@@ -590,7 +590,7 @@ bool test_open_chains_cut_as_open_paths() {
         runs.back().second = XY{move.x, move.y};
       }
     } else {
-      // Any beam-off move ends the run � including a rapid, which is how the
+      // Any beam-off move ends the run — including a rapid, which is how the
       // head travels between two contours.
       in_run = false;
     }
@@ -627,6 +627,109 @@ bool test_open_chains_cut_as_open_paths() {
   return ok;
 }
 
+bool test_small_features_survive_without_leads() {
+  // A contour shorter than TWICE the lead allowance is skipped (the lead cannot
+  // fit on it).  A PCB is full of small features, so this is the difference
+  // between cutting a mask layer and silently losing its openings — the PCB
+  // workspace therefore creates layer cuts with NO leads.
+  const std::filesystem::path scratch =
+      std::filesystem::temp_directory_path() / "pcb_small_features.gbr";
+  {
+    std::ofstream file(scratch, std::ios::binary);
+    file << "%FSLAX46Y46*%\n"
+            "%MOMM*%\n"
+            "%LPD*%\n"
+            "G01*\n"
+            "%ADD10C,5.000000*%\n"
+            "%ADD11C,0.800000*%\n"
+            "D10*\n"
+            "X0Y0D03*\n"         // 5 mm pad: ~15.7 mm around
+            "D11*\n"
+            "X10000000Y0D03*\n"  // 0.8 mm pad: ~2.5 mm around
+            "M02*\n";
+  }
+
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.import_pcb_layer(scratch.string());
+  const FeatureEntry* layer = find_layer(document);
+  if (layer == nullptr) {
+    return expect(false, "layer imported");
+  }
+  const PcbLayerAttestation attestation = attestation_for(*layer);
+
+  CamSetup setup;
+  setup.name = "Laser setup";
+  setup.machine_type = "laser";
+  document = manager.cam_setup_create(setup);
+  ToolEntry tool;
+  tool.name = "CO2 laser";
+  tool.type = "laser";
+  document = manager.cam_tool_add(tool);
+
+  const auto add_op = [&](double lead) {
+    CamOperation op;
+    op.name = "pads";
+    op.type = "laser_cut";
+    op.tool_id = document.cam.tool_library[0].tool_id;
+    LaserCutParameters laser;
+    laser.kerf_width_mm = 0.0;
+    laser.lead_in_mm = lead;
+    laser.lead_out_mm = lead;
+    op.parameters.laser = laser;
+    GeometryReference reference;
+    reference.persistent_id = attestation.layer_feature_id;
+    reference.attestation = attestation;
+    op.geometry_references.machining_regions.push_back(reference);
+    document = manager.cam_operation_add(op);
+    return document.cam.operations.back().op_id;
+  };
+
+  const auto count_contours = [](const Toolpath& toolpath) {
+    int contours = 0;
+    bool previous_on = false;
+    for (const auto& move : toolpath.moves) {
+      if (move.laser_on && !previous_on) {
+        ++contours;
+      }
+      previous_on = move.laser_on;
+    }
+    return contours;
+  };
+
+  const std::string leaded_id = add_op(2.0);
+  const std::string bare_id = add_op(0.0);
+  const auto leaded = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), leaded_id, /*preview=*/false);
+  const auto bare = polysmith::core::generate_operation_toolpath(
+      manager.get_document().value(), bare_id, /*preview=*/false);
+  if (!expect(leaded.result.ok && bare.result.ok, "both lead settings run")) {
+    std::cerr << "  leaded: " << leaded.result.error_message
+              << "\n  bare: " << bare.result.error_message << "\n";
+    return false;
+  }
+
+  const int leaded_contours = count_contours(leaded.result.toolpath);
+  const int bare_contours = count_contours(bare.result.toolpath);
+  std::cout << "  2 mm leads: " << leaded_contours
+            << " contours, no leads: " << bare_contours << " contours\n";
+
+  bool ok = expect(leaded_contours == 1,
+                   "with 2 mm leads the small pad cannot be cut");
+  ok &= expect(bare_contours == 2, "without leads both pads are cut");
+  bool explained = false;
+  for (const auto& warning : leaded.result.warnings) {
+    explained =
+        explained ||
+        warning.find("shorter than the lead allowance") != std::string::npos;
+  }
+  ok &= expect(explained,
+               "and the skip is reported, naming the lead allowance");
+  std::error_code remove_error;
+  std::filesystem::remove(scratch, remove_error);
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -649,6 +752,8 @@ int main() {
       {"centerline_mode_follows_the_drawn_line",
        test_centerline_mode_follows_the_drawn_line},
       {"open_chains_cut_as_open_paths", test_open_chains_cut_as_open_paths},
+      {"small_features_survive_without_leads",
+       test_small_features_survive_without_leads},
   };
 
   int failures = 0;

@@ -237,6 +237,14 @@ export async function triggerCamLaserCut({
               layer_mode: (layerIsLineArt ? "centerline" : "regions") as
                 | "centerline"
                 | "regions",
+              // No leads on a layer cut.  A contour shorter than TWICE the lead
+              // allowance is skipped (the lead cannot fit on it), and a PCB is
+              // full of small features: a 0.8 mm via ring is under 4 mm around,
+              // so the CAM default of 2 + 2 mm silently dropped vias and mask
+              // openings.  Starting on the contour is also what you want when
+              // the geometry is the file's own outline.
+              lead_in_mm: 0,
+              lead_out_mm: 0,
             }
           : {}),
       },
