@@ -910,6 +910,37 @@ export interface ImportIgesCommand {
   };
 }
 
+// PCB fabrication layers (Gerber / Excellon). The core resolves the layer's
+// role from the file's own attributes and, failing that, its filename; `role`
+// here is the layer table's explicit override and is optional.
+export interface PcbImportLayerCommand {
+  id: string;
+  type: "pcb_import_layer";
+  payload: {
+    file_path: string;
+    role?: string;
+  };
+}
+
+export interface PcbUpdateLayerCommand {
+  id: string;
+  type: "pcb_update_layer";
+  payload: {
+    feature_id: string;
+    /** Empty string re-resolves the role from the file's own attributes. */
+    role?: string;
+    mirror_x?: boolean;
+  };
+}
+
+export interface PcbRemoveLayerCommand {
+  id: string;
+  type: "pcb_remove_layer";
+  payload: {
+    feature_id: string;
+  };
+}
+
 export interface ConvertMeshToBodyCommand {
   id: string;
   type: "convert_mesh_to_body";
@@ -1059,6 +1090,9 @@ export type CoreCommand =
   | ImportDxfCommand
   | ImportStepCommand
   | ImportIgesCommand
+  | PcbImportLayerCommand
+  | PcbUpdateLayerCommand
+  | PcbRemoveLayerCommand
   | ConvertMeshToBodyCommand
   | CamMachineSettingsSetCommand
   | CamCaptureFaceReferenceCommand

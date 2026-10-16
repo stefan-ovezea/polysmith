@@ -163,6 +163,7 @@ import * as selectionSources from "./app/selectionSources";
 import { SketchDeleteConfirmationPanel } from "./app/SketchDeleteConfirmationPanel";
 import { SlicerWorkspace } from "./app/SlicerWorkspace";
 import { GrblWorkspace } from "./app/GrblWorkspace";
+import { PcbWorkspace } from "./app/PcbWorkspace";
 import {
   createSketchToolActions,
   type SketchConstraintVertexKind,
@@ -2275,6 +2276,9 @@ function App() {
     importDxf,
     importStep,
     importIges,
+    pcbImportLayer,
+    pcbUpdateLayer,
+    pcbRemoveLayer,
     exportDocumentIges,
     convertMeshToBody,
     detachBodyProjections,
@@ -4417,6 +4421,14 @@ function App() {
               onHandoffConsumed={() => {
                 setGrblHandoff(null);
               }}
+            />
+          ) : workspaceView === "pcb" ? (
+            <PcbWorkspace
+              features={document?.feature_history ?? []}
+              onImportLayer={pcbImportLayer}
+              onUpdateLayer={pcbUpdateLayer}
+              onRemoveLayer={pcbRemoveLayer}
+              addMessage={addMessage}
             />
           ) : (
             <>

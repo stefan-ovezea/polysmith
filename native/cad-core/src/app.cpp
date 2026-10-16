@@ -95,6 +95,7 @@ void CadCoreApp::handle_command_line(const CommandMessage& command) {
 #include "app/impl/dxf_command_handlers.inc"
 #include "app/impl/step_command_handlers.inc"
 #include "app/impl/iges_command_handlers.inc"
+#include "app/impl/pcb_command_handlers.inc"
 #include "app/impl/feature_selection_appearance_commands.inc"
 #include "app/impl/feature_operation_commands.inc"
 #include "app/impl/sketch_edit_commands.inc"

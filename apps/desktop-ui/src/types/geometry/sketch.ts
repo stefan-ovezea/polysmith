@@ -8,6 +8,7 @@ import type {
   HoleFeatureParameters,
   LoftFeatureParameters,
   MoveFeatureParameters,
+  PcbLayerParameters,
   ProfileBoundaryEdge,
   RevolveFeatureParameters,
   SweepFeatureParameters,
@@ -596,6 +597,9 @@ export interface FeatureEntry {
   construction_plane_parameters?: ConstructionPlaneFeatureParameters | null;
   construction_axis_parameters?: ConstructionAxisFeatureParameters | null;
   construction_point_parameters?: ConstructionPointFeatureParameters | null;
+  // Present on `pcb_layer` features (imported Gerber / Excellon layers).
+  // Optional so older saves load cleanly.
+  pcb_layer_parameters?: PcbLayerParameters | null;
 }
 
 // `project` is a modal tool, not a shape: while it's active the

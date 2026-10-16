@@ -122,6 +122,9 @@ import {
   makeImportDxfCommand,
   makeImportStepCommand,
   makeImportIgesCommand,
+  makePcbImportLayerCommand,
+  makePcbRemoveLayerCommand,
+  makePcbUpdateLayerCommand,
   makeConvertMeshToBodyCommand,
   makeDetachBodyProjectionsCommand,
   makeRemoveSketchProjectionsCommand,
@@ -377,6 +380,27 @@ export function useCadCore() {
     },
     importIges: async (filePath: string) => {
       await sendAndRefreshSessionViewport(makeImportIgesCommand(filePath));
+    },
+    // PCB fabrication layers. Imports are additive: the caller imports each
+    // file of a Gerber set in turn, and the layer table reads the resulting
+    // `pcb_layer` features back out of the document state.
+    pcbImportLayer: async (filePath: string, role?: string) => {
+      await sendAndRefreshSessionViewport(
+        makePcbImportLayerCommand(filePath, role),
+      );
+    },
+    pcbUpdateLayer: async (
+      featureId: string,
+      options: { role?: string; mirrorX?: boolean } = {},
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makePcbUpdateLayerCommand(featureId, options),
+      );
+    },
+    pcbRemoveLayer: async (featureId: string) => {
+      await sendAndRefreshSessionViewport(
+        makePcbRemoveLayerCommand(featureId),
+      );
     },
     convertMeshToBody: async (bodyId: string) => {
       await sendAndRefreshSessionViewport(

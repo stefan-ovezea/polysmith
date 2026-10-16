@@ -180,6 +180,45 @@ export function makeImportIgesCommand(filePath: string): CoreCommand {
   };
 }
 
+// ── PCB fabrication layers ─────────────────────────────────────────
+// The core resolves each layer's role from the file itself; `role` is only
+// sent when the layer table overrides it.
+
+export function makePcbImportLayerCommand(
+  filePath: string,
+  role?: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "pcb_import_layer",
+    payload: role ? { file_path: filePath, role } : { file_path: filePath },
+  };
+}
+
+export function makePcbUpdateLayerCommand(
+  featureId: string,
+  options: { role?: string; mirrorX?: boolean } = {},
+): CoreCommand {
+  const payload: { feature_id: string; role?: string; mirror_x?: boolean } = {
+    feature_id: featureId,
+  };
+  if (options.role !== undefined) {
+    payload.role = options.role;
+  }
+  if (options.mirrorX !== undefined) {
+    payload.mirror_x = options.mirrorX;
+  }
+  return { id: crypto.randomUUID(), type: "pcb_update_layer", payload };
+}
+
+export function makePcbRemoveLayerCommand(featureId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "pcb_remove_layer",
+    payload: { feature_id: featureId },
+  };
+}
+
 export function makeExportDocumentDxfCommand(filePath: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

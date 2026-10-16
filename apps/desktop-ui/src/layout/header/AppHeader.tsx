@@ -36,7 +36,7 @@ const drawingWorkspaces = [
   "modify",
 ] as const;
 type CamWorkspace = (typeof camWorkspaces)[number];
-type WorkspaceView = "cad" | "slicer" | "cam" | "drawing" | "grbl";
+type WorkspaceView = "cad" | "slicer" | "cam" | "drawing" | "grbl" | "pcb";
 type AppHeaderCreateToolbarProps = Omit<
   CreateToolbarProps,
   "disabled" | "openMenu" | "setOpenMenu"
@@ -582,7 +582,9 @@ export function AppHeader({
                     ? t("workspace.drawing")
                     : workspaceView === "grbl"
                       ? t("workspace.grbl")
-                      : t("workspace.slicer")
+                      : workspaceView === "pcb"
+                        ? t("workspace.pcb")
+                        : t("workspace.slicer")
             }
             items={[
               {
@@ -605,6 +607,10 @@ export function AppHeader({
               {
                 label: t("workspace.grbl"),
                 onSelect: () => onSetWorkspaceView("grbl"),
+              },
+              {
+                label: t("workspace.pcb"),
+                onSelect: () => onSetWorkspaceView("pcb"),
               },
             ]}
             onOpenChange={onWorkspaceDropdownOpenChange}
