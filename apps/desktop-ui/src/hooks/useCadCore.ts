@@ -122,6 +122,7 @@ import {
   makeImportDxfCommand,
   makeImportStepCommand,
   makeImportIgesCommand,
+  makePcbCaptureLayerReferenceCommand,
   makePcbImportLayerCommand,
   makePcbRemoveLayerCommand,
   makePcbUpdateLayerCommand,
@@ -273,6 +274,7 @@ import type {
   HelixFeatureParameters,
   HoleFeatureParameters,
   LaserMachineSettings,
+  PcbLayerAttestation,
   MachineDefinition,
   MoveFeatureParameters,
   PointAttestation,
@@ -2069,6 +2071,22 @@ export function useCadCore() {
       await sendAndRefreshSessionViewport(
         makeCamWcsSetFaceCommand(faceId, setupId),
       );
+    },
+    pcbCaptureLayerReference: async (featureId: string) => {
+      // Awaited: the core mints the layer witness and replies with a
+      // pcb_layer_attestation_result event, so the renderer never invents
+      // what identifies a layer.
+      const response = await sendCoreCommandAwaited(
+        makePcbCaptureLayerReferenceCommand(featureId) as CoreCommand & {
+          id: string;
+        },
+      );
+      return response as {
+        payload?: {
+          persistent_id: string;
+          attestation: PcbLayerAttestation;
+        };
+      };
     },
     camCaptureFaceReference: async (faceId: string) => {
       // Awaited: the reply is a cam_face_attestation_result event

@@ -25,6 +25,19 @@ export type PcbRole =
 
 export type PcbLayerFormat = "gerber" | "excellon";
 
+/** The reference a CAM operation stores when it cuts a layer. Mirrors the
+ *  core's `PcbLayerAttestation`; the CORE mints it (never the renderer), and
+ *  the witness is what re-identifies the layer after a re-read. */
+export interface PcbLayerAttestation {
+  layer_feature_id: string;
+  role: string;
+  ring_count: number;
+  min_x: number;
+  min_y: number;
+  max_x: number;
+  max_y: number;
+}
+
 export interface PcbLayerParameters {
   file_path: string;
   format: PcbLayerFormat;

@@ -158,6 +158,7 @@
         "loft_profiles",
         "move_sketch_entities",
         "ping",
+        "pcb_capture_layer_reference",
         "pcb_import_layer",
         "pcb_remove_layer",
         "pcb_update_layer",

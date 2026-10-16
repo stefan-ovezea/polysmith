@@ -8,6 +8,10 @@
 //  TNP-Safe References
 // ══════════════════════════════════════════════════════════════════
 
+// A reference to an imported PCB layer is one more witness kind alongside
+// the face / edge / sketch-profile / point ones below.
+import type { PcbLayerAttestation } from "./pcb";
+
 export interface Bounds3D {
   min_x: number; min_y: number; min_z: number;
   max_x: number; max_y: number; max_z: number;
@@ -66,6 +70,7 @@ export interface GeometryReference {
     | FaceAttestation
     | EdgeAttestation
     | SketchProfileAttestation
+    | PcbLayerAttestation
     | PointAttestation;
 }
 

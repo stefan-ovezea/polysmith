@@ -21,6 +21,9 @@ interface PcbWorkspaceProps {
     options: { role?: string; mirrorX?: boolean },
   ) => Promise<void>;
   onRemoveLayer: (featureId: string) => Promise<void>;
+  /** Creates a laser operation cutting this layer, then shows the CAM
+   *  workspace so the new operation's panel is in front of the user. */
+  onCreateLaserCut: (featureId: string) => Promise<void>;
   addMessage: (message: string) => void;
 }
 
@@ -62,6 +65,7 @@ export function PcbWorkspace({
   onImportLayer,
   onUpdateLayer,
   onRemoveLayer,
+  onCreateLaserCut,
   addMessage,
 }: PcbWorkspaceProps) {
   const { t } = useTranslation();
@@ -235,15 +239,27 @@ export function PcbWorkspace({
                     </label>
                   </td>
                   <td className="py-1.5">
-                    <button
-                      type="button"
-                      className="cad-action-ghost h-7"
-                      onClick={() => {
-                        void onRemoveLayer(feature.feature_id);
-                      }}
-                    >
-                      {t("pcb.remove")}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="cad-action-ghost h-7"
+                        title={t("pcb.createLaserCutHint")}
+                        onClick={() => {
+                          void onCreateLaserCut(feature.feature_id);
+                        }}
+                      >
+                        {t("pcb.createLaserCut")}
+                      </button>
+                      <button
+                        type="button"
+                        className="cad-action-ghost h-7"
+                        onClick={() => {
+                          void onRemoveLayer(feature.feature_id);
+                        }}
+                      >
+                        {t("pcb.remove")}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );

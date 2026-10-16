@@ -237,6 +237,9 @@
     "warningCount": "{{count}} warning(s)",
     "sourceMissing": "Source file is missing",
     "remove": "Remove",
+    "createLaserCut": "Laser cut",
+    "createLaserCutHint": "Create a laser cut operation tracing every contour of this layer, then open it in CAM.",
+    "captureFailed": "The layer reference could not be captured — re-import the layer.",
     "operationsHint": "Machining operations for these layers (laser cutting, isolation routing, drilling) come next.",
     "role": {
       "unknown": "Unclassified",

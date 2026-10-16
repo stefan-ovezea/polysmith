@@ -533,10 +533,26 @@ independently and does **not** apply polarity or boolean assembly, so a
 negative mask fills the openings rather than the material.  Contour cutting is
 exact; the fill case waits for the set-boolean decision in §4.
 
-**Next:** the last mile to an in-app cut — a way for the PCB workspace to
-create the operation (mint the layer reference in the core, then
-`cam_operation_create` with `laser_cut`), so a layer can go PCB → CAM → post →
-GRBL.
+**P2c (last mile) — create the cut from the layer table: done.**
+
+`pcb_capture_layer_reference {feature_id}` mints the layer witness **in the
+core** from the layer's own summary and replies with
+`pcb_layer_attestation_result` — the same doctrine as
+`cam_capture_face_reference`: the renderer names a row, the core decides what
+identifies it.  The PCB workspace's per-row **Laser cut** button then reuses
+the existing laser-cut action with that reference (no parallel operation
+code path: the action gained an optional `pcbLayerFeatureId`), and switches to
+CAM so the new operation's panel is in front of the user — the same
+producer/consumer shape as the CAM → GRBL handoff.
+
+So the chain is now complete end to end: **import a Gerber set → Laser cut on a
+layer → CAM operation → post → GRBL workspace.**
+
+**Next:** in-app verification of that chain, then `pcb_isolation` (2.5D milling
+with V-bit width from tip ⌀ + included angle + depth, via
+`cam2d::offset_closed_loop` + `plan_stepdown_levels`) and `pcb_drill` (existing
+`drilling_generator`).  The shared-helper extraction for the laser loop
+planning remains queued as its own test-backed change.
 
 Committed-fixture coverage is in place: `copper_trimmed.gbr` polygonizes to
 **1964 rings, 1215 macro-pad parts, 1 pour, 0 skipped, 0 diagnostics**, so both

@@ -2276,6 +2276,7 @@ function App() {
     importDxf,
     importStep,
     importIges,
+    pcbCaptureLayerReference,
     pcbImportLayer,
     pcbUpdateLayer,
     pcbRemoveLayer,
@@ -3086,10 +3087,30 @@ function App() {
       runAction,
       camOperationCreate,
       camCaptureFaceReference,
+      pcbCaptureLayerReference,
       setSelectedOperationId: setSelectedCamOperationId,
       addMessage,
       translate: t,
     });
+
+  // From the PCB workspace: cut a layer's contours, then show CAM so the new
+  // operation's panel is in front of the user (the CAM → GRBL handoff shape).
+  const createPcbLaserCutAction = async (featureId: string) => {
+    await triggerCamLaserCut({
+      document,
+      viewport,
+      setupId: activeCamSetupId,
+      runAction,
+      camOperationCreate,
+      camCaptureFaceReference,
+      pcbCaptureLayerReference,
+      pcbLayerFeatureId: featureId,
+      setSelectedOperationId: setSelectedCamOperationId,
+      addMessage,
+      translate: t,
+    });
+    setWorkspaceView("cam");
+  };
 
   const triggerCamTestPatternAction = () =>
     triggerCamTestPattern({
@@ -4434,6 +4455,7 @@ function App() {
               onImportLayer={pcbImportLayer}
               onUpdateLayer={pcbUpdateLayer}
               onRemoveLayer={pcbRemoveLayer}
+              onCreateLaserCut={createPcbLaserCutAction}
               addMessage={addMessage}
             />
           ) : (

@@ -219,6 +219,16 @@ export function makePcbRemoveLayerCommand(featureId: string): CoreCommand {
   };
 }
 
+export function makePcbCaptureLayerReferenceCommand(
+  featureId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "pcb_capture_layer_reference",
+    payload: { feature_id: featureId },
+  };
+}
+
 export function makeExportDocumentDxfCommand(filePath: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

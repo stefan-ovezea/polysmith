@@ -166,6 +166,26 @@ const camFaceAttestationResultEventSchema = z.object({
   }),
 });
 
+// Reply to pcb_capture_layer_reference — see PcbLayerAttestationResultEvent
+// in types/ipc.ts. Payload mirrors make_pcb_layer_attestation_event
+// (native/cad-core/src/app/impl/pcb_command_handlers.inc).
+const pcbLayerAttestationResultEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("pcb_layer_attestation_result"),
+  payload: z.object({
+    persistent_id: z.string(),
+    attestation: z.object({
+      layer_feature_id: z.string(),
+      role: z.string().default(""),
+      ring_count: z.number().default(0),
+      min_x: z.number().default(0),
+      min_y: z.number().default(0),
+      max_x: z.number().default(0),
+      max_y: z.number().default(0),
+    }),
+  }),
+});
+
 // Reply to cam_capture_edge_reference — see CamEdgeAttestationResultEvent
 // in types/ipc.ts. Payload mirrors make_cam_edge_attestation_event
 // (native/cad-core/src/app/impl/cam_commands.inc).  The circle witness
@@ -419,6 +439,7 @@ export const coreMessageSchema = z.union([
   camFaceAttestationResultEventSchema,
   camEdgeAttestationResultEventSchema,
   camAttestationResultEventSchema,
+  pcbLayerAttestationResultEventSchema,
   drawingDimensionPreviewEventSchema,
   drawingAnnotationPreviewEventSchema,
   drawingViewPreviewResultEventSchema,

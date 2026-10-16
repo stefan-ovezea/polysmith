@@ -243,6 +243,7 @@ import type {
   MachineDefinition,
   PointAttestation,
 } from "./geometry/cam";
+import type { PcbLayerAttestation } from "./geometry/pcb";
 import type {
   DrawingDocumentData,
   DrawingViewPreviewPayload,
@@ -941,6 +942,26 @@ export interface PcbRemoveLayerCommand {
   };
 }
 
+// Asks the core to mint the reference a PCB-cutting operation will store.
+// The witness is computed core-side from the layer's own summary, exactly
+// like cam_capture_face_reference — the renderer only names the row.
+export interface PcbCaptureLayerReferenceCommand {
+  id: string;
+  type: "pcb_capture_layer_reference";
+  payload: {
+    feature_id: string;
+  };
+}
+
+export interface PcbLayerAttestationResultEvent {
+  id: string;
+  type: "pcb_layer_attestation_result";
+  payload: {
+    persistent_id: string;
+    attestation: PcbLayerAttestation;
+  };
+}
+
 export interface ConvertMeshToBodyCommand {
   id: string;
   type: "convert_mesh_to_body";
@@ -1091,6 +1112,7 @@ export type CoreCommand =
   | ImportStepCommand
   | ImportIgesCommand
   | PcbImportLayerCommand
+  | PcbCaptureLayerReferenceCommand
   | PcbUpdateLayerCommand
   | PcbRemoveLayerCommand
   | ConvertMeshToBodyCommand

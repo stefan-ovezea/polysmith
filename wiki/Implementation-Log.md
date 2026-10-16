@@ -170,9 +170,20 @@ plus the format layer.
   independently and applies no polarity/boolean assembly (a negative mask would
   fill its openings).  Contour cutting is exact; fill waits on the set-boolean
   decision.
-- **Next:** the last mile to an in-app cut — the PCB workspace creating the
-  operation (core mints the layer reference, then `cam_operation_create` with
-  `laser_cut`), so a layer can go PCB → CAM → post → GRBL.
+- **Creating the cut from the layer table (P2c last mile):**
+  `pcb_capture_layer_reference {feature_id}` mints the layer witness in the
+  core from the layer's own summary and replies with
+  `pcb_layer_attestation_result` — the `cam_capture_face_reference` doctrine
+  (the renderer names a row; the core decides what identifies it).  The PCB
+  workspace's per-row **Laser cut** button reuses the existing laser-cut action
+  (it gained an optional `pcbLayerFeatureId` rather than a parallel path) and
+  switches to CAM so the new operation's panel is in front of the user.  The
+  chain is now complete end to end: import a Gerber set → Laser cut on a layer
+  → CAM operation → post → GRBL workspace.
+- **Next:** in-app verification of that chain, then `pcb_isolation` (2.5D
+  milling, V-bit width from tip ⌀ + included angle + depth) and `pcb_drill`.
+  The shared-helper extraction for the laser loop planning stays queued as its
+  own test-backed change.
 
 ## 2026-09-24
 
