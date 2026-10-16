@@ -312,6 +312,67 @@ bool test_real_board_fixture_when_present() {
   return ok;
 }
 
+// ── Committed fixtures (always run in-repo) ────────────────────────
+
+std::string committed_fixture(const std::string& name) {
+  const std::string path = "native/cad-core/tests/data/pcb/" + name;
+  std::error_code error;
+  if (!std::filesystem::exists(path, error)) {
+    return std::string();
+  }
+  std::ifstream stream(path, std::ios::binary);
+  return std::string((std::istreambuf_iterator<char>(stream)),
+                     std::istreambuf_iterator<char>());
+}
+
+bool test_committed_copper_fixture_polygonizes() {
+  const std::string copper = committed_fixture("copper_trimmed.gbr");
+  if (copper.empty()) {
+    std::cout << "  (skipped: tests/data/pcb/copper_trimmed.gbr not found)\n";
+    return true;
+  }
+  const GerberFile file = parse_gerber(copper);
+  const PcbLayerGeometry geometry = polygonize_gerber(file);
+
+  int macro_rings = 0;
+  int region_rings = 0;
+  for (const PcbRing& ring : geometry.rings) {
+    if (ring.macro_primitive != 0) {
+      ++macro_rings;
+    }
+    if (ring.from_region) {
+      ++region_rings;
+    }
+  }
+  std::cout << "  rings=" << geometry.rings.size() << " macro_parts=" << macro_rings
+            << " regions=" << region_rings << " skipped=" << geometry.skipped_operations
+            << " diagnostics=" << geometry.diagnostics.size() << "\n";
+
+  bool ok = expect(geometry.skipped_operations == 0,
+                   "every command in the trimmed layer produces geometry");
+  ok &= expect(geometry.rings.size() >= 900, "strokes, pads and the pour all emit rings");
+  ok &= expect(macro_rings > 0, "macro pads expand into their primitives");
+  ok &= expect(region_rings == 1, "the copper pour is one ring");
+  ok &= expect(geometry.bounds.valid && geometry.bounds.max_x > 90.0,
+               "bounds follow the source layer");
+  return ok;
+}
+
+bool test_committed_profile_fixture_polygonizes() {
+  const std::string profile = committed_fixture("edge_cuts.gbr");
+  if (profile.empty()) {
+    std::cout << "  (skipped: tests/data/pcb/edge_cuts.gbr not found)\n";
+    return true;
+  }
+  const GerberFile file = parse_gerber(profile);
+  const PcbLayerGeometry geometry = polygonize_gerber(file);
+  bool ok = expect(geometry.skipped_operations == 0, "the profile strokes into rings");
+  ok &= expect(geometry.rings.size() == 20, "20 profile draws produce 20 stroked rings");
+  ok &= expect(!geometry.rings.empty() && geometry.rings.front().dark,
+               "the profile is a dark layer");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -332,6 +393,8 @@ int main() {
       {"unsupported_shapes_degrade_with_diagnostics",
        test_unsupported_shapes_degrade_with_diagnostics},
       {"real_board_fixture_when_present", test_real_board_fixture_when_present},
+      {"committed_copper_fixture_polygonizes", test_committed_copper_fixture_polygonizes},
+      {"committed_profile_fixture_polygonizes", test_committed_profile_fixture_polygonizes},
   };
 
   int failures = 0;

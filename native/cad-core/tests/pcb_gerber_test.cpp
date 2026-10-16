@@ -420,6 +420,58 @@ bool test_real_board_fixture_when_present() {
   return ok;
 }
 
+// ── Committed fixtures (always run in-repo) ────────────────────────
+// A trimmed slice of the same board lives in tests/data/pcb — see the
+// README there for provenance and the exact trimming recipe.
+
+std::string committed_fixture(const std::string& name) {
+  return read_text("native/cad-core/tests/data/pcb/" + name);
+}
+
+bool test_committed_copper_fixture() {
+  const std::string copper = committed_fixture("copper_trimmed.gbr");
+  if (copper.empty()) {
+    std::cout << "  (skipped: tests/data/pcb/copper_trimmed.gbr not found)\n";
+    return true;
+  }
+  const GerberFile file = parse_gerber(copper);
+  bool ok = expect(file.ok, "trimmed copper parses");
+  ok &= expect(file.file_function == "Copper,L1,Top", "role attribute survives trimming");
+  ok &= expect(file.apertures.size() == 71, "all 71 aperture definitions are present");
+  ok &= expect(file.macros.count("RoundRect") == 1, "the RoundRect macro is present");
+  ok &= expect(file.unsupported.empty(), "nothing in the trimmed slice is unsupported");
+  ok &= expect(count_kind(file, GerberOperation::Kind::Flash) == 716, "716 pad flashes");
+  ok &= expect(count_kind(file, GerberOperation::Kind::RegionBegin) == 1, "one copper pour");
+  ok &= expect(file.operations.size() >= 900, "the command stream is complete");
+  ok &= expect(file.bounds.valid && file.bounds.max_x > 90.0 && file.bounds.max_x < 100.0,
+               "bounds match the 99.9 mm board");
+  return ok;
+}
+
+bool test_committed_profile_and_paste_fixtures() {
+  const std::string profile = committed_fixture("edge_cuts.gbr");
+  const std::string paste = committed_fixture("paste_bottom.gbr");
+  if (profile.empty() || paste.empty()) {
+    std::cout << "  (skipped: tests/data/pcb profile/paste fixtures missing)\n";
+    return true;
+  }
+  const GerberFile edge = parse_gerber(profile);
+  bool ok = expect(edge.ok && edge.file_function == "Profile,NP", "profile fixture role");
+  ok &= expect(count_kind(edge, GerberOperation::Kind::Arc) == 10, "10 profile arcs");
+  ok &= expect(edge.operations.size() == 40, "20 draws + 20 travels");
+
+  const GerberFile paste_layer = parse_gerber(paste);
+  ok &= expect(paste_layer.ok, "paste fixture parses");
+  ok &= expect(paste_layer.apertures.size() == 15, "15 paste apertures");
+  // The in-file attribute says "Paste,Bot" while the .gbrjob for the same
+  // layer says "SolderPaste,Bot" — the role resolver must normalise both.
+  ok &= expect(paste_layer.file_function == "Paste,Bot", "paste role");
+  ok &= expect(count_kind(paste_layer, GerberOperation::Kind::Flash) > 0, "paste flashes");
+  ok &= expect(count_kind(paste_layer, GerberOperation::Kind::RegionBegin) == 0,
+               "the paste layer has no regions");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -443,6 +495,8 @@ int main() {
       {"bad_input_returns_diagnostics_never_crashes",
        test_bad_input_returns_diagnostics_never_crashes},
       {"real_board_fixture_when_present", test_real_board_fixture_when_present},
+      {"committed_copper_fixture", test_committed_copper_fixture},
+      {"committed_profile_and_paste_fixtures", test_committed_profile_and_paste_fixtures},
   };
 
   int failures = 0;

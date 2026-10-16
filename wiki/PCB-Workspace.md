@@ -97,6 +97,12 @@ middle tier matters because KiCad can plot without a job file, and the mask
 polarity trap (`SolderMask` is *negative* — the file describes **openings**) is
 exactly what an unqualified filename guess gets wrong.
 
+The tiers do **not** share a vocabulary, so the resolver needs an alias table,
+not string equality: the same layer is `Paste,Bot` in the Gerber attribute and
+`SolderPaste,Bot` in the job file, `Legend` vs `Silkscreen`, `Profile` vs
+`Profile,NP`.  Fixture evidence for both spellings lives in
+`native/cad-core/tests/data/pcb/`.
+
 **Degrade, never crash:** any unsupported construct is recorded in the parse
 diagnostics (line number + reason), the rest of the file still imports, and the
 UI surfaces the list. Malformed/oversized input is bounded and returns an error
@@ -200,12 +206,32 @@ Registration/origin comes from the `profile` layer bbox (centre or lower-left,
 per machine setup); bottom-side layers get X-mirroring in the operation, so the
 stored geometry stays in board coordinates.
 
-**Open question that needs your input:** isolation routing with a **V-bit**
-needs Z depth control (effective cut width varies with depth), while the
-current laser-centric CAM has no plunge/step-down model. Either we implement
-isolation with a flat end mill only (single Z, width = tool ⌀) and document that
-limitation, or PCB ops bring Z/plunge parameters into the CAM model — a much
-bigger change that should be its own decision record.
+**Decision — isolation is a 2.5D milling operation, V-bit included.**  An
+earlier draft of this document claimed the CAM had no plunge/depth model and
+that V-bit isolation would need one.  That was wrong: the milling side already
+carries `stepdown_mm`, `plunge_feedrate_mm_per_min` and
+`plan_stepdown_levels()` (`src/core/cam/cam_planning.h`), and the laser
+operations simply pass `plunge_feedrate_mm_per_min: 0` because they never move
+in Z.  So isolation needs **no new CAM machinery** — it is a 2.5D milling op on
+the existing depth/plunge path.
+
+What is genuinely tool-specific is the **cut width**:
+
+| Tool | Effective cut width | Passes |
+|---|---|---|
+| Flat end mill ⌀ *d* | *d*, depth-independent | XY offsets outward by *d*/2 + clearance |
+| **V-bit** (tip ⌀ *t*, included angle θ) | *t* + 2·*depth*·tan(θ/2) | **Z levels**: deeper cuts are wider, so successive Z steps clear more copper |
+
+That means a V-bit isolation op takes the tool's tip diameter *and* included
+angle (or an explicit per-depth width), derives the effective radius per Z
+level, and uses the existing `plan_stepdown_levels` walk to sequence the
+passes — the practical V-bit workflow, where depth *is* the width control.
+A flat end mill stays a single-Z, multi-XY-offset pass.
+
+Two further reuses fall out of the same reconnaissance: `pcb_drill` maps onto
+the existing `drilling_generator` (`DrillCycle` with G81/G83 and peck depth)
+rather than a new generator, and the tool library already carries plunging
+feedrates per operation.
 
 ---
 
@@ -263,9 +289,12 @@ binding rules.
 - **Performance budget**: F_Cu (390 KB, ~16k strokes, two multi-thousand-vertex
   pours) parse + polygonize under 1 s; offsets + ordering under 1 s. Recorded as
   a test so it cannot regress silently.
-- **Fixtures**: trimmed subset committed under
-  `native/cad-core/tests/data/pcb/`; the full board stays local until you
-  confirm committing it (~1.3 MB) is acceptable.
+- **Fixtures**: a trimmed slice is committed under
+  `native/cad-core/tests/data/pcb/` (see its README for provenance and the
+  exact trimming recipe): `copper_trimmed.gbr` — 35 KB keeping **all 71
+  apertures**, 716 pad flashes, traces and one pour — plus the profile layer,
+  a paste layer and both Excellon files.  The untrimmed plot stays local and is
+  exercised by the same suites when `POLYSMITH_PCB_FIXTURE_DIR` points at it.
 
 ---
 
@@ -277,7 +306,7 @@ binding rules.
 | **P1** | Gerber X1 + Excellon parsers (pure) + unit tests | tests green |
 | **P2** | `pcb_layer` feature + `PcbRegionAttestation` + IPC commands | **your approval — architectural** |
 | **P3** | Laser `pcb_layer_cut` end to end (import → op → post → GRBL) | in-app verification |
-| **P4** | `pcb_isolation` (cam2d loop offsets, passes, tabs) + `pcb_drill` | in-app verification |
+| **P4** | `pcb_isolation` (2.5D milling op: cam2d offsets, `plan_stepdown_levels` for V-bit Z passes) + `pcb_drill` (existing `drilling_generator`) | in-app verification |
 | **P5** | PCB workspace UI (layer table, board view, job pane, handoff) | in-app verification |
 | **P6** | DXF layer + SOLID/HATCH polish in the existing importer (independent) | in-app verification |
 
@@ -295,7 +324,6 @@ P1 does not depend on the P2 review, which is why it can proceed in parallel.
   interact with the STEP-import viewport work.
 - **Arc tessellation tolerance** trades file size against isolation accuracy;
   it must be one documented constant, not per-call.
-- **V-bit isolation** (see §5) — needs a decision before P4.
 - **Untrusted input.** Gerber is user-supplied; the parser must be bounded
   (line length, coordinate magnitude, macro depth, total entities) and is a
   fuzz/crash surface. The CAD core's process boundary helps but is not a
@@ -357,6 +385,10 @@ vertices* (two pours of several thousand points), not independent traces, so
 ring count is far below command count.
 
 **Next (P1c):** the Excellon drill parser (tool table, plated/non-plated,
-decimal coordinates — the fixture's `PTH.drl` has 13 tools and the NPTH file
-is header-only with zero holes).  Then P2, which needs the review below.
+decimal coordinates — `tests/data/pcb/pth.drl` has 13 tools and `npth.drl` is
+header-only with zero holes).  Then P2, which needs the review below.
+
+Committed-fixture coverage is in place: `copper_trimmed.gbr` polygonizes to
+**1964 rings, 1215 macro-pad parts, 1 pour, 0 skipped, 0 diagnostics**, so both
+suites now assert real-board behaviour without the local full plot.
 

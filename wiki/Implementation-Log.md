@@ -48,6 +48,26 @@ plus the format layer.
   for the narrow dense-copper trim case, pending board evidence.
   On the real board F_Cu polygonizes to 2017 rings with **0 skipped operations
   and 0 diagnostics**.
+- **Fixture set committed:** `native/cad-core/tests/data/pcb/` — a 35 KB
+  trimmed F_Cu slice (all 71 apertures, 716 pad flashes, traces, one pour),
+  the board profile, a paste layer and both Excellon files, with a README
+  recording provenance and the exact trimming recipe.  The untrimmed plot stays
+  local behind `POLYSMITH_PCB_FIXTURE_DIR`.  Both suites now assert real-board
+  behaviour in-repo: the trimmed copper polygonizes to 1964 rings, 1215 macro
+  pad parts, 1 pour, 0 skipped, 0 diagnostics.
+- **Isolation decided as a 2.5D milling operation, V-bit included** (§5 of the
+  design doc): an earlier claim in that document — that the CAM had no
+  plunge/step-down model — was **wrong**.  `stepdown_mm`,
+  `plunge_feedrate_mm_per_min` and `plan_stepdown_levels()` already exist; the
+  laser ops simply never move in Z.  A V-bit's effective width is
+  `tip + 2·depth·tan(θ/2)`, so for a V-bit the Z levels *are* the width control
+  (successive steps clear more copper), while a flat end mill stays a single-Z
+  multi-offset pass.  `pcb_drill` likewise reuses the existing
+  `drilling_generator` (G81/G83 + peck) instead of adding a generator.
+- **Role-resolution detail found in the fixtures:** the three tiers disagree on
+  vocabulary — `Paste,Bot` in the Gerber attribute vs `SolderPaste,Bot` in the
+  `.gbrjob`, `Legend` vs `Silkscreen` — so the P2 resolver needs an alias
+  table, not string equality.
 - **Next:** P1c Excellon drill parser, then **P2** (`pcb_layer` feature +
   `PcbRegionAttestation` + IPC commands), which needs explicit approval before
   any document-model code.
