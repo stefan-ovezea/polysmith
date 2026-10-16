@@ -244,6 +244,28 @@ export function useSlicerWorkspaceActions({
   }
 
   useEffect(() => {
+    // The Slicer view is a separate native OS window managed by the shell, not
+    // a DOM subtree — so leaving the workspace without unmapping it leaves
+    // OrcaSlicer sitting on top of whatever the user switched to. Only
+    // showCadView() used to do this, so CAM / drawing / GRBL / PCB all showed
+    // the slicer window over their page (reported as "PCB workspace goes to
+    // slicer"). Unmap on every exit, mirroring showCadView().
+    if (workspaceView === "slicer" || !hasOrcaEmbedSession) {
+      return;
+    }
+    void hideOrcaWindow()
+      .then((result) => {
+        addMessage(`slicer: ${result.message}`);
+      })
+      .catch((error) => {
+        addMessage(`slicer hide error: ${String(error)}`);
+      })
+      .finally(() => {
+        setHasOrcaEmbedSession(false);
+      });
+  }, [workspaceView, hasOrcaEmbedSession, addMessage, setHasOrcaEmbedSession]);
+
+  useEffect(() => {
     if (workspaceView !== "slicer" || !hasOrcaEmbedSession) {
       return;
     }
