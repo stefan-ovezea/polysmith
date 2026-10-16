@@ -85,9 +85,34 @@ plus the format layer.
   a fixed-point `0.01 mm`; (3) the committed fixtures contain no point-less
   coordinates at all, so only the synthetic cases exercised that path.
 - **P1 is complete** (parser, polygonizer, drill parser — all pure, tested and
-  dependency-free).  **Next:** P2 (`pcb_layer` feature +
-  `PcbRegionAttestation` + IPC commands), gated on explicit approval before
-  any document-model code.
+  dependency-free).
+- **`pcb_layer` document feature (P2 core slice, user-approved):**
+  `import_pcb_layer` / `update_pcb_layer` / `remove_pcb_layer`
+  (`document/impl/pcb_commands.inc`, suite `cad_core_pcb_layer_test`, 10
+  cases).  The feature stores the source path **plus summary counts**, not the
+  geometry: a copper layer is ~2k rings, and snapshotting that into every save
+  (the STEP-import precedent) would add megabytes of re-derivable data.  The
+  accepted consequence: a moved or deleted Gerber file marks the feature
+  `dependency_broken` with a warning and keeps its last known counts, where a
+  STEP import would still open.  It contributes no B-rep geometry, so the body
+  compiler skips it exactly as it skips construction features (verified:
+  `build_feature_shape` returns an empty shape for unknown kinds).
+- **Role resolution by normalised keyword, never equality**
+  (`pcb_role.{h,cpp}`): the tiers disagree on vocabulary — `Paste,Bot` (Gerber
+  attribute) vs `SolderPaste,Bot` (job file), `Legend` vs `Silkscreen`,
+  `Profile` vs `Edge_Cuts` — and `NonPlated` contains `Plated`, so drills are
+  matched first.  The file's own attribute wins, the filename is the fallback,
+  and an explicit user role overrides both (recorded as
+  `role_from_attributes = false`).  Solder-mask polarity is **negative** (the
+  file describes the openings) and is labelled as assumed when the file is
+  silent.  Layer parameters survive a save/load round trip.
+- **Two test-harness lessons:** a suite that forgets `create_document()` dies by
+  uncaught exception (0xC0000409), and stdout to a pipe is block-buffered, so a
+  case name must be flushed or a crash hides its own location.  Both fixed in
+  `pcb_layer_test`.
+- **Next:** P2b — `pcb_*` IPC commands + protocol schema + TS types, then the
+  thin `pcb` workspace (import + layer table + "create laser operation") for
+  in-app verification, then `PcbRegionAttestation` + the CAM operations.
 
 ## 2026-09-24
 

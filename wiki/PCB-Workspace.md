@@ -305,7 +305,8 @@ binding rules.
 |---|---|---|
 | **P0** | This document + `wiki/Home.md` link | your review |
 | **P1** | Gerber X1 + Excellon parsers (pure) + unit tests | tests green |
-| **P2** | `pcb_layer` feature + `PcbRegionAttestation` + IPC commands | **your approval — architectural** |
+| **P2** | `pcb_layer` feature ✅ · `PcbRegionAttestation` + `pcb_*` IPC commands (next) | **approved**; feature verified by tests |
+| **P2b** | thin `pcb` workspace UI: import + layer table + "create laser operation" | in-app verification (approved sequencing change) |
 | **P3** | Laser `pcb_layer_cut` end to end (import → op → post → GRBL) | in-app verification |
 | **P4** | `pcb_isolation` (2.5D milling op: cam2d offsets, `plan_stepdown_levels` for V-bit Z passes) + `pcb_drill` (existing `drilling_generator`) | in-app verification |
 | **P5** | PCB workspace UI (layer table, board view, job pane, handoff) | in-app verification |
@@ -414,9 +415,46 @@ Three defects the tests caught, all fixed before commit:
 - The fixtures contain **no** point-less coordinates, so only the synthetic
   cases covered this path; the real files would not have caught either bug.
 
-**Next — P2** (`pcb_layer` feature + `PcbRegionAttestation` + IPC commands),
-which needs explicit approval before any document-model code.  P1 is complete:
-parser, polygonizer and drill parser are all pure, tested and dependency-free.
+**P2 (core slice) — the `pcb_layer` feature: done**
+(`core/pcb/pcb_types.h`, `pcb_role.{h,cpp}`, `pcb_layer_io.{h,cpp}`,
+`document/impl/pcb_commands.inc`, suite `cad_core_pcb_layer_test`, 10 cases).
+
+`import_pcb_layer` / `update_pcb_layer` / `remove_pcb_layer` create and own a
+`pcb_layer` feature: `kind = "pcb_layer"`, carrying `PcbLayerParameters`.  The
+feature contributes **no B-rep geometry**, so the body compiler skips it exactly
+as it skips a construction feature — verified, not assumed
+(`build_feature_shape` returns an empty shape for unknown kinds).
+
+**The one decision worth reviewing: geometry is re-derived, not embedded.**
+
+| | STEP/IGES import (existing precedent) | `pcb_layer` |
+|---|---|---|
+| Stored | source path **plus a serialized shape snapshot** | source path **plus summary counts** |
+| Part file | self-contained; source may be deleted | needs the Gerber set present |
+| Missing source | still opens | `dependency_broken` + warning, summary kept |
+
+A copper layer is ~2 k rings and tens of thousands of points; snapshotting that
+into every save would add megabytes of data that re-derives in milliseconds.
+The cost is that a moved or deleted Gerber file shows up as a broken dependency
+(with the last known counts kept, so the timeline does not lie with zeroes).
+If self-contained saves turn out to matter — a part mailed to someone without
+the fabrication set — the parsed rings can be embedded as a sidecar without
+changing this contract.
+
+Role resolution is by **normalised keyword, never equality**, because the tiers
+disagree on vocabulary: `Paste,Bot` (Gerber attribute) vs `SolderPaste,Bot`
+(job file), `Legend` vs `Silkscreen`, `Profile` vs `Edge_Cuts`.  The file's own
+attribute wins; the filename is the fallback; an explicit user role overrides
+both and is recorded as such (`role_from_attributes = false`).  Solder-mask
+layers carry a **negative** polarity — the file describes the openings — and
+the polarity is assumed and labelled when the file does not state it.
+
+The feature also keeps a bounded warning list (32 entries plus a suppressed
+count), so one pathological file cannot grow the saved document without bound.
+
+**Next — P2b:** the `pcb_*` IPC commands + protocol schema + TS types, then the
+thin `pcb` workspace (import + layer table + "create laser operation") so this
+can be exercised in the app; then `PcbRegionAttestation` and the CAM ops.
 
 Committed-fixture coverage is in place: `copper_trimmed.gbr` polygonizes to
 **1964 rings, 1215 macro-pad parts, 1 pour, 0 skipped, 0 diagnostics**, so both

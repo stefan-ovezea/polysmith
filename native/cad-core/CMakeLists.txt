@@ -298,6 +298,8 @@ set(CAD_CORE_SOURCES
   src/core/pcb/gerber_parser.cpp
   src/core/pcb/gerber_polygonize.cpp
   src/core/pcb/excellon_parser.cpp
+  src/core/pcb/pcb_layer_io.cpp
+  src/core/pcb/pcb_role.cpp
   src/core/plugin/plugin_feature.cpp
   src/core/primitive/box_feature.cpp
   src/core/primitive/cylinder_feature.cpp
@@ -575,6 +577,7 @@ polysmith_add_core_test(cad_core_step_import_test tests/step_import_test.cpp)
 polysmith_add_core_test(cad_core_pcb_gerber_test tests/pcb_gerber_test.cpp)
 polysmith_add_core_test(cad_core_pcb_polygonize_test tests/pcb_polygonize_test.cpp)
 polysmith_add_core_test(cad_core_pcb_excellon_test tests/pcb_excellon_test.cpp)
+polysmith_add_core_test(cad_core_pcb_layer_test tests/pcb_layer_test.cpp)
 
 polysmith_add_core_test(cad_core_viewport_seam_enumeration_test tests/viewport_seam_enumeration_test.cpp)
 

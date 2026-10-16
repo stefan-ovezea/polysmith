@@ -8,6 +8,7 @@
 #include "core/document/plane_frame.h"
 #include "core/extrude/extrude_types.h"
 #include "core/loft/loft_types.h"
+#include "core/pcb/pcb_types.h"
 #include "core/plugin/plugin_types.h"
 #include "core/primitive/primitive_types.h"
 #include "core/revolve/revolve_types.h"
@@ -65,6 +66,10 @@ struct FeatureEntry {
   std::optional<MeshToBodyFeatureParameters> mesh_to_body_parameters;
   std::optional<StepImportFeatureParameters> step_import_parameters;
   std::optional<IgesImportFeatureParameters> iges_import_parameters;
+  // An imported PCB fabrication layer (Gerber or Excellon).  Contributes no
+  // B-rep geometry — it is 2D CAM data, consumed by the PCB CAM operations —
+  // so the body compiler skips it like a construction feature.
+  std::optional<PcbLayerParameters> pcb_layer_parameters;
 };
 
 }  // namespace polysmith::core
