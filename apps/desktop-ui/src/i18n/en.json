@@ -1882,6 +1882,7 @@
   },
   "logs": {
     "close": "Close logs",
+    "entriesShownOfKept": "{{shown}} shown · {{kept}} kept",
     "hideDebug": "Hide debug",
     "level": "Level",
     "message": "Message",

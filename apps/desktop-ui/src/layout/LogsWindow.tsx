@@ -57,7 +57,12 @@ export function LogsWindow({ logs, onClose, onClear }: LogsWindowProps) {
           <div>
             <p className="cad-kicker">{t("logs.title")}</p>
             <p className="mt-1 text-xs text-on-surface-dim">
-              {t("common.entries", { count: visibleLogs.length })}
+              {visibleLogs.length === logs.length
+                ? t("common.entries", { count: logs.length })
+                : t("logs.entriesShownOfKept", {
+                    shown: visibleLogs.length,
+                    kept: logs.length,
+                  })}
             </p>
             {logs.length >= 500 ? (
               // The store keeps a rolling window: say so, because a count that

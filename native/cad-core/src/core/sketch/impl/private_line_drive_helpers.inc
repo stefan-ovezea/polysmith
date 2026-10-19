@@ -23,7 +23,7 @@ void drive_line_length(SketchLine& line, double value) {
   line.end_x = line.start_x + direction_x * value;
   line.end_y = line.start_y + direction_y * value;
   apply_line_constraint(line);
-  validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
+  validate_line(line.start_x, line.start_y, line.end_x, line.end_y, "driving a line");
 }
 
 void drive_line_length_from_fixed_end(SketchLine& line, double value) {
@@ -55,7 +55,7 @@ void drive_line_length_from_fixed_end(SketchLine& line, double value) {
   } else if (line.constraint == "vertical") {
     line.start_x = line.end_x;
   }
-  validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
+  validate_line(line.start_x, line.start_y, line.end_x, line.end_y, "driving a line");
 }
 
 void drive_line_length_respecting_fixed_points(

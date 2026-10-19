@@ -125,7 +125,7 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
         }
       }
 
-      validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
+      validate_line(line.start_x, line.start_y, line.end_x, line.end_y, "moving connected points");
 
       const double next_other_x = moved_start ? line.end_x : line.start_x;
       const double next_other_y = moved_start ? line.end_y : line.start_y;

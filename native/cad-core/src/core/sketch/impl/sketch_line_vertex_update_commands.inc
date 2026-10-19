@@ -47,7 +47,7 @@ void update_sketch_line(FeatureEntry& feature,
   snap_line_endpoints_to_coincident_geometry(*feature.sketch_parameters, *line_it);
   apply_line_constraint_respecting_fixed_points(
       *feature.sketch_parameters, *line_it);
-  validate_line(line_it->start_x, line_it->start_y, line_it->end_x, line_it->end_y);
+  validate_line(line_it->start_x, line_it->start_y, line_it->end_x, line_it->end_y, "updating a line vertex");
 
   if (!points_match(previous_start_x,
                     previous_start_y,

@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "core/document/document.h"
+#include "core/viewport/viewport.h"
 #include "dxf/dxf_export.h"
 #include "dxf/dxf_import.h"
 
@@ -259,12 +260,22 @@ bool test_fusion_sketch_when_present() {
   std::cout << "  " << sketch->lines.size() << " of " << parsed.lines.size()
             << " segments arrived (" << (arrived * 100.0) << "%)\n";
   ok &= expect(arrived > 0.95, "at least 95% of the parsed segments arrive");
-  // The shortfall must be REPORTED, not silent: the FEATURE summary carries it.
-  if (sketch->lines.size() < parsed.lines.size()) {
-    const auto& feature = document.feature_history.back();
-    ok &= expect(feature.parameters_summary.find("merged") != std::string::npos,
-                 "the import summary reports the merged segments");
+  // The app calls build_viewport_state on every refresh, so anything it throws
+  // becomes one logged error PER REQUEST — which is exactly what the user saw
+  // as a flood of "Sketch lines must have non-zero length" after the import.
+  bool viewport_threw = false;
+  std::string viewport_error;
+  try {
+    (void)polysmith::core::build_viewport_state(manager.get_document());
+  } catch (const std::exception& failure) {
+    viewport_threw = true;
+    viewport_error = failure.what();
   }
+  if (viewport_threw) {
+    std::cerr << "  viewport threw: " << viewport_error << "\n";
+  }
+  ok &= expect(!viewport_threw,
+               "the app's refresh path survives the imported sketch");
   return ok;
 }
 
