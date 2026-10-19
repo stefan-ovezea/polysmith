@@ -6,6 +6,7 @@
 #include "drw_interface.h"
 #include "libdxfrw.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -27,12 +28,92 @@ constexpr double kMinSize = 0.001;
 // point are dropped, so every segment is representable and the shape is
 // unchanged within 0.01 mm.
 constexpr double kSampleSpacing = 0.011;
+// Douglas–Peucker tolerance for tessellated curves, in millimetres.
+//
+// A spline sampled at a fixed 64 segments is mostly redundant points: this file
+// arrives as 12.5k segments for 191 short splines.  The sketch's own refresh is
+// superlinear in entity count (measured: 1k lines 0.2 s, 3k 1.3 s, 10.7k 14 s),
+// so a dense import is not just big, it is unusable — 15 s to delete one line.
+// Simplifying each tessellated curve to 0.02 mm (twice the sketch's own
+// coincidence resolution, so no visible change) is the difference between a
+// sketch you can edit and one you cannot.
+constexpr double kSimplifyToleranceMm = 0.02;
 constexpr double kBulgeEpsilon = 1e-9;
 constexpr double kPlanarEpsilon = 1e-6;
 constexpr int kTessellationSegments = 64;
 constexpr double kInchesToMm = 25.4;
 
+// Local 2D point for the tessellation simplifier: the DXF layer must not take a
+// dependency on the CAM geometry module just to hold two doubles.
+struct SampledPoint {
+  double x = 0.0;
+  double y = 0.0;
+};
+
 bool is_planar_z(double z) { return std::abs(z) <= kPlanarEpsilon; }
+
+// Douglas–Peucker over a polyline: keeps the points that carry the shape and
+// drops the ones a straight line already represents within `tolerance`.
+std::vector<SampledPoint> simplify_polyline(const std::vector<SampledPoint>& points,
+                                         double tolerance) {
+  if (points.size() < 3) {
+    return points;
+  }
+  std::vector<bool> keep(points.size(), false);
+  keep.front() = true;
+  keep.back() = true;
+
+  const auto distance_to_segment = [](const SampledPoint& point,
+                                      const SampledPoint& start,
+                                      const SampledPoint& end) {
+    const double dx = end.x - start.x;
+    const double dy = end.y - start.y;
+    const double length_squared = dx * dx + dy * dy;
+    if (length_squared <= 0.0) {
+      return std::hypot(point.x - start.x, point.y - start.y);
+    }
+    double t = ((point.x - start.x) * dx + (point.y - start.y) * dy) /
+               length_squared;
+    t = std::clamp(t, 0.0, 1.0);
+    return std::hypot(point.x - (start.x + t * dx),
+                      point.y - (start.y + t * dy));
+  };
+
+  // Explicit stack: a 12k-point curve would otherwise recurse thousands deep.
+  std::vector<std::pair<size_t, size_t>> ranges{{0, points.size() - 1}};
+  while (!ranges.empty()) {
+    const auto [first, last] = ranges.back();
+    ranges.pop_back();
+    if (last <= first + 1) {
+      continue;
+    }
+    double worst = 0.0;
+    size_t worst_index = first;
+    for (size_t i = first + 1; i < last; ++i) {
+      const double distance =
+          distance_to_segment(points[i], points[first], points[last]);
+      if (distance > worst) {
+        worst = distance;
+        worst_index = i;
+      }
+    }
+    if (worst <= tolerance) {
+      continue;
+    }
+    keep[worst_index] = true;
+    ranges.emplace_back(first, worst_index);
+    ranges.emplace_back(worst_index, last);
+  }
+
+  std::vector<SampledPoint> simplified;
+  simplified.reserve(points.size());
+  for (size_t i = 0; i < points.size(); ++i) {
+    if (keep[i]) {
+      simplified.push_back(points[i]);
+    }
+  }
+  return simplified;
+}
 
 void record_skipped(DxfImportResult& result, const char* kind) {
   result.skipped_count += 1;
@@ -161,14 +242,13 @@ bool append_spline_segments(DxfImportResult& result, const DRW_Spline& spline,
   if (!(t1 > t0)) {
     return false;
   }
+  // Sample the spline, then simplify the polyline: a fixed 64-segment
+  // tessellation is mostly redundant points, and this sketch's refresh cost is
+  // superlinear in entity count (see kSimplifyToleranceMm).
+  std::vector<SampledPoint> samples;
+  samples.reserve(kTessellationSegments + 1);
   double px = 0.0;
   double py = 0.0;
-  // Reference for the spacing test is the last EMITTED point, not the previous
-  // sample: consecutive 0.005 mm steps would otherwise each clear the threshold
-  // against their immediate neighbour and still disappear in the document.
-  double emitted_x = 0.0;
-  double emitted_y = 0.0;
-  bool have_emitted = false;
   for (int i = 0; i <= kTessellationSegments; ++i) {
     const double t = t0 + (t1 - t0) * static_cast<double>(i) /
                                kTessellationSegments;
@@ -183,22 +263,21 @@ bool append_spline_segments(DxfImportResult& result, const DRW_Spline& spline,
     }
     px = x;
     py = y;
-    if (!have_emitted) {
-      emitted_x = x;
-      emitted_y = y;
-      have_emitted = true;
+    if (!samples.empty() && std::hypot(x - samples.back().x,
+                                       y - samples.back().y) < kMinSize) {
       continue;
     }
-    // EVERY emitted step must clear the model's resolution, including the
-    // last one: a short tail would collapse onto the previous vertex in the
-    // document and be dropped there instead.  Ending the curve up to 0.011 mm
-    // short of the exact spline end is within the model's own precision.
-    if (std::hypot(x - emitted_x, y - emitted_y) < kSampleSpacing) {
+    samples.push_back(SampledPoint{x, y});
+  }
+  const std::vector<SampledPoint> simplified =
+      simplify_polyline(samples, kSimplifyToleranceMm);
+  for (size_t i = 1; i < simplified.size(); ++i) {
+    const SampledPoint& start = simplified[i - 1];
+    const SampledPoint& end = simplified[i];
+    if (std::hypot(end.x - start.x, end.y - start.y) <= kMinSize) {
       continue;
     }
-    result.lines.push_back(DxfImportLine{emitted_x, emitted_y, x, y});
-    emitted_x = x;
-    emitted_y = y;
+    result.lines.push_back(DxfImportLine{start.x, start.y, end.x, end.y});
   }
   return true;
 }
@@ -231,34 +310,31 @@ void append_ellipse_segments(DxfImportResult& result,
   // where rot90 rotates the major vector a quarter turn counterclockwise.
   const double rot_x = -my;
   const double rot_y = mx;
-  double px = 0.0;
-  double py = 0.0;
-  double emitted_x = 0.0;
-  double emitted_y = 0.0;
-  bool have_emitted = false;
+  // Same sampling + simplification as the spline path (kSimplifyToleranceMm).
+  std::vector<SampledPoint> samples;
+  samples.reserve(kTessellationSegments + 1);
   for (int i = 0; i <= kTessellationSegments; ++i) {
     const double t =
         t0 + (t1 - t0) * static_cast<double>(i) / kTessellationSegments;
-    const double px_now = ellipse.basePoint.x * scale + std::cos(t) * mx +
-                          std::sin(t) * ellipse.ratio * rot_x;
-    const double py_now = ellipse.basePoint.y * scale + std::cos(t) * my +
-                          std::sin(t) * ellipse.ratio * rot_y;
-    px = px_now;
-    py = py_now;
-    if (!have_emitted) {
-      emitted_x = px_now;
-      emitted_y = py_now;
-      have_emitted = true;
+    const double x = ellipse.basePoint.x * scale + std::cos(t) * mx +
+                     std::sin(t) * ellipse.ratio * rot_x;
+    const double y = ellipse.basePoint.y * scale + std::cos(t) * my +
+                     std::sin(t) * ellipse.ratio * rot_y;
+    if (!samples.empty() && std::hypot(x - samples.back().x,
+                                       y - samples.back().y) < kMinSize) {
       continue;
     }
-    // Same spacing rule as the spline tessellation (see kSampleSpacing).
-    if (std::hypot(px_now - emitted_x, py_now - emitted_y) < kSampleSpacing) {
+    samples.push_back(SampledPoint{x, y});
+  }
+  const std::vector<SampledPoint> simplified =
+      simplify_polyline(samples, kSimplifyToleranceMm);
+  for (size_t i = 1; i < simplified.size(); ++i) {
+    const SampledPoint& start = simplified[i - 1];
+    const SampledPoint& end = simplified[i];
+    if (std::hypot(end.x - start.x, end.y - start.y) <= kMinSize) {
       continue;
     }
-    result.lines.push_back(
-        DxfImportLine{emitted_x, emitted_y, px_now, py_now});
-    emitted_x = px_now;
-    emitted_y = py_now;
+    result.lines.push_back(DxfImportLine{start.x, start.y, end.x, end.y});
   }
   result.ellipses_tessellated += 1;
 }

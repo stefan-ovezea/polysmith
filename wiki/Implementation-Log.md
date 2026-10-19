@@ -75,6 +75,49 @@ CAM generators registered (9): adaptive_clearing, contour_2d, drilling,
 engrave, face_milling, laser_cut, laser_test_pattern, pocket_2d, slot
 ```
 
+### A 10.7k-line imported sketch was unusable: measured, then fixed by simplifying
+
+Reported: importing the Fusion sketch, saving it and deleting a single line took
+**more than 15 seconds**, so the sketch could not be edited at all.
+
+Measured on the real file rather than guessed (all in the DXF suite, printed on
+every run):
+
+| | before | after |
+|---|---|---|
+| segments imported | 11,113 | **847** |
+| import | 28.4 s | **0.21 s** |
+| viewport refresh | 0.85 s | **0.011 s** |
+| delete one line | 14.6 s | **0.11 s** |
+
+Two findings, only one of which is about speed:
+
+- **The refresh is superlinear in entity count** — 1,000 lines 0.21 s, 3,000
+  1.33 s, 10,738 14.3 s — and the import pays it twice.  (Instrumenting the
+  passes showed all of them at ~0 ms, so the quadratic term is either in a
+  helper they call or in the pathological geometry itself: with the simplified
+  sketch, 3,000 lines refresh in 0.10 s, i.e. the superlinearity disappeared with
+  the dense near-coincident tessellation.  Worth revisiting with a profiler;
+  the numbers above are the contract.)
+- **A fixed 64-segment tessellation was mostly redundant points.**  191 short
+  splines became 12.5k entities.  The reader now simplifies each tessellated
+  spline and ellipse with **Douglas–Peucker at 0.02 mm** (twice the sketch's own
+  coincidence resolution), so only the points that carry the shape survive.
+
+Two test expectations were counting segments (64 exactly) and now assert the
+invariants that matter instead: the curve is a **chained** polyline whose start
+and end are the spline's, and the ellipse keeps its extents.  A deterministic
+guard bounds the parsed segment count under 2,000, because wall-clock assertions
+are flaky on other machines.
+
+Also fixed along the way: `rebuild_sketch_vertices` and
+`sync_entity_coords_from_vertices` used linear id scans per point (O(n²) with
+21k vertices); both are indexed now.
+
+**Still open:** the extrude refusal on this sketch ("4 pairs of holes touch or
+overlap") is the source geometry's own topology — curves that touch — not a
+regression from this change; the profile needs separated loops.
+
 **Still open in the DXF importer (P6):** layer names are ignored
 (`addLayer` is an empty stub, so everything lands in one sketch), TEXT/MTEXT and
 SOLID/HATCH are skipped with a count, and blocks are dropped.  A Fusion sketch

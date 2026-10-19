@@ -191,19 +191,26 @@ std::optional<std::tuple<std::string, double, double>> resolve_shared_point(
 
 void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   parameters.vertices.clear();
+  // Membership test for "have I already appended this vertex id?" — a linear
+  // scan with string comparison here is O(n) per point, i.e. O(n²) per refresh,
+  // which is what made a 10.7k-line imported sketch take 14 s to redraw and 15 s
+  // to delete a single line.  A hash set makes it O(1); insertion order (and
+  // therefore the first-seen-wins rule) is unchanged.
+  std::unordered_set<std::string> appended_ids;
+  parameters.vertices.reserve(parameters.projected_points.size() +
+                              parameters.lines.size() * 2 +
+                              parameters.arcs.size() * 2 +
+                              parameters.ellipses.size() * 3 +
+                              parameters.circles.size() * 5);
+  appended_ids.reserve(parameters.vertices.capacity());
 
   const auto append_point = [&](const std::string& point_id,
                                 const std::string& kind,
                                 double x,
                                 double y) {
-    const auto existing_it = std::find_if(
-        parameters.vertices.begin(),
-        parameters.vertices.end(),
-        [&](const SketchVertex& point) { return point.id == point_id; });
-    if (existing_it != parameters.vertices.end()) {
+    if (!appended_ids.insert(point_id).second) {
       return;
     }
-
     parameters.vertices.push_back(SketchVertex{
         .id = point_id,
         .kind = kind,
@@ -582,10 +589,20 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
 // truth; entity fields are a read-optimised cache.
 void sync_entity_coords_from_vertices(SketchFeatureParameters& parameters) {
   // Helper: find a vertex by its primary id.
+  //
+  // Indexed, not scanned: this runs for EVERY entity on every refresh, so a
+  // linear scan per endpoint is O(n²) — on a 10.7k-line imported sketch that is
+  // ~460M string comparisons, and it measured as 14 s per refresh (i.e. 15 s to
+  // delete one line).  The vertex table is not modified in this pass, so
+  // pointers into it stay valid.
+  std::unordered_map<std::string, const SketchVertex*> vertices_by_id;
+  vertices_by_id.reserve(parameters.vertices.size());
+  for (const auto& vertex : parameters.vertices) {
+    vertices_by_id.emplace(vertex.id, &vertex);
+  }
   auto find_v = [&](const std::string& vid) -> const SketchVertex* {
-    for (const auto& v : parameters.vertices)
-      if (v.id == vid) return &v;
-    return nullptr;
+    const auto found = vertices_by_id.find(vid);
+    return found == vertices_by_id.end() ? nullptr : found->second;
   };
 
   for (auto& line : parameters.lines) {

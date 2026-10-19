@@ -9,6 +9,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // dropped by `rebuild_sketch_vertices`), but cleaning them up here
   // keeps the data model tidy and prevents stale viewport sprites.
   auto& p = *feature.sketch_parameters;
+
   p.midpoint_anchors.erase(
       std::remove_if(p.midpoint_anchors.begin(),
                      p.midpoint_anchors.end(),

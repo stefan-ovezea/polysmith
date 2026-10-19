@@ -12,6 +12,7 @@
 // directory (R12-style group-code/value pairs), so every path here
 // exercises the same libdxfrw reader the core uses.
 
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -260,6 +261,14 @@ bool test_fusion_sketch_when_present() {
   std::cout << "  " << sketch->lines.size() << " of " << parsed.lines.size()
             << " segments arrived (" << (arrived * 100.0) << "%)\n";
   ok &= expect(arrived > 0.95, "at least 95% of the parsed segments arrive");
+  // Deterministic guard for the thing that made this sketch unusable: a fixed
+  // 64-segment tessellation produced 12.5k entities for 191 short splines, and
+  // the sketch refresh is superlinear in entity count (1k lines 0.2 s, 10.7k
+  // 14 s).  Douglas–Peucker at 0.02 mm turns that into ~850.  Bounding the
+  // count is what keeps the import editable; wall-clock assertions would be
+  // flaky on other machines.
+  ok &= expect(parsed.lines.size() < 2000,
+               "the tessellation is simplified, not emitted point for point");
   // The app calls build_viewport_state on every refresh, so anything it throws
   // becomes one logged error PER REQUEST — which is exactly what the user saw
   // as a flood of "Sketch lines must have non-zero length" after the import.
@@ -276,6 +285,70 @@ bool test_fusion_sketch_when_present() {
   }
   ok &= expect(!viewport_threw,
                "the app's refresh path survives the imported sketch");
+
+  // Where does the time go?  The user reports a 10.7k-line import that takes
+  // ~15 s to delete a single line, so the cost has to be measured, not guessed.
+  {
+    using clock = std::chrono::steady_clock;
+    const auto ms = [](clock::duration span) {
+      return std::chrono::duration<double, std::milli>(span).count();
+    };
+
+    DocumentManager timing;
+    timing.create_document();
+    const auto parse_start = clock::now();
+    const auto geometry = polysmith::core::import_dxf_geometry(path);
+    const auto parse_done = clock::now();
+    const auto import_start = clock::now();
+    const DocumentState loaded = timing.import_dxf(path);
+    const auto import_done = clock::now();
+
+    const auto viewport_start = clock::now();
+    (void)polysmith::core::build_viewport_state(timing.get_document());
+    const auto viewport_done = clock::now();
+
+    const std::string first_line_id = loaded.feature_history.back()
+                                          .sketch_parameters->lines.front()
+                                          .id;
+    const auto delete_start = clock::now();
+    (void)timing.delete_sketch_selection({first_line_id}, {}, {});
+    const auto delete_done = clock::now();
+
+    std::cout << "  timing: parse " << ms(parse_done - parse_start)
+              << " ms (" << geometry.lines.size() << " lines parsed)\n"
+              << "  timing: import " << ms(import_done - import_start)
+              << " ms, viewport " << ms(viewport_done - viewport_start)
+              << " ms, delete one line " << ms(delete_done - delete_start)
+              << " ms\n";
+
+    // Split the refresh: the vertex rebuild / solver pass versus profile
+    // detection, which is the part that looks superlinear on a big sketch.
+    DocumentState copy = timing.get_document().value();
+    auto& feature = copy.feature_history.back();
+    const auto refresh_start = clock::now();
+    polysmith::core::refresh_sketch_derived_state(feature);
+    const auto refresh_done = clock::now();
+    const auto profiles_start = clock::now();
+    const auto profiles = polysmith::core::detect_sketch_profiles(feature);
+    const auto profiles_done = clock::now();
+    std::cout << "  timing: refresh " << ms(refresh_done - refresh_start)
+              << " ms, detect profiles " << ms(profiles_done - profiles_start)
+              << " ms (" << profiles.polygons.size() << " polygons, "
+              << profiles.circles.size() << " circles)\n";
+
+    // Scaling probe: is the refresh linear or quadratic in the entity count?
+    // That decides whether a cheaper import (fewer entities) is a real fix.
+    for (const size_t keep : {static_cast<size_t>(3000)}) {
+      DocumentState trimmed = timing.get_document().value();
+      auto& trim_feature = trimmed.feature_history.back();
+      trim_feature.sketch_parameters->lines.resize(keep);
+      const auto start = clock::now();
+      polysmith::core::refresh_sketch_derived_state(trim_feature);
+      const auto done = clock::now();
+      std::cout << "  timing: refresh with " << keep << " lines = "
+                << ms(done - start) << " ms\n";
+    }
+  }
   return ok;
 }
 
@@ -337,9 +410,10 @@ bool test_sub_tolerance_tessellation_does_not_abort_import() {
     return false;
   }
   std::cout << "  tiny spline segments: " << sketch->lines.size() << "\n";
-  // 0.4 mm of curve at the 0.011 mm sample spacing is roughly 36 segments; the
-  // point is that the curve is still there, not the exact count.
-  ok &= expect(sketch->lines.size() >= 10,
+  // Douglas–Peucker now emits only the segments a 0.02 mm tolerance needs, so a
+  // 0.4 mm curve is a handful of segments rather than dozens.  What this case
+  // guards is that the import survives and keeps the curve — not the count.
+  ok &= expect(sketch->lines.size() >= 2,
                "the curve survives at the sketch model's resolution");
   return ok;
 }
@@ -524,8 +598,23 @@ bool test_spline_tessellation() {
   const DocumentState document = manager.import_dxf(path);
   const auto* sketch = active_sketch_params(document);
   if (!expect(sketch != nullptr, "spline import no sketch")) return false;
-  if (!expect(sketch->lines.size() == 64, "spline should make 64 lines")) {
+  // The tessellation is simplified with Douglas–Peucker (0.02 mm), so the count
+  // is a handful of segments rather than a fixed 64.  What must hold is that the
+  // curve is there, chained end to end, and that it tracks the spline closely.
+  if (!expect(sketch->lines.size() >= 4,
+              "a spline imports as a chain of segments")) {
     return false;
+  }
+  // Chained: each segment must start where the previous one ended, or the
+  // simplification would have broken the polyline into unrelated pieces.
+  for (size_t i = 1; i < sketch->lines.size(); ++i) {
+    const auto& previous = sketch->lines[i - 1];
+    const auto& current = sketch->lines[i];
+    if (!expect(near(previous.end_x, current.start_x) &&
+                    near(previous.end_y, current.start_y),
+                "simplified spline segments stay chained")) {
+      return false;
+    }
   }
   // Bezier end points equal the end control points.
   const auto& first = sketch->lines.front();
@@ -595,7 +684,11 @@ bool test_ellipse_circular_and_elliptical() {
   if (!expect(sketch2 != nullptr, "elliptical ellipse no sketch")) {
     return false;
   }
-  if (!expect(sketch2->lines.size() == 64, "ellipse should make 64 lines")) {
+  // Douglas–Peucker (0.02 mm) keeps the count shape-dependent, so assert the
+  // ellipse is a chained curve of several segments whose EXTENTS are right —
+  // that is what matters, not a fixed 64.
+  if (!expect(sketch2->lines.size() >= 8,
+              "ellipse imports as a chain of segments")) {
     return false;
   }
   double min_x = 1e9;
