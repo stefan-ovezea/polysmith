@@ -255,6 +255,14 @@ plus the format layer.
   required the summary rather than the feature kind.  The laser-setup
   auto-ensure that lived on the workspace button moved to the CAM "2D Cut"
   action, so that behaviour survived the removal.
+- **USER-VERIFIED (2026-10-19): the restructure works in-app.** After the
+  properties card was portaled to `document.body` — `.cad-sidebar` sets
+  `backdrop-filter`, which makes it a containing block for `position: fixed`
+  descendants, so the card was rendered behind the sidebar overlays and clicks
+  fell through to the sketch while its own buttons stayed unreachable — the user
+  confirmed: "it is working now i can click and reacts".  Import → hierarchy →
+  right-click Properties → CAM layer source is now the working path, with no PCB
+  workspace.
 - **Next:** the layer source in the contour/engrave panels (a Gerber layer is as
   much a milling source as a laser one — isolation routing on copper is a
   contour operation), then `pcb_isolation` and `pcb_drill`.
