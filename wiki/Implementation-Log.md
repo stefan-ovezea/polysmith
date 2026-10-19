@@ -50,6 +50,22 @@ code and pass now.
 SOLID/HATCH are skipped with a count, and blocks are dropped.  A Fusion sketch
 export carries no text normally, but an imported drawing does.
 
+### Log window: diagnostics survive chatter
+
+The Logs panel keeps the last 500 entries, and after a 191-spline import the
+user watched the count reach 500 and then fall — entries were being evicted from
+the front while the panel showed only the number it *held*.  Two fixes:
+
+- **The import no longer floods**: tessellations are counted per kind
+  (`splines_tessellated` / `ellipses_tessellated`) and logged once instead of
+  once per entity, so that import costs two lines instead of ~400.
+- **The window evicts chatter first** (`lib/logWindow.ts`, unit-tested): when it
+  is full, the oldest debug/info entries go, and warnings and errors are only
+  evicted once nothing else remains.  This app's only diagnostics surface is
+  that panel, so a burst of info must never push out the warning that explains a
+  failure.  The panel says so when the window is full.
+
+
 ## 2026-10-16
 
 ### PCB / Gerber workspace — design + Gerber X1 parser (branch `gerber`)
