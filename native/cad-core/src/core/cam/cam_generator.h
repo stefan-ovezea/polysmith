@@ -75,6 +75,9 @@ struct CamGenerator {
 
 void register_cam_generator(CamGenerator generator);
 const CamGenerator* find_cam_generator(const std::string& type);
+// The types currently registered, sorted.  Used by the startup log so it names
+// what the running binary ACTUALLY has (a hardcoded list went stale).
+std::vector<std::string> cam_generator_types();
 
 // Registers all built-in generators.  Called once from CadCoreApp::run()
 // after OCCT initialization — never from a static initializer, which

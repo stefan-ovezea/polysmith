@@ -45,6 +45,36 @@ export (skipped when it is absent), a synthetic 0.4 mm spline whose steps are
 case proves a collapsing segment is dropped.  All three fail on the previous
 code and pass now.
 
+### The zero-length flood: a repair reported as a failure, per line
+
+With the import fixed, the user's log still filled with
+`ERROR deleted zero-length line line-10843..` — 375 of them per import, written
+straight to stderr (hence the `cad_core_stderr` source and a `react_warning`
+echo of each).
+
+That was the **zero-length cleanup pass**, doing its job: the 375 segments whose
+endpoints welded within the 0.01 mm coincidence tolerance are exactly the count
+the import already reports as "Merged 375 imported segment(s)".  So it was a
+repair, logged as a failure, once per line, through the wrong channel.
+
+Now: one structured `log_debug` summary — "removed N zero-length line(s) whose
+endpoints welded to one vertex" — next to the import's warning.  Verified on the
+real file: 0 per-line errors, 1 summary, and the two counts agree (375/375).
+The annotated `validate_line` contexts added while chasing this stay: they make
+any future zero-length rejection name the pass that produced it.
+
+### Startup log no longer lies about the CAM generators
+
+The startup line said "CAM generators registered (laser_cut, face_milling)" while
+**nine** are registered — a hardcoded string, in the one message written to
+confirm what the running binary actually has.  It is now built from the registry
+(`cam_generator_types()`), so it reads:
+
+```
+CAM generators registered (9): adaptive_clearing, contour_2d, drilling,
+engrave, face_milling, laser_cut, laser_test_pattern, pocket_2d, slot
+```
+
 **Still open in the DXF importer (P6):** layer names are ignored
 (`addLayer` is an empty stub, so everything lands in one sketch), TEXT/MTEXT and
 SOLID/HATCH are skipped with a count, and blocks are dropped.  A Fusion sketch

@@ -125,11 +125,22 @@ void CadCoreApp::run() {
   // CAM generators register after OCCT is up — never from static
   // initializers, whose order relative to OCCT is undefined.
   polysmith::core::register_builtin_cam_generators();
-  // Visible in the Logs panel: verifies the running binary includes
-  // the CAM generators (useful when an old core process lingers).
-  polysmith::core::log_info(
-      "cad_core",
-      "CAM generators registered (laser_cut, face_milling)");
+  // Visible in the Logs panel: verifies the running binary includes the CAM
+  // generators (useful when an old core process lingers).  Names come from the
+  // registry itself — the previous hardcoded list said "laser_cut,
+  // face_milling" while nine generators were registered, which defeats the one
+  // thing this line exists for.
+  {
+    const std::vector<std::string> generators =
+        polysmith::core::cam_generator_types();
+    std::string listed;
+    for (const auto& type : generators) {
+      listed += (listed.empty() ? "" : ", ") + type;
+    }
+    polysmith::core::log_info(
+        "cad_core", "CAM generators registered (" +
+                        std::to_string(generators.size()) + "): " + listed);
+  }
 
   std::string line;
   while (std::getline(std::cin, line)) {
