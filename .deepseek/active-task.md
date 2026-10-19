@@ -31,9 +31,15 @@ Design + plan: **[wiki/PCB-Workspace.md](wiki/PCB-Workspace.md)**. Coming from
   (chain attestation + armed pick); (c) `pcb_isolation` (2.5D milling, V-bit
   width from tip ⌀ + included angle + depth) and `pcb_drill`; (d) queued:
   extract the duplicated loop planning shared by the face path and the PCB path.
-- **P6 (independent, untouched):** DXF importer polish — `addLayer` is an empty
-  stub (`dxf_import.cpp`) and SOLID/HATCH are dropped, so multi-layer and filled
-  DXF imports lose data.
+- **P6, partly done (2026-10-19):** the DXF importer no longer aborts on a dense
+  sketch export.  A Fusion export whose 191 splines tessellate into 0.0048 mm
+  steps used to collapse on the sketch's 0.01 mm coincidence tolerance and throw
+  "Sketch lines must have non-zero length".  Fixed by emitting tessellations at
+  the model's resolution (`kSampleSpacing` 0.011 mm), making imported geometry
+  exact (`share_endpoints=false`), and dropping a collapsed segment instead of
+  throwing — with the shortfall reported in the feature summary.  Still open:
+  layer names are ignored (`addLayer` is an empty stub), TEXT/MTEXT and
+  SOLID/HATCH are skipped, and blocks are dropped.
 - Fixture: real KiCad 10.0.4 4-layer board in `projects/EDM` (local, not
   committed; a trimmed subset is committed as `tests/data/pcb/`).  The
   polygonizer suite measures the full board when that directory is present.

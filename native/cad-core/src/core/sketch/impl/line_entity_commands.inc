@@ -2,17 +2,23 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
                      double start_y, double end_x, double end_y,
                      bool is_construction, bool snap_start,
                      bool auto_dimensions, bool refresh_immediately,
-                     bool infer_constraints) {
+                     bool infer_constraints, bool share_endpoints) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch lines");
   }
 
   validate_line(start_x, start_y, end_x, end_y);
 
-  const auto shared_start_point = find_coincident_endpoint(
-      *feature.sketch_parameters, "", start_x, start_y);
+  // Imported geometry opts out of endpoint coalescing: see the parameter's
+  // comment.  An empty match list leaves the raw coordinates untouched.
+  const auto shared_start_point =
+      share_endpoints ? find_coincident_endpoint(*feature.sketch_parameters, "",
+                                                 start_x, start_y)
+                      : std::nullopt;
   const auto shared_end_point =
-      find_coincident_endpoint(*feature.sketch_parameters, "", end_x, end_y);
+      share_endpoints ? find_coincident_endpoint(*feature.sketch_parameters, "",
+                                                 end_x, end_y)
+                      : std::nullopt;
 
   auto& params = *feature.sketch_parameters;
   // When the endpoint snaps to an existing point (projected vertex,
@@ -54,9 +60,26 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
   // The start point of user‑drawn lines must not be auto‑merged with
   // nearby geometry (see the phantom‑line bug in the impl log).
   // Rectangle / polygon / mirror lines still merge corners by default.
-  snap_line_endpoints_to_coincident_geometry(*feature.sketch_parameters, line,
-                                             snap_start);
-  validate_line(line.start_x, line.start_y, line.end_x, line.end_y);
+  if (share_endpoints) {
+    snap_line_endpoints_to_coincident_geometry(*feature.sketch_parameters, line,
+                                               snap_start);
+  }
+  // Endpoint snapping can COLLAPSE a segment: when both ends land on the same
+  // existing vertex (a segment shorter than the 0.01 mm coincidence tolerance),
+  // the stored line has zero length and every later validation of that line
+  // throws.  Throwing here aborted an entire import over one degenerate step —
+  // a Fusion sketch export is thousands of 0.005 mm spline steps, so that is
+  // the common case, not the exotic one.  Drop the line instead: the rest of
+  // the sketch is fine, and the caller asked for one segment, not for a state
+  // it cannot represent.
+  if (measure_line_length(line) <= kMinimumSketchDimensionValue) {
+    log_warn("sketch",
+             "dropped a line that collapsed to zero length after endpoint "
+             "snapping (segment shorter than the 0.01 mm coincidence "
+             "tolerance)");
+    feature.sketch_parameters->lines.pop_back();
+    return;
+  }
   // Construction lines are reference geometry; they don't get a
   // driving length dimension automatically. The user can still apply
   // one explicitly via the dimension tool if they want. Projected

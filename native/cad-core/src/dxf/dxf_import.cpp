@@ -18,6 +18,15 @@ namespace {
 // below these sizes would make add_sketch_* throw, so they are skipped
 // and counted instead.
 constexpr double kMinSize = 0.001;
+// The sketch model treats two points within 0.01 mm (kCoincidentTolerance) as
+// the same point, so a tessellation step shorter than that cannot survive: it
+// collapses onto one vertex on the way into the document, and the segment is
+// lost.  A Fusion sketch export is thousands of 0.005 mm spline steps, which is
+// how a whole import used to be aborted by one of them.  Emit curves at the
+// model's own resolution instead — samples closer than this to the last EMITTED
+// point are dropped, so every segment is representable and the shape is
+// unchanged within 0.01 mm.
+constexpr double kSampleSpacing = 0.011;
 constexpr double kBulgeEpsilon = 1e-9;
 constexpr double kPlanarEpsilon = 1e-6;
 constexpr int kTessellationSegments = 64;
@@ -154,6 +163,12 @@ bool append_spline_segments(DxfImportResult& result, const DRW_Spline& spline,
   }
   double px = 0.0;
   double py = 0.0;
+  // Reference for the spacing test is the last EMITTED point, not the previous
+  // sample: consecutive 0.005 mm steps would otherwise each clear the threshold
+  // against their immediate neighbour and still disappear in the document.
+  double emitted_x = 0.0;
+  double emitted_y = 0.0;
+  bool have_emitted = false;
   for (int i = 0; i <= kTessellationSegments; ++i) {
     const double t = t0 + (t1 - t0) * static_cast<double>(i) /
                                kTessellationSegments;
@@ -166,13 +181,24 @@ bool append_spline_segments(DxfImportResult& result, const DRW_Spline& spline,
       x = px;
       y = py;
     }
-    if (i > 0) {
-      if (std::hypot(x - px, y - py) > kMinSize) {
-        result.lines.push_back(DxfImportLine{px, py, x, y});
-      }
-    }
     px = x;
     py = y;
+    if (!have_emitted) {
+      emitted_x = x;
+      emitted_y = y;
+      have_emitted = true;
+      continue;
+    }
+    // EVERY emitted step must clear the model's resolution, including the
+    // last one: a short tail would collapse onto the previous vertex in the
+    // document and be dropped there instead.  Ending the curve up to 0.011 mm
+    // short of the exact spline end is within the model's own precision.
+    if (std::hypot(x - emitted_x, y - emitted_y) < kSampleSpacing) {
+      continue;
+    }
+    result.lines.push_back(DxfImportLine{emitted_x, emitted_y, x, y});
+    emitted_x = x;
+    emitted_y = y;
   }
   return true;
 }
@@ -207,6 +233,9 @@ void append_ellipse_segments(DxfImportResult& result,
   const double rot_y = mx;
   double px = 0.0;
   double py = 0.0;
+  double emitted_x = 0.0;
+  double emitted_y = 0.0;
+  bool have_emitted = false;
   for (int i = 0; i <= kTessellationSegments; ++i) {
     const double t =
         t0 + (t1 - t0) * static_cast<double>(i) / kTessellationSegments;
@@ -214,11 +243,22 @@ void append_ellipse_segments(DxfImportResult& result,
                           std::sin(t) * ellipse.ratio * rot_x;
     const double py_now = ellipse.basePoint.y * scale + std::cos(t) * my +
                           std::sin(t) * ellipse.ratio * rot_y;
-    if (i > 0 && std::hypot(px_now - px, py_now - py) > kMinSize) {
-      result.lines.push_back(DxfImportLine{px, py, px_now, py_now});
-    }
     px = px_now;
     py = py_now;
+    if (!have_emitted) {
+      emitted_x = px_now;
+      emitted_y = py_now;
+      have_emitted = true;
+      continue;
+    }
+    // Same spacing rule as the spline tessellation (see kSampleSpacing).
+    if (std::hypot(px_now - emitted_x, py_now - emitted_y) < kSampleSpacing) {
+      continue;
+    }
+    result.lines.push_back(
+        DxfImportLine{emitted_x, emitted_y, px_now, py_now});
+    emitted_x = px_now;
+    emitted_y = py_now;
   }
   result.warnings.push_back("ellipse approximated as " +
                             std::to_string(kTessellationSegments) +

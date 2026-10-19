@@ -26,7 +26,15 @@ void add_sketch_line(FeatureEntry& feature,
                      // coordinates exactly axis-aligned. Importers of
                      // arbitrary geometry (DXF) pass false — the
                      // constraint would deform the imported shape.
-                     bool infer_constraints = true);
+                     bool infer_constraints = true,
+                     // Endpoints are normally shared with any existing
+                     // vertex within 0.01 mm, which is what keeps a sketch
+                     // connected. Importers pass false: their geometry must
+                     // stay EXACT, and a dense tessellation (a Fusion sketch
+                     // export is 0.005 mm spline steps) has segments shorter
+                     // than that tolerance, so coalescing would collapse
+                     // them onto a single vertex.
+                     bool share_endpoints = true);
 void add_sketch_rectangle(FeatureEntry& feature,
                           int& next_line_index,
                           double start_x,

@@ -2,6 +2,54 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-10-19
+
+### DXF import: a dense sketch export no longer aborts the whole import
+
+Reported: importing a Fusion 360 sketch export (`Sketch3.dxf`) failed with
+"Sketch lines must have non-zero length" and produced no sketch at all.
+
+Root cause, found by measuring the file rather than guessing: the export's
+**191 splines** tessellate into 12,537 segments whose **shortest step is
+0.0048 mm**.  The reader's own guard only rejects segments at or below
+0.001 mm, so they all passed — and then `add_sketch_line`, which runs
+`validate_line` **after** snapping endpoints to existing vertices, collapsed
+each sub-0.01 mm segment onto a single vertex (`kCoincidentTolerance` is
+0.01 mm), re-validated it, and **threw**.  One degenerate step in a tessellation
+took the whole import down, and the sketch model cannot represent geometry finer
+than its own tolerance, so no input-side patch alone is enough.
+
+Three changes, in order of importance:
+
+- **The reader emits curves at the model's resolution.**  `kSampleSpacing`
+  (0.011 mm, just above the coincidence tolerance) decimates spline and ellipse
+  tessellations against the last *emitted* point, including the last step — a
+  short tail would collapse in the document instead.  The shape is unchanged
+  within 0.01 mm; the segment count drops from 12,537 to 11,113.
+- **Imported geometry is exact.**  `add_sketch_line` gained `share_endpoints`
+  (default true); the DXF import passes false, which finally matches the
+  comment that has always claimed imported geometry stays exact.  Endpoint
+  coalescing is what collapses it — the call was unconditional.
+- **A collapsing segment is dropped, never thrown.**  If a line still collapses
+  after snapping, it is popped with a warning instead of aborting the caller.
+  The manager's `add_sketch_line` wrapper had assumed a line always appears
+  (`lines.back()` to build the auto-dimension id) — that assumption is now
+  checked, because the core can legitimately add nothing.
+
+Verified: the user's file imports and **10,738 of 11,113 representable
+segments arrive (96.6 %)**; the shortfall is the sketch model merging geometry
+finer than 0.01 mm, and it is now **reported** in the feature summary and the log
+rather than lost.  Regression coverage: a fixture-gated case imports the real
+export (skipped when it is absent), a synthetic 0.4 mm spline whose steps are
+0.006 mm reproduces the failure without any fixture file, and a manager-level
+case proves a collapsing segment is dropped.  All three fail on the previous
+code and pass now.
+
+**Still open in the DXF importer (P6):** layer names are ignored
+(`addLayer` is an empty stub, so everything lands in one sketch), TEXT/MTEXT and
+SOLID/HATCH are skipped with a count, and blocks are dropped.  A Fusion sketch
+export carries no text normally, but an imported drawing does.
+
 ## 2026-10-16
 
 ### PCB / Gerber workspace — design + Gerber X1 parser (branch `gerber`)

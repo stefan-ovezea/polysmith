@@ -128,6 +128,25 @@ std::string dxf_spline() {
   return s.str();
 }
 
+// Four control points spanning 0.4 mm: at 64 tessellation segments each step is
+// about 0.006 mm, i.e. SMALLER than the sketch's 0.01 mm coincidence tolerance.
+// That is the shape of a Fusion sketch export, and it is the case that used to
+// abort the whole import.
+std::string dxf_tiny_spline() {
+  std::ostringstream s;
+  s << "0\nSPLINE\n8\n0\n71\n3\n72\n8\n73\n4\n74\n0\n";
+  for (int i = 0; i < 4; ++i) s << "40\n0.0\n";
+  for (int i = 0; i < 4; ++i) s << "40\n1.0\n";
+  const double controls[4][3] = {{0.0, 0.0, 0.0},
+                                 {0.13, 0.0, 0.0},
+                                 {0.13, 0.13, 0.0},
+                                 {0.0, 0.26, 0.0}};
+  for (const auto& c : controls) {
+    s << "10\n" << c[0] << "\n20\n" << c[1] << "\n30\n" << c[2] << "\n";
+  }
+  return s.str();
+}
+
 std::string dxf_ellipse(double mx, double my, double ratio) {
   std::ostringstream s;
   s << "0\nELLIPSE\n8\n0\n10\n0.0\n20\n0.0\n30\n0.0\n11\n" << mx << "\n21\n"
@@ -179,6 +198,140 @@ bool vertex_unfixed(const polysmith::core::SketchFeatureParameters& sketch,
 // ---------------------------------------------------------------------------
 // Tests.
 // ---------------------------------------------------------------------------
+
+// Regression fixture: a Fusion 360 sketch export (splines, polylines, lines,
+// arcs).  Gated on the local project file, like the PCB real-board fixtures:
+// the real export is what found the failure, and it may not exist on every
+// machine.  Reported regression: importing it threw
+// "Sketch lines must have non-zero length" and produced no sketch at all.
+bool test_fusion_sketch_when_present() {
+  const std::string path = "projects/Sketch3.dxf";
+  std::error_code error;
+  if (!std::filesystem::exists(path, error)) {
+    std::cout << "  (skipped: no fixture at " << path << ")\n";
+    return true;
+  }
+
+  // Parse-only first: this isolates the reader from the document layer.
+  const polysmith::core::DxfImportResult parsed =
+      polysmith::core::import_dxf_geometry(path);
+  std::cout << "  parsed lines=" << parsed.lines.size()
+            << " arcs=" << parsed.arcs.size()
+            << " circles=" << parsed.circles.size()
+            << " points=" << parsed.points.size()
+            << " skipped=" << parsed.skipped_count << "\n";
+
+  double shortest = 1e9;
+  for (const auto& line : parsed.lines) {
+    const double length = std::hypot(line.x2 - line.x1, line.y2 - line.y1);
+    shortest = std::min(shortest, length);
+  }
+  std::cout << "  shortest parsed line: " << shortest << " mm\n";
+
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  try {
+    document = manager.import_dxf(path);
+  } catch (const std::exception& failure) {
+    std::cerr << "  import threw: " << failure.what() << "\n";
+    return expect(false, "a Fusion sketch export imports without throwing");
+  }
+
+  const auto* sketch = active_sketch_params(document);
+  if (!expect(sketch != nullptr, "import created an active sketch")) {
+    return false;
+  }
+  std::cout << "  sketch lines=" << sketch->lines.size()
+            << " arcs=" << sketch->arcs.size()
+            << " circles=" << sketch->circles.size() << "\n";
+  bool ok = expect(!sketch->lines.empty(), "the sketch has geometry");
+  // The sketch model merges points within 0.01 mm, so geometry finer than that
+  // cannot all survive; the reader decimates tessellations to that spacing to
+  // keep the loss small, and the import reports what was merged.  Assert the
+  // honest contract: nothing throws, the curves are there, and the overwhelming
+  // majority of segments arrive.
+  const double arrived =
+      parsed.lines.empty()
+          ? 1.0
+          : static_cast<double>(sketch->lines.size()) /
+                static_cast<double>(parsed.lines.size());
+  std::cout << "  " << sketch->lines.size() << " of " << parsed.lines.size()
+            << " segments arrived (" << (arrived * 100.0) << "%)\n";
+  ok &= expect(arrived > 0.95, "at least 95% of the parsed segments arrive");
+  // The shortfall must be REPORTED, not silent: the FEATURE summary carries it.
+  if (sketch->lines.size() < parsed.lines.size()) {
+    const auto& feature = document.feature_history.back();
+    ok &= expect(feature.parameters_summary.find("merged") != std::string::npos,
+                 "the import summary reports the merged segments");
+  }
+  return ok;
+}
+
+// A segment can be longer than the reader's minimum yet shorter than the
+// sketch's coincidence tolerance (0.01 mm).  Both endpoints then snap onto the
+// same existing vertex and the stored line would have zero length — which every
+// later validation rejects.  It used to THROW, aborting the whole import; it
+// must be dropped instead, with the rest of the sketch intact.
+bool test_collapsed_segment_is_dropped_not_thrown() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_line(0.0, 0.0, 10.0, 0.0);
+
+  // 0.002 mm long, starting 0.004 mm from the first line's end: both endpoints
+  // are inside the 0.01 mm coincidence window of (10, 0), so both snap onto
+  // that vertex and the segment has zero length in the document.
+  bool threw = false;
+  try {
+    manager.add_sketch_line(10.004, 0.002, 10.004, 0.004);
+  } catch (const std::exception&) {
+    threw = true;
+  }
+  bool ok = expect(!threw, "a collapsing segment does not throw");
+  // get_document() returns BY VALUE: hold the copy, never a reference into it.
+  const DocumentState snapshot = manager.get_document().value();
+  const auto* sketch = active_sketch_params(snapshot);
+  if (!expect(sketch != nullptr, "the sketch survived")) {
+    return false;
+  }
+  ok &= expect(sketch->lines.size() == 1,
+               "the collapsed segment was not added, the original line is");
+  return ok;
+}
+
+// The reported failure, in miniature and with no fixture file: a spline whose
+// tessellation steps are finer than the sketch's coincidence tolerance used to
+// collapse on the way in and throw, aborting the whole import.  It must import,
+// and the curve must survive at the sketch model's resolution.
+bool test_sub_tolerance_tessellation_does_not_abort_import() {
+  std::ostringstream dxf;
+  dxf << dxf_header() << dxf_tiny_spline() << dxf_footer();
+  const std::string path =
+      write_fixture("dxf_tiny_spline.dxf", dxf.str());
+
+  DocumentManager manager;
+  manager.create_document();
+  bool threw = false;
+  DocumentState document;
+  try {
+    document = manager.import_dxf(path);
+  } catch (const std::exception& failure) {
+    threw = true;
+    std::cout << "  threw: " << failure.what() << "\n";
+  }
+  bool ok = expect(!threw, "a sub-tolerance spline does not abort the import");
+  const auto* sketch = active_sketch_params(document);
+  if (!expect(sketch != nullptr, "a sketch was created")) {
+    return false;
+  }
+  std::cout << "  tiny spline segments: " << sketch->lines.size() << "\n";
+  // 0.4 mm of curve at the 0.011 mm sample spacing is roughly 36 segments; the
+  // point is that the curve is still there, not the exact count.
+  ok &= expect(sketch->lines.size() >= 10,
+               "the curve survives at the sketch model's resolution");
+  return ok;
+}
 
 bool test_import_lines_circles_arcs() {
   std::ostringstream dxf;
@@ -703,6 +856,12 @@ bool test_import_plane_id() {
 }  // namespace
 
 int main() {
+  std::cerr << "[dxf_import_export_test] test 0: Fusion sketch export (if present)\n";
+  if (!test_fusion_sketch_when_present()) return 1;
+  std::cerr << "[dxf_import_export_test] test 0b: collapsed segment dropped\n";
+  if (!test_collapsed_segment_is_dropped_not_thrown()) return 1;
+  std::cerr << "[dxf_import_export_test] test 0c: sub-tolerance tessellation\n";
+  if (!test_sub_tolerance_tessellation_does_not_abort_import()) return 1;
   std::cerr << "[dxf_import_export_test] test 1: lines/circles/arcs\n";
   if (!test_import_lines_circles_arcs()) return 1;
   std::cerr << "[dxf_import_export_test] test 2: inches scaling\n";

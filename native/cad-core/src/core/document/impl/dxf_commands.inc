@@ -45,7 +45,12 @@ DocumentState DocumentManager::import_dxf(
                                      /*snap_start=*/false,
                                      /*auto_dimensions=*/false,
                                      /*refresh_immediately=*/false,
-                                     /*infer_constraints=*/false);
+                                     /*infer_constraints=*/false,
+                                     // Exact: no endpoint coalescing.  A
+                                     // tessellation has segments shorter than
+                                     // the 0.01 mm coincidence tolerance, and
+                                     // merging them would collapse the curve.
+                                     /*share_endpoints=*/false);
   }
   for (const auto& circle : parsed.circles) {
     polysmith::core::add_sketch_circle(sketch,
@@ -130,6 +135,17 @@ DocumentState DocumentManager::import_dxf(
 
   polysmith::core::refresh_sketch_with_append_focus(sketch, focus_ids);
 
+  // The sketch model treats points within 0.01 mm as the same point, so where
+  // an imported curve passes that close to another one, the shared vertices
+  // merge and one of the two segments has nowhere to go.  That is a resolution
+  // limit of the sketch, not a reader bug — but losing geometry silently is
+  // not acceptable, so count it and say so.  The reader already decimates
+  // tessellations to that spacing, which keeps this small.
+  const size_t lines_added =
+      sketch.sketch_parameters->lines.size() - lines_before;
+  const size_t lines_lost =
+      parsed.lines.size() > lines_added ? parsed.lines.size() - lines_added : 0;
+
   // Set AFTER the final refresh — refresh_sketch_derived_state
   // regenerates parameters_summary and would clobber this.
   sketch.name = "DXF Import";
@@ -137,11 +153,23 @@ DocumentState DocumentManager::import_dxf(
   if (parsed.skipped_count > 0) {
     summary += " · skipped " + std::to_string(parsed.skipped_count);
   }
+  if (lines_lost > 0) {
+    summary += " · " + std::to_string(lines_lost) +
+               " segment(s) merged at the 0.01 mm sketch resolution";
+  }
   sketch.parameters_summary = summary;
 
+  if (lines_lost > 0) {
+    polysmith::core::log_warn(
+        "dxf_import",
+        "Merged " + std::to_string(lines_lost) +
+            " imported segment(s) at the 0.01 mm sketch resolution (the source "
+            "has geometry finer than the sketch model can represent)");
+  }
   polysmith::core::log_info(
       "dxf_import",
       "Imported " + std::to_string(parsed.entity_count()) +
+          " entities (" + std::to_string(lines_added) + " line(s))" +
           " entities from " + file_path +
           (parsed.units_scaled ? " (inches scaled to mm)" : ""));
   for (const auto& warning : parsed.warnings) {
