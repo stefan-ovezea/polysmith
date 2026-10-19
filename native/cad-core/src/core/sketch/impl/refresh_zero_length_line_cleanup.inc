@@ -1,7 +1,14 @@
-// Clean up zero‑length lines — a symptom of a constraint‑resolver
-// or trim bug. Collect their ids first, then erase the lines and
-// every piece of associated data (constraints, dimensions, relations,
-// anchors, fillets) so they don't keep re‑logging on every refresh.
+// Clean up zero‑length lines.  Usually a symptom of a constraint‑resolver or
+// trim bug — but ALSO the normal outcome of welding two vertices that sit within
+// the coincidence tolerance, which a dense imported tessellation does by the
+// hundred.  Collect their ids first, then erase the lines and every piece of
+// associated data (constraints, dimensions, relations, anchors, fillets) so they
+// don't keep re‑logging on every refresh.
+//
+// Reporting: ONE summary line through the structured logger.  This used to write
+// "ERROR deleted zero-length line <id>" to stderr for every single line, so an
+// imported sketch produced 375 raw-error lines per import — the Logs panel's
+// entire rolling window, at the wrong level (it is a repair, not a failure).
 {
   std::vector<std::string> zero_ids;
   for (const auto &line : p.lines) {
@@ -10,8 +17,11 @@
     }
   }
   if (!zero_ids.empty()) {
+    polysmith::core::log_debug(
+        "sketch",
+        "removed " + std::to_string(zero_ids.size()) +
+            " zero-length line(s) whose endpoints welded to one vertex");
     for (const auto &zid : zero_ids) {
-      fprintf(stderr, "ERROR deleted zero-length line %s\n", zid.c_str());
 
       // Erase constraints that target this line.
       // NOTE: endpoint IDs are NOT used here — the line's endpoints
