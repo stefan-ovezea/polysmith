@@ -168,10 +168,25 @@ DocumentState DocumentManager::import_dxf(
   }
   polysmith::core::log_info(
       "dxf_import",
-      "Imported " + std::to_string(parsed.entity_count()) +
-          " entities (" + std::to_string(lines_added) + " line(s))" +
-          " entities from " + file_path +
+      "Imported " + std::to_string(parsed.entity_count()) + " entities (" +
+          std::to_string(lines_added) + " line(s)) from " + file_path +
           (parsed.units_scaled ? " (inches scaled to mm)" : ""));
+  // One line per KIND, never one per entity: a sketch export carries hundreds
+  // of splines, and a message each filled the Logs panel's 500-entry rolling
+  // window until everything before it had been evicted — which read as the log
+  // count going DOWN.
+  if (parsed.splines_tessellated > 0) {
+    polysmith::core::log_info(
+        "dxf_import",
+        std::to_string(parsed.splines_tessellated) +
+            " spline(s) approximated by straight segments");
+  }
+  if (parsed.ellipses_tessellated > 0) {
+    polysmith::core::log_info(
+        "dxf_import",
+        std::to_string(parsed.ellipses_tessellated) +
+            " ellipse(s) approximated by straight segments");
+  }
   for (const auto& warning : parsed.warnings) {
     polysmith::core::log_info("dxf_import", warning);
   }

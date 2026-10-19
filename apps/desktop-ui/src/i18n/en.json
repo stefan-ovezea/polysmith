@@ -1886,6 +1886,7 @@
     "level": "Level",
     "message": "Message",
     "noLogs": "No logs yet.",
+    "rollingWindow": "Showing the most recent 500 entries; older ones are dropped.",
     "showDebug": "Show debug",
     "source": "Source",
     "time": "Time",

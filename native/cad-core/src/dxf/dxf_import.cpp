@@ -260,9 +260,7 @@ void append_ellipse_segments(DxfImportResult& result,
     emitted_x = px_now;
     emitted_y = py_now;
   }
-  result.warnings.push_back("ellipse approximated as " +
-                            std::to_string(kTessellationSegments) +
-                            " straight segments");
+  result.ellipses_tessellated += 1;
 }
 
 class DxfReadInterface : public DRW_Interface {
@@ -417,9 +415,8 @@ class DxfReadInterface : public DRW_Interface {
       record_skipped(result_, "SPLINE");
       return;
     }
-    result_.warnings.push_back("spline approximated as " +
-                               std::to_string(kTessellationSegments) +
-                               " straight segments");
+    // Counted, not logged per entity: see DxfImportResult.
+    result_.splines_tessellated += 1;
   }
 
   void addEllipse(const DRW_Ellipse& data) override {
