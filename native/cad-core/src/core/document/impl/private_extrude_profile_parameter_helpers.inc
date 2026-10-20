@@ -12,10 +12,17 @@ void validate_hole_separation(const ExtrudeFeatureParameters& params) {
     return;
   }
 
-  // Sample a set of edges into points.  Lines contribute endpoints;
-  // circular pieces are sampled along their param span (the span's
-  // direction does not matter — the same geometric arc results from
-  // either walk direction).
+  // Sample a set of edges into points.  Lines contribute endpoints; circular
+  // pieces are sampled along their param span (the span's direction does not
+  // matter — the same geometric arc results from either walk direction).
+  //
+  // EVERY kind must use its own geometry.  This used to treat every non-line
+  // edge as a circular arc, so an exact SPLINE edge (center/radius left at 0)
+  // sampled as a cloud of (0,0) points: any hole containing a spline then looked
+  // like it touched every other such hole at "gap 0.000 mm", and the extrude was
+  // refused for a sketch that had no touching holes at all (reported as "10
+  // pairs of holes touch" — a complete graph among five holes, which is the
+  // signature of degenerate sampling, not of geometry).
   const auto sample = [](const std::vector<ProfileBoundaryEdge>& edges) {
     constexpr int kSamples = 16;
     std::vector<SketchProfilePoint> pts;
@@ -23,6 +30,37 @@ void validate_hole_separation(const ExtrudeFeatureParameters& params) {
       if (e.entity_kind == "line") {
         pts.push_back(SketchProfilePoint{.x = e.start_x, .y = e.start_y});
         pts.push_back(SketchProfilePoint{.x = e.end_x, .y = e.end_y});
+        continue;
+      }
+      if (e.entity_kind == "spline" && e.spline_pole_xs.size() >= 2) {
+        // Spline params are in [0, 1]; evaluate the same clamped B-spline the
+        // wire builder constructs.
+        const std::vector<double> knots = spline_open_uniform_knots(
+            static_cast<int>(e.spline_pole_xs.size()), e.spline_degree);
+        for (int i = 0; i <= kSamples; ++i) {
+          const double t =
+              e.param_start + (e.param_end - e.param_start) *
+                                  (static_cast<double>(i) / kSamples);
+          const SplineSample point = spline_eval(
+              e.spline_degree, knots, e.spline_pole_xs, e.spline_pole_ys, t);
+          pts.push_back(SketchProfilePoint{.x = point.x, .y = point.y});
+        }
+        continue;
+      }
+      if (e.entity_kind == "ellipse" && e.minor_radius > 0.0) {
+        // Ellipse params are parametric angles in the ellipse frame.
+        const double cos_rot = std::cos(e.rotation);
+        const double sin_rot = std::sin(e.rotation);
+        for (int i = 0; i <= kSamples; ++i) {
+          const double a =
+              e.param_start + (e.param_end - e.param_start) *
+                                  (static_cast<double>(i) / kSamples);
+          const double local_x = e.radius * std::cos(a);
+          const double local_y = e.minor_radius * std::sin(a);
+          pts.push_back(SketchProfilePoint{
+              .x = e.center_x + local_x * cos_rot - local_y * sin_rot,
+              .y = e.center_y + local_x * sin_rot + local_y * cos_rot});
+        }
         continue;
       }
       for (int i = 0; i <= kSamples; ++i) {
