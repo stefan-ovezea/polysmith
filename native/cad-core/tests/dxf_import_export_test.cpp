@@ -1,10 +1,10 @@
 // Regression tests for the DXF import/export feature:
-//   - import_dxf (ASCII DXF → new sketch on a reference plane)
-//   - entity mapping: LINE/CIRCLE/ARC/LWPOLYLINE/POLYLINE (bulge→arc),
+//   - import_dxf (ASCII DXF - new sketch on a reference plane)
+//   - entity mapping: LINE/CIRCLE/ARC/LWPOLYLINE/POLYLINE (bulge-arc),
 //     POINT, SPLINE (de Boor tessellation), ELLIPSE
-//   - $INSUNITS inches → mm scaling
+//   - $INSUNITS inches - mm scaling
 //   - unsupported/degenerate entities skipped + counted
-//   - export_document_as_dxf (active sketch → ASCII DXF) + round-trip
+//   - export_document_as_dxf (active sketch - ASCII DXF) + round-trip
 //   - error paths: missing/garbage files, no active sketch
 //   - save/load round-trip of an imported sketch.
 //
@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "core/document/document.h"
+#include "core/sketch/sketch_profile.h"
 #include "core/viewport/viewport.h"
 #include "dxf/dxf_export.h"
 #include "dxf/dxf_import.h"
@@ -266,13 +267,13 @@ bool test_fusion_sketch_when_present() {
   // Deterministic guard for the thing that made this sketch unusable: a fixed
   // 64-segment tessellation produced 12.5k entities for 191 short splines, and
   // the sketch refresh is superlinear in entity count (1k lines 0.2 s, 10.7k
-  // 14 s).  Douglas–Peucker at 0.02 mm turns that into ~850.  Bounding the
+  // 14 s).  Douglas-Peucker at 0.02 mm turns that into ~850.  Bounding the
   // count is what keeps the import editable; wall-clock assertions would be
   // flaky on other machines.
   ok &= expect(parsed.lines.size() < 2000,
                "the tessellation is simplified, not emitted point for point");
   // The app calls build_viewport_state on every refresh, so anything it throws
-  // becomes one logged error PER REQUEST — which is exactly what the user saw
+  // becomes one logged error PER REQUEST - which is exactly what the user saw
   // as a flood of "Sketch lines must have non-zero length" after the import.
   bool viewport_threw = false;
   std::string viewport_error;
@@ -338,6 +339,20 @@ bool test_fusion_sketch_when_present() {
               << " ms (" << profiles.polygons.size() << " polygons, "
               << profiles.circles.size() << " circles)\n";
 
+    // detect_sketch_profiles returns the CACHED list; the refresh pays for the
+    // REBUILD, and that is where exact splines get expensive (OCCT
+    // intersections per curve pair).  Measure it on its own.
+    const auto rebuild_start = clock::now();
+    (void)polysmith::core::build_sketch_profile_regions(
+        *feature.sketch_parameters);
+    const auto rebuild_done = clock::now();
+    std::cout << "  timing: rebuild profiles " << ms(rebuild_done - rebuild_start)
+              << " ms (sketch: " << feature.sketch_parameters->lines.size()
+              << " lines, " << feature.sketch_parameters->arcs.size()
+              << " arcs, " << feature.sketch_parameters->splines.size()
+              << " splines, " << feature.sketch_parameters->ellipses.size()
+              << " ellipses)\n";
+
     // What a single selection costs the UI: the whole document state goes over
     // IPC on every selection change, so its size is the interaction budget.
     const auto payload_start = clock::now();
@@ -399,7 +414,7 @@ bool test_fusion_sketch_when_present() {
 
 // A segment can be longer than the reader's minimum yet shorter than the
 // sketch's coincidence tolerance (0.01 mm).  Both endpoints then snap onto the
-// same existing vertex and the stored line would have zero length — which every
+// same existing vertex and the stored line would have zero length - which every
 // later validation rejects.  It used to THROW, aborting the whole import; it
 // must be dropped instead, with the rest of the sketch intact.
 bool test_collapsed_segment_is_dropped_not_thrown() {
@@ -454,11 +469,12 @@ bool test_sub_tolerance_tessellation_does_not_abort_import() {
   if (!expect(sketch != nullptr, "a sketch was created")) {
     return false;
   }
-  std::cout << "  tiny spline segments: " << sketch->lines.size() << "\n";
-  // Douglas–Peucker now emits only the segments a 0.02 mm tolerance needs, so a
-  // 0.4 mm curve is a handful of segments rather than dozens.  What this case
-  // guards is that the import survives and keeps the curve — not the count.
-  ok &= expect(sketch->lines.size() >= 2,
+  std::cout << "  tiny spline: " << sketch->splines.size() << " spline(s), "
+            << sketch->lines.size() << " line(s)\n";
+  // The curve must survive in SOME form: as an exact spline entity (the normal
+  // path now) or as segments (the fallback for an unrepresentable curve).  The
+  // regression this guards is the import ABORTING, not the entity kind.
+  ok &= expect(!sketch->splines.empty() || sketch->lines.size() >= 2,
                "the curve survives at the sketch model's resolution");
   return ok;
 }
@@ -498,7 +514,7 @@ bool test_import_lines_circles_arcs() {
               "arc center/radius wrong")) {
     return false;
   }
-  // DXF arcs sweep CCW from 0° to 90°: start on +x, end on +y.
+  // DXF arcs sweep CCW from 0- to 90-: start on +x, end on +y.
   if (!expect(near(arc.start_x, 5.0) && near(arc.start_y, 10.0), "arc start wrong")) {
     return false;
   }
@@ -544,7 +560,7 @@ bool test_import_insunits_inches() {
               "inches import missing line")) {
     return false;
   }
-  // 1 inch → 25.4 mm.
+  // 1 inch - 25.4 mm.
   return expect(near(sketch->lines[0].end_x, 25.4) &&
                     near(sketch->lines[0].start_x, 0.0),
                 "inches scaling wrong");
@@ -633,7 +649,7 @@ bool test_polyline_legacy_closed() {
   return expect(sketch->lines.size() == 3, "legacy polyline segment count");
 }
 
-bool test_spline_tessellation() {
+bool test_spline_imports_as_exact_spline() {
   std::ostringstream dxf;
   dxf << dxf_header() << dxf_spline() << dxf_footer();
   const std::string path = write_fixture("dxf_spline.dxf", dxf.str());
@@ -643,38 +659,100 @@ bool test_spline_tessellation() {
   const DocumentState document = manager.import_dxf(path);
   const auto* sketch = active_sketch_params(document);
   if (!expect(sketch != nullptr, "spline import no sketch")) return false;
-  // The tessellation is simplified with Douglas–Peucker (0.02 mm), so the count
-  // is a handful of segments rather than a fixed 64.  What must hold is that the
-  // curve is there, chained end to end, and that it tracks the spline closely.
-  if (!expect(sketch->lines.size() >= 4,
-              "a spline imports as a chain of segments")) {
+  // NO FACETING: a clamped open-uniform spline is representable by the sketch's
+  // own spline entity, so it must arrive as ONE curve - not as tessellated
+  // lines.  Tessellating is what produced faceted extrusions.
+  if (!expect(sketch->lines.empty(),
+              "an exactly representable spline produces no tessellated lines")) {
     return false;
   }
-  // Chained: each segment must start where the previous one ended, or the
-  // simplification would have broken the polyline into unrelated pieces.
-  for (size_t i = 1; i < sketch->lines.size(); ++i) {
-    const auto& previous = sketch->lines[i - 1];
-    const auto& current = sketch->lines[i];
-    if (!expect(near(previous.end_x, current.start_x) &&
-                    near(previous.end_y, current.start_y),
-                "simplified spline segments stay chained")) {
-      return false;
-    }
+  if (!expect(sketch->splines.size() == 1, "the spline imports as one entity")) {
+    return false;
   }
-  // Bezier end points equal the end control points.
-  const auto& first = sketch->lines.front();
-  const auto& last = sketch->lines.back();
-  if (!expect(near(first.start_x, 0.0) && near(first.start_y, 0.0),
+  const auto& spline = sketch->splines.front();
+  if (!expect(spline.degree == 3, "imported spline keeps its degree")) {
+    return false;
+  }
+  if (!expect(spline.pole_xs.size() == 4,
+              "imported spline keeps all control points")) {
+    return false;
+  }
+  // End points of a clamped B-spline are its end poles: (0,0) - (0,10).
+  if (!expect(near(spline.pole_xs.front(), 0.0) &&
+                  near(spline.pole_ys.front(), 0.0),
               "spline start wrong")) {
     return false;
   }
-  return expect(near(last.end_x, 0.0) && near(last.end_y, 10.0),
+  return expect(near(spline.pole_xs.back(), 0.0) &&
+                    near(spline.pole_ys.back(), 10.0),
                 "spline end wrong");
+}
+
+// NO-FACETING CONTRACT.  A closed region bounded by an imported spline must
+// keep a SPLINE boundary edge in profile detection - that edge is what the
+// sketch wire builder turns into a Geom_BSplineCurve, i.e. what makes the
+// extruded surface smooth.  If this ever reports "line" edges instead, the
+// importer started tessellating and the user gets faceted surfaces.
+bool test_spline_profile_keeps_curve() {
+  std::ostringstream dxf;
+  // The cubic from (0,0) to (0,10) bulging right, closed by a straight line.
+  dxf << dxf_header() << dxf_spline() << dxf_line(0.0, 10.0, 0.0, 0.0)
+      << dxf_footer();
+  const std::string path = write_fixture("dxf_spline_profile.dxf", dxf.str());
+
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.import_dxf(path);
+  const auto* sketch = active_sketch_params(document);
+  if (!expect(sketch != nullptr, "spline profile no sketch")) return false;
+  if (!expect(sketch->splines.size() == 1,
+              "the spline is an exact entity before profiling")) {
+    return false;
+  }
+  if (!expect(!sketch->profiles.empty(), "a region is detected")) return false;
+  bool found_spline_edge = false;
+  for (const auto& region : sketch->profiles) {
+    for (const auto& edge : region.boundary_edges) {
+      if (edge.entity_kind == "spline" && !edge.spline_pole_xs.empty()) {
+        found_spline_edge = true;
+      }
+    }
+  }
+  return expect(found_spline_edge,
+                "the region keeps a spline edge with its poles, not a "
+                "tessellated run");
+}
+
+// A curve the sketch model cannot represent (degree it would have to change)
+// must still import, as tessellated lines - the fallback has to keep working,
+// and it is the only path that legitimately produces facets.
+bool test_unrepresentable_spline_falls_back_to_lines() {
+  std::ostringstream dxf;
+  // Degree 2 with 5 poles: the model's degree would be min(3, 5-1) = 3, i.e. a
+  // different curve, so this is not exactly representable.
+  dxf << dxf_header()
+      << "0\nSPLINE\n8\n0\n70\n8\n71\n2\n72\n8\n73\n5\n"
+         "40\n0\n40\n0\n40\n0\n40\n1\n40\n2\n40\n3\n40\n3\n40\n3\n"
+         "10\n0\n20\n0\n30\n0\n10\n1\n20\n2\n30\n0\n10\n3\n20\n0\n30\n0\n"
+         "10\n4\n20\n2\n30\n0\n10\n5\n20\n0\n30\n0\n0\nENDSEC\n0\nEOF\n";
+  const std::string path = write_fixture("dxf_spline_degree2.dxf", dxf.str());
+
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.import_dxf(path);
+  const auto* sketch = active_sketch_params(document);
+  if (!expect(sketch != nullptr, "fallback spline no sketch")) return false;
+  if (!expect(sketch->splines.empty(),
+              "a non-representable spline is not imported as an entity")) {
+    return false;
+  }
+  return expect(!sketch->lines.empty(),
+                "the fallback still delivers the curve as segments");
 }
 
 bool test_near_axis_lines_import_exact() {
   // A line 0.005 off horizontal is within the H/V constraint hint
-  // tolerance (0.01) — imported geometry must NOT be snapped to an
+  // tolerance (0.01) - imported geometry must NOT be snapped to an
   // axis (regression: constraint inference deformed tessellated
   // splines/ellipses and near-axis DXF lines).
   std::ostringstream dxf;
@@ -700,7 +778,7 @@ bool test_near_axis_lines_import_exact() {
 }
 
 bool test_ellipse_circular_and_elliptical() {
-  // ratio 1.0 → circle of radius |major|.
+  // ratio 1.0 - circle of radius |major|.
   std::ostringstream dxf;
   dxf << dxf_header() << dxf_ellipse(5.0, 0.0, 1.0) << dxf_footer();
   const std::string path = write_fixture("dxf_ell_circ.dxf", dxf.str());
@@ -709,7 +787,7 @@ bool test_ellipse_circular_and_elliptical() {
   const DocumentState document = manager.import_dxf(path);
   const auto* sketch = active_sketch_params(document);
   if (!expect(sketch != nullptr, "circular ellipse no sketch")) return false;
-  if (!expect(sketch->circles.size() == 1, "circular ellipse → 1 circle")) {
+  if (!expect(sketch->circles.size() == 1, "circular ellipse - 1 circle")) {
     return false;
   }
   if (!expect(near(sketch->circles[0].radius, 5.0) &&
@@ -718,7 +796,7 @@ bool test_ellipse_circular_and_elliptical() {
     return false;
   }
 
-  // ratio 0.5 → tessellated segments; bounding box ±5 in x, ±2.5 in y.
+  // ratio 0.5 - tessellated segments; bounding box -5 in x, -2.5 in y.
   std::ostringstream dxf2;
   dxf2 << dxf_header() << dxf_ellipse(5.0, 0.0, 0.5) << dxf_footer();
   const std::string path2 = write_fixture("dxf_ell_flat.dxf", dxf2.str());
@@ -729,8 +807,8 @@ bool test_ellipse_circular_and_elliptical() {
   if (!expect(sketch2 != nullptr, "elliptical ellipse no sketch")) {
     return false;
   }
-  // Douglas–Peucker (0.02 mm) keeps the count shape-dependent, so assert the
-  // ellipse is a chained curve of several segments whose EXTENTS are right —
+  // Douglas-Peucker (0.02 mm) keeps the count shape-dependent, so assert the
+  // ellipse is a chained curve of several segments whose EXTENTS are right -
   // that is what matters, not a fixed 64.
   if (!expect(sketch2->lines.size() >= 8,
               "ellipse imports as a chain of segments")) {
@@ -810,7 +888,7 @@ bool test_points_into_projected_points() {
     return false;
   }
 
-  // Imported points are editable too — no fix badges.
+  // Imported points are editable too - no fix badges.
   for (const auto& point : sketch->projected_points) {
     if (!expect(vertex_unfixed(*sketch, point.id),
                 "imported point should not be fixed")) {
@@ -1021,8 +1099,12 @@ int main() {
   if (!test_closed_lwpolyline()) return 1;
   std::cerr << "[dxf_import_export_test] test 5: legacy polyline\n";
   if (!test_polyline_legacy_closed()) return 1;
-  std::cerr << "[dxf_import_export_test] test 6: spline tessellation\n";
-  if (!test_spline_tessellation()) return 1;
+  std::cerr << "[dxf_import_export_test] test 6: exact spline import\n";
+  if (!test_spline_imports_as_exact_spline()) return 1;
+  std::cerr << "[dxf_import_export_test] test 6b: unrepresentable spline fallback\n";
+  if (!test_unrepresentable_spline_falls_back_to_lines()) return 1;
+  std::cerr << "[dxf_import_export_test] test 6c: spline profile keeps its curve\\n";
+  if (!test_spline_profile_keeps_curve()) return 1;
   std::cerr << "[dxf_import_export_test] test 7: near-axis lines exact\n";
   if (!test_near_axis_lines_import_exact()) return 1;
   std::cerr << "[dxf_import_export_test] test 8: ellipses\n";

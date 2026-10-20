@@ -6,6 +6,11 @@
 #include "drw_interface.h"
 #include "libdxfrw.h"
 
+// The sketch spline's knot convention (clamped open-uniform, parameter range
+// normalised to [0, 1]) — shared so the importer can decide EXACTLY whether a
+// DXF spline is representable as a sketch spline instead of tessellating it.
+#include "core/sketch/spline_math.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -208,6 +213,60 @@ bool de_boor_value(int degree, const std::vector<double>& knots,
     }
   }
   out = d[degree];
+  return true;
+}
+
+// True when the sketch's own spline entity can represent this DXF spline
+// EXACTLY: same degree (the model clamps to min(3, poles-1)), no weights, and
+// clamped open-uniform knots after normalising the parameter range to [0, 1].
+// A curve that passes this is imported as a curve; anything else is tessellated.
+bool is_planar_spline(const DRW_Spline& spline) {
+  const double nz = std::abs(spline.normalVec.z);
+  const double nlen = std::hypot(spline.normalVec.x, spline.normalVec.y,
+                                 spline.normalVec.z);
+  return !(nlen > kPlanarEpsilon && std::abs(nz - nlen) > kPlanarEpsilon);
+}
+
+// A full (closed) ellipse: start == end, or exactly one turn.
+bool ellipse_is_full(const DRW_Ellipse& ellipse) {
+  const double sweep = std::abs(ellipse.endparam - ellipse.staparam);
+  return sweep < kBulgeEpsilon ||
+         std::abs(sweep - 2.0 * M_PI) < kBulgeEpsilon;
+}
+
+bool spline_is_exactly_representable(const DRW_Spline& spline) {
+  const int degree = spline.degree;
+  const int ncontrol = static_cast<int>(spline.controllist.size());
+  if (degree < 1 || ncontrol < degree + 1) {
+    return false;
+  }
+  if (degree != std::min(3, ncontrol - 1)) {
+    return false;  // the model would change the degree, i.e. the shape
+  }
+  // NOTE: libdxfrw parses control points and knots but NOT weights (code 41),
+  // so a rational spline is indistinguishable from a plain B-spline here.  For
+  // the exports this importer targets (Fusion/KiCad sketches) the curves are
+  // non-rational with clamped knots; a rational file would import as its
+  // non-rational control curve, which is a known limitation of the reader, not
+  // a decision of this check.
+  const std::vector<double>& knots = spline.knotslist;
+  if (static_cast<int>(knots.size()) != ncontrol + degree + 1) {
+    return false;
+  }
+  // Normalise the DXF knot range to [0, 1] (the sketch spline's parameter
+  // space) and compare with the model's clamped open-uniform vector.
+  const double first = knots.front();
+  const double last = knots.back();
+  if (!(last > first)) {
+    return false;
+  }
+  std::vector<double> expected = spline_open_uniform_knots(ncontrol, degree);
+  for (int i = 0; i < static_cast<int>(knots.size()); ++i) {
+    const double normalised = (knots[i] - first) / (last - first);
+    if (std::abs(normalised - expected[i]) > 1e-6) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -487,6 +546,25 @@ class DxfReadInterface : public DRW_Interface {
     if (in_block_) {
       return;
     }
+    if (data == nullptr) {
+      return;
+    }
+    // Exact import first: the sketch's spline entity is the same clamped
+    // B-spline, so importing it as a curve keeps extrusions smooth.  Tessellating
+    // is the fallback for curves the model cannot represent (weights, custom
+    // knots, a degree it would have to change) â€” and it is what used to happen
+    // to every spline, producing faceted surfaces.
+    if (spline_is_exactly_representable(*data) && is_planar_spline(*data)) {
+      DxfImportSpline spline;
+      spline.degree = data->degree;
+      spline.line = 0;  // the reader has no source line at this level
+      spline.poles.reserve(data->controllist.size());
+      for (const auto* control : data->controllist) {
+        spline.poles.emplace_back(control->x * scale_, control->y * scale_);
+      }
+      result_.splines.push_back(std::move(spline));
+      return;
+    }
     if (!append_spline_segments(result_, *data, scale_)) {
       record_skipped(result_, "SPLINE");
       return;
@@ -497,6 +575,22 @@ class DxfReadInterface : public DRW_Interface {
 
   void addEllipse(const DRW_Ellipse& data) override {
     if (in_block_) {
+      return;
+    }
+    // A FULL ellipse imports exactly (SketchEllipse); a partial one still has
+    // to be tessellated (see DxfImportEllipse).
+    if (ellipse_is_full(data) && std::abs(data.ratio - 1.0) > kPlanarEpsilon) {
+      DxfImportEllipse ellipse;
+      ellipse.center_x = data.basePoint.x * scale_;
+      ellipse.center_y = data.basePoint.y * scale_;
+      const double major_x = data.secPoint.x * scale_;
+      const double major_y = data.secPoint.y * scale_;
+      ellipse.axis_a_x = major_x;
+      ellipse.axis_a_y = major_y;
+      // Minor axis: perpendicular to the major, length ratio * |major|.
+      ellipse.axis_b_x = -major_y * data.ratio;
+      ellipse.axis_b_y = major_x * data.ratio;
+      result_.ellipses.push_back(std::move(ellipse));
       return;
     }
     append_ellipse_segments(result_, data, scale_);
