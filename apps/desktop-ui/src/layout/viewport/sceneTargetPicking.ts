@@ -116,6 +116,7 @@ export function intersectViewportSceneTargets({
   faceMeshes,
   meshes,
   tolerancePx = 20,
+  advanceProfileSelection = false,
 }: {
   event: PointerEvent;
   renderer: THREE.WebGLRenderer;
@@ -139,6 +140,9 @@ export function intersectViewportSceneTargets({
   faceMeshes: THREE.Mesh[];
   meshes: THREE.Mesh[];
   tolerancePx?: number;
+  // True only for a CLICK: repeated clicks on the same spot step through the
+  // faces that overlap there instead of always returning the smallest.
+  advanceProfileSelection?: boolean;
 }): ViewportPickHit | null {
   setPointerNdcFromEvent(pointer, event, renderer);
   raycaster.setFromCamera(pointer, camera);
@@ -157,6 +161,7 @@ export function intersectViewportSceneTargets({
       profiles: sceneData?.sketchProfiles ?? [],
       profileObjects: sketchProfileObjects,
       raycaster,
+      advance: advanceProfileSelection === true,
     });
 
   // Project mode: the click targets BODY geometry (face / edge /

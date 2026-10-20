@@ -3470,7 +3470,13 @@ export function ViewportPanel({
       });
     }
 
-    function intersectSceneTargets(event: PointerEvent) {
+    // dvanceProfileSelection is true ONLY for clicks.  Hover must not step
+    // the candidate cycle, or the highlight flickers through every overlapping
+    // face at mouse-move rate.
+    function intersectSceneTargets(
+      event: PointerEvent,
+      advanceProfileSelection = false,
+    ) {
       return intersectViewportSceneTargets({
         event,
         renderer,
@@ -3496,6 +3502,7 @@ export function ViewportPanel({
         faceMeshes: faceMeshesRef.current,
         meshes: meshesRef.current,
         tolerancePx: readStoredFilter().tolerance_px,
+        advanceProfileSelection,
       });
     }
 
@@ -4977,7 +4984,9 @@ export function ViewportPanel({
         draftStartedOnPointerDownRef,
         draftDimensionSessionRef,
         draftDimensionInputRefs,
-        intersectSceneTargets,
+        // A click is the only thing that steps the profile candidate cycle.
+        intersectSceneTargets: (event: PointerEvent) =>
+          intersectSceneTargets(event, true),
         activeSketchToolRef,
         activeSketchPlaneFrameRef,
         sketchLinesRef,

@@ -365,6 +365,9 @@ export interface ProfileBoundaryEdge {
   spline_degree: number;
   spline_pole_xs: number[];
   spline_pole_ys: number[];
+  // Ellipse pieces (radius is the major radius).
+  minor_radius?: number;
+  rotation?: number;
 }
 
 export interface ViewportSceneBounds {

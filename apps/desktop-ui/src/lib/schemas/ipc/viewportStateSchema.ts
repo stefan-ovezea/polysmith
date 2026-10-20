@@ -568,6 +568,8 @@ export const viewportStateSchema = z.object({
             ccw: z.boolean(),
             spline_degree: z.number(),
             spline_pole_xs: z.array(z.number()),
+            minor_radius: z.number().optional(),
+            rotation: z.number().optional(),
             spline_pole_ys: z.array(z.number()),
           }),
         )
@@ -590,6 +592,8 @@ export const viewportStateSchema = z.object({
               ccw: z.boolean(),
               spline_degree: z.number(),
               spline_pole_xs: z.array(z.number()),
+            minor_radius: z.number().optional(),
+            rotation: z.number().optional(),
               spline_pole_ys: z.array(z.number()),
             }),
           ),

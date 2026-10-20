@@ -337,6 +337,9 @@ json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive
         {"spline_degree", edge.spline_degree},
         {"spline_pole_xs", edge.spline_pole_xs},
         {"spline_pole_ys", edge.spline_pole_ys},
+        // Ellipse pieces: the pick contour follows the real ellipse, not a chord.
+        {"minor_radius", edge.minor_radius},
+        {"rotation", edge.rotation},
     };
   };
   json boundary_edges = json::array();

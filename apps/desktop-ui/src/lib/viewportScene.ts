@@ -1,3 +1,4 @@
+import { splineEval, splineOpenUniformKnots } from "@/lib/splineCurve";
 import type {
   ViewportBoxPrimitive,
   ViewportCylinderPrimitive,
@@ -670,6 +671,11 @@ function makeSketchProfile(profile: ViewportSketchProfile): SketchProfileScene {
         center: [edge.center_x, edge.center_y],
         radius: edge.radius,
         ccw: edge.ccw,
+        splinePoleXs: edge.spline_pole_xs,
+        splinePoleYs: edge.spline_pole_ys,
+        splineDegree: edge.spline_degree,
+        minorRadius: edge.minor_radius,
+        rotation: edge.rotation,
       })),
     ),
     start: [profile.start_x, profile.start_y],
@@ -751,6 +757,11 @@ function makeSketchProfileFromDocument(
         center: [edge.center_x, edge.center_y],
         radius: edge.radius,
         ccw: edge.ccw,
+        splinePoleXs: edge.spline_pole_xs,
+        splinePoleYs: edge.spline_pole_ys,
+        splineDegree: edge.spline_degree,
+        minorRadius: edge.minor_radius,
+        rotation: edge.rotation,
       })),
     ),
     start: [profile.center_x, profile.center_y],
@@ -784,8 +795,49 @@ function sampleBoundaryEdges(
       push(edge.end[0], edge.end[1]);
       continue;
     }
+    // Spline edges follow the REAL clamped B-spline.  A chord across a curved
+    // edge cuts corners, and where the chord crosses a neighbouring edge the
+    // pick polygon self-intersects — the region then cannot be selected
+    // (reported: a band selectable on one side only, and splitting it in half
+    // made both halves selectable).
+    if (
+      edge.entityKind === "spline" &&
+      (edge.splinePoleXs?.length ?? 0) >= 2 &&
+      (edge.splinePoleYs?.length ?? 0) === edge.splinePoleXs?.length
+    ) {
+      const poleXs = edge.splinePoleXs as number[];
+      const poleYs = edge.splinePoleYs as number[];
+      const degree = Math.min(edge.splineDegree ?? Math.min(3, poleXs.length - 1), poleXs.length - 1);
+      const knots = splineOpenUniformKnots(poleXs.length, degree);
+      const steps = Math.max(2, Math.min(128, Math.ceil(poleXs.length * 8)));
+      for (let i = 1; i <= steps; i += 1) {
+        const t =
+          edge.paramStart + (edge.paramEnd - edge.paramStart) * (i / steps);
+        const [x, y] = splineEval(degree, knots, poleXs, poleYs, t);
+        push(x, y);
+      }
+      continue;
+    }
+    // Ellipse edges: major radius + minor radius rotated by `rotation`.
+    if (edge.entityKind === "ellipse" && (edge.minorRadius ?? 0) > 0) {
+      const minor = edge.minorRadius as number;
+      const cos = Math.cos(edge.rotation ?? 0);
+      const sin = Math.sin(edge.rotation ?? 0);
+      const steps = 32;
+      for (let i = 1; i <= steps; i += 1) {
+        const t =
+          edge.paramStart + (edge.paramEnd - edge.paramStart) * (i / steps);
+        const localX = edge.radius * Math.cos(t);
+        const localY = minor * Math.sin(t);
+        push(
+          edge.center[0] + localX * cos - localY * sin,
+          edge.center[1] + localX * sin + localY * cos,
+        );
+      }
+      continue;
+    }
     if (edge.entityKind !== "arc" && edge.entityKind !== "circle") {
-      // Ellipse/spline edges: the stored endpoints are the fallback.
+      // Unknown kinds: the stored endpoints are the fallback.
       push(edge.end[0], edge.end[1]);
       continue;
     }
