@@ -44,6 +44,17 @@ struct PlannedLoop {
   // map through the sketch plane frame.
   bool isWorldXY = false;
   double worldZ = 0.0;  // cut-plane Z for world-XY loops
+  // The loop is one boundary of an imported PCB layer.  Every such boundary is
+  // an independent contour — including the two sides of a thin ribbon, which
+  // sit 0.1 mm apart with near-identical areas — so the duplicate-contour
+  // healing pass (which exists for legacy sketch captures) must never pair
+  // them up.  See the dedupe block in laser_generate.cpp.
+  bool from_layer = false;
+  // An OPEN chain: the cut starts at the first sample and stops at the last.
+  // There is no closure, no pierce search, no kerf offset and no lead to hang
+  // off a seam — silkscreen text, a logo stroke, an open sketch chain.  The
+  // emitter branches on this before any of the closed-loop machinery.
+  bool is_open = false;
 };
 
 CamGenerateResult generate_laser_cut_toolpath(

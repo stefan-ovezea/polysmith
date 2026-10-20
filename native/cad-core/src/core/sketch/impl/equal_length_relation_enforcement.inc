@@ -48,7 +48,7 @@ void enforce_equal_length_relations(SketchFeatureParameters& parameters,
       validate_line(driven_line.start_x,
                     driven_line.start_y,
                     driven_line.end_x,
-                    driven_line.end_y);
+                    driven_line.end_y, "enforcing equal length");
 
       if (!points_match(previous_start_x,
                         previous_start_y,

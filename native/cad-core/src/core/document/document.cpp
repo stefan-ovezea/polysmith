@@ -7,6 +7,8 @@
 #include "core/drawing/drawing_runtime.h"
 #include "core/drawing/export/drawing_export.h"
 #include "core/diagnostics/logger.h"
+#include "core/pcb/pcb_layer_io.h"
+#include "core/pcb/pcb_role.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/sketch/sketch_profile.h"
 #include "core/sketch/sketch_tool_ids.h"
@@ -20,6 +22,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <limits>
 #include <set>
 #include <sstream>
@@ -110,4 +113,5 @@ namespace {
 #include "core/document/impl/dxf_commands.inc"
 #include "core/document/impl/step_commands.inc"
 #include "core/document/impl/iges_commands.inc"
+#include "core/document/impl/pcb_commands.inc"
 }  // namespace polysmith::core

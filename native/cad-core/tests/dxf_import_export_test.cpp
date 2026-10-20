@@ -12,6 +12,8 @@
 // directory (R12-style group-code/value pairs), so every path here
 // exercises the same libdxfrw reader the core uses.
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -22,8 +24,10 @@
 #include <vector>
 
 #include "core/document/document.h"
+#include "core/viewport/viewport.h"
 #include "dxf/dxf_export.h"
 #include "dxf/dxf_import.h"
+#include "protocol/serialization.h"
 
 namespace {
 
@@ -128,6 +132,25 @@ std::string dxf_spline() {
   return s.str();
 }
 
+// Four control points spanning 0.4 mm: at 64 tessellation segments each step is
+// about 0.006 mm, i.e. SMALLER than the sketch's 0.01 mm coincidence tolerance.
+// That is the shape of a Fusion sketch export, and it is the case that used to
+// abort the whole import.
+std::string dxf_tiny_spline() {
+  std::ostringstream s;
+  s << "0\nSPLINE\n8\n0\n71\n3\n72\n8\n73\n4\n74\n0\n";
+  for (int i = 0; i < 4; ++i) s << "40\n0.0\n";
+  for (int i = 0; i < 4; ++i) s << "40\n1.0\n";
+  const double controls[4][3] = {{0.0, 0.0, 0.0},
+                                 {0.13, 0.0, 0.0},
+                                 {0.13, 0.13, 0.0},
+                                 {0.0, 0.26, 0.0}};
+  for (const auto& c : controls) {
+    s << "10\n" << c[0] << "\n20\n" << c[1] << "\n30\n" << c[2] << "\n";
+  }
+  return s.str();
+}
+
 std::string dxf_ellipse(double mx, double my, double ratio) {
   std::ostringstream s;
   s << "0\nELLIPSE\n8\n0\n10\n0.0\n20\n0.0\n30\n0.0\n11\n" << mx << "\n21\n"
@@ -179,6 +202,266 @@ bool vertex_unfixed(const polysmith::core::SketchFeatureParameters& sketch,
 // ---------------------------------------------------------------------------
 // Tests.
 // ---------------------------------------------------------------------------
+
+// Regression fixture: a Fusion 360 sketch export (splines, polylines, lines,
+// arcs).  Gated on the local project file, like the PCB real-board fixtures:
+// the real export is what found the failure, and it may not exist on every
+// machine.  Reported regression: importing it threw
+// "Sketch lines must have non-zero length" and produced no sketch at all.
+bool test_fusion_sketch_when_present() {
+  const std::string path = "projects/Sketch3.dxf";
+  std::error_code error;
+  if (!std::filesystem::exists(path, error)) {
+    std::cout << "  (skipped: no fixture at " << path << ")\n";
+    return true;
+  }
+
+  // Parse-only first: this isolates the reader from the document layer.
+  const polysmith::core::DxfImportResult parsed =
+      polysmith::core::import_dxf_geometry(path);
+  std::cout << "  parsed lines=" << parsed.lines.size()
+            << " arcs=" << parsed.arcs.size()
+            << " circles=" << parsed.circles.size()
+            << " points=" << parsed.points.size()
+            << " skipped=" << parsed.skipped_count << "\n";
+
+  double shortest = 1e9;
+  for (const auto& line : parsed.lines) {
+    const double length = std::hypot(line.x2 - line.x1, line.y2 - line.y1);
+    shortest = std::min(shortest, length);
+  }
+  std::cout << "  shortest parsed line: " << shortest << " mm\n";
+
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document;
+  try {
+    document = manager.import_dxf(path);
+  } catch (const std::exception& failure) {
+    std::cerr << "  import threw: " << failure.what() << "\n";
+    return expect(false, "a Fusion sketch export imports without throwing");
+  }
+
+  const auto* sketch = active_sketch_params(document);
+  if (!expect(sketch != nullptr, "import created an active sketch")) {
+    return false;
+  }
+  std::cout << "  sketch lines=" << sketch->lines.size()
+            << " arcs=" << sketch->arcs.size()
+            << " circles=" << sketch->circles.size() << "\n";
+  bool ok = expect(!sketch->lines.empty(), "the sketch has geometry");
+  // The sketch model merges points within 0.01 mm, so geometry finer than that
+  // cannot all survive; the reader decimates tessellations to that spacing to
+  // keep the loss small, and the import reports what was merged.  Assert the
+  // honest contract: nothing throws, the curves are there, and the overwhelming
+  // majority of segments arrive.
+  const double arrived =
+      parsed.lines.empty()
+          ? 1.0
+          : static_cast<double>(sketch->lines.size()) /
+                static_cast<double>(parsed.lines.size());
+  std::cout << "  " << sketch->lines.size() << " of " << parsed.lines.size()
+            << " segments arrived (" << (arrived * 100.0) << "%)\n";
+  ok &= expect(arrived > 0.95, "at least 95% of the parsed segments arrive");
+  // Deterministic guard for the thing that made this sketch unusable: a fixed
+  // 64-segment tessellation produced 12.5k entities for 191 short splines, and
+  // the sketch refresh is superlinear in entity count (1k lines 0.2 s, 10.7k
+  // 14 s).  Douglas–Peucker at 0.02 mm turns that into ~850.  Bounding the
+  // count is what keeps the import editable; wall-clock assertions would be
+  // flaky on other machines.
+  ok &= expect(parsed.lines.size() < 2000,
+               "the tessellation is simplified, not emitted point for point");
+  // The app calls build_viewport_state on every refresh, so anything it throws
+  // becomes one logged error PER REQUEST — which is exactly what the user saw
+  // as a flood of "Sketch lines must have non-zero length" after the import.
+  bool viewport_threw = false;
+  std::string viewport_error;
+  try {
+    (void)polysmith::core::build_viewport_state(manager.get_document());
+  } catch (const std::exception& failure) {
+    viewport_threw = true;
+    viewport_error = failure.what();
+  }
+  if (viewport_threw) {
+    std::cerr << "  viewport threw: " << viewport_error << "\n";
+  }
+  ok &= expect(!viewport_threw,
+               "the app's refresh path survives the imported sketch");
+
+  // Where does the time go?  The user reports a 10.7k-line import that takes
+  // ~15 s to delete a single line, so the cost has to be measured, not guessed.
+  {
+    using clock = std::chrono::steady_clock;
+    const auto ms = [](clock::duration span) {
+      return std::chrono::duration<double, std::milli>(span).count();
+    };
+
+    DocumentManager timing;
+    timing.create_document();
+    const auto parse_start = clock::now();
+    const auto geometry = polysmith::core::import_dxf_geometry(path);
+    const auto parse_done = clock::now();
+    const auto import_start = clock::now();
+    const DocumentState loaded = timing.import_dxf(path);
+    const auto import_done = clock::now();
+
+    const auto viewport_start = clock::now();
+    (void)polysmith::core::build_viewport_state(timing.get_document());
+    const auto viewport_done = clock::now();
+
+    const std::string first_line_id = loaded.feature_history.back()
+                                          .sketch_parameters->lines.front()
+                                          .id;
+    const auto delete_start = clock::now();
+    (void)timing.delete_sketch_selection({first_line_id}, {}, {});
+    const auto delete_done = clock::now();
+
+    std::cout << "  timing: parse " << ms(parse_done - parse_start)
+              << " ms (" << geometry.lines.size() << " lines parsed)\n"
+              << "  timing: import " << ms(import_done - import_start)
+              << " ms, viewport " << ms(viewport_done - viewport_start)
+              << " ms, delete one line " << ms(delete_done - delete_start)
+              << " ms\n";
+
+    // Split the refresh: the vertex rebuild / solver pass versus profile
+    // detection, which is the part that looks superlinear on a big sketch.
+    DocumentState copy = timing.get_document().value();
+    auto& feature = copy.feature_history.back();
+    const auto refresh_start = clock::now();
+    polysmith::core::refresh_sketch_derived_state(feature);
+    const auto refresh_done = clock::now();
+    const auto profiles_start = clock::now();
+    const auto profiles = polysmith::core::detect_sketch_profiles(feature);
+    const auto profiles_done = clock::now();
+    std::cout << "  timing: refresh " << ms(refresh_done - refresh_start)
+              << " ms, detect profiles " << ms(profiles_done - profiles_start)
+              << " ms (" << profiles.polygons.size() << " polygons, "
+              << profiles.circles.size() << " circles)\n";
+
+    // What a single selection costs the UI: the whole document state goes over
+    // IPC on every selection change, so its size is the interaction budget.
+    const auto payload_start = clock::now();
+    const auto payload =
+        polysmith::protocol::to_payload(timing.get_document().value());
+    const auto payload_done = clock::now();
+    std::cout << "  timing: document payload "
+              << (payload.dump().size() / 1024) << " KB in "
+              << ms(payload_done - payload_start) << " ms\n";
+
+    // Per-key breakdown: WHICH part of the document is the payload?  Any
+    // interaction fix has to target the big one, not the whole.
+    for (auto it = payload.begin(); it != payload.end(); ++it) {
+      std::cout << "  payload[" << it.key() << "] = "
+                << (it.value().dump().size() / 1024) << " KB\n";
+    }
+    for (const auto& serialized :
+         payload.value("feature_history", nlohmann::json::array())) {
+      const auto params = serialized.value("sketch_parameters", nlohmann::json());
+      if (params.is_null()) {
+        continue;
+      }
+      std::cout << "  sketch payload keys:";
+      for (auto it = params.begin(); it != params.end(); ++it) {
+        std::cout << " " << it.key() << "=" << (it.value().dump().size() / 1024)
+                  << "KB";
+      }
+      std::cout << "\n";
+    }
+
+    // Largest regions by vertex count: is profile detection producing sensible
+    // regions, or 48 slivers between crossing curves?
+    std::vector<size_t> region_sizes;
+    for (const auto& polygon : profiles.polygons) {
+      region_sizes.push_back(polygon.points.size());
+    }
+    std::sort(region_sizes.rbegin(), region_sizes.rend());
+    std::cout << "  regions: " << region_sizes.size() << ", biggest vertex counts:";
+    for (size_t i = 0; i < std::min<size_t>(region_sizes.size(), 6); ++i) {
+      std::cout << " " << region_sizes[i];
+    }
+    std::cout << "\n";
+
+    // Scaling probe: is the refresh linear or quadratic in the entity count?
+    // That decides whether a cheaper import (fewer entities) is a real fix.
+    for (const size_t keep : {static_cast<size_t>(3000)}) {
+      DocumentState trimmed = timing.get_document().value();
+      auto& trim_feature = trimmed.feature_history.back();
+      trim_feature.sketch_parameters->lines.resize(keep);
+      const auto start = clock::now();
+      polysmith::core::refresh_sketch_derived_state(trim_feature);
+      const auto done = clock::now();
+      std::cout << "  timing: refresh with " << keep << " lines = "
+                << ms(done - start) << " ms\n";
+    }
+  }
+  return ok;
+}
+
+// A segment can be longer than the reader's minimum yet shorter than the
+// sketch's coincidence tolerance (0.01 mm).  Both endpoints then snap onto the
+// same existing vertex and the stored line would have zero length — which every
+// later validation rejects.  It used to THROW, aborting the whole import; it
+// must be dropped instead, with the rest of the sketch intact.
+bool test_collapsed_segment_is_dropped_not_thrown() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_line(0.0, 0.0, 10.0, 0.0);
+
+  // 0.002 mm long, starting 0.004 mm from the first line's end: both endpoints
+  // are inside the 0.01 mm coincidence window of (10, 0), so both snap onto
+  // that vertex and the segment has zero length in the document.
+  bool threw = false;
+  try {
+    manager.add_sketch_line(10.004, 0.002, 10.004, 0.004);
+  } catch (const std::exception&) {
+    threw = true;
+  }
+  bool ok = expect(!threw, "a collapsing segment does not throw");
+  // get_document() returns BY VALUE: hold the copy, never a reference into it.
+  const DocumentState snapshot = manager.get_document().value();
+  const auto* sketch = active_sketch_params(snapshot);
+  if (!expect(sketch != nullptr, "the sketch survived")) {
+    return false;
+  }
+  ok &= expect(sketch->lines.size() == 1,
+               "the collapsed segment was not added, the original line is");
+  return ok;
+}
+
+// The reported failure, in miniature and with no fixture file: a spline whose
+// tessellation steps are finer than the sketch's coincidence tolerance used to
+// collapse on the way in and throw, aborting the whole import.  It must import,
+// and the curve must survive at the sketch model's resolution.
+bool test_sub_tolerance_tessellation_does_not_abort_import() {
+  std::ostringstream dxf;
+  dxf << dxf_header() << dxf_tiny_spline() << dxf_footer();
+  const std::string path =
+      write_fixture("dxf_tiny_spline.dxf", dxf.str());
+
+  DocumentManager manager;
+  manager.create_document();
+  bool threw = false;
+  DocumentState document;
+  try {
+    document = manager.import_dxf(path);
+  } catch (const std::exception& failure) {
+    threw = true;
+    std::cout << "  threw: " << failure.what() << "\n";
+  }
+  bool ok = expect(!threw, "a sub-tolerance spline does not abort the import");
+  const auto* sketch = active_sketch_params(document);
+  if (!expect(sketch != nullptr, "a sketch was created")) {
+    return false;
+  }
+  std::cout << "  tiny spline segments: " << sketch->lines.size() << "\n";
+  // Douglas–Peucker now emits only the segments a 0.02 mm tolerance needs, so a
+  // 0.4 mm curve is a handful of segments rather than dozens.  What this case
+  // guards is that the import survives and keeps the curve — not the count.
+  ok &= expect(sketch->lines.size() >= 2,
+               "the curve survives at the sketch model's resolution");
+  return ok;
+}
 
 bool test_import_lines_circles_arcs() {
   std::ostringstream dxf;
@@ -360,8 +643,23 @@ bool test_spline_tessellation() {
   const DocumentState document = manager.import_dxf(path);
   const auto* sketch = active_sketch_params(document);
   if (!expect(sketch != nullptr, "spline import no sketch")) return false;
-  if (!expect(sketch->lines.size() == 64, "spline should make 64 lines")) {
+  // The tessellation is simplified with Douglas–Peucker (0.02 mm), so the count
+  // is a handful of segments rather than a fixed 64.  What must hold is that the
+  // curve is there, chained end to end, and that it tracks the spline closely.
+  if (!expect(sketch->lines.size() >= 4,
+              "a spline imports as a chain of segments")) {
     return false;
+  }
+  // Chained: each segment must start where the previous one ended, or the
+  // simplification would have broken the polyline into unrelated pieces.
+  for (size_t i = 1; i < sketch->lines.size(); ++i) {
+    const auto& previous = sketch->lines[i - 1];
+    const auto& current = sketch->lines[i];
+    if (!expect(near(previous.end_x, current.start_x) &&
+                    near(previous.end_y, current.start_y),
+                "simplified spline segments stay chained")) {
+      return false;
+    }
   }
   // Bezier end points equal the end control points.
   const auto& first = sketch->lines.front();
@@ -431,7 +729,11 @@ bool test_ellipse_circular_and_elliptical() {
   if (!expect(sketch2 != nullptr, "elliptical ellipse no sketch")) {
     return false;
   }
-  if (!expect(sketch2->lines.size() == 64, "ellipse should make 64 lines")) {
+  // Douglas–Peucker (0.02 mm) keeps the count shape-dependent, so assert the
+  // ellipse is a chained curve of several segments whose EXTENTS are right —
+  // that is what matters, not a fixed 64.
+  if (!expect(sketch2->lines.size() >= 8,
+              "ellipse imports as a chain of segments")) {
     return false;
   }
   double min_x = 1e9;
@@ -703,6 +1005,12 @@ bool test_import_plane_id() {
 }  // namespace
 
 int main() {
+  std::cerr << "[dxf_import_export_test] test 0: Fusion sketch export (if present)\n";
+  if (!test_fusion_sketch_when_present()) return 1;
+  std::cerr << "[dxf_import_export_test] test 0b: collapsed segment dropped\n";
+  if (!test_collapsed_segment_is_dropped_not_thrown()) return 1;
+  std::cerr << "[dxf_import_export_test] test 0c: sub-tolerance tessellation\n";
+  if (!test_sub_tolerance_tessellation_does_not_abort_import()) return 1;
   std::cerr << "[dxf_import_export_test] test 1: lines/circles/arcs\n";
   if (!test_import_lines_circles_arcs()) return 1;
   std::cerr << "[dxf_import_export_test] test 2: inches scaling\n";

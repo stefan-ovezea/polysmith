@@ -122,6 +122,10 @@ import {
   makeImportDxfCommand,
   makeImportStepCommand,
   makeImportIgesCommand,
+  makePcbCaptureLayerReferenceCommand,
+  makePcbImportLayerCommand,
+  makePcbRemoveLayerCommand,
+  makePcbUpdateLayerCommand,
   makeConvertMeshToBodyCommand,
   makeDetachBodyProjectionsCommand,
   makeRemoveSketchProjectionsCommand,
@@ -270,6 +274,7 @@ import type {
   HelixFeatureParameters,
   HoleFeatureParameters,
   LaserMachineSettings,
+  PcbLayerAttestation,
   MachineDefinition,
   MoveFeatureParameters,
   PointAttestation,
@@ -377,6 +382,27 @@ export function useCadCore() {
     },
     importIges: async (filePath: string) => {
       await sendAndRefreshSessionViewport(makeImportIgesCommand(filePath));
+    },
+    // PCB fabrication layers. Imports are additive: the caller imports each
+    // file of a Gerber set in turn, and the layer table reads the resulting
+    // `pcb_layer` features back out of the document state.
+    pcbImportLayer: async (filePath: string, role?: string) => {
+      await sendAndRefreshSessionViewport(
+        makePcbImportLayerCommand(filePath, role),
+      );
+    },
+    pcbUpdateLayer: async (
+      featureId: string,
+      options: { role?: string; mirrorX?: boolean } = {},
+    ) => {
+      await sendAndRefreshSessionViewport(
+        makePcbUpdateLayerCommand(featureId, options),
+      );
+    },
+    pcbRemoveLayer: async (featureId: string) => {
+      await sendAndRefreshSessionViewport(
+        makePcbRemoveLayerCommand(featureId),
+      );
     },
     convertMeshToBody: async (bodyId: string) => {
       await sendAndRefreshSessionViewport(
@@ -2046,6 +2072,22 @@ export function useCadCore() {
         makeCamWcsSetFaceCommand(faceId, setupId),
       );
     },
+    pcbCaptureLayerReference: async (featureId: string) => {
+      // Awaited: the core mints the layer witness and replies with a
+      // pcb_layer_attestation_result event, so the renderer never invents
+      // what identifies a layer.
+      const response = await sendCoreCommandAwaited(
+        makePcbCaptureLayerReferenceCommand(featureId) as CoreCommand & {
+          id: string;
+        },
+      );
+      return response as {
+        payload?: {
+          persistent_id: string;
+          attestation: PcbLayerAttestation;
+        };
+      };
+    },
     camCaptureFaceReference: async (faceId: string) => {
       // Awaited: the reply is a cam_face_attestation_result event
       // carrying the TNP-safe witness captured by the core.
@@ -2153,6 +2195,37 @@ export function useCadCore() {
         throw new Error(
           payload?.message ?? "the core rejected the profile selection",
         );
+      }
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    camOperationSetLayer: async (
+      opId: string,
+      layerFeatureId: string,
+      parameters?: CamOperation["parameters"],
+    ): Promise<void> => {
+      // The core mints the layer witness from the layer's own import summary;
+      // the renderer only names the row.  The same call carries the layer's
+      // recommended parameters (centre-lines for line art, no leads), because
+      // attaching a layer is an explicit choice by the user and the panel right
+      // beside it shows every one of those values.
+      const response = await sendCoreCommandAwaited(
+        makeCamOperationUpdateCommand(
+          opId,
+          {
+            geometry_references: {
+              machining_regions: [],
+              avoidance_regions: [],
+              guide_curves: [],
+              check_surfaces: [],
+            },
+            ...(parameters ? { parameters } : {}),
+          },
+          { layer_feature_id: layerFeatureId },
+        ) as CoreCommand & { id: string },
+      );
+      if (response.type === "error") {
+        const payload = response.payload as { message?: string } | undefined;
+        throw new Error(payload?.message ?? "the core rejected the layer");
       }
       await sendCoreCommand(makeGetViewportStateCommand());
     },

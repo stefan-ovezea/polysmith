@@ -42,6 +42,10 @@ json make_cam_generation_result_event(
     const std::string& error_message, const std::vector<std::string>& warnings);
 json make_cam_face_attestation_event(const std::string& id,
                                      const json& payload);
+// Reply to pcb_capture_layer_reference — the layer witness the core mints
+// for an imported fabrication layer.
+json make_pcb_layer_attestation_event(const std::string& id,
+                                      const json& payload);
 json make_cam_edge_attestation_event(const std::string& id,
                                      const json& payload);
 // Generic geometry-attestation result — cam_capture_point replies with

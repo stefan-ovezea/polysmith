@@ -120,6 +120,18 @@ json to_payload(const polysmith::core::PointAttestation& att) {
   return {{"point", array3(att.point)}};
 }
 
+json to_payload(const polysmith::core::PcbLayerAttestation& att) {
+  return json{
+      {"layer_feature_id", att.layer_feature_id},
+      {"role", att.role},
+      {"ring_count", att.ring_count},
+      {"min_x", att.min_x},
+      {"min_y", att.min_y},
+      {"max_x", att.max_x},
+      {"max_y", att.max_y},
+  };
+}
+
 json to_payload(const polysmith::core::LaserCutParameters& laser) {
   json j = {
       {"mode", laser.mode},
@@ -153,6 +165,7 @@ json to_payload(const polysmith::core::LaserCutParameters& laser) {
       {"material_thickness_mm", laser.material_thickness_mm},
       {"cut_plane_offset_mm", laser.cut_plane_offset_mm},
       {"cut_order", laser.cut_order},
+      {"layer_mode", laser.layer_mode},
       {"arc_segments_per_circle", laser.arc_segments_per_circle},
   };
   if (laser.speed_mm_per_s.has_value()) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -45,6 +46,25 @@ struct ResolvedProfileRef {
   double score = 0.0;
 };
 
+/// A resolved imported fabrication layer.  Nothing is cached here: the rings
+/// live in the caller (it re-derives them once per pass through
+/// `pcb::load_pcb_layer`), because a copper layer is thousands of polygons and
+/// a resolution result must stay cheap to copy.
+struct ResolvedPcbLayerRef {
+  bool found = false;
+  int ring_count = 0;    // Gerber layers
+  int hit_count = 0;     // Excellon layers
+  int tool_count = 0;    // Excellon layers
+  double min_x = 0.0, min_y = 0.0, max_x = 0.0, max_y = 0.0;
+  /// True when the layer's current geometry disagrees with the witness
+  /// captured when the operation was created (ring count or bounds moved).
+  /// The operation still cuts — the caller warns instead of dropping it, so a
+  /// re-poured board does not silently lose its toolpath.
+  bool changed = false;
+  /// Why it could not be resolved, for the dependency warning.
+  std::string error;
+};
+
 // Resolves a face attestation against every body in the compiled set.
 // The serialized attestation carries no body id (bodies are rebuilt by
 // compile_bodies on every recompute), so all bodies are candidates.
@@ -63,6 +83,22 @@ ResolvedEdgeRef resolve_edge_attestation(const EdgeAttestation& attestation,
 ResolvedProfileRef resolve_profile_attestation(
     const SketchProfileAttestation& attestation, const FeatureEntry& sketch);
 
+/// Resolves a PCB layer attestation against the document: the referenced
+/// `pcb_layer` feature must still exist and its source file must still parse
+/// to geometry.  The source is re-read here, so a layer whose file was
+/// re-plotted picks up the new geometry automatically (with `changed` set,
+/// which the caller surfaces as a warning).
+ResolvedPcbLayerRef resolve_pcb_layer_attestation(
+    const PcbLayerAttestation& attestation, const DocumentState& document);
+
+/// Mint the witness an operation stores for an imported PCB layer, from the
+/// layer feature's own import summary — the single implementation used by both
+/// the `pcb_capture_layer_reference` reply and the operation update that
+/// attaches a layer, so a witness is never fabricated twice in two shapes.
+/// Returns nullopt when `feature_id` is not a layer in this document.
+std::optional<PcbLayerAttestation> pcb_layer_attestation_from_feature(
+    const DocumentState& document, const std::string& feature_id);
+
 // Human-readable degradation message for a failed/ambiguous face
 // reference, following the dependency_broken doctrine: never throw,
 // never guess.
@@ -70,6 +106,7 @@ std::string face_reference_failure_message(const ResolvedFaceRef& face);
 std::string edge_reference_failure_message(const ResolvedEdgeRef& edge);
 std::string profile_reference_failure_message(
     const ResolvedProfileRef& profile);
+std::string pcb_layer_reference_failure_message(const ResolvedPcbLayerRef& layer);
 
 // Resolves the setup an operation belongs to: the operation's
 // setup_id when set, else the first setup (legacy documents created
@@ -93,6 +130,8 @@ bool resolve_geometry_reference(
     const std::function<void(const ResolvedFaceRef&)>& on_face,
     const std::function<void(const ResolvedEdgeRef&)>& on_edge,
     const std::function<void(const PointAttestation&)>& on_point,
+    const std::function<void(const ResolvedPcbLayerRef&, const FeatureEntry&)>&
+        on_pcb_layer,
     std::string& message);
 
 }  // namespace polysmith::core

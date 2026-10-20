@@ -115,6 +115,7 @@ import {
   createHoleParameterHandlers,
 } from "./app/bodyModifierActions";
 import { CamFloatingPanels } from "./app/CamFloatingPanels";
+import { PcbLayerPropertiesPanel } from "./layout/PcbLayerPropertiesPanel";
 import {
   AnnotationPanel,
   DimensionPanel,
@@ -150,6 +151,7 @@ import { triggerCamDrilling } from "./app/camDrillingActions";
 import { triggerCamSlot } from "./app/camSlotActions";
 import { triggerCamEngrave } from "./app/camEngraveActions";
 import { triggerCamLaserCut, selectCamSketchFeature } from "./app/camLaserActions";
+import { ensureLaserSetup } from "./app/pcbCutActions";
 import { triggerCamTestPattern } from "./app/camTestPatternActions";
 import {
   pickDrawingDxfPath,
@@ -576,6 +578,12 @@ function App() {
     () => new Set<CategoryId>(),
   );
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("projects");
+  // Which imported layer's properties card is open, if any.  The card replaced
+  // the PCB workspace's layer table: role and its provenance, polarity,
+  // contents, mirror and warnings are facts about the imported FILE.
+  const [pcbPropertiesFeatureId, setPcbPropertiesFeatureId] = useState<
+    string | null
+  >(null);
   const [recentProjectsDocument, setRecentProjectsDocument] =
     useState<RecentProjectsDocument>(EMPTY_RECENT_PROJECTS_DOCUMENT);
   const recentProjectsDocumentRef = useRef<RecentProjectsDocument>(
@@ -2275,6 +2283,10 @@ function App() {
     importDxf,
     importStep,
     importIges,
+    pcbCaptureLayerReference,
+    pcbImportLayer,
+    pcbUpdateLayer,
+    pcbRemoveLayer,
     exportDocumentIges,
     convertMeshToBody,
     detachBodyProjections,
@@ -2452,6 +2464,7 @@ function App() {
     camOperationCreate,
     camOperationUpdate,
     camOperationApplySelection,
+    camOperationSetLayer,
     camOperationDelete,
     camOperationSetScope,
     camOperationPreview,
@@ -3075,17 +3088,42 @@ function App() {
   // milling) and creates the operation, selecting it so its panel
   // opens.
   const triggerCamLaserCutAction = () =>
-    triggerCamLaserCut({
+    createLaserCutWithSetupAction();
+
+  // A laser operation cannot join a mill setup, so creating one asks for a laser
+  // setup first and makes one when the project has none: the user should not
+  // have to configure a machine before the first cut.  (This lived on the PCB
+  // workspace's "Laser cut" button until that workspace went away; the
+  // behaviour is worth keeping, and it now benefits every 2D cut.)
+  const createLaserCutWithSetupAction = async (
+    layerFeatureId?: string,
+  ): Promise<void> => {
+    const setupId = await ensureLaserSetup({
+      document,
+      activeSetupId: activeCamSetupId,
+      runAction,
+      camSetupCreate,
+      setActiveSetupId: setActiveCamSetupId,
+      addMessage,
+      translate: t,
+    });
+    if (!setupId) {
+      return;
+    }
+    await triggerCamLaserCut({
       document,
       viewport,
-      setupId: activeCamSetupId,
+      setupId,
       runAction,
       camOperationCreate,
       camCaptureFaceReference,
+      pcbCaptureLayerReference,
+      pcbLayerFeatureId: layerFeatureId ?? null,
       setSelectedOperationId: setSelectedCamOperationId,
       addMessage,
       translate: t,
     });
+  };
 
   const triggerCamTestPatternAction = () =>
     triggerCamTestPattern({
@@ -4134,6 +4172,9 @@ function App() {
           showDrawingView={showDrawingView}
           showSlicerView={showSlicerView}
           showGrblView={showGrblView}
+          // The PCB workspace has no native window to tear down, so it needs
+          // no slicer-hook wrapper — just the shared workspace setter (which
+          // still closes an active sketch first).
           status={status}
           drawingRibbon={{
             drawingCount: document?.drawing.drawings.length ?? 0,
@@ -4295,6 +4336,7 @@ function App() {
           exportDocumentDxf={exportDocumentDxf}
           importStl={importStl}
           importDxf={importDxf}
+          importPcbLayer={pcbImportLayer}
           importStep={importStep}
           importIges={importIges}
           exportDocumentIges={exportDocumentIges}
@@ -4497,6 +4539,7 @@ function App() {
                 selectFeature={selectFeature}
                 selectReference={selectReference}
                 setFeatureSuppressed={setFeatureSuppressed}
+                onShowLayerProperties={setPcbPropertiesFeatureId}
                 setHiddenCategories={setHiddenCategories}
                 setHiddenFeatureIds={setHiddenFeatureIds}
                 setHierarchyWidth={setHierarchyWidth}
@@ -6375,7 +6418,23 @@ function App() {
                   }}
                 />
               ) : null}
-              <CamFloatingPanels
+              {pcbPropertiesFeatureId ? (
+                (() => {
+                  const layer = document?.feature_history.find(
+                    (feature) =>
+                      feature.feature_id === pcbPropertiesFeatureId &&
+                      feature.kind === "pcb_layer",
+                  );
+                  return layer ? (
+                    <PcbLayerPropertiesPanel
+                      layer={layer}
+                      onClose={() => setPcbPropertiesFeatureId(null)}
+                      onUpdate={pcbUpdateLayer}
+                      onRemove={pcbRemoveLayer}
+                    />
+                  ) : null;
+                })()
+              ) : null}              <CamFloatingPanels
                 document={document}
                 viewport={viewport}
                 disabled={status !== "connected"}
@@ -6427,6 +6486,7 @@ function App() {
                 onSaveMachine={saveCamMachineAction}
                 camPostProcessorSet={camPostProcessorSet}
                 camOperationApplySelection={camOperationApplySelection}
+                camOperationSetLayer={camOperationSetLayer}
                 onImportPost={() => {
                   void importCamPostAction();
                 }}

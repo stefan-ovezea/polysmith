@@ -240,6 +240,10 @@ export function makeCamOperationUpdateCommand(
     // them the capture does not depend on the live document selection
     // still being present when the command is processed.
     selected_profile_ids?: string[];
+    // Or an imported PCB layer feature: the core mints that layer's witness
+    // from its own import summary and makes it the operation's geometry.  One
+    // explicit source per update, both resolved core-side.
+    layer_feature_id?: string;
   },
 ): CoreCommand {
   return {

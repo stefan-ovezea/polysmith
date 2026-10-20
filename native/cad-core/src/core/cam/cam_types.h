@@ -66,12 +66,29 @@ struct PointAttestation {
   std::array<double, 3> point = {0.0, 0.0, 0.0};
 };
 
-/// TNP-safe reference to a 3D face, 3D edge, sketch profile, or a bare
-/// world-space point.
+/// Witness data to re-identify an imported fabrication layer (a `pcb_layer`
+/// feature) that an operation cuts.
+///
+/// The WHOLE layer is referenced, not individual rings: both PCB workflows
+/// (laser-cut every contour of a layer, isolate all of its copper) consume the
+/// complete ring set, and referencing one thing instead of thousands keeps the
+/// re-identification surface small.  The rings themselves are re-derived from
+/// the source file on every recompute, so identity rests on the layer's
+/// feature id plus the shape of what it held.  A layer whose source changed is
+/// still cut — the caller warns, it does not silently drop the operation.
+struct PcbLayerAttestation {
+  std::string layer_feature_id;  // owning `pcb_layer` feature
+  std::string role;              // role id at capture time (advisory only)
+  int ring_count = 0;            // rings in the layer at capture time
+  double min_x = 0.0, min_y = 0.0, max_x = 0.0, max_y = 0.0;  // layer bounds
+};
+
+/// TNP-safe reference to a 3D face, 3D edge, sketch profile, imported PCB
+/// layer, or a bare world-space point.
 struct GeometryReference {
   std::string persistent_id;
   std::variant<FaceAttestation, EdgeAttestation, SketchProfileAttestation,
-               PointAttestation>
+               PcbLayerAttestation, PointAttestation>
       attestation;
 };
 
@@ -266,6 +283,16 @@ struct LaserCutParameters {
   double kerf_width_mm = 0.15;  // full cut width; halved per side
   std::string kerf_side = "auto";  // "auto" (holes inward, outers outward)
                                    // | "outside" | "inside" | "none"
+
+  // Imported PCB layers only (sketch/face geometry is unaffected):
+  //   "regions"    — cut the assembled filled areas, offset by the kerf.  Right
+  //                  for copper, mask and paste, where the file describes AREAS.
+  //   "centerline" — follow each drawn stroke's centre line once, with no kerf
+  //                  offset.  Right for a board profile and silkscreen, where
+  //                  the aperture is a hairline meaning "cut along this line";
+  //                  cutting those as regions traces BOTH sides of a 0.1 mm
+  //                  ribbon instead of the line itself.
+  std::string layer_mode = "regions";  // "regions" | "centerline" — VALIDATED
 
   // Leads.
   double lead_in_mm = 2.0;

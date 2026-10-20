@@ -73,7 +73,7 @@ void enforce_collinear_relations(SketchFeatureParameters& parameters,
       drive_line_collinear_to_reference(driven_line, reference_line);
       snap_line_endpoints_to_coincident_geometry(parameters, driven_line);
       validate_line(driven_line.start_x, driven_line.start_y,
-                    driven_line.end_x, driven_line.end_y);
+                    driven_line.end_x, driven_line.end_y, "enforcing a dimension");
 
       if (!points_match(previous_start_x, previous_start_y,
                         driven_line.start_x, driven_line.start_y)) {

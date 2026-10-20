@@ -322,11 +322,45 @@ export async function pickImportStepPath({
   return result;
 }
 
+/// Fabrication layers arrive as a SET (copper, mask, silk, profile, drills), so
+/// this is the one import that takes several files at once.  A laser or mill
+/// board needs only a few of them, and the rest would just clutter the
+/// hierarchy — hence multi-select rather than "import the whole folder".
+export async function pickImportPcbPaths({
+  translate,
+  addMessage,
+}: DocumentDialogContext): Promise<string[] | null> {
+  const result = await open({
+    title: translate("dialogs.importPcbTitle"),
+    multiple: true,
+    directory: false,
+    filters: [
+      {
+        name: translate("dialogs.pcbFileType"),
+        extensions: [
+          "gbr", "ger", "gtl", "gbl", "gts", "gbs", "gto", "gbo",
+          "g1", "g2", "gl1", "gl2", "drl", "txt",
+        ],
+      },
+    ],
+  });
+
+  if (result === null) {
+    addMessage("import canceled");
+    return null;
+  }
+  const paths = Array.isArray(result) ? result : [result];
+  if (paths.length === 0) {
+    addMessage("import canceled");
+    return null;
+  }
+  return paths;
+}
+
 export async function pickImportIgesPath({
   translate,
   addMessage,
-}: DocumentDialogContext) {
-  const result = await open({
+}: DocumentDialogContext) {  const result = await open({
     title: translate("dialogs.importIgesTitle"),
     multiple: false,
     directory: false,

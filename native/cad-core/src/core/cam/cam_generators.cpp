@@ -1,7 +1,9 @@
 #include "core/cam/cam_generator.h"
 
+#include <algorithm>
 #include <cassert>
 #include <unordered_map>
+#include <vector>
 
 #include "core/cam/adaptive_clearing.h"
 #include "core/cam/contour_2d.h"
@@ -41,6 +43,17 @@ const CamGenerator* find_cam_generator(const std::string& type) {
     return nullptr;
   }
   return &found->second;
+}
+
+std::vector<std::string> cam_generator_types() {
+  std::vector<std::string> types;
+  types.reserve(registry().size());
+  for (const auto& [type, generator] : registry()) {
+    (void)generator;
+    types.push_back(type);
+  }
+  std::sort(types.begin(), types.end());
+  return types;
 }
 
 void register_builtin_cam_generators() {

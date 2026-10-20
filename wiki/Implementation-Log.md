@@ -2,6 +2,408 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-10-19
+
+### DXF import: a dense sketch export no longer aborts the whole import
+
+Reported: importing a Fusion 360 sketch export (`Sketch3.dxf`) failed with
+"Sketch lines must have non-zero length" and produced no sketch at all.
+
+Root cause, found by measuring the file rather than guessing: the export's
+**191 splines** tessellate into 12,537 segments whose **shortest step is
+0.0048 mm**.  The reader's own guard only rejects segments at or below
+0.001 mm, so they all passed — and then `add_sketch_line`, which runs
+`validate_line` **after** snapping endpoints to existing vertices, collapsed
+each sub-0.01 mm segment onto a single vertex (`kCoincidentTolerance` is
+0.01 mm), re-validated it, and **threw**.  One degenerate step in a tessellation
+took the whole import down, and the sketch model cannot represent geometry finer
+than its own tolerance, so no input-side patch alone is enough.
+
+Three changes, in order of importance:
+
+- **The reader emits curves at the model's resolution.**  `kSampleSpacing`
+  (0.011 mm, just above the coincidence tolerance) decimates spline and ellipse
+  tessellations against the last *emitted* point, including the last step — a
+  short tail would collapse in the document instead.  The shape is unchanged
+  within 0.01 mm; the segment count drops from 12,537 to 11,113.
+- **Imported geometry is exact.**  `add_sketch_line` gained `share_endpoints`
+  (default true); the DXF import passes false, which finally matches the
+  comment that has always claimed imported geometry stays exact.  Endpoint
+  coalescing is what collapses it — the call was unconditional.
+- **A collapsing segment is dropped, never thrown.**  If a line still collapses
+  after snapping, it is popped with a warning instead of aborting the caller.
+  The manager's `add_sketch_line` wrapper had assumed a line always appears
+  (`lines.back()` to build the auto-dimension id) — that assumption is now
+  checked, because the core can legitimately add nothing.
+
+Verified: the user's file imports and **10,738 of 11,113 representable
+segments arrive (96.6 %)**; the shortfall is the sketch model merging geometry
+finer than 0.01 mm, and it is now **reported** in the feature summary and the log
+rather than lost.  Regression coverage: a fixture-gated case imports the real
+export (skipped when it is absent), a synthetic 0.4 mm spline whose steps are
+0.006 mm reproduces the failure without any fixture file, and a manager-level
+case proves a collapsing segment is dropped.  All three fail on the previous
+code and pass now.
+
+### The zero-length flood: a repair reported as a failure, per line
+
+With the import fixed, the user's log still filled with
+`ERROR deleted zero-length line line-10843..` — 375 of them per import, written
+straight to stderr (hence the `cad_core_stderr` source and a `react_warning`
+echo of each).
+
+That was the **zero-length cleanup pass**, doing its job: the 375 segments whose
+endpoints welded within the 0.01 mm coincidence tolerance are exactly the count
+the import already reports as "Merged 375 imported segment(s)".  So it was a
+repair, logged as a failure, once per line, through the wrong channel.
+
+Now: one structured `log_debug` summary — "removed N zero-length line(s) whose
+endpoints welded to one vertex" — next to the import's warning.  Verified on the
+real file: 0 per-line errors, 1 summary, and the two counts agree (375/375).
+The annotated `validate_line` contexts added while chasing this stay: they make
+any future zero-length rejection name the pass that produced it.
+
+### Startup log no longer lies about the CAM generators
+
+The startup line said "CAM generators registered (laser_cut, face_milling)" while
+**nine** are registered — a hardcoded string, in the one message written to
+confirm what the running binary actually has.  It is now built from the registry
+(`cam_generator_types()`), so it reads:
+
+```
+CAM generators registered (9): adaptive_clearing, contour_2d, drilling,
+engrave, face_milling, laser_cut, laser_test_pattern, pocket_2d, slot
+```
+
+### A 10.7k-line imported sketch was unusable: measured, then fixed by simplifying
+
+Reported: importing the Fusion sketch, saving it and deleting a single line took
+**more than 15 seconds**, so the sketch could not be edited at all.
+
+Measured on the real file rather than guessed (all in the DXF suite, printed on
+every run):
+
+| | before | after |
+|---|---|---|
+| segments imported | 11,113 | **847** |
+| import | 28.4 s | **0.21 s** |
+| viewport refresh | 0.85 s | **0.011 s** |
+| delete one line | 14.6 s | **0.11 s** |
+
+Two findings, only one of which is about speed:
+
+- **The refresh is superlinear in entity count** — 1,000 lines 0.21 s, 3,000
+  1.33 s, 10,738 14.3 s — and the import pays it twice.  (Instrumenting the
+  passes showed all of them at ~0 ms, so the quadratic term is either in a
+  helper they call or in the pathological geometry itself: with the simplified
+  sketch, 3,000 lines refresh in 0.10 s, i.e. the superlinearity disappeared with
+  the dense near-coincident tessellation.  Worth revisiting with a profiler;
+  the numbers above are the contract.)
+- **A fixed 64-segment tessellation was mostly redundant points.**  191 short
+  splines became 12.5k entities.  The reader now simplifies each tessellated
+  spline and ellipse with **Douglas–Peucker at 0.02 mm** (twice the sketch's own
+  coincidence resolution), so only the points that carry the shape survive.
+
+Two test expectations were counting segments (64 exactly) and now assert the
+invariants that matter instead: the curve is a **chained** polyline whose start
+and end are the spline's, and the ellipse keeps its extents.  A deterministic
+guard bounds the parsed segment count under 2,000, because wall-clock assertions
+are flaky on other machines.
+
+Also fixed along the way: `rebuild_sketch_vertices` and
+`sync_entity_coords_from_vertices` used linear id scans per point (O(n²) with
+21k vertices); both are indexed now.
+
+**Still open:** the extrude refusal on this sketch ("4 pairs of holes touch or
+overlap") is the source geometry's own topology — curves that touch — not a
+regression from this change; the profile needs separated loops.
+
+**Still open in the DXF importer (P6):** layer names are ignored
+(`addLayer` is an empty stub, so everything lands in one sketch), TEXT/MTEXT and
+SOLID/HATCH are skipped with a count, and blocks are dropped.  A Fusion sketch
+export carries no text normally, but an imported drawing does.
+
+### Log window: diagnostics survive chatter
+
+The Logs panel keeps the last 500 entries, and after a 191-spline import the
+user watched the count reach 500 and then fall — entries were being evicted from
+the front while the panel showed only the number it *held*.  Two fixes:
+
+- **The import no longer floods**: tessellations are counted per kind
+  (`splines_tessellated` / `ellipses_tessellated`) and logged once instead of
+  once per entity, so that import costs two lines instead of ~400.
+- **The window evicts chatter first** (`lib/logWindow.ts`, unit-tested): when it
+  is full, the oldest debug/info entries go, and warnings and errors are only
+  evicted once nothing else remains.  This app's only diagnostics surface is
+  that panel, so a burst of info must never push out the warning that explains a
+  failure.  The panel says so when the window is full.
+
+
+## 2026-10-16
+
+### PCB / Gerber workspace — design + Gerber X1 parser (branch `gerber`)
+
+Fabrication data (Gerber + Excellon) has to become CAM operations for two
+workflows: isolation routing on a mill and laser cutting.  This lands the plan
+plus the format layer.
+
+- **Workspace decision** ([PCB-Workspace](PCB-Workspace)): a sixth top-level
+  `pcb` workspace that owns import, layer roles/polarity and PCB job
+  parameters, and produces ordinary CAM operations.  It never emits G-code, so
+  the project keeps one operation model, one preview pipeline and one post
+  processor: `cad | cam | drawing | grbl | slicer | pcb`.
+- **Parser** (`src/core/pcb/gerber_parser.{h,cpp}`, suite
+  `cad_core_pcb_gerber_test`): `%FS`/`%MO` with all three zero-suppression
+  modes, the aperture table, aperture macros **with** expression evaluation
+  (`$n`, `+ - x /`, parentheses, in-order assignments), the modal command
+  stream (move/line/arc/flash, `G36`/`G37` regions, `LPD`/`LPC`, `G90`/`G91`),
+  and the X2 role attributes in both spellings (`%TF…%` and KiCad's
+  `G04 #@! TF…*` comments).  Unsupported constructs (`%SR`, `%AB`, `G74`,
+  `%IPNEG`) are recorded and skipped; malformed input returns diagnostics
+  instead of throwing, with operation/statement caps for untrusted files.
+- **Verified against a real board** (local KiCad 10.0.4 4-layer plot in
+  `projects/EDM`, deliberately *not* committed): F_Cu imports 71 apertures,
+  12 pours, 716 pad flashes and a ~16.5k-operation command stream with nothing
+  unsupported; Edge_Cuts yields 10 multi-quadrant arcs.  The fixture case is
+  path/env gated (`POLYSMITH_PCB_FIXTURE_DIR`), so the suite passes without it.
+  The suite caught a real parser bug during development (`ADD<code>` read as
+  `AD` + code, silently rejecting every aperture).
+- **Gates:** `pnpm core:build` + `pnpm test:core` — 68/68 suites green
+  (including the new one), no UI change.
+- **Polygonizer** (`gerber_polygonize.{h,cpp}`, suite
+  `cad_core_pcb_polygonize_test`): command stream → closed rings in mm, each
+  tagged with the polarity in effect — circle/rect/obround/polygon flashes,
+  capsule strokes for round apertures, exact flat-ended sweeps for rectangular
+  ones, macro flashes expanded into their primitives, region contours, and
+  tolerance-based arc sampling.  **Deliberately no set booleans**: cutting
+  treats every ring as a loop regardless of polarity, and clear rings are
+  tagged rather than dropped (§4 of the design doc).
+- **Geometry engine decision revised:** the core already owns an arc-preserving
+  loop offsetter (`cam2d::offset_closed_loop`, used for the laser kerf and
+  face-milling inset) plus containment/clipping helpers, so isolation routing
+  needs **no polygon-clipping dependency**; Clipper2 is demoted to a *candidate*
+  for the narrow dense-copper trim case, pending board evidence.
+  On the real board F_Cu polygonizes to 2017 rings with **0 skipped operations
+  and 0 diagnostics**.
+- **Fixture set committed:** `native/cad-core/tests/data/pcb/` — a 35 KB
+  trimmed F_Cu slice (all 71 apertures, 716 pad flashes, traces, one pour),
+  the board profile, a paste layer and both Excellon files, with a README
+  recording provenance and the exact trimming recipe.  The untrimmed plot stays
+  local behind `POLYSMITH_PCB_FIXTURE_DIR`.  Both suites now assert real-board
+  behaviour in-repo: the trimmed copper polygonizes to 1964 rings, 1215 macro
+  pad parts, 1 pour, 0 skipped, 0 diagnostics.
+- **Isolation decided as a 2.5D milling operation, V-bit included** (§5 of the
+  design doc): an earlier claim in that document — that the CAM had no
+  plunge/step-down model — was **wrong**.  `stepdown_mm`,
+  `plunge_feedrate_mm_per_min` and `plan_stepdown_levels()` already exist; the
+  laser ops simply never move in Z.  A V-bit's effective width is
+  `tip + 2·depth·tan(θ/2)`, so for a V-bit the Z levels *are* the width control
+  (successive steps clear more copper), while a flat end mill stays a single-Z
+  multi-offset pass.  `pcb_drill` likewise reuses the existing
+  `drilling_generator` (G81/G83 + peck) instead of adding a generator.
+- **Role-resolution detail found in the fixtures:** the three tiers disagree on
+  vocabulary — `Paste,Bot` in the Gerber attribute vs `SolderPaste,Bot` in the
+  `.gbrjob`, `Legend` vs `Silkscreen` — so the P2 resolver needs an alias
+  table, not string equality.
+- **Excellon drill parser** (`excellon_parser.{h,cpp}`, suite
+  `cad_core_pcb_excellon_test`): `M48`/`FMAT,2`/`METRIC`/`INCH` headers,
+  `TnC<diameter>` tool tables with KiCad's per-tool `TA.AperFunction`
+  comments (via vs component drills), `TF.FileFunction` plated/non-plated,
+  `G90`/`G91`, `G05`, `M71`/`M72`, `M30`, decimal **and** fixed-point
+  coordinates, and `R<n>[X…][Y…]` repeats.  Against the committed fixtures:
+  `pth.drl` → 13 tools / 511 holes / no diagnostics; `npth.drl` → a valid
+  empty program (zero holes is not an error).
+- **Three parser defects the tests caught before commit:** (1) `R<n>` repeats
+  the *previous* hole `n` more times **stepping** by its `X`/`Y` — KiCad's own
+  regression test documents `R07X5000` as 8 holes 5 mm apart — whereas the
+  first implementation repeated in place and ignored the step (wrong holes
+  drilled, pattern holes missing); (2) a file that writes one explicit decimal
+  point is a decimal file, so a whole-millimetre hole appears as `X10`, not as
+  a fixed-point `0.01 mm`; (3) the committed fixtures contain no point-less
+  coordinates at all, so only the synthetic cases exercised that path.
+- **P1 is complete** (parser, polygonizer, drill parser — all pure, tested and
+  dependency-free).
+- **`pcb_layer` document feature (P2 core slice, user-approved):**
+  `import_pcb_layer` / `update_pcb_layer` / `remove_pcb_layer`
+  (`document/impl/pcb_commands.inc`, suite `cad_core_pcb_layer_test`, 10
+  cases).  The feature stores the source path **plus summary counts**, not the
+  geometry: a copper layer is ~2k rings, and snapshotting that into every save
+  (the STEP-import precedent) would add megabytes of re-derivable data.  The
+  accepted consequence: a moved or deleted Gerber file marks the feature
+  `dependency_broken` with a warning and keeps its last known counts, where a
+  STEP import would still open.  It contributes no B-rep geometry, so the body
+  compiler skips it exactly as it skips construction features (verified:
+  `build_feature_shape` returns an empty shape for unknown kinds).
+- **Role resolution by normalised keyword, never equality**
+  (`pcb_role.{h,cpp}`): the tiers disagree on vocabulary — `Paste,Bot` (Gerber
+  attribute) vs `SolderPaste,Bot` (job file), `Legend` vs `Silkscreen`,
+  `Profile` vs `Edge_Cuts` — and `NonPlated` contains `Plated`, so drills are
+  matched first.  The file's own attribute wins, the filename is the fallback,
+  and an explicit user role overrides both (recorded as
+  `role_from_attributes = false`).  Solder-mask polarity is **negative** (the
+  file describes the openings) and is labelled as assumed when the file is
+  silent.  Layer parameters survive a save/load round trip.
+- **Two test-harness lessons:** a suite that forgets `create_document()` dies by
+  uncaught exception (0xC0000409), and stdout to a pipe is block-buffered, so a
+  case name must be flushed or a crash hides its own location.  Both fixed in
+  `pcb_layer_test`.
+- **P2b — `pcb_*` IPC commands + the thin PCB workspace:**
+  `pcb_import_layer` / `pcb_update_layer` / `pcb_remove_layer`
+  (`app/impl/pcb_command_handlers.inc`, schema names, TS types, command
+  factories and senders), then a `pcb` workspace page
+  (`app/PcbWorkspace.tsx`) with import, a layer table (role override,
+  contents, polarity, mirror, warnings, remove) and the workspace switcher,
+  label and render branch wired.  The workspace produces no G-code and no
+  toolpaths: its only output is `pcb_layer` features, and the page says so.
+- **One trap worth remembering:** the UI's feature schema is an explicit zod
+  object, and zod strips unknown keys — so `pcb_layer_parameters` had to be
+  declared in `documentStateSchema.ts` or the layer table would have rendered
+  **empty with no error at all**.
+- **USER-VERIFIED IN-APP** against the full EDM set (13 files, 1–2 s): all 12
+  Gerber + drill files resolved their role **from the file's own attributes**
+  (no filename guesses), both solder-mask rows came out **Negative** polarity,
+  bottom-side layers defaulted to **Mirrored**, `Edge_Cuts` reported the
+  99.9 × 99.9 mm board, `F_Cu` reported **2017 rings — the exact figure the
+  polygonizer suite pins for that file**, and `NPTH.drl` came in as 0 tools /
+  0 holes.
+- **Navigation bug found by the same session:** the `pcb` entry landed on the
+  Slicer page.  `AppTopBar`'s `onSetWorkspaceView` was an if-chain over the
+  five known views with `showSlicerView()` as the **fallback**, so an
+  unrecognised view silently became the slicer.  Fixed with an exhaustive
+  `switch` plus a `never` assertion, so the next workspace added cannot land
+  on someone else's page.  (A second, unrelated real bug was fixed on the way:
+  leaving the Slicer workspace for CAM/drawing/GRBL/PCB left the *native*
+  OrcaSlicer window mapped over the next page — only `showCadView()` ever
+  unmapped it.)
+- **PCB layer reference (P2c identity half):** `PcbLayerAttestation` — a
+  CAM operation that cuts a layer references the WHOLE layer (feature id +
+  ring count + bounds), because both workflows consume the complete ring set
+  and one reference is a far smaller TNP surface than thousands of rings.
+  Rings are re-derived from the source on every recompute; a re-plotted layer
+  still cuts but reports `changed` so the user is warned, while a deleted
+  feature or vanished source degrades with a reason naming what is missing.
+  Drill layers resolve on their holes (511 hits / 13 tools for `pth.drl`).
+  Witness survives the protocol round trip.  Suite
+  `cad_core_pcb_layer_attestation_test` (5 cases).
+- **Generation is guarded rather than silently empty:** `cam_generate` now
+  fails with an explicit message when a resolved PCB layer reaches a generator
+  that has no PCB branch yet, so the next slice cannot ship an operation that
+  "succeeds" with no toolpath.  Removed when the laser branch lands.
+- **A layer now cuts (P2c cutting half, core):** the laser generator grew a
+  PCB-layer branch (`laser_generate.cpp`).  Each ring of a layer is an
+  independent closed contour, so each becomes its own group — nesting across
+  rings is not a hole relationship, it is two separate cuts.  Layer
+  coordinates are used verbatim as world XY at the operation's plane offset.
+  Suite `cad_core_pcb_layer_cut_test` proves it on the committed profile
+  layer: **20 contours, one per ring**, kerf pushing the cut outside the drawn
+  outline by no more than the kerf, nothing straying, a **drill-only layer
+  failing with "no contours to cut"** plus a warning (never an empty
+  "successful" toolpath), and a **deleted layer** degrading with a reason.
+- **Parallel branch, not a shared helper — on purpose:** the face-outline path
+  duplicates ~40 lines of loop planning, so a defect in the new branch cannot
+  reach the production face/sketch paths.  The extraction into a shared helper
+  is its own test-backed change, agreed with the user in advance.
+- **Known limitation:** laser *fill* mode on a layer hatches each ring
+  independently and applies no polarity/boolean assembly (a negative mask would
+  fill its openings).  Contour cutting is exact; fill waits on the set-boolean
+  decision.
+- **Creating the cut from the layer table (P2c last mile):**
+  `pcb_capture_layer_reference {feature_id}` mints the layer witness in the
+  core from the layer's own summary and replies with
+  `pcb_layer_attestation_result` — the `cam_capture_face_reference` doctrine
+  (the renderer names a row; the core decides what identifies it).  The PCB
+  workspace's per-row **Laser cut** button reuses the existing laser-cut action
+  (it gained an optional `pcbLayerFeatureId` rather than a parallel path) and
+  switches to CAM so the new operation's panel is in front of the user.  The
+  chain is now complete end to end: import a Gerber set → Laser cut on a layer
+  → CAM operation → post → GRBL workspace.
+- **Region assembly with Clipper2 (the §4 decision, forced by evidence):** the
+  committed copper layer is 1,964 drawn primitives, 1,215 of them macro parts —
+  a KiCad `RoundRect` pad is nine overlapping primitives, so cutting it as drawn
+  traced each pad nine times *including lines inside it*.  `third_party/clipper2`
+  (vendored in-tree, BSL-1.0, commit f9c5eb6e / v2.0.1) now unions dark draws and
+  subtracts clear draws **in file order** in `core/pcb/pcb_region_assembly`, so
+  `PcbLayerGeometry` carries both views: `rings` (cuttable) and `drawn_rings`
+  (as drawn).  Rings: copper 1,964 → **573**, full-board F_Cu 2,017 → **254**,
+  Edge_Cuts 20 → **8**; rapid travel on the copper layer 3,533 → **1,833 mm**.
+  Paths are normalized to one winding first: Clipper2 unions under NonZero, so
+  mixed windings make an overlapping pad cancel instead of merge.
+- **A silent geometry-destroying bug, found by the ring count:** the laser
+  generator's duplicate-contour healing pass (legacy *sketch* captures) pairs
+  loops whose centroids are within 0.05 mm and areas within 25 %.  The two sides
+  of a thin ribbon satisfy both, so it deleted real contours on every hairline
+  layer (8 profile rings cut as 5).  Layer loops now carry
+  `PlannedLoop::from_layer` and are never paired.
+- **Centre-line cut mode, per operation:** a board profile is drawn with a
+  0.1 mm hairline aperture, so region assembly turns the outline into 0.1 mm
+  ribbons and a laser traces both sides.  `LaserCutParameters::layer_mode`
+  (`regions` | `centerline`, per the user's call: it sits on the 2D cut
+  operation beside cut order and kerf side, not on the layer) now picks the
+  interpretation: regions cuts assembled areas with the kerf; centre-lines
+  follows each drawn stroke once with **no kerf and no leads**.  The polygonizer
+  records every stroke's centre-line (`stroke_paths`, with aperture width) and
+  chains the abutting ones into closed loops (`stroke_loops`), so a profile cut
+  is one contour per outline instead of a pierce mark per drawn side.  Measured:
+  the committed profile cuts as **4 contours** in centre-line mode against 8 in
+  regions mode, staying inside the drawn extents rather than a kerf outside.
+  Open chains (silkscreen text) are left out with a warning — cutting an open
+  path needs an open cut path the emitter does not have yet.
+- **Open chains cut as open paths (PCB layers):** Fusion-style "open chain"
+  support, starting with line art.  Stroke centre-lines chain into `PcbChain`s
+  with a `closed` flag, and centre-line mode cuts closed chains as loops and open
+  chains as **open paths** (`PlannedLoop::is_open`): rapid to the first point,
+  fire, walk, stop.  No pierce search, leads, kerf, closure or tabs — an open
+  path has no seam.  A one-segment path is legitimate (silkscreen is full of
+  them), so the three-sample minimum guarding the closed-loop machinery does not
+  apply, and open chains are built DIRECTLY rather than through `plan_loop` (a
+  closed-loop offsetting routine that collapses a two-point path to a single
+  sample — the test caught exactly that: a laser-on move that went nowhere).
+  Sketch geometry and text are the other half: sketch text is already expanded
+  into plain lines tagged `generated_by: "text:<id>"`, so it is selectable
+  geometry; what is missing is a chain attestation (endpoints, length, segment
+  count, kinds) plus an armed open-chain pick in CAM.  Planned in
+  `wiki/PCB-Workspace.md`; the emitter branch is shared, so it is not throwaway.
+- **Leads off by default on layer cuts, and why it matters:** a contour shorter
+  than twice the lead allowance is skipped, so the CAM default of 2 mm + 2 mm was
+  silently dropping vias and mask openings on a PCB (warned in the log, invisible
+  on screen).  Layer cuts now start with zero leads — pinned by
+  `small_features_survive_without_leads` (2 mm leads cut 1 of 2 pads; no leads cut
+  both).  Real-board measurements are now in the polygonizer suite: `B_Cu` 122
+  assembled regions, `F_Cu` 254, `In1`/`In2` 180/92, masks 134/262, and
+  `B_Silkscreen` 1,493 strokes → **207 chains (19 closed, 188 open)** at
+  0.1–0.254 mm widths — i.e. KiCad's stroked text becomes exactly the open paths
+  centre-line mode cuts.
+- **USER-VERIFIED (2026-10-16):** after the zero-lead fix the user confirmed the
+  generated path on the real board "looks much closer to the original KiCad with
+  all the details" — region assembly, ordering and the lead rule all confirmed
+  in-app on `B_Cu`.
+- **The PCB workspace is gone (restructure, per the user's call):** it had become
+  a workspace whose only job was importing, and importing twice is how two paths
+  drift.  File → *Import PCB…* now lives with every other importer in CAD
+  (multi-select, because a job is a SET and only a few of its files are needed);
+  a layer is an ordinary geometry source in the CAM operation panel's Geometry
+  block, next to the sketch scope it replaces, with *None (model geometry)* to
+  switch back; and the layer table became a right-click → **Properties** card on
+  the feature carrying role *and its provenance*, format, polarity, contents,
+  size, mirror and the import warnings.  Two things found while doing it: a
+  `pcb_layer` was invisible in the hierarchy (it has no B-rep shape, so it fell
+  through every category and appeared only in the timeline — there is now an
+  **Imports** category), and the layer picker could come up empty because it
+  required the summary rather than the feature kind.  The laser-setup
+  auto-ensure that lived on the workspace button moved to the CAM "2D Cut"
+  action, so that behaviour survived the removal.
+- **USER-VERIFIED (2026-10-19): the restructure works in-app.** After the
+  properties card was portaled to `document.body` — `.cad-sidebar` sets
+  `backdrop-filter`, which makes it a containing block for `position: fixed`
+  descendants, so the card was rendered behind the sidebar overlays and clicks
+  fell through to the sketch while its own buttons stayed unreachable — the user
+  confirmed: "it is working now i can click and reacts".  Import → hierarchy →
+  right-click Properties → CAM layer source is now the working path, with no PCB
+  workspace.
+- **Next:** the layer source in the contour/engrave panels (a Gerber layer is as
+  much a milling source as a laser one — isolation routing on copper is a
+  contour operation), then `pcb_isolation` and `pcb_drill`.
+
 ## 2026-09-24
 
 ### Bootstrap chain hardening — cross-platform build scripts (dev, uncommitted)

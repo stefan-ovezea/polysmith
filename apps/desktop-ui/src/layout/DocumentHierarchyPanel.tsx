@@ -5,7 +5,12 @@ import type { DocumentState, SlicerExportFormat } from "@/types";
 import { ContextMenuShell } from "./ContextMenuShell";
 import { useContextMenuDismiss } from "./hooks/useContextMenuDismiss";
 
-export type CategoryId = "origin" | "construction" | "sketches" | "bodies";
+export type CategoryId =
+  | "origin"
+  | "construction"
+  | "sketches"
+  | "bodies"
+  | "imports";
 
 interface DocumentHierarchyPanelProps {
   document: DocumentState | null;
@@ -13,6 +18,8 @@ interface DocumentHierarchyPanelProps {
   hiddenCategories: ReadonlySet<CategoryId>;
   onToggleFeatureVisibility: (featureId: string) => void;
   onToggleCategoryVisibility: (category: CategoryId) => void;
+  // Opens the imported-layer properties card for a pcb_layer feature.
+  onShowLayerProperties?: (featureId: string) => void;
   onSelectFeature: (featureId: string) => Promise<void>;
   // Construction planes are *both* features and references. Clicking
   // one in the hierarchy sets selected_reference_id (so the Sketch
@@ -175,6 +182,26 @@ function SketchIcon() {
     >
       <path d="M4 20 6 14 16 4l4 4L10 18Z" />
       <path d="m14 6 4 4" />
+    </svg>
+  );
+}
+
+// Stacked sheets: an imported fabrication layer is reference art, not a body.
+function LayerIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3 21 8l-9 5-9-5Z" />
+      <path d="m3 13 9 5 9-5" />
     </svg>
   );
 }
@@ -498,6 +525,7 @@ export function DocumentHierarchyPanel({
   hiddenCategories,
   onToggleFeatureVisibility,
   onToggleCategoryVisibility,
+  onShowLayerProperties,
   onSelectFeature,
   onSelectReference,
   onReenterSketch,
@@ -519,7 +547,14 @@ export function DocumentHierarchyPanel({
 }: DocumentHierarchyPanelProps) {
   const { t } = useTranslation();
   const [openCategories, setOpenCategories] = useState<Set<CategoryId>>(
-    () => new Set<CategoryId>(["origin", "construction", "sketches", "bodies"]),
+    () =>
+      new Set<CategoryId>([
+        "origin",
+        "construction",
+        "sketches",
+        "bodies",
+        "imports",
+      ]),
   );
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingFeatureId, setRenamingFeatureId] = useState<string | null>(
@@ -627,6 +662,15 @@ export function DocumentHierarchyPanel({
         }
         return true;
       }),
+    [features],
+  );
+
+  // Imported reference geometry that is NOT a body: PCB fabrication layers have
+  // no B-rep shape (their rings are re-derived from the source file every
+  // recompute), so they belong to no other category and used to be invisible
+  // here — present in the timeline, absent from the tree.
+  const imports = useMemo(
+    () => features.filter((feature) => feature.kind === "pcb_layer"),
     [features],
   );
 
@@ -834,6 +878,54 @@ export function DocumentHierarchyPanel({
               )}
               onRenameSubmit={(nextName) => {
                 void submitRename(sketch.feature_id, nextName);
+              }}
+              onRenameCancel={cancelRename}
+              {...rowLabels}
+            />
+          );
+        })}
+      </Category>
+
+      <Category
+        id="imports"
+        label={t("document.imports")}
+        isOpen={openCategories.has("imports")}
+        onToggleOpen={() => toggleOpen("imports")}
+        isHidden={hiddenCategories.has("imports")}
+        onToggleVisibility={() => onToggleCategoryVisibility("imports")}
+        emptyHint={imports.length === 0 ? t("document.noImports") : undefined}
+        {...categoryLabels}
+      >
+        {imports.map((imported) => {
+          const isHidden = hiddenFeatureIds.has(imported.feature_id);
+          return (
+            <Row
+              key={imported.feature_id}
+              icon={<LayerIcon />}
+              label={imported.name}
+              isSelected={document.selected_feature_id === imported.feature_id}
+              isHidden={isHidden}
+              hasWarning={imported.dependency_broken === true}
+              warningText={imported.dependency_warning}
+              isRenaming={renamingFeatureId === imported.feature_id}
+              onSelect={() => {
+                void onSelectFeature(imported.feature_id);
+              }}
+              onActivate={() => {
+                void onSelectFeature(imported.feature_id);
+              }}
+              onToggleVisibility={() => {
+                onToggleFeatureVisibility(imported.feature_id);
+              }}
+              onContextMenu={openContextMenu(
+                imported.feature_id,
+                imported.name,
+                isHidden,
+                imported.suppressed === true,
+                false,
+              )}
+              onRenameSubmit={(nextName) => {
+                void submitRename(imported.feature_id, nextName);
               }}
               onRenameCancel={cancelRename}
               {...rowLabels}
@@ -1059,6 +1151,21 @@ export function DocumentHierarchyPanel({
                       {t("common.detachProjections")}
                     </button>
                   ) : null}
+                </>
+              ) : null}
+              {contextFeature?.kind === "pcb_layer" ? (
+                <>
+                  <button
+                    type="button"
+                    className="cad-context-menu-item"
+                    onClick={() => {
+                      onShowLayerProperties?.(contextMenu.featureId);
+                      setContextMenu(null);
+                    }}
+                  >
+                    {t("pcb.properties", "Properties")}
+                  </button>
+                  <div className="cad-context-menu-separator" />
                 </>
               ) : null}
               {contextFeature?.kind === "sketch" ? (

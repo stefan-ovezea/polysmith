@@ -8,6 +8,10 @@
 //  TNP-Safe References
 // ══════════════════════════════════════════════════════════════════
 
+// A reference to an imported PCB layer is one more witness kind alongside
+// the face / edge / sketch-profile / point ones below.
+import type { PcbLayerAttestation } from "./pcb";
+
 export interface Bounds3D {
   min_x: number; min_y: number; min_z: number;
   max_x: number; max_y: number; max_z: number;
@@ -66,6 +70,7 @@ export interface GeometryReference {
     | FaceAttestation
     | EdgeAttestation
     | SketchProfileAttestation
+    | PcbLayerAttestation
     | PointAttestation;
 }
 
@@ -245,6 +250,10 @@ export interface LaserCutParameters {
   arc_segments_per_circle: number;  // polyline chords per full circle;
                                     // 0 = auto chord tolerance
   cut_order: "inner_first" | "nearest_neighbor" | "by_area";
+  /** Imported PCB layers only: cut the assembled filled areas, or follow each
+   *  drawn stroke's centre line (a board profile is drawn as a hairline whose
+   *  meaning is "cut along this line"). */
+  layer_mode: "regions" | "centerline";
 }
 
 // 2D Contour parameters (only meaningful when type == "contour_2d").

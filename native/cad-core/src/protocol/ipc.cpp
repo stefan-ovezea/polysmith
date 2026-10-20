@@ -191,6 +191,15 @@ json make_cam_face_attestation_event(const std::string& id,
   };
 }
 
+json make_pcb_layer_attestation_event(const std::string& id,
+                                      const json& payload) {
+  return {
+      {"id", id},
+      {"type", "pcb_layer_attestation_result"},
+      {"payload", payload},
+  };
+}
+
 json make_cam_edge_attestation_event(const std::string& id,
                                      const json& payload) {
   return {

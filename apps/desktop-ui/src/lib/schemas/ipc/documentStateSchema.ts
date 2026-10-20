@@ -314,6 +314,29 @@ export const documentStateSchema = z.object({
         })
         .nullable()
         .default(null),
+      // Imported PCB fabrication layer (Gerber / Excellon). Summary only —
+      // the rings live in the core and are re-derived from the source file.
+      pcb_layer_parameters: z
+        .object({
+          file_path: z.string(),
+          format: z.enum(["gerber", "excellon"]).default("gerber"),
+          role: z.string().default("unknown"),
+          file_polarity: z.string().default(""),
+          file_function: z.string().default(""),
+          role_from_attributes: z.boolean().default(false),
+          mirror_x: z.boolean().default(false),
+          ring_count: z.number().default(0),
+          hit_count: z.number().default(0),
+          tool_count: z.number().default(0),
+          bounds_valid: z.boolean().default(false),
+          min_x: z.number().default(0),
+          min_y: z.number().default(0),
+          max_x: z.number().default(0),
+          max_y: z.number().default(0),
+          warnings: z.array(z.string()).default([]),
+        })
+        .nullable()
+        .default(null),
       hole_parameters: z
         .object({
           target_body_id: z.string(),

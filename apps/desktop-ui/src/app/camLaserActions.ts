@@ -3,10 +3,12 @@ import type {
   CamOperationPayload,
   DocumentState,
   FaceAttestation,
+  PcbLayerAttestation,
   GeometryReference,
   ViewportState,
 } from "@/types";
 import { defaultToolForOperation } from "./camToolSelection";
+import { pcbLayerLaserDefaults } from "./pcbLayerDefaults";
 import { DEFAULT_LASER_PARAMS } from "@/layout/CamLaserCutPanel";
 
 interface CamLaserCutContext {
@@ -26,6 +28,17 @@ interface CamLaserCutContext {
       attestation: FaceAttestation;
     };
   }>;
+  /** Mints the reference for an imported PCB layer (core-side witness). */
+  pcbCaptureLayerReference?: (
+    featureId: string,
+  ) => Promise<{
+    payload?: {
+      persistent_id: string;
+      attestation: PcbLayerAttestation;
+    };
+  }>;
+  /** When set, the operation cuts this PCB layer instead of model geometry. */
+  pcbLayerFeatureId?: string | null;
   setSelectedOperationId: (operationId: string | null) => void;
   addMessage: (message: string) => void;
   translate: (key: string, options?: Record<string, unknown>) => string;
@@ -92,6 +105,8 @@ export async function triggerCamLaserCut({
   runAction,
   camOperationCreate,
   camCaptureFaceReference,
+  pcbCaptureLayerReference,
+  pcbLayerFeatureId,
   setSelectedOperationId,
   addMessage,
   translate,
@@ -109,8 +124,9 @@ export async function triggerCamLaserCut({
   );
 
   // Input geometry: sketch profiles (or the selected sketch feature),
-  // OR a selected 3D face whose outline gets cut at its height.  The
-  // face witness is captured by the CORE — never fabricated here.
+  // OR a selected 3D face whose outline gets cut at its height, OR an
+  // imported PCB layer (the workspace's row button).  Every witness is
+  // captured by the CORE — never fabricated here.
   let faceReference: GeometryReference | null = null;
   if (!hasProfileSelection && !hasSelectedSketch && document.selected_face_id) {
     await runAction(async () => {
@@ -126,7 +142,40 @@ export async function triggerCamLaserCut({
       }
     });
   }
-  if (!hasProfileSelection && !hasSelectedSketch && !faceReference) {
+  // An imported PCB layer is its own geometry source: every ring of the
+  // layer is a contour to cut.  The reference is minted core-side from the
+  // layer's summary, so a re-imported file re-identifies itself.
+  let layerReference: GeometryReference | null = null;
+  let layerRole = "";
+  if (pcbLayerFeatureId && pcbCaptureLayerReference) {
+    await runAction(async () => {
+      const response = await pcbCaptureLayerReference(
+        pcbLayerFeatureId as string,
+      );
+      const payload = response.payload;
+      if (payload?.attestation) {
+        layerReference = {
+          persistent_id: payload.persistent_id,
+          attestation: payload.attestation,
+        };
+        // A profile or silkscreen layer is DRAWN as hairlines: the file means
+        // "cut along this line", so following the stroke centre-lines is the
+        // right starting point.  Copper, mask and paste describe AREAS.
+        layerRole = payload.attestation.role;
+      }
+    });
+    if (!layerReference) {
+      addMessage(translate("pcb.captureFailed"));
+      return;
+    }
+  }
+
+  if (
+    !hasProfileSelection &&
+    !hasSelectedSketch &&
+    !faceReference &&
+    !layerReference
+  ) {
     // No pre-selection: the operation is created with an EMPTY scope
     // and the panel's reference-sketch dropdown fills it in afterwards
     // (the core allows empty-scope laser operations on create).
@@ -143,15 +192,17 @@ export async function triggerCamLaserCut({
   const previousCount = document.cam.operations.length;
 
   const operation: CamOperationPayload = {
-    name: "2D Cut",
+    name: layerReference ? "PCB layer cut" : "2D Cut",
     type: "laser_cut",
     enabled: true,
     setup_id: setupId ?? "",
     tool_id: laserTool?.tool_id ?? "",
-    ...(faceReference
+    ...(layerReference || faceReference
       ? {
           geometry_references: {
-            machining_regions: [faceReference] as GeometryReference[],
+            machining_regions: [
+              (layerReference ?? faceReference) as GeometryReference,
+            ],
             avoidance_regions: [],
             guide_curves: [],
             check_surfaces: [],
@@ -168,7 +219,16 @@ export async function triggerCamLaserCut({
       multiple_passes: false,
       coolant: "off",
       tool_axis_mode: "fixed_z",
-      laser: { ...DEFAULT_LASER_PARAMS },
+      laser: {
+        ...DEFAULT_LASER_PARAMS,
+        // A layer is thousands of INDEPENDENT contours, so the CAM default of
+        // inner_first — which degenerates to smallest-area-first when no loop
+        // encloses another — cuts them in Gerber file order and sends the head
+        // criss-crossing the board between them.  One rule for every way a layer
+        // gets attached, so the same file cuts the same way however it was
+        // picked (see pcbLayerDefaults).
+        ...(layerReference ? pcbLayerLaserDefaults(layerRole) : {}),
+      },
     },
     dependencies: {
       parent_operation_ids: [],

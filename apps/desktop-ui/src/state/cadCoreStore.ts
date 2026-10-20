@@ -15,6 +15,7 @@ import {
   getViewportFromMessage,
 } from "../lib/ipcProtocol";
 import { useToastStore } from "./toastStore";
+import { appendLogWithinWindow } from "../lib/logWindow";
 
 interface CadCoreStoreState {
   status: "idle" | "starting" | "connected" | "error" | "stopped";
@@ -179,7 +180,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       ) {
         return state;
       }
-      return { logs: [...state.logs, entry].slice(-500) };
+      return { logs: appendLogWithinWindow(state.logs, entry) };
     }),
   clearLogs: () => set({ logs: [] }),
   dismissGenerationResult: () => set({ generationResult: null }),
@@ -210,7 +211,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       }
 
       if (message.type === "log") {
-        nextState.logs = [...state.logs, message.payload].slice(-500);
+        nextState.logs = appendLogWithinWindow(state.logs, message.payload);
       }
 
       if (message.type === "cam_generation_result") {

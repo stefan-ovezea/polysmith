@@ -15,6 +15,7 @@ import {
   pickExportIgesPath,
   pickExportPath,
   pickImportDxfPath,
+  pickImportPcbPaths,
   pickImportIgesPath,
   pickImportStepPath,
   pickImportStlPath,
@@ -94,6 +95,7 @@ interface AppTopBarProps {
   exportDocumentDxf: (filePath: string) => Promise<void>;
   importStl: (filePath: string, scale?: number) => Promise<void>;
   importDxf: (filePath: string, planeId?: string) => Promise<void>;
+  importPcbLayer: (filePath: string) => Promise<void>;
   importStep: (filePath: string) => Promise<void>;
   importIges: (filePath: string) => Promise<void>;
   exportDocumentIges: (filePath: string) => Promise<void>;
@@ -186,23 +188,32 @@ export function AppTopBar(props: AppTopBarProps) {
       drawingRibbon={props.drawingRibbon}
       canOpenSlicerView={props.canOpenSlicerView}
       onSetWorkspaceView={(view) => {
-        if (view === "cad") {
-          void props.showCadView();
-          return;
+        // Exhaustive on purpose. This used to be an if-chain over the five
+        // known views with showSlicerView() as the fallback, so adding the
+        // `pcb` workspace silently navigated to the Slicer instead — the
+        // `never` assertion below turns that class of bug into a compile
+        // error the next time a workspace is added.
+        switch (view) {
+          case "cad":
+            void props.showCadView();
+            return;
+          case "cam":
+            void props.showCamView();
+            return;
+          case "drawing":
+            void props.showDrawingView();
+            return;
+          case "grbl":
+            void props.showGrblView();
+            return;
+          case "slicer":
+            void props.showSlicerView();
+            return;
+          default: {
+            const unhandled: never = view;
+            void unhandled;
+          }
         }
-        if (view === "cam") {
-          void props.showCamView();
-          return;
-        }
-        if (view === "drawing") {
-          void props.showDrawingView();
-          return;
-        }
-        if (view === "grbl") {
-          void props.showGrblView();
-          return;
-        }
-        void props.showSlicerView();
       }}
       status={props.status}
       disabled={props.status !== "connected"}
@@ -310,6 +321,24 @@ export function AppTopBar(props: AppTopBarProps) {
         await props.runAction(async () => {
           await props.importDxf(filePath);
           props.addMessage(`import requested: ${filePath}`);
+        });
+      }}
+      onImportPcb={async () => {
+        // A fabrication set is imported one file at a time: each reply carries a
+        // fresh document state, so the hierarchy fills in as the set loads and
+        // one unreadable file cannot stop the rest.
+        const paths = await pickImportPcbPaths({
+          translate: props.translate,
+          addMessage: props.addMessage,
+        });
+        if (!paths) {
+          return;
+        }
+        await props.runAction(async () => {
+          for (const filePath of paths) {
+            await props.importPcbLayer(filePath);
+          }
+          props.addMessage(`import requested: ${paths.length} PCB file(s)`);
         });
       }}
       onImportStep={async () => {

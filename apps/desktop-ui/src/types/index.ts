@@ -7,5 +7,6 @@ export * from "./geometry/sketch";
 export * from "./geometry/primitives";
 export * from "./geometry/contraints";
 export * from "./geometry/cam";
+export * from "./geometry/pcb";
 export * from "./geometry/drawing";
 export * from "./drawingTool";

@@ -22,6 +22,11 @@ DocumentState DocumentManager::add_sketch_line(double start_x,
 
   push_undo_state();
   clear_redo_stack();
+  // The core can refuse to add a line that would collapse after endpoint
+  // snapping (a segment shorter than the coincidence tolerance), so nothing
+  // here may assume a line appeared: `.back()` on an empty list is how that
+  // assumption crashes.
+  const size_t lines_before = feature_it->sketch_parameters->lines.size();
   polysmith::core::add_sketch_line(*feature_it,
                                    next_sketch_line_id_++,
                                    start_x,
@@ -34,6 +39,18 @@ DocumentState DocumentManager::add_sketch_line(double start_x,
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
+  if (feature_it->sketch_parameters->lines.size() == lines_before) {
+    // Nothing was added (the request collapsed): keep the tool armed and the
+    // selection clear, but never read a line that does not exist.
+    document_->selected_sketch_dimension_id = std::nullopt;
+    document_->selected_sketch_profile_id = std::nullopt;
+    document_->selected_sketch_profile_ids.clear();
+    document_->selected_sketch_vertex_ids.clear();
+    document_->selected_sketch_entity_ids.clear();
+    document_->active_sketch_tool = "line";
+    bump_geometry_revision();
+    return document_.value();
+  }
   // Construction lines don't get an auto length dimension, so the
   // dimension list may be unchanged. Pick the dimension only if one
   // was actually created for this line; otherwise clear the

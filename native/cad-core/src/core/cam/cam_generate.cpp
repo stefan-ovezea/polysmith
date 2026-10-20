@@ -149,6 +149,10 @@ CamGenerateOutcome generate_operation_toolpath(
         [&](const PointAttestation& point) {
           context.geometry.points.push_back(point);
         },
+        [&](const ResolvedPcbLayerRef& resolved, const FeatureEntry& layer) {
+          context.geometry.pcb_layers.push_back(resolved);
+          context.geometry.pcb_layer_features.push_back(&layer);
+        },
         message);
     if (!ok) {
       outcome.result.ok = false;
@@ -176,6 +180,10 @@ CamGenerateOutcome generate_operation_toolpath(
         },
         [&](const PointAttestation& point) {
           context.geometry.points.push_back(point);
+        },
+        [&](const ResolvedPcbLayerRef& resolved, const FeatureEntry& layer) {
+          context.geometry.pcb_layers.push_back(resolved);
+          context.geometry.pcb_layer_features.push_back(&layer);
         },
         message);
     if (!ok) {

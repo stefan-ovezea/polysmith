@@ -55,6 +55,13 @@ struct DxfImportResult {
   std::map<std::string, int> skipped_by_kind;
   // Human-readable approximations applied during import (spline /
   // ellipse tessellation, units scaling).
+  //
+  // PER-KIND COUNTS, not per-entity: a Fusion sketch export has hundreds of
+  // splines, and one message each flooded the Logs panel until the 500-entry
+  // ring evicted everything before it — the user saw the counter appear to go
+  // DOWN.  These are logged once, as a summary.
+  int splines_tessellated = 0;
+  int ellipses_tessellated = 0;
   std::vector<std::string> warnings;
   // True when $INSUNITS == 1 triggered a ×25.4 scale.
   bool units_scaled = false;

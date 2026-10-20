@@ -162,6 +162,19 @@ polysmith::core::PointAttestation point_attestation_from_payload(
   return att;
 }
 
+polysmith::core::PcbLayerAttestation pcb_layer_attestation_from_payload(
+    const json& payload) {
+  polysmith::core::PcbLayerAttestation att;
+  att.layer_feature_id = cam_read_string(payload, "layer_feature_id", "");
+  att.role = cam_read_string(payload, "role", "");
+  att.ring_count = cam_read_int(payload, "ring_count", 0);
+  att.min_x = cam_read_number(payload, "min_x", 0.0);
+  att.min_y = cam_read_number(payload, "min_y", 0.0);
+  att.max_x = cam_read_number(payload, "max_x", 0.0);
+  att.max_y = cam_read_number(payload, "max_y", 0.0);
+  return att;
+}
+
 // Discriminates the attestation variant by which witness keys the
 // payload carries: point refs have a point array, sketch refs have
 // sketch_feature_id, face refs have sample_points, edge refs have
@@ -183,6 +196,11 @@ polysmith::core::GeometryReference geometry_reference_from_payload(
   const auto& att = payload.at("attestation");
   if (att.contains("point")) {
     ref.attestation = point_attestation_from_payload(att);
+  } else if (att.contains("layer_feature_id")) {
+    // A PCB layer reference.  Checked before the sketch branch: both carry a
+    // feature id, but only this one names `layer_feature_id`, and the two must
+    // never be confused (a sketch has no rings to cut).
+    ref.attestation = pcb_layer_attestation_from_payload(att);
   } else if (att.contains("sketch_feature_id")) {
     ref.attestation = sketch_profile_attestation_from_payload(att);
   } else if (att.contains("sample_points")) {
@@ -397,6 +415,7 @@ polysmith::core::LaserCutParameters laser_cut_parameters_from_payload(
   laser.cut_plane_offset_mm =
       cam_read_number(payload, "cut_plane_offset_mm", 0.0);
   laser.cut_order = cam_read_string(payload, "cut_order", "inner_first");
+  laser.layer_mode = cam_read_string(payload, "layer_mode", "regions");
   laser.arc_segments_per_circle =
       cam_read_int(payload, "arc_segments_per_circle", 0);
   if (payload.contains("speed_mm_per_s") &&

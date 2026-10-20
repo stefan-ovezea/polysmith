@@ -57,8 +57,24 @@ export function LogsWindow({ logs, onClose, onClear }: LogsWindowProps) {
           <div>
             <p className="cad-kicker">{t("logs.title")}</p>
             <p className="mt-1 text-xs text-on-surface-dim">
-              {t("common.entries", { count: visibleLogs.length })}
+              {visibleLogs.length === logs.length
+                ? t("common.entries", { count: logs.length })
+                : t("logs.entriesShownOfKept", {
+                    shown: visibleLogs.length,
+                    kept: logs.length,
+                  })}
             </p>
+            {logs.length >= 500 ? (
+              // The store keeps a rolling window: say so, because a count that
+              // stops growing (or appears to shrink as older lines are evicted)
+              // otherwise looks like the log lost entries.
+              <p className="mt-1 text-[10px] text-on-surface-muted">
+                {t(
+                  "logs.rollingWindow",
+                  "Showing the most recent 500 entries; older ones are dropped.",
+                )}
+              </p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <button

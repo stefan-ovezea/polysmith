@@ -46,6 +46,11 @@ struct CamGenerateContext {
     std::vector<ResolvedProfileRef> profiles;           // profile regions
     std::vector<const SketchFeatureParameters*> sketches;  // owning sketches
     std::vector<PointAttestation> points;               // bare drilling points
+    // Imported PCB layers (Gerber / Excellon) an operation cuts.  Resolved
+    // one per reference; the owning feature travels with it so a generator can
+    // re-derive the rings or drill hits from the source file.
+    std::vector<ResolvedPcbLayerRef> pcb_layers;
+    std::vector<const FeatureEntry*> pcb_layer_features;
     // Compiled by the driver when a generator needs body faces
     // (drilling lifts circle holes to the material top).  Null when
     // the document has no bodies or none were needed.
@@ -70,6 +75,9 @@ struct CamGenerator {
 
 void register_cam_generator(CamGenerator generator);
 const CamGenerator* find_cam_generator(const std::string& type);
+// The types currently registered, sorted.  Used by the startup log so it names
+// what the running binary ACTUALLY has (a hardcoded list went stale).
+std::vector<std::string> cam_generator_types();
 
 // Registers all built-in generators.  Called once from CadCoreApp::run()
 // after OCCT initialization — never from a static initializer, which

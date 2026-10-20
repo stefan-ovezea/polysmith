@@ -7,6 +7,7 @@
 #include "core/document/document.h"
 #include "core/document/feature.h"
 #include "core/geometry/body_compiler.h"
+#include "core/pcb/pcb_layer_io.h"
 
 namespace polysmith::core {
 
@@ -106,6 +107,106 @@ std::string profile_reference_failure_message(
                "(geometry changed — re-select it).";
 }
 
+namespace {
+// The witness is advisory: a re-poured or re-plotted layer is a *different
+// shape*, not a broken reference, so a mismatch warns instead of dropping the
+// operation.  10 µm is below any PCB process tolerance but above the rounding
+// noise of a re-plot.
+constexpr double kPcbWitnessToleranceMm = 0.01;
+
+bool layer_bounds_match(const PcbLayerAttestation& attestation,
+                        const polysmith::core::pcb::PcbBounds& bounds) {
+  if (!bounds.valid) {
+    return false;
+  }
+  return std::abs(bounds.min_x - attestation.min_x) <= kPcbWitnessToleranceMm &&
+         std::abs(bounds.min_y - attestation.min_y) <= kPcbWitnessToleranceMm &&
+         std::abs(bounds.max_x - attestation.max_x) <= kPcbWitnessToleranceMm &&
+         std::abs(bounds.max_y - attestation.max_y) <= kPcbWitnessToleranceMm;
+}
+}  // namespace
+
+std::optional<PcbLayerAttestation> pcb_layer_attestation_from_feature(
+    const DocumentState& document, const std::string& feature_id) {
+  for (const FeatureEntry& feature : document.feature_history) {
+    if (feature.id != feature_id || !feature.pcb_layer_parameters.has_value()) {
+      continue;
+    }
+    const auto& params = *feature.pcb_layer_parameters;
+    PcbLayerAttestation attestation;
+    attestation.layer_feature_id = feature.id;
+    attestation.role = polysmith::core::pcb_role_id(params.role);
+    attestation.ring_count = params.ring_count;
+    attestation.min_x = params.min_x;
+    attestation.min_y = params.min_y;
+    attestation.max_x = params.max_x;
+    attestation.max_y = params.max_y;
+    return attestation;
+  }
+  return std::nullopt;
+}
+
+ResolvedPcbLayerRef resolve_pcb_layer_attestation(
+    const PcbLayerAttestation& attestation, const DocumentState& document) {
+  ResolvedPcbLayerRef resolved;
+  const FeatureEntry* layer = nullptr;
+  for (const FeatureEntry& feature : document.feature_history) {
+    if (feature.id == attestation.layer_feature_id) {
+      layer = &feature;
+      break;
+    }
+  }
+  if (layer == nullptr) {
+    resolved.error =
+        "The PCB layer used by this operation is no longer in the document.";
+    return resolved;
+  }
+  if (!layer->pcb_layer_parameters.has_value()) {
+    resolved.error =
+        "The feature this operation referenced is no longer a PCB layer.";
+    return resolved;
+  }
+
+  // Re-derive from the source rather than trusting the summary stored on the
+  // feature: the file is the truth (the project's re-resolve-every-recompute
+  // rule), and a layer whose file was re-plotted must cut the new copper.
+  const polysmith::core::pcb::PcbLayerLoad loaded =
+      polysmith::core::pcb::load_pcb_layer(layer->pcb_layer_parameters->file_path);
+  if (!loaded.ok) {
+    resolved.error = loaded.error.empty()
+                         ? std::string("The PCB layer's source file could not "
+                                       "be read — re-import it.")
+                         : loaded.error;
+    return resolved;
+  }
+  if (loaded.ring_count == 0 && loaded.hit_count == 0) {
+    resolved.error = "The PCB layer's source produced no geometry to cut.";
+    return resolved;
+  }
+
+  resolved.found = true;
+  resolved.ring_count = loaded.ring_count;
+  resolved.hit_count = loaded.hit_count;
+  resolved.tool_count = loaded.tool_count;
+  resolved.min_x = loaded.bounds.min_x;
+  resolved.min_y = loaded.bounds.min_y;
+  resolved.max_x = loaded.bounds.max_x;
+  resolved.max_y = loaded.bounds.max_y;
+  resolved.changed = loaded.ring_count != attestation.ring_count ||
+                     !layer_bounds_match(attestation, loaded.bounds);
+  return resolved;
+}
+
+std::string pcb_layer_reference_failure_message(
+    const ResolvedPcbLayerRef& layer) {
+  if (layer.found) {
+    return "";
+  }
+  return layer.error.empty()
+             ? "The PCB layer used by this operation could not be resolved."
+             : layer.error;
+}
+
 const CamSetup* setup_for(const DocumentState& document,
                           const CamOperation& op) {
   if (!op.setup_id.empty()) {
@@ -126,6 +227,8 @@ bool resolve_geometry_reference(
     const std::function<void(const ResolvedFaceRef&)>& on_face,
     const std::function<void(const ResolvedEdgeRef&)>& on_edge,
     const std::function<void(const PointAttestation&)>& on_point,
+    const std::function<void(const ResolvedPcbLayerRef&, const FeatureEntry&)>&
+        on_pcb_layer,
     std::string& message) {
   if (std::holds_alternative<PointAttestation>(ref.attestation)) {
     // A bare coordinate is its own identity — nothing to resolve
@@ -182,6 +285,27 @@ bool resolve_geometry_reference(
     }
     if (on_edge) {
       on_edge(resolved);
+    }
+    return true;
+  }
+  if (std::holds_alternative<PcbLayerAttestation>(ref.attestation)) {
+    const auto& attestation = std::get<PcbLayerAttestation>(ref.attestation);
+    const auto resolved = resolve_pcb_layer_attestation(attestation, document);
+    if (!resolved.found) {
+      message = pcb_layer_reference_failure_message(resolved);
+      return false;
+    }
+    if (on_pcb_layer) {
+      const FeatureEntry* layer = nullptr;
+      for (const auto& feature : document.feature_history) {
+        if (feature.id == attestation.layer_feature_id) {
+          layer = &feature;
+          break;
+        }
+      }
+      if (layer != nullptr) {
+        on_pcb_layer(resolved, *layer);
+      }
     }
     return true;
   }

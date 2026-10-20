@@ -19,14 +19,23 @@ std::string make_parameters_summary(const SketchFeatureParameters& parameters) {
   return stream.str();
 }
 
+// `context` names the operation that rejected the line.  This error reaches the
+// user's Logs panel verbatim and, without it, "Sketch lines must have non-zero
+// length" says nothing about WHERE the degenerate line came from — a solver
+// pass, an import, or a draw action.
 void validate_line(double start_x,
                    double start_y,
                    double end_x,
-                   double end_y) {
+                   double end_y,
+                   const char* context = nullptr) {
   const double dx = end_x - start_x;
   const double dy = end_y - start_y;
   if (std::sqrt(dx * dx + dy * dy) <= 0.001) {
-    throw std::runtime_error("Sketch lines must have non-zero length");
+    throw std::runtime_error(
+        context != nullptr
+            ? std::string("Sketch lines must have non-zero length (") + context +
+                  ")"
+            : std::string("Sketch lines must have non-zero length"));
   }
 }
 
