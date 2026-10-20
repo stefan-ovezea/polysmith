@@ -415,11 +415,36 @@ const drawingViewPreviewResultEventSchema = z.object({
   payload: drawingViewPreviewResultSchema,
 });
 
+// Selection-only reply for the select_* commands.  The document is unchanged,
+// so the core sends the selection fields instead of re-serialising everything
+// (a click used to cost 1,219 KB on a dense sketch).
+export const selectionChangedEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("selection_changed"),
+  payload: z.object({
+    revision: z.number(),
+    selected_feature_id: z.string().nullable().optional(),
+    selected_reference_id: z.string().nullable().optional(),
+    selected_face_id: z.string().nullable().optional(),
+    selected_edge_ids: z.array(z.string()).default([]),
+    selected_vertex_ids: z.array(z.string()).default([]),
+    selected_sketch_vertex_id: z.string().nullable().optional(),
+    selected_sketch_entity_id: z.string().nullable().optional(),
+    selected_sketch_vertex_ids: z.array(z.string()).default([]),
+    selected_sketch_entity_ids: z.array(z.string()).default([]),
+    selected_sketch_dimension_id: z.string().nullable().optional(),
+    selected_sketch_text_id: z.string().nullable().optional(),
+    selected_sketch_profile_id: z.string().nullable().optional(),
+    selected_sketch_profile_ids: z.array(z.string()).default([]),
+  }),
+});
+
 export const coreMessageSchema = z.union([
   helloEventSchema,
   pongEventSchema,
   documentCreatedEventSchema,
   documentStateEventSchema,
+  selectionChangedEventSchema,
   sessionStateEventSchema,
   viewportStateEventSchema,
   documentExportedEventSchema,

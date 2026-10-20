@@ -527,6 +527,29 @@ export interface DocumentStateEvent extends BaseMessage {
   payload: DocumentState;
 }
 
+// Reply to the select_* commands: the selection fields only.  The document is
+// unchanged, so the core stopped re-serialising it for every click.
+export interface SelectionChangedEvent extends BaseMessage {
+  type: "selection_changed";
+  id: string;
+  payload: {
+    revision: number;
+    selected_feature_id?: string | null;
+    selected_reference_id?: string | null;
+    selected_face_id?: string | null;
+    selected_edge_ids: string[];
+    selected_vertex_ids: string[];
+    selected_sketch_vertex_id?: string | null;
+    selected_sketch_entity_id?: string | null;
+    selected_sketch_vertex_ids: string[];
+    selected_sketch_entity_ids: string[];
+    selected_sketch_dimension_id?: string | null;
+    selected_sketch_text_id?: string | null;
+    selected_sketch_profile_id?: string | null;
+    selected_sketch_profile_ids: string[];
+  };
+}
+
 export interface SessionStateEvent extends BaseMessage {
   type: "session_state";
   id: string;
@@ -757,6 +780,7 @@ export type CoreMessage =
   | PongEvent
   | DocumentCreatedEvent
   | DocumentStateEvent
+  | SelectionChangedEvent
   | SessionStateEvent
   | ViewportStateEvent
   | DocumentExportedEvent

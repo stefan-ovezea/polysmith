@@ -26,7 +26,6 @@
                   read_string(command.payload, "profile_id"), additive);
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }

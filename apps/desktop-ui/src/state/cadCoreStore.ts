@@ -196,6 +196,32 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
         nextState.document = document;
       }
 
+      // Selection-only reply: the core no longer re-sends the whole document for
+      // a click (that was 1,219 KB on a dense sketch).  Patch exactly the fields
+      // the event carries; everything else in the document is unchanged.
+      if (message.type === "selection_changed" && state.document) {
+        const selection = message.payload;
+        nextState.document = {
+          ...state.document,
+          revision: selection.revision,
+          selected_feature_id: selection.selected_feature_id ?? null,
+          selected_reference_id: selection.selected_reference_id ?? null,
+          selected_face_id: selection.selected_face_id ?? null,
+          selected_edge_ids: selection.selected_edge_ids,
+          selected_vertex_ids: selection.selected_vertex_ids,
+          selected_sketch_vertex_id: selection.selected_sketch_vertex_id ?? null,
+          selected_sketch_entity_id: selection.selected_sketch_entity_id ?? null,
+          selected_sketch_vertex_ids: selection.selected_sketch_vertex_ids,
+          selected_sketch_entity_ids: selection.selected_sketch_entity_ids,
+          selected_sketch_dimension_id:
+            selection.selected_sketch_dimension_id ?? null,
+          selected_sketch_text_id: selection.selected_sketch_text_id ?? null,
+          selected_sketch_profile_id:
+            selection.selected_sketch_profile_id ?? null,
+          selected_sketch_profile_ids: selection.selected_sketch_profile_ids,
+        } as typeof state.document;
+      }
+
       if (message.type === "session_state") {
         nextState.session = message.payload;
       }

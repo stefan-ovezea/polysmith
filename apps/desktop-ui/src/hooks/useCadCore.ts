@@ -1557,19 +1557,18 @@ export function useCadCore() {
     },
     selectSketchPoint: async (vertexId: string, additive = false) => {
       await sendCoreCommand(makeSelectSketchVertexCommand(vertexId, additive));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      // No viewport refetch after a selection: the geometry does not change and
+      // the UI derives the highlight from document.selected_* .  A viewport
+      // state is ~2 MB on an imported sketch, and this was paid per click.
     },
     selectSketchEntity: async (entityId: string, additive = false) => {
       await sendCoreCommand(makeSelectSketchEntityCommand(entityId, additive));
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchDimension: async (dimensionId: string) => {
       await sendCoreCommand(makeSelectSketchDimensionCommand(dimensionId));
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchProfile: async (profileId: string, additive = false) => {
       await sendCoreCommand(makeSelectSketchProfileCommand(profileId, additive));
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchProfileByEntity: async (
       entityId: string,
@@ -1583,7 +1582,6 @@ export function useCadCore() {
           smallestOnly,
         ),
       );
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     extrudeProfile: async (
       profileIds: string | readonly string[],

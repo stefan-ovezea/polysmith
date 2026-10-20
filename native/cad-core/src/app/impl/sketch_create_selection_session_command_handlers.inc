@@ -8,8 +8,7 @@
         read_string(command.payload, "vertex_id"), additive);
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 
@@ -34,8 +33,7 @@
         read_string(command.payload, "entity_id"), additive);
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 
@@ -58,8 +56,7 @@
         document_manager().select_sketch_entities(entity_ids, additive);
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 
@@ -82,8 +79,7 @@
         window_mode, additive);
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 
@@ -92,8 +88,7 @@
         read_string(command.payload, "dimension_id"));
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 

@@ -27,6 +27,9 @@ json to_payload(const polysmith::core::FeatureEntry& feature,
                 bool include_derived_geometry = false);
 json to_payload(const polysmith::core::DocumentState& document,
                 bool include_opaque = false);
+// Just the selection fields (see impl/selection_to_payload.inc): the payload a
+// select_* command replies with instead of the whole document.
+json to_selection_payload(const polysmith::core::DocumentState& document);
 json to_payload(const polysmith::core::SessionState& session);
 json to_payload(const polysmith::core::ViewportBoxPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportCylinderPrimitive& primitive);
