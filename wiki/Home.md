@@ -43,6 +43,7 @@
 | 🧩 **[GCS Implementation Strategy](GCS-Implementation-Strategy)** | Freeze state machine, speculative inferencing, DOF feedback — implementation plan |
 | 🔧 **[CAM Development Plan](CAM-Development)** | CAM workspace: data model, TNP strategy, preview pipeline, v1 operations |
 | 🔌 **[PCB / Gerber Workspace](PCB-Workspace)** | **Planning + P1.** Separate `pcb` workspace: Gerber/Excellon import → isolation routing and laser CAM operations |
+| ⚡ **[Interaction Performance](Interaction-Performance)** | **Investigation.** Why a click on a big sketch ships 1.2 MB, and the plan: wire-format trim, selection events, region picker |
 | 📐 **[Drawing Workspace UI Study](Drawing-Workspace-UI-Study)** | Fusion-style ISO drawing workspace: design study and phased implementation plan (R1 shipped) |
 
 ### 🤖 AI / Agent

@@ -40,6 +40,18 @@ Design + plan: **[wiki/PCB-Workspace.md](wiki/PCB-Workspace.md)**. Coming from
   throwing — with the shortfall reported in the feature summary.  Still open:
   layer names are ignored (`addLayer` is an empty stub), TEXT/MTEXT and
   SOLID/HATCH are skipped, and blocks are dropped.
+- **Interaction performance (investigation done, 2026-10-20):** a click on a big
+  sketch is slow because **selection ships the whole document state — 1,219 KB**,
+  of which **704 KB is `profiles` and 277 KB is `vertices`, both derived**; profile
+  detection itself is 0.1 ms.  225 command handlers broadcast the full state, 11
+  of them selection commands.  Plan in `wiki/Interaction-Performance.md`:
+  **A** trim the wire format (derived caches only for the active sketch, counts
+  elsewhere → ~250 KB), **B** a `selection_changed` event the UI patches
+  (< 1 KB per click), **C** a region list in the extrude panel with hover
+  highlight + isolate (48 regions from crossing curves cannot be picked by
+  ray-casting).  Selection being core-owned state contradicts the project's own
+  "document state, not interaction state" rule — B is the transport fix, moving
+  ownership to the UI is the documented long-term direction.
 - Fixture: real KiCad 10.0.4 4-layer board in `projects/EDM` (local, not
   committed; a trimmed subset is committed as `tests/data/pcb/`).  The
   polygonizer suite measures the full board when that directory is present.

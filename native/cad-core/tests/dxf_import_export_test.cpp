@@ -12,6 +12,7 @@
 // directory (R12-style group-code/value pairs), so every path here
 // exercises the same libdxfrw reader the core uses.
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -26,6 +27,7 @@
 #include "core/viewport/viewport.h"
 #include "dxf/dxf_export.h"
 #include "dxf/dxf_import.h"
+#include "protocol/serialization.h"
 
 namespace {
 
@@ -335,6 +337,49 @@ bool test_fusion_sketch_when_present() {
               << " ms, detect profiles " << ms(profiles_done - profiles_start)
               << " ms (" << profiles.polygons.size() << " polygons, "
               << profiles.circles.size() << " circles)\n";
+
+    // What a single selection costs the UI: the whole document state goes over
+    // IPC on every selection change, so its size is the interaction budget.
+    const auto payload_start = clock::now();
+    const auto payload =
+        polysmith::protocol::to_payload(timing.get_document().value());
+    const auto payload_done = clock::now();
+    std::cout << "  timing: document payload "
+              << (payload.dump().size() / 1024) << " KB in "
+              << ms(payload_done - payload_start) << " ms\n";
+
+    // Per-key breakdown: WHICH part of the document is the payload?  Any
+    // interaction fix has to target the big one, not the whole.
+    for (auto it = payload.begin(); it != payload.end(); ++it) {
+      std::cout << "  payload[" << it.key() << "] = "
+                << (it.value().dump().size() / 1024) << " KB\n";
+    }
+    for (const auto& serialized :
+         payload.value("feature_history", nlohmann::json::array())) {
+      const auto params = serialized.value("sketch_parameters", nlohmann::json());
+      if (params.is_null()) {
+        continue;
+      }
+      std::cout << "  sketch payload keys:";
+      for (auto it = params.begin(); it != params.end(); ++it) {
+        std::cout << " " << it.key() << "=" << (it.value().dump().size() / 1024)
+                  << "KB";
+      }
+      std::cout << "\n";
+    }
+
+    // Largest regions by vertex count: is profile detection producing sensible
+    // regions, or 48 slivers between crossing curves?
+    std::vector<size_t> region_sizes;
+    for (const auto& polygon : profiles.polygons) {
+      region_sizes.push_back(polygon.points.size());
+    }
+    std::sort(region_sizes.rbegin(), region_sizes.rend());
+    std::cout << "  regions: " << region_sizes.size() << ", biggest vertex counts:";
+    for (size_t i = 0; i < std::min<size_t>(region_sizes.size(), 6); ++i) {
+      std::cout << " " << region_sizes[i];
+    }
+    std::cout << "\n";
 
     // Scaling probe: is the refresh linear or quadratic in the entity count?
     // That decides whether a cheaper import (fewer entities) is a real fix.
