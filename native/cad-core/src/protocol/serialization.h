@@ -14,8 +14,17 @@ using json = nlohmann::json;
 // events), large opaque blobs the UI never reads — B-rep shape
 // snapshots on mesh_to_body and standalone body copies — are omitted
 // from the payload. Save/load passes true to persist them.
+//
+// `include_derived_geometry` gates the sketch's DERIVED caches (detected
+// profiles and the vertex table).  They are recomputed on every refresh and are
+// 80% of a dense sketch's payload (measured: 704 KB profiles + 277 KB vertices
+// of 1,219 KB), and the UI only consumes them for the sketch it has open — the
+// viewport state carries profile geometry for rendering and picking.  So the
+// document payload includes them for the ACTIVE sketch only, and reports
+// `profile_count`/`vertex_count` for every other sketch.
 json to_payload(const polysmith::core::FeatureEntry& feature,
-                bool include_opaque = false);
+                bool include_opaque = false,
+                bool include_derived_geometry = false);
 json to_payload(const polysmith::core::DocumentState& document,
                 bool include_opaque = false);
 json to_payload(const polysmith::core::SessionState& session);

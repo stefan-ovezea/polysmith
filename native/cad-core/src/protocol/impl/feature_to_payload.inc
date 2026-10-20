@@ -1,5 +1,6 @@
 json to_payload(const polysmith::core::FeatureEntry& feature,
-                bool include_opaque) {
+                bool include_opaque,
+                bool include_derived_geometry) {
   return {
       {"feature_id", feature.id},
       {"kind", feature.kind},

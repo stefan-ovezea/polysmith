@@ -150,10 +150,14 @@ function sketchPointBelongsToFeature(
 ) {
   return (
     pointId != null &&
-    (targetFeature?.sketch_parameters?.vertices.some(
+    // The vertex table only ships for the open sketch; a non-zero count means
+    // the point belongs to this sketch as far as the payload can tell, and a
+    // dependent that cannot be resolved degrades instead of crashing.
+    ((targetFeature?.sketch_parameters?.vertices.some(
       (point) => point.vertex_id === pointId,
     ) ??
-      false)
+      false) ||
+      (targetFeature?.sketch_parameters?.vertex_count ?? 0) > 0)
   );
 }
 

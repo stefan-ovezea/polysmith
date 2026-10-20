@@ -2,7 +2,17 @@ json to_payload(const polysmith::core::DocumentState& document,
                 bool include_opaque) {
   json feature_history = json::array();
   for (const auto& feature : document.feature_history) {
-    feature_history.push_back(to_payload(feature, include_opaque));
+    // Only the sketch the user has open needs its derived caches (profiles,
+    // vertices) in an EVENT payload; every other sketch reports counts.  Saves
+    // (include_opaque) keep the caches: a reload must be able to re-resolve the
+    // profile references extrudes depend on before any refresh runs.  See
+    // serialization.h for the measurement behind this.
+    const bool is_active_sketch =
+        include_opaque ||
+        (document.active_sketch_feature_id.has_value() &&
+         *document.active_sketch_feature_id == feature.id);
+    feature_history.push_back(
+        to_payload(feature, include_opaque, is_active_sketch));
   }
 
   return {

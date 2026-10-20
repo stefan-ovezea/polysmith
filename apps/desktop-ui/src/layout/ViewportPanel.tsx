@@ -5900,7 +5900,12 @@ export function ViewportPanel({
 
   const lineCount = sketchFeature?.sketch_parameters?.lines.length ?? 0;
   const circleCount = sketchFeature?.sketch_parameters?.circles.length ?? 0;
-  const pointCount = sketchFeature?.sketch_parameters?.vertices.length ?? 0;
+  // `vertex_count` is present even when the core omits the vertex table (it is
+  // sent only for the open sketch), so this count stays correct either way.
+  const pointCount =
+    sketchFeature?.sketch_parameters?.vertex_count ??
+    sketchFeature?.sketch_parameters?.vertices.length ??
+    0;
   const arcCount = sketchFeature?.sketch_parameters?.arcs.length ?? 0;
 
   const {

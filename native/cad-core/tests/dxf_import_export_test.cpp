@@ -361,7 +361,21 @@ bool test_fusion_sketch_when_present() {
     const auto payload_done = clock::now();
     std::cout << "  timing: document payload "
               << (payload.dump().size() / 1024) << " KB in "
-              << ms(payload_done - payload_start) << " ms\n";
+              << ms(payload_done - payload_start) << " ms (sketch active)\n";
+
+    // The interaction case that made the UI feel broken: selecting surfaces in
+    // the model view, with NO sketch open.  Only the active sketch ships its
+    // derived caches, so this is the payload a click costs.
+    DocumentState idle = timing.get_document().value();
+    idle.active_sketch_feature_id.reset();
+    const auto idle_start = clock::now();
+    const auto idle_payload = polysmith::protocol::to_payload(idle);
+    const auto idle_done = clock::now();
+    const size_t idle_kb = idle_payload.dump().size() / 1024;
+    std::cout << "  timing: document payload with no sketch open " << idle_kb
+              << " KB in " << ms(idle_done - idle_start) << " ms\n";
+    ok &= expect(idle_kb < 400,
+                 "the document payload stays small when no sketch is open");
 
     // Per-key breakdown: WHICH part of the document is the payload?  Any
     // interaction fix has to target the big one, not the whole.
