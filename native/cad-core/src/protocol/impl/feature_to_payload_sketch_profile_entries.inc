@@ -1,12 +1,12 @@
                  {"profile_count", feature.sketch_parameters->profiles.size()},
                  {"profiles",
-                  [&feature, include_derived_geometry]() {
+                  [&feature, include_profiles]() {
                     json profiles = json::array();
                     // Derived cache (serialization.h): detected regions ship only
                     // for the sketch the user has open; `profile_count` above
                     // carries the size and the viewport state carries the geometry
                     // used for rendering and picking.
-                    if (!include_derived_geometry) {
+                    if (!include_profiles) {
                       return profiles;
                     }
                     for (const auto& profile : feature.sketch_parameters->profiles) {

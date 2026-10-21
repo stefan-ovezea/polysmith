@@ -105,8 +105,13 @@
     const auto document = document_manager().reenter_sketch(
         read_string(command.payload, "feature_id"));
 
+    // include_opaque: opening the sketch is one of the two moments the derived
+    // profile cache must reach the client (the other is load).  Every edit after
+    // this ships without profiles and the UI keeps the set it already has;
+    // get_sketch_profiles exists for a consumer that needs them fresher.
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+            command.id,
+            polysmith::protocol::to_payload(document, /*include_opaque=*/true)));
     return;
   }

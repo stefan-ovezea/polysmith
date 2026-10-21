@@ -193,7 +193,13 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
 
       const document = getDocumentFromMessage(message);
       if (document) {
-        nextState.document = document;
+        // Detected profiles are derived and no longer travel on the event
+        // stream (see serialization.h): the core ships them when a sketch is
+        // opened or loaded, and omits them from every later event, so keep the
+        // set the client already has for a feature whose live count still
+        // matches. The region list, source labels and extrude defaults read
+        // them synchronously, exactly as before.
+        nextState.document = keepKnownProfiles(document, state.document);
       }
 
       // Selection-only reply: the core no longer re-sends the whole document for
@@ -299,4 +305,50 @@ function getStatusFromMessage(
     return "connected";
   }
   return prevStatus;
+}
+
+/**
+ * Carry the detected profiles forward across an event that omitted them.
+ *
+ * profiles is a derived cache: the core ships it when a sketch is opened or
+ * loaded and omits it from every later event (see serialization.h), which is
+ * most of an edit's payload on a dense sketch. Every consumer here -- region
+ * list, source labels, extrude defaults -- reads the array synchronously, so we
+ * keep the last set the core sent for a feature whose live profile_count still
+ * matches it. When the count moves, the set is dropped rather than kept stale,
+ * and get_sketch_profiles can refetch it.
+ */
+function keepKnownProfiles(
+  incoming: DocumentState,
+  previous: DocumentState | null,
+): DocumentState {
+  if (!previous) {
+    return incoming;
+  }
+  const known = new Map(
+    (previous.feature_history ?? [])
+      .filter((feature) => feature.kind === 'sketch' && feature.sketch_parameters)
+      .map((feature) => [feature.feature_id, feature.sketch_parameters!]),
+  );
+  let patched = false;
+  for (const feature of incoming.feature_history ?? []) {
+    const params = feature.sketch_parameters;
+    if (feature.kind !== 'sketch' || !params) {
+      continue;
+    }
+    if ((params.profiles?.length ?? 0) > 0) {
+      continue;
+    }
+    const old = known.get(feature.feature_id);
+    const oldProfiles = old?.profiles ?? [];
+    if (!old || oldProfiles.length === 0) {
+      continue;
+    }
+    if ((params.profile_count ?? 0) !== oldProfiles.length) {
+      continue;
+    }
+    params.profiles = oldProfiles;
+    patched = true;
+  }
+  return patched ? { ...incoming } : incoming;
 }

@@ -37,6 +37,50 @@
     return;
   }
 
+  if (command.type == "get_sketch_profiles") {
+    // Detected profiles of one sketch, on demand.  This is derived data (see
+    // serialization.h): it no longer travels on the event stream, and the
+    // consumers that need it -- the region list, source labels, extrude
+    // defaults -- ask for it when they run.
+    const auto document = document_manager().get_document();
+    if (!document.has_value()) {
+      polysmith::core::log_error("cad_core", "No active document");
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return;
+    }
+    const std::string feature_id = read_string(command.payload, "feature_id");
+    for (const auto& feature : document->feature_history) {
+      if (feature.id != feature_id) {
+        continue;
+      }
+      if (!feature.sketch_parameters.has_value()) {
+        polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+            command.id, "NOT_A_SKETCH",
+            "Feature '" + feature_id + "' is not a sketch"));
+        return;
+      }
+      // Reuse the feature serializer so the profile shape stays identical to
+      // the one saves carry; only the profiles are taken from it.
+      const auto feature_payload = polysmith::protocol::to_payload(
+          feature, /*include_opaque=*/false, /*include_vertices=*/false,
+          /*include_profiles=*/true);
+      const auto& params = feature_payload.at("sketch_parameters");
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_sketch_profiles_event(
+              command.id,
+              polysmith::protocol::json{
+                  {"feature_id", feature.id},
+                  {"profile_count", params.at("profile_count")},
+                  {"profiles", params.at("profiles")},
+              }));
+      return;
+    }
+    polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+        command.id, "FEATURE_NOT_FOUND", "No feature '" + feature_id + "'"));
+    return;
+  }
+
   if (command.type == "get_viewport_state") {
     polysmith::protocol::write_message(
         polysmith::protocol::make_viewport_state_event(
