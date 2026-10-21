@@ -1,7 +1,11 @@
   if (command.type == "delete_sketch_dimension") {
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().delete_sketch_dimension(
         read_string(command.payload, "dimension_id"));
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
