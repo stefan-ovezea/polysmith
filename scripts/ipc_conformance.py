@@ -258,7 +258,11 @@ def build_script(document: dict) -> list[dict]:
                        "payload": {"entity_ids": [line], "dx": 0.5, "dy": 0.25,
                                    "center_x": 0.0, "center_y": 0.0,
                                    "angle_deg": 0.0}})
-    script.append({"id": "s8", "type": "get_document_state", "payload": {}})
+        script.append({"id": "s8", "type": "add_sketch_line",
+                       "payload": {"start_x": 30.0, "start_y": 6.0,
+                                   "end_x": 38.0, "end_y": 6.0,
+                                   "is_construction": False}})
+    script.append({"id": "s9", "type": "get_document_state", "payload": {}})
     return script
 
 
@@ -304,7 +308,7 @@ def main() -> int:
             print(f"FAIL  {command['type']:24} no reply")
             failures += 1
             continue
-        if args.self_test and command["id"] == "s8":
+        if args.self_test and command["id"] == "s9":
             # pretend the core forgot one line in the LAST full state: nothing
             # downstream can repair the shadow, so the harness must notice
             payload = reply.get("payload") or {}
