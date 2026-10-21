@@ -49,6 +49,7 @@
           command.payload.at("copy").is_boolean()) {
         copy = command.payload.at("copy").get<bool>();
       }
+      const auto before_document = document_manager().get_document();
       const auto document = document_manager().transform_sketch_entities(
           entity_ids,
           read_dimension(command.payload, "dx"),
@@ -59,11 +60,15 @@
           read_dimension(command.payload, "scale"),
           copy);
 
+      if (emit_sketch_entities_changed(command.id, before_document, document)) {
+        return;
+      }
       polysmith::protocol::write_message(
           polysmith::protocol::make_document_state_event(
               command.id, polysmith::protocol::to_payload(document)));
       return;
     }
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().move_sketch_entities(
         entity_ids,
         read_dimension(command.payload, "dx"),
@@ -72,6 +77,9 @@
         read_dimension(command.payload, "center_y"),
         read_dimension(command.payload, "angle_deg"));
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
