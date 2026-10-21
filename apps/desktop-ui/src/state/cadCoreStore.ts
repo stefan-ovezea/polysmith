@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   CamGenerationResultEvent,
+  SketchEntitiesChangedEvent,
   CoreMessage,
   DocumentState,
   DocumentExportResult,
@@ -228,6 +229,16 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
         } as typeof state.document;
       }
 
+      // Incremental sketch edit (phase D1): patch only what the core touched.
+      // A stale revision or an unknown feature leaves the document alone; the
+      // next full state corrects it, so a missed patch can never be silent.
+      if (message.type === "sketch_entities_changed" && state.document) {
+        nextState.document = applySketchEntitiesChanged(
+          state.document,
+          message.payload,
+        );
+      }
+
       if (message.type === "session_state") {
         nextState.session = message.payload;
       }
@@ -351,4 +362,67 @@ function keepKnownProfiles(
     patched = true;
   }
   return patched ? { ...incoming } : incoming;
+}
+
+
+/** Patch a `sketch_entities_changed` event into the document copy. */
+function applySketchEntitiesChanged(
+  document: DocumentState,
+  change: SketchEntitiesChangedEvent["payload"],
+): DocumentState {
+  const feature = (document.feature_history ?? []).find(
+    (entry) => entry.feature_id === change.feature_id,
+  );
+  const params = feature?.sketch_parameters;
+  if (!feature || !params || change.revision <= document.revision) {
+    return document;
+  }
+  const patchById = (
+    current: any[] | undefined,
+    incoming: Array<Record<string, unknown>> | undefined,
+    idKey: string,
+  ): any[] | undefined => {
+    if (!incoming?.length) {
+      return current;
+    }
+    const byId = new Map((current ?? []).map((entry) => [entry[idKey], entry]));
+    for (const entry of incoming) {
+      const existing = byId.get(entry[idKey]);
+      byId.set(entry[idKey], existing ? { ...existing, ...entry } : entry);
+    }
+    return [...byId.values()];
+  };
+  const removed = new Set(change.removed ?? []);
+  const lines = patchById(
+    params.lines as any[],
+    change.lines,
+    "line_id",
+  )?.filter((line) => !removed.has(line.line_id as string)) as
+    | typeof params.lines
+    | undefined;
+  const vertices = patchById(
+    params.vertices as any[],
+    change.vertices,
+    "vertex_id",
+  )?.filter((vertex) => !removed.has(vertex.vertex_id as string)) as
+    | typeof params.vertices
+    | undefined;
+  return {
+    ...document,
+    revision: change.revision,
+    feature_history: (document.feature_history ?? []).map((entry) =>
+      entry.feature_id === change.feature_id
+        ? {
+            ...entry,
+            sketch_parameters: {
+              ...params,
+              lines: lines ?? params.lines,
+              vertices: vertices ?? params.vertices,
+              profile_count: change.derived?.profile_count ?? params.profile_count,
+              vertex_count: change.derived?.vertex_count ?? params.vertex_count,
+            },
+          }
+        : entry,
+    ),
+  };
 }

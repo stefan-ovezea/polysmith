@@ -439,7 +439,29 @@ export const selectionChangedEventSchema = z.object({
   }),
 });
 
+// Incremental sketch edit (wiki/IPC-Payload-Plan.md phase D1): the entities the
+// command touched, by id. Rows are loosely typed on purpose - the core owns
+// their shape and the store patches them field by field.
+export const sketchEntitiesChangedEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("sketch_entities_changed"),
+  payload: z.object({
+    revision: z.number(),
+    feature_id: z.string(),
+    lines: z.array(z.record(z.string(), z.unknown())).optional(),
+    vertices: z.array(z.record(z.string(), z.unknown())).optional(),
+    removed: z.array(z.string()).optional(),
+    derived: z
+      .object({
+        profile_count: z.number().optional(),
+        vertex_count: z.number().optional(),
+      })
+      .optional(),
+  }),
+});
+
 export const coreMessageSchema = z.union([
+  sketchEntitiesChangedEventSchema,
   helloEventSchema,
   pongEventSchema,
   documentCreatedEventSchema,

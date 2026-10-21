@@ -529,6 +529,22 @@ export interface DocumentStateEvent extends BaseMessage {
 
 // Reply to the select_* commands: the selection fields only.  The document is
 // unchanged, so the core stopped re-serialising it for every click.
+// Incremental reply for a sketch edit (wiki/IPC-Payload-Plan.md phase D1): only
+// the entities the command touched, by id. The client patches them; a stale
+// revision makes it ignore the event and wait for a full document_state.
+export interface SketchEntitiesChangedEvent extends BaseMessage {
+  type: "sketch_entities_changed";
+  id: string;
+  payload: {
+    revision: number;
+    feature_id: string;
+    lines?: Array<Record<string, unknown>>;
+    vertices?: Array<Record<string, unknown>>;
+    removed?: string[];
+    derived?: { profile_count?: number; vertex_count?: number };
+  };
+}
+
 export interface SelectionChangedEvent extends BaseMessage {
   type: "selection_changed";
   id: string;
@@ -781,6 +797,7 @@ export type CoreMessage =
   | DocumentCreatedEvent
   | DocumentStateEvent
   | SelectionChangedEvent
+  | SketchEntitiesChangedEvent
   | SessionStateEvent
   | ViewportStateEvent
   | DocumentExportedEvent
