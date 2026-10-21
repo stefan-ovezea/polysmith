@@ -7,6 +7,7 @@ PolySmith supports first-class application themes:
 - **Light / Daylight Drafting:** a bright engineering-studio workspace that keeps the same cyan and yellow accent language while shifting the shell, panels, and viewport chrome to light neutral surfaces.
 - **System:** a selector option that follows the operating system preference and resolves only to the built-in Dark or Light theme.
 - **Catppuccin Latte, Frappé, Macchiato, and Mocha:** Catppuccin-derived themes using the official Catppuccin flavor palettes.
+- **SolidCraft:** a neutral-slate theme with a muted blue accent, derived from the SolidCraft CAD application's dark palette. Colours only — no layout, spacing or component changes.
 
 Both themes must feel like the same product. Theme work should change tokens, not component structure.
 
@@ -20,6 +21,7 @@ Theme tokens live in:
 - `apps/desktop-ui/src/config/themes/catppuccin-frappe.json`
 - `apps/desktop-ui/src/config/themes/catppuccin-macchiato.json`
 - `apps/desktop-ui/src/config/themes/catppuccin-mocha.json`
+- `apps/desktop-ui/src/config/themes/solidcraft.json`
 
 The bundled `apps/desktop-ui/src/config/config.json` and bundled theme JSON files are defaults only. On app boot, PolySmith creates a user configuration directory when it does not already exist, copies the default `config.json` and theme files there, then reads and writes runtime settings from that user-owned location:
 
@@ -32,6 +34,22 @@ Catppuccin attribution: the Catppuccin themes are based on the official
 Catppuccin palette and style guide (`https://catppuccin.com/palette/` and
 `https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md`).
 Keep the `Catppuccin` prefix in theme names and visible UI labels.
+
+SolidCraft attribution: the `SolidCraft` theme derives its colour values from
+the SolidCraft CAD application's dark palette
+(`https://github.com/tangency-labs/solidcraft`, `assets/styles/ui/palettes.rs`,
+MIT OR Apache-2.0) — colour values only; no code, artwork, icons or text is
+taken, and PolySmith is not affiliated with or endorsed by SolidCraft. The name
+is used descriptively so the theme is recognisable.
+
+**Updating a bundled theme:** the copies under `%APPDATA%\polysmith\themes\`
+(see below) win at runtime. Changing a bundled theme JSON only affects users who
+have not run that build yet — the bootstrap writes a theme file if it is missing
+and otherwise only backfills *missing* keys, so existing values stay. When a
+bundled theme's values change, bump a `revision` field and have
+`bootstrap_app_config` overwrite the stored copy when the bundled revision is
+newer; until that exists, delete the stored file (or edit it) to pick the change
+up.
 
 ---
 
