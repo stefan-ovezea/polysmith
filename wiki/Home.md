@@ -63,6 +63,7 @@
 | 🎯 **[V1 Roadmap](V1-Roadmap)** | Project focus and near-term milestones |
 | 📋 **[Implementation Log](Implementation-Log)** | Running log of shipped implementation milestones |
 | 🔄 **[Vertex Unification Plan](Vertex-Unification-Plan)** | **Planning.** Migrate all point kinds to unified `vertices[]` with `vertex-N` IDs and explicit ownership |
+| 🔧 **[Refactoring Plan](Refactoring-Plan)** | **Planning.** SolidCraft comparison, staged: persistent naming → data safety → oracles/fuzz → core refactor |
 
 ### 🧩 Sketch System
 
