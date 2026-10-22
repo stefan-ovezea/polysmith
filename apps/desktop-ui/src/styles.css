@@ -8,6 +8,10 @@
 @theme {
   --font-sans: "Inter", sans-serif;
   --font-display: "Space Grotesk", sans-serif;
+  /* Align Tailwind's `text-sm` with SolidCraft's 12px body size — the
+   * default 14px made panels and tabs read too large. */
+  --text-sm: 0.75rem;
+  --text-sm--line-height: 1rem;
 
   --color-surface-lowest: #0e0e0e;
   --color-surface-base: #131313;
@@ -80,8 +84,10 @@
   font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Keep the platform's subpixel antialiasing (ClearType on Windows).
+   * `antialiased` forces grayscale AA, which reads soft/foggy at 1x. */
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
   --cad-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --cad-shell-radial: rgba(0, 229, 255, 0.12);
   --cad-shell-radial-soft: rgba(0, 229, 255, 0.06);
@@ -262,7 +268,8 @@ button:not(:disabled),
   }
 
   .cad-ribbon {
-    @apply backdrop-blur-xl;
+    /* No backdrop blur: the bar is ~90% opaque, so the blur only softened
+     * the toolbar layer (icons read foggy) without changing the look. */
     border-bottom: 1px solid var(--cad-panel-soft-border);
     background:
       linear-gradient(
@@ -274,7 +281,7 @@ button:not(:disabled),
   }
 
   .cad-ribbon-tab {
-    @apply rounded-full px-3 py-1.5 font-display text-[13px] uppercase tracking-[0.14em] text-on-surface-muted transition-all duration-300;
+    @apply rounded-full px-2.5 py-1.5 font-display text-[12px] uppercase tracking-[0.1em] text-on-surface transition-all duration-300;
     transition-timing-function: var(--cad-ease);
   }
 
@@ -287,10 +294,16 @@ button:not(:disabled),
   }
 
   .cad-ribbon-action {
-    @apply inline-flex items-center justify-center rounded-xl px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-on-surface transition-all duration-300;
+    @apply inline-flex items-center justify-center rounded-xl px-2.5 py-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-on-surface transition-all duration-300;
     background: var(--cad-subtle-surface-strong);
     box-shadow: inset 0 0 0 1px var(--cad-outline-soft);
     transition-timing-function: var(--cad-ease);
+  }
+
+  /* Icon-only ribbon buttons (File/Edit/Logs/Settings/AI) — tint the
+   * glyph blue-grey while the text-bearing buttons keep on-surface. */
+  .cad-ribbon-action-icon {
+    color: var(--cad-icon, var(--color-on-surface));
   }
 
   .cad-ribbon-action:hover:not(:disabled) {
@@ -308,7 +321,8 @@ button:not(:disabled),
   }
 
   .cad-tool-button {
-    @apply inline-flex items-center justify-center rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-on-surface transition-all duration-300;
+    @apply inline-flex items-center justify-center rounded-xl px-2.5 py-1.5 text-[12px] font-medium transition-all duration-300;
+    color: var(--cad-icon, var(--color-on-surface));
     background: var(--cad-subtle-surface);
     box-shadow: inset 0 0 0 1px var(--cad-panel-soft-border);
     transition-timing-function: var(--cad-ease);
@@ -507,7 +521,7 @@ button:not(:disabled),
   .cad-action-primary:disabled,
   .cad-ribbon-action:disabled,
   .cad-tool-button:disabled {
-    @apply cursor-not-allowed opacity-45;
+    @apply cursor-not-allowed opacity-55;
     transform: none;
     box-shadow: none;
   }
@@ -1431,22 +1445,20 @@ button:not(:disabled),
     background: var(--cad-context-hover);
   }
 
-  /* Flat, chromeless tool icon. Used for ribbon and timeline buttons
-   * where the icon should read like a standalone glyph at rest and
-   * only feel button-like on hover / focus / active. Sits next to
-   * `.cad-icon-button` (which adds the tooltip pseudo-element) so the
-   * usual composition is `class="cad-icon-button cad-icon-tool ..."`. */
+  /* Ribbon tool button: a faint chip (fill + 1px outline) like SolidCraft's
+   * egui buttons, so each glyph reads as a control rather than floating. */
   .cad-icon-tool {
-    @apply inline-flex items-center justify-center rounded-lg text-on-surface transition-colors;
-    background: transparent;
+    @apply inline-flex items-center justify-center rounded-lg transition-colors;
+    color: var(--cad-icon, var(--color-on-surface));
+    background: var(--cad-subtle-surface-dim);
     border: none;
-    /* Buttons default to the system font; SVGs use currentColor so
-     * the same hover transition tints the icon. */
+    box-shadow: inset 0 0 0 1px var(--cad-outline-soft);
     transition-timing-function: var(--cad-ease);
   }
 
   .cad-icon-tool:hover:not(:disabled) {
-    background: var(--cad-subtle-surface);
+    background: var(--cad-subtle-surface-strong);
+    box-shadow: inset 0 0 0 1px var(--cad-outline-soft);
   }
 
   .cad-icon-tool:focus-visible {
@@ -1455,13 +1467,15 @@ button:not(:disabled),
   }
 
   .cad-icon-tool:disabled {
-    @apply cursor-not-allowed opacity-40;
+    @apply cursor-not-allowed opacity-55;
   }
 
   .cad-icon-tool-active {
     background: var(--cad-accent-surface-strong);
     color: var(--color-primary-glow);
-    box-shadow: 0 0 14px var(--cad-accent-glow-selection);
+    box-shadow:
+      inset 0 0 0 1px var(--cad-accent-outline-strong),
+      0 0 14px var(--cad-accent-glow-selection);
   }
 
   .cad-icon-button,
@@ -1512,6 +1526,11 @@ button:not(:disabled),
     display: inline-flex;
     align-items: stretch;
     min-width: 0;
+    /* Same chip as `.cad-icon-tool`, on the wrapper so the primary part
+     * and the chevron share one outline instead of a seam between them. */
+    background: var(--cad-subtle-surface-dim);
+    border-radius: 0.5rem;
+    box-shadow: inset 0 0 0 1px var(--cad-outline-soft);
   }
 
   .cad-split-tool-primary {
@@ -1523,7 +1542,7 @@ button:not(:disabled),
     border: none;
     border-radius: 0.5rem 0 0 0.5rem;
     background: transparent;
-    color: var(--color-on-surface);
+    color: var(--cad-icon, var(--color-on-surface));
     transition:
       background-color 140ms var(--cad-ease),
       box-shadow 140ms var(--cad-ease);
@@ -1542,7 +1561,7 @@ button:not(:disabled),
 
   .cad-split-tool-primary:disabled {
     cursor: not-allowed;
-    opacity: 0.4;
+    opacity: 0.55;
   }
 
   .cad-split-tool-primary-active {
@@ -1587,7 +1606,7 @@ button:not(:disabled),
 
   .cad-split-tool-chevron:disabled {
     cursor: not-allowed;
-    opacity: 0.4;
+    opacity: 0.55;
   }
 
   .cad-split-tool-chevron-active {

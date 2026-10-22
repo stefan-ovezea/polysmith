@@ -109,7 +109,9 @@ function MenuDropdown({
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        className="cad-ribbon-action"
+        className={
+          icon ? "cad-ribbon-action cad-ribbon-action-icon" : "cad-ribbon-action"
+        }
         disabled={disabled}
         onClick={() => setIsOpen((current) => !current)}
         aria-label={label}
@@ -869,7 +871,7 @@ export function AppHeader({
           />
           <button
             type="button"
-            className="cad-ribbon-action"
+            className="cad-ribbon-action cad-ribbon-action-icon"
             onClick={onOpenLogs}
             aria-label={t("header.logs")}
             title={t("header.logs")}
@@ -907,8 +909,8 @@ export function AppHeader({
               type="button"
               className={
                 isAiPanelOpen
-                  ? "cad-ribbon-action h-8 w-8 px-0 py-0 text-primary-glow"
-                  : "cad-ribbon-action h-8 w-8 px-0 py-0 text-on-surface-muted hover:text-on-surface"
+                  ? "cad-ribbon-action cad-ribbon-action-icon h-8 w-8 px-0 py-0 text-primary-glow"
+                  : "cad-ribbon-action cad-ribbon-action-icon h-8 w-8 px-0 py-0"
               }
               onClick={onToggleAiPanel}
               aria-label={t("header.aiAssistant")}
@@ -935,7 +937,7 @@ export function AppHeader({
           */}
           <button
             type="button"
-            className="cad-ribbon-action h-8 w-8 px-0 py-0 text-on-surface-muted hover:text-on-surface"
+            className="cad-ribbon-action cad-ribbon-action-icon h-8 w-8 px-0 py-0"
             onClick={onOpenSettings}
             aria-label={t("header.settings")}
             title={t("header.settings")}
