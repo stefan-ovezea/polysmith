@@ -295,6 +295,9 @@ set(CAD_CORE_SOURCES
   src/core/diagnostics/logger.cpp
   src/core/document/document.cpp
   src/core/document/document_lifecycle.cpp
+  src/core/document/format/atomic_save.cpp
+  src/core/document/format/journal.cpp
+  src/core/document/format/migrations.cpp
   src/core/export/export.cpp
   src/dxf/dxf_export.cpp
   src/dxf/dxf_import.cpp
@@ -468,6 +471,7 @@ polysmith_add_core_test(cad_core_multi_profile_extrude_test tests/multi_profile_
 polysmith_add_core_test(cad_core_cam_face_reference_test tests/cam_face_reference_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_save_load_test tests/cam_save_load_test.cpp)
+polysmith_add_core_test(cad_core_format_version_test tests/cad_core_format_version_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_commands_test tests/cam_commands_test.cpp)
 

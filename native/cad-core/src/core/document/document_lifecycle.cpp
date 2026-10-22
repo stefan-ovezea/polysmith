@@ -1,5 +1,9 @@
 #include "core/document/document.h"
 #include "core/document/document_internal.h"
+#include "core/document/format/atomic_save.h"
+#include "core/document/format/format_version.h"
+#include "core/document/format/journal.h"
+#include "core/document/format/migrations.h"
 #include "core/cam/cam_export.h"
 #include "core/cam/cam_profile_reference.h"
 #include "core/cam/cam_runtime.h"
@@ -1096,16 +1100,14 @@ void DocumentManager::save_document_to_path(const std::string& file_path) const 
   if (file_path.empty()) {
     throw std::runtime_error("Save path cannot be empty");
   }
-  const nlohmann::json payload =
+  const nlohmann::json document =
       polysmith::protocol::to_payload(document_.value(), /*include_opaque=*/true);
-  std::ofstream stream(file_path);
-  if (!stream.is_open()) {
-    throw std::runtime_error("Failed to open file for writing: " + file_path);
-  }
-  stream << payload.dump(2);
-  if (!stream.good()) {
-    throw std::runtime_error("Failed to write document to: " + file_path);
-  }
+  const nlohmann::json payload = {
+      {"format", "polysmith/1"},
+      {"document", document},
+  };
+  write_file_atomically(std::filesystem::path(file_path), payload.dump(2));
+  journal_truncate(document_->id);
 }
 
 DocumentState DocumentManager::load_document_from_path(
@@ -1129,7 +1131,16 @@ DocumentState DocumentManager::load_document_from_path(
     throw std::runtime_error(std::string("Document parse error: ") +
                              error.what());
   }
-  DocumentState loaded = polysmith::protocol::document_from_payload(payload);
+  const int version = document_format_version(payload);
+  if (version > kCurrentFormatVersion) {
+    throw std::runtime_error(
+        "Document format version " + std::to_string(version) +
+        " is newer than this build supports (" +
+        std::to_string(kCurrentFormatVersion) + ")");
+  }
+  const nlohmann::json migrated = migrate_document_format(payload, version);
+  DocumentState loaded =
+      polysmith::protocol::document_from_payload(migrated.at("document"));
   for (auto& feature : loaded.feature_history) {
     if (feature.kind == "sketch") {
       polysmith::core::refresh_sketch_profiles(feature);

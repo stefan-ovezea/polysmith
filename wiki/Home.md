@@ -65,6 +65,7 @@
 | 📋 **[Implementation Log](Implementation-Log)** | Running log of shipped implementation milestones |
 | 🔄 **[Vertex Unification Plan](Vertex-Unification-Plan)** | **Planning.** Migrate all point kinds to unified `vertices[]` with `vertex-N` IDs and explicit ownership |
 | 🔧 **[Refactoring Plan](Refactoring-Plan)** | **Planning.** SolidCraft comparison, staged: persistent naming → data safety → oracles/fuzz → core refactor |
+| 🛡️ **[Data Safety Design](Data-Safety-Design)** | Stage 2: atomic save, recovery journal, file-format versioning |
 
 ### 🧩 Sketch System
 

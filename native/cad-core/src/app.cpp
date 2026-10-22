@@ -36,6 +36,7 @@
 #include "core/cam/tool_library.h"
 #include "core/cam/tool_table_io.h"
 #include "core/document/document.h"
+#include "core/document/format/journal.h"
 #include "core/drawing/drawing_annotation_geometry.h"
 #include "core/drawing/drawing_dimension_geometry.h"
 #include "core/drawing/drawing_resolution.h"
@@ -84,6 +85,18 @@ using polysmith::core::PluginFeatureParameters;
 using polysmith::core::PluginGeometryOperation;
 using polysmith::core::ThreadFeatureParameters;
 using polysmith::protocol::CommandMessage;
+
+bool should_journal(const std::string& type) {
+  if (type == "ping") {
+    return false;
+  }
+  if (type.rfind("get_", 0) == 0) {
+    return false;
+  }
+  return type != "cam_setup_get" && type != "cam_stock_get" &&
+         type != "cam_tool_list" && type != "cam_post_list" &&
+         type != "cam_machine_list" && type != "cam_tool_library_list";
+}
 
 }  // namespace
 
@@ -211,6 +224,12 @@ void CadCoreApp::run() {
     try {
       command = polysmith::protocol::parse_command(line);
       handle_command_line(command);
+      if (should_journal(command.type)) {
+        const auto document = document_manager().get_document();
+        if (document.has_value()) {
+          polysmith::core::journal_append(document->id, line);
+        }
+      }
     } catch (const std::runtime_error& error) {
       if (std::string(error.what()) == "__POLYSMITH_SHUTDOWN__") {
         polysmith::core::log_info("cad_core", "Shutdown requested");

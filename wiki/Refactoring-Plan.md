@@ -42,6 +42,9 @@ behaviour), then fillet-edge provenance.
 
 ## Stage 2 — Never lose work (data safety)
 
+> Concrete design: [Data-Safety-Design.md](Data-Safety-Design.md). ASCII JSON
+> confirmed; versioned envelope + atomic save + recovery journal implemented.
+
 `Lessons §1` and `§4`. `.polysmith` is currently the raw `DocumentState` payload
 written straight over the destination, with no version field.
 
