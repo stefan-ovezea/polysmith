@@ -58,7 +58,7 @@ void refresh_linked_loft_features(DocumentState &document,
     }
 
     try {
-      const TopoDS_Shape next_shape = build_loft_shape(next_parameters);
+      const auto next_shape = build_loft_shape(next_parameters);
       if (next_shape.IsNull()) {
         throw std::runtime_error("Loft rebuild produced an empty shape");
       }

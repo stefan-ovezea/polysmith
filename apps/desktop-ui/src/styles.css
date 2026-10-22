@@ -481,6 +481,16 @@ button:not(:disabled),
       0 0 12px color-mix(in srgb, var(--color-tertiary-plane-edge) 35%, transparent);
   }
 
+  /* Ambiguous re-bind (feature still compiles, but the match was a guess):
+   * same treatment as the broken warning, in the primary blue so "check me"
+   * reads differently from the amber "broken". */
+  .cad-timeline-feature-ambiguous {
+    color: var(--color-primary-glow);
+    box-shadow:
+      inset 0 0 0 1px var(--color-primary-glow),
+      0 0 12px color-mix(in srgb, var(--color-primary-glow) 35%, transparent);
+  }
+
   .cad-kicker {
     @apply font-display text-[11px] uppercase tracking-[0.22em] text-primary-glow;
   }

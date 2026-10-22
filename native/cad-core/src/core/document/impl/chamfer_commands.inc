@@ -40,6 +40,8 @@ DocumentState DocumentManager::create_chamfer(
   ChamferFeatureParameters params{};
   params.target_body_id = owner_id;
   params.edge_ids = edge_ids;
+  params.edge_fingerprints =
+      capture_edge_fingerprints(document_.value(), edge_ids, /*exclude=*/"");
   params.distance = distance;
   // Same rationale as create_fillet — see comment there.
   params.is_pending = true;
@@ -112,6 +114,8 @@ DocumentState DocumentManager::update_chamfer_edges(
   // See update_fillet_edges for why this command intentionally does
   // not push an undo step.
   feature_it->chamfer_parameters->edge_ids = edge_ids;
+  feature_it->chamfer_parameters->edge_fingerprints =
+      capture_edge_fingerprints(document_.value(), edge_ids, feature_id);
   std::ostringstream summary;
   summary << edge_ids.size() << " edge"
           << (edge_ids.size() == 1 ? "" : "s") << " · "

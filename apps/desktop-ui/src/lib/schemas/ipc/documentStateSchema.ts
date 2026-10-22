@@ -57,6 +57,10 @@ export const documentStateSchema = z.object({
       // warning button when true; the message is the tooltip.
       dependency_broken: z.boolean().default(false),
       dependency_warning: z.string().default(""),
+      // Re-bound-to-an-uncertain-match signal; still compiles but the
+      // timeline shows a distinct (blue) "check me" warning.
+      dependency_ambiguous: z.boolean().default(false),
+      dependency_ambiguous_warning: z.string().default(""),
       parameters_summary: z.string(),
       box_parameters: z
         .object({

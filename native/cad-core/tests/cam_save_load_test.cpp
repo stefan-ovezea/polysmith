@@ -14,6 +14,8 @@
 
 #include "core/document/document.h"
 #include "core/cam/cam_operation.h"
+#include "core/geometry/face_geometry.h"
+#include "core/geometry/refresh_dependents.h"
 #include "protocol/serialization.h"
 
 namespace {
@@ -778,6 +780,174 @@ bool test_drilling_face_edge_round_trip() {
                 "drilling face/edge round trip: point variant survives");
 }
 
+bool test_feature_dependency_flags_round_trip() {
+  // `dependency_ambiguous` (a re-bound reference whose match was not
+  // certain) and its warning must survive the full document
+  // serialize/deserialize path, next to the existing `dependency_broken`.
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.get_document().value();
+
+  polysmith::core::FeatureEntry fillet{};
+  fillet.id = "feature-fillet";
+  fillet.kind = "fillet";
+  fillet.name = "Fillet";
+  fillet.status = "ok";
+  fillet.dependency_ambiguous = true;
+  fillet.dependency_ambiguous_warning =
+      "Fillet edge re-bound to a near-equal edge — verify the selection.";
+  fillet.dependency_broken = false;
+  document.feature_history.push_back(fillet);
+
+  const auto payload = polysmith::protocol::to_payload(document, true);
+  const auto restored = polysmith::protocol::document_from_payload(payload);
+
+  if (!expect(restored.feature_history.size() ==
+                  document.feature_history.size(),
+              "feature flag round trip: history size survives")) {
+    return false;
+  }
+  const auto& after = restored.feature_history.back();
+  return expect(
+      after.dependency_ambiguous &&
+          after.dependency_ambiguous_warning ==
+              fillet.dependency_ambiguous_warning,
+      "dependency_ambiguous + warning must survive serialize/deserialize");
+}
+
+bool test_fillet_edge_fingerprint_round_trip() {
+  // Fillet edge provenance: the core must capture a geometric fingerprint
+  // for each picked edge at creation, persist it through the document
+  // payload, and re-resolve it cleanly (not broken, not ambiguous) when the
+  // edge is still present.
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      polysmith::core::BoxFeatureParameters{
+          .width = 10.0, .height = 10.0, .depth = 10.0});
+  const std::string box_id = document.feature_history.back().id;
+
+  document = manager.create_fillet({box_id + ":edge:0"}, 1.0);
+  const std::string fillet_id = document.feature_history.back().id;
+
+  const polysmith::core::FeatureEntry* fillet = nullptr;
+  for (const auto& feature : document.feature_history) {
+    if (feature.id == fillet_id) {
+      fillet = &feature;
+      break;
+    }
+  }
+  if (!expect(fillet != nullptr && fillet->fillet_parameters.has_value() &&
+                  fillet->fillet_parameters->edge_fingerprints.size() == 1 &&
+                  fillet->fillet_parameters->edge_fingerprints[0].kind == "line",
+              "fillet captures one line fingerprint for the picked edge")) {
+    return false;
+  }
+
+  document = manager.confirm_fillet(fillet_id);
+
+  const auto payload = polysmith::protocol::to_payload(document, true);
+  DocumentState restored = polysmith::protocol::document_from_payload(payload);
+
+  const polysmith::core::FeatureEntry* restored_fillet = nullptr;
+  for (const auto& feature : restored.feature_history) {
+    if (feature.id == fillet_id) {
+      restored_fillet = &feature;
+      break;
+    }
+  }
+  if (!expect(restored_fillet != nullptr &&
+                  restored_fillet->fillet_parameters.has_value() &&
+                  restored_fillet->fillet_parameters->edge_fingerprints.size() ==
+                      1 &&
+                  restored_fillet->fillet_parameters->edge_fingerprints[0].kind ==
+                      "line",
+              "fillet edge fingerprint survives serialize/deserialize")) {
+    return false;
+  }
+
+  polysmith::core::refresh_history_dependencies(restored);
+  return expect(!restored_fillet->dependency_broken &&
+                    !restored_fillet->dependency_ambiguous,
+                "fillet edge re-resolves cleanly after load");
+}
+
+bool test_face_sketch_fingerprint_round_trip() {
+  // Face-based sketch provenance: the core must capture the face's plane
+  // (origin + normal) at sketch-on-face creation, persist it through the
+  // document payload, and re-resolve it cleanly (not broken, not
+  // ambiguous) when the face is still present.
+  DocumentManager manager;
+  manager.create_document();
+  DocumentState document = manager.add_box_feature(
+      polysmith::core::BoxFeatureParameters{
+          .width = 10.0, .height = 10.0, .depth = 10.0});
+  const std::string box_id = document.feature_history.back().id;
+  const std::string face_id = box_id + ":face:0";
+
+  const auto profile =
+      polysmith::core::compute_planar_face_profile(document, face_id);
+  if (!expect(profile.has_value(), "box face 0 is planar")) {
+    return false;
+  }
+  const polysmith::core::PlaneFrame& pf = profile->plane_frame;
+  polysmith::core::SketchFeatureParameters::SketchPlaneFrame frame{
+      .origin_x = pf.origin_x,
+      .origin_y = pf.origin_y,
+      .origin_z = pf.origin_z,
+      .x_axis_x = pf.x_axis_x,
+      .x_axis_y = pf.x_axis_y,
+      .x_axis_z = pf.x_axis_z,
+      .y_axis_x = pf.y_axis_x,
+      .y_axis_y = pf.y_axis_y,
+      .y_axis_z = pf.y_axis_z,
+      .normal_x = pf.normal_x,
+      .normal_y = pf.normal_y,
+      .normal_z = pf.normal_z,
+  };
+
+  document = manager.start_sketch_on_face(face_id, frame);
+  const std::string sketch_id = document.feature_history.back().id;
+
+  const polysmith::core::FeatureEntry* sketch = nullptr;
+  for (const auto& feature : document.feature_history) {
+    if (feature.id == sketch_id) {
+      sketch = &feature;
+      break;
+    }
+  }
+  if (!expect(sketch != nullptr && sketch->sketch_parameters.has_value() &&
+                  sketch->sketch_parameters->face_fingerprint.has_value() &&
+                  sketch->sketch_parameters->face_fingerprint->valid,
+              "face sketch captures a plane fingerprint")) {
+    return false;
+  }
+
+  const auto payload = polysmith::protocol::to_payload(document, true);
+  DocumentState restored = polysmith::protocol::document_from_payload(payload);
+
+  const polysmith::core::FeatureEntry* restored_sketch = nullptr;
+  for (const auto& feature : restored.feature_history) {
+    if (feature.id == sketch_id) {
+      restored_sketch = &feature;
+      break;
+    }
+  }
+  if (!expect(restored_sketch != nullptr &&
+                  restored_sketch->sketch_parameters.has_value() &&
+                  restored_sketch->sketch_parameters->face_fingerprint
+                      .has_value() &&
+                  restored_sketch->sketch_parameters->face_fingerprint->valid,
+              "face sketch fingerprint survives serialize/deserialize")) {
+    return false;
+  }
+
+  polysmith::core::refresh_history_dependencies(restored);
+  return expect(!restored_sketch->dependency_broken &&
+                    !restored_sketch->dependency_ambiguous,
+                "face sketch re-resolves cleanly after load");
+}
+
 }  // namespace
 
 int main() {
@@ -834,6 +1004,30 @@ int main() {
 
   std::cout << "  Test 7: drilling face + edge refs round-trip... ";
   if (test_drilling_face_edge_round_trip()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 8: feature dependency flags round-trip... ";
+  if (test_feature_dependency_flags_round_trip()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 9: fillet edge fingerprint round-trip... ";
+  if (test_fillet_edge_fingerprint_round_trip()) {
+    std::cout << "PASS\n";
+  } else {
+    std::cout << "FAIL\n";
+    allPassed = false;
+  }
+
+  std::cout << "  Test 10: face sketch fingerprint round-trip... ";
+  if (test_face_sketch_fingerprint_round_trip()) {
     std::cout << "PASS\n";
   } else {
     std::cout << "FAIL\n";

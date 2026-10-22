@@ -50,7 +50,7 @@ DocumentState DocumentManager::update_revolve_profile(
                               profile_id,
                               feature_it->revolve_parameters->axis_entity_id,
                               feature_it->revolve_parameters->angle_degrees);
-  const TopoDS_Shape next_shape = build_revolve_shape(next_parameters);
+  const auto next_shape = build_revolve_shape(next_parameters);
   if (next_shape.IsNull()) {
     throw std::runtime_error("Revolve update produced an empty shape");
   }
@@ -87,7 +87,7 @@ DocumentState DocumentManager::update_revolve_axis(
                               feature_it->revolve_parameters->profile_id,
                               axis_entity_id,
                               feature_it->revolve_parameters->angle_degrees);
-  const TopoDS_Shape next_shape = build_revolve_shape(next_parameters);
+  const auto next_shape = build_revolve_shape(next_parameters);
   if (next_shape.IsNull()) {
     throw std::runtime_error("Revolve update produced an empty shape");
   }

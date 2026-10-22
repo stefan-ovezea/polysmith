@@ -294,11 +294,18 @@ set(CAD_CORE_SOURCES
   src/core/construction/construction_plane_feature.cpp
   src/core/diagnostics/logger.cpp
   src/core/document/document.cpp
+  src/core/document/document_lifecycle.cpp
   src/core/export/export.cpp
   src/dxf/dxf_export.cpp
   src/dxf/dxf_import.cpp
   src/core/extrude/extrude_feature.cpp
   src/core/geometry/body_compiler.cpp
+  src/core/geometry/body_copy_commands.cpp
+  src/core/geometry/extrude_helpers.cpp
+  src/core/geometry/face_signature.cpp
+  src/core/geometry/import_commands.cpp
+  src/core/geometry/import_runtime.cpp
+  src/core/geometry/mesh_commands.cpp
   src/core/geometry/edge_geometry.cpp
   src/core/geometry/face_geometry.cpp
   src/core/geometry/feature_shape.cpp
@@ -353,6 +360,25 @@ target_link_libraries(cad_core_lib PUBLIC ${OpenCASCADE_LIBRARIES} planegcs dxfr
 add_executable(cad_core
   src/app.cpp
   src/main.cpp
+  src/app/body_modifier_command_handlers.cpp
+  src/app/cam_command_handlers.cpp
+  src/app/construction_command_handlers.cpp
+  src/app/corner_trim_command_handlers.cpp
+  src/app/document_session_command_handlers.cpp
+  src/app/drawing_command_handlers.cpp
+  src/app/drawing_template_command_handlers.cpp
+  src/app/extrude_command_handlers.cpp
+  src/app/feature_command_handlers.cpp
+  src/app/fillet_command_handlers.cpp
+  src/app/import_command_handlers.cpp
+  src/app/pcb_command_handlers.cpp
+  src/app/sketch_create_command_handlers.cpp
+  src/app/sketch_edit_command_handlers.cpp
+  src/app/sketch_tool_command_handlers.cpp
+  src/app/sketch_utility_command_handlers.cpp
+  src/app/solid_feature_command_handlers.cpp
+  src/app/threaded_command_handlers.cpp
+  src/app/trim_preview_command_handlers.cpp
 )
 
 target_link_libraries(cad_core PRIVATE cad_core_lib)

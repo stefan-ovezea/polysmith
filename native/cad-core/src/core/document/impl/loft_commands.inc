@@ -47,7 +47,7 @@ DocumentState DocumentManager::update_loft_profiles(
       make_loft_parameters_for_profiles(document_->feature_history,
                                         profile_ids,
                                         ruled);
-  const TopoDS_Shape next_shape = build_loft_shape(next_parameters);
+  const auto next_shape = build_loft_shape(next_parameters);
   if (next_shape.IsNull()) {
     throw std::runtime_error("Loft update produced an empty shape");
   }

@@ -49,12 +49,14 @@
 #include "core/document/document.h"
 #include "core/export/export.h"
 #include "core/geometry/body_compiler.h"
+#include "core/geometry/import_runtime.h"
 #include "core/viewport/viewport.h"
 #include "protocol/serialization.h"
 
 namespace {
 
 using polysmith::core::compile_bodies;
+using polysmith::core::find_imported_shape;
 using polysmith::core::DocumentManager;
 using polysmith::core::DocumentState;
 
@@ -589,7 +591,7 @@ bool test_serialization_round_trip() {
   }
   // The live handle is a cache — after load it is null and the
   // compiler must fall back to deserializing the snapshot.
-  if (!expect(step_it->step_import_parameters->imported_shape.IsNull(),
+  if (!expect(find_imported_shape(step_it->id) == nullptr,
               "roundtrip: live handle must be null after load")) {
     return false;
   }

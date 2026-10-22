@@ -20,10 +20,8 @@ TopoDS_Shape build_plugin_feature_shape(
     const PluginFeatureParameters& parameters);
 TopoDS_Shape build_mesh_import_shape(
     const MeshImportFeatureParameters& parameters);
-TopoDS_Shape build_step_import_shape(
-    const StepImportFeatureParameters& parameters);
-TopoDS_Shape build_iges_import_shape(
-    const IgesImportFeatureParameters& parameters);
+TopoDS_Shape build_step_import_shape(const std::string& feature_id);
+TopoDS_Shape build_iges_import_shape(const std::string& feature_id);
 
 // Convenience that dispatches on FeatureEntry::kind. Returns a null shape
 // for non-solid features (e.g. sketches) instead of throwing, so callers

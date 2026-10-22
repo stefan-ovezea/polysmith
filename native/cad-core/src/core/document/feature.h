@@ -42,6 +42,18 @@ struct FeatureEntry {
   // tooltip on the warning-coloured timeline button). Empty when
   // `dependency_broken` is false.
   std::string dependency_warning;
+  // Set by `refresh_history_dependencies` when this feature re-bound an
+  // upstream reference to a *different* entity whose match was not
+  // certain (the geometric fingerprint returned more than one near-equal
+  // candidate). Unlike `dependency_broken` the feature still compiles —
+  // it picked the best guess — so this flag only warns the user to check
+  // it rather than freezing the geometry. Distinct from
+  // `dependency_broken`, where the reference could not be resolved at all.
+  bool dependency_ambiguous = false;
+  // Human-readable explanation of the uncertain re-bind (shown as the
+  // tooltip on the ambiguity-coloured timeline button). Empty when
+  // `dependency_ambiguous` is false.
+  std::string dependency_ambiguous_warning;
   std::optional<BoxFeatureParameters> box_parameters;
   std::optional<CylinderFeatureParameters> cylinder_parameters;
   std::optional<ExtrudeFeatureParameters> extrude_parameters;

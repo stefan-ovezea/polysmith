@@ -1,4 +1,5 @@
 #include "core/document/document.h"
+#include "core/document/document_internal.h"
 #include "core/cam/cam_runtime.h"
 #include "core/drawing/drawing_annotation_geometry.h"
 #include "core/drawing/drawing_projection.h"
@@ -35,33 +36,18 @@
 
 #include <nlohmann/json.hpp>
 
-#include <Bnd_Box.hxx>
-#include <BRepBndLib.hxx>
-#include <BRepGProp.hxx>
-#include <GProp_GProps.hxx>
-#include <BRepAlgoAPI_Common.hxx>
-#include <BRep_Builder.hxx>
-#include <BRepExtrema_DistShapeShape.hxx>
-#include <BRepTools.hxx>
-#include <Standard_Failure.hxx>
-#include <TopExp_Explorer.hxx>
-#include <TopAbs_ShapeEnum.hxx>
-#include <TopExp.hxx>
-#include <NCollection_IndexedMap.hxx>
-#include <TopoDS.hxx>
-#include <TopoDS_Face.hxx>
-#include <TopoDS_Shape.hxx>
-#include <gp_Pnt.hxx>
-#include <gp_Vec.hxx>
-
 #include "core/geometry/body_compiler.h"
 #include "core/cam/cam_export.h"
 #include "core/cam/cam_profile_reference.h"
 #include "core/cam/cam_refresh.h"
 #include "core/construction/construction_plane_feature.h"
 #include "core/geometry/edge_geometry.h"
+#include "core/geometry/extrude_helpers.h"
 #include "core/geometry/face_geometry.h"
+#include "core/geometry/face_signature.h"
 #include "core/geometry/feature_shape.h"
+#include "core/geometry/import_runtime.h"
+#include "core/geometry/shape_snapshot.h"
 #include "core/geometry/mesh_import_helpers.h"
 #include "core/geometry/mesh_projection.h"
 #include "core/geometry/step_import_helpers.h"
@@ -75,7 +61,7 @@ namespace polysmith::core {
 namespace {
 
 #include "core/document/impl/private_document_helpers.inc"
-#include "core/document/impl/private_extrude_extent_helpers.inc"
+#include "core/document/impl/private_extrude_frame_helpers.inc"
 #include "core/document/impl/private_profile_feature_helpers.inc"
 #include "core/document/impl/private_sketch_feature_parameter_helpers.inc"
 #include "core/document/impl/private_linked_feature_refresh.inc"
@@ -85,7 +71,6 @@ namespace {
 }  // namespace
 
 #include "core/document/impl/lifecycle.inc"
-#include "core/document/impl/selection.inc"
 #include "core/document/impl/edge_features.inc"
 #include "core/document/impl/sketch_commands.inc"
 #include "core/document/impl/sketch_dimension_commands.inc"
@@ -107,12 +92,7 @@ namespace {
 #include "core/document/impl/construction_commands.inc"
 #include "core/document/impl/hole_commands.inc"
 #include "core/document/impl/body_appearance_commands.inc"
-#include "core/document/impl/document_io_commands.inc"
-#include "core/document/impl/session_cam_commands.inc"
-#include "core/document/impl/session_drawing_commands.inc"
 #include "core/document/impl/mesh_commands.inc"
 #include "core/document/impl/dxf_commands.inc"
-#include "core/document/impl/step_commands.inc"
-#include "core/document/impl/iges_commands.inc"
 #include "core/document/impl/pcb_commands.inc"
 }  // namespace polysmith::core

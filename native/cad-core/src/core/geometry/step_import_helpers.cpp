@@ -15,6 +15,7 @@
 #include <TopoDS.hxx>
 
 #include "core/diagnostics/logger.h"
+#include "core/geometry/import_runtime.h"
 #include "core/geometry/import_sew_helpers.h"
 
 namespace polysmith::core {
@@ -119,8 +120,9 @@ StepImportResult read_step_file(const std::string& file_path) {
   }
 }
 
-TopoDS_Shape build_step_import_shape(const StepImportFeatureParameters& params) {
-  return params.imported_shape;
+TopoDS_Shape build_step_import_shape(const std::string& feature_id) {
+  const TopoDS_Shape* cached = find_imported_shape(feature_id);
+  return cached ? *cached : TopoDS_Shape{};
 }
 
 }  // namespace polysmith::core

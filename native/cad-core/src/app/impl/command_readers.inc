@@ -1,6 +1,0 @@
-#include "app/impl/command_reader_basic_helpers.inc"
-#include "app/impl/command_reader_extrude_helpers.inc"
-#include "app/impl/command_reader_threaded_feature_helpers.inc"
-#include "app/impl/command_reader_move_helpers.inc"
-#include "app/impl/command_reader_plane_frame_helpers.inc"
-#include "app/impl/command_reader_plugin_helpers.inc"

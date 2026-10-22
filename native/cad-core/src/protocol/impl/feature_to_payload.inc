@@ -14,6 +14,8 @@ json to_payload(const polysmith::core::FeatureEntry& feature,
       // upstream face it referenced is gone.
       {"dependency_broken", feature.dependency_broken},
       {"dependency_warning", feature.dependency_warning},
+      {"dependency_ambiguous", feature.dependency_ambiguous},
+      {"dependency_ambiguous_warning", feature.dependency_ambiguous_warning},
       {"parameters_summary", feature.parameters_summary},
 #include "protocol/impl/feature_to_payload_primitive_entries.inc"
 #include "protocol/impl/feature_to_payload_extrude_entries.inc"

@@ -22,6 +22,16 @@ polysmith::core::FeatureEntry feature_entry_from_payload(const json& payload) {
     feature.dependency_warning =
         payload.at("dependency_warning").get<std::string>();
   }
+  if (payload.contains("dependency_ambiguous") &&
+      payload.at("dependency_ambiguous").is_boolean()) {
+    feature.dependency_ambiguous =
+        payload.at("dependency_ambiguous").get<bool>();
+  }
+  if (payload.contains("dependency_ambiguous_warning") &&
+      payload.at("dependency_ambiguous_warning").is_string()) {
+    feature.dependency_ambiguous_warning =
+        payload.at("dependency_ambiguous_warning").get<std::string>();
+  }
 #include "protocol/impl/feature_from_payload_primitive_blocks.inc"
 #include "protocol/impl/feature_from_payload_profile_feature_blocks.inc"
 #include "protocol/impl/feature_from_payload_body_modifier_blocks.inc"

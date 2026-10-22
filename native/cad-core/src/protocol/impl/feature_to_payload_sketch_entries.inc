@@ -33,6 +33,18 @@
                              }},
                         }
                       : json(nullptr)},
+                  {"face_fingerprint",
+                   feature.sketch_parameters->face_fingerprint.has_value()
+                       ? json{
+                             {"valid", feature.sketch_parameters->face_fingerprint->valid},
+                             {"origin_x", feature.sketch_parameters->face_fingerprint->origin_x},
+                             {"origin_y", feature.sketch_parameters->face_fingerprint->origin_y},
+                             {"origin_z", feature.sketch_parameters->face_fingerprint->origin_z},
+                             {"normal_x", feature.sketch_parameters->face_fingerprint->normal_x},
+                             {"normal_y", feature.sketch_parameters->face_fingerprint->normal_y},
+                             {"normal_z", feature.sketch_parameters->face_fingerprint->normal_z},
+                         }
+                       : json(nullptr)},
 #include "protocol/impl/feature_to_payload_sketch_geometry_entries.inc"
 #include "protocol/impl/feature_to_payload_sketch_chamfer_entries.inc"
 #include "protocol/impl/feature_to_payload_sketch_slot_entries.inc"

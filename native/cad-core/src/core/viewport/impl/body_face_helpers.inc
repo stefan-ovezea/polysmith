@@ -276,7 +276,7 @@ void enumerate_body_faces(const TopoDS_Shape& body_shape,
     primitive.is_selected = selected_face_id.has_value() &&
                             selected_face_id.value() == face_id;
     primitive.appearance_color =
-        face_appearance_color(document, face_id, appearance_face_signature(face));
+        face_appearance_color(document, face_id, face_signature(face));
 
     const gp_Trsf transform = location.Transformation();
     const bool reversed = face.Orientation() == TopAbs_REVERSED;

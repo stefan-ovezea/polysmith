@@ -16,6 +16,7 @@
 #include <TopoDS.hxx>
 
 #include "core/diagnostics/logger.h"
+#include "core/geometry/import_runtime.h"
 #include "core/geometry/import_sew_helpers.h"
 
 namespace polysmith::core {
@@ -119,8 +120,9 @@ IgesImportResult read_iges_file(const std::string& file_path) {
   }
 }
 
-TopoDS_Shape build_iges_import_shape(const IgesImportFeatureParameters& params) {
-  return params.imported_shape;
+TopoDS_Shape build_iges_import_shape(const std::string& feature_id) {
+  const TopoDS_Shape* cached = find_imported_shape(feature_id);
+  return cached ? *cached : TopoDS_Shape{};
 }
 
 }  // namespace polysmith::core
