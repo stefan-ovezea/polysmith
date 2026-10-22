@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "core/sketch/dof_counter.h"
+#include "protocol/impl/binary_payload.h"
 
 namespace polysmith::protocol {
 

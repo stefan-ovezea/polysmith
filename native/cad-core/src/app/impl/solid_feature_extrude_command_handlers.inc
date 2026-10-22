@@ -90,10 +90,13 @@
   }
 
   if (command.type == "update_extrude_mode") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_extrude_mode(
-        read_string(command.payload, "feature_id"),
-        read_string(command.payload, "mode"));
+        feature_id, read_string(command.payload, "mode"));
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -107,9 +110,13 @@
       target_body_id =
           command.payload.at("target_body_id").get<std::string>();
     }
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_extrude_target_body(
-        read_string(command.payload, "feature_id"), target_body_id);
+        feature_id, target_body_id);
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -124,9 +131,13 @@
                   command.payload.at("parameters"))
             : polysmith::protocol::extrude_parameters_from_payload(
                   command.payload);
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_extrude_parameters(
-        read_string(command.payload, "feature_id"), parameters);
+        feature_id, parameters);
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -143,9 +154,13 @@
         }
       }
     }
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_extrude_profiles(
-        read_string(command.payload, "feature_id"), profile_ids);
+        feature_id, profile_ids);
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

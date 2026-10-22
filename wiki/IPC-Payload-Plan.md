@@ -289,11 +289,11 @@ deterministic; wall-clock assertions are not).
 | 0 ✅ | conformance harness (`scripts/ipc_conformance.py`, self-test) | conformant, catches injected drift | **done** |
 | 1 ✅ | Phase C2: open-sketch derived caches on demand | edit **1.44 MB → 599 KB** | **done** |
 | 2 ✅ | Phase C: profile snapshot out of events | load **574 KB → 276 KB**; edit 599 → **549 KB** | **done** |
-| 3 | Phase D1: `sketch_entities_changed` for the open sketch | edit → 1–3 KB | 3–5 d |
-| 4 | Phase D2: `feature_changed` for the other families | 276 → 5–20 KB typical | 2–3 d |
-| 5 | Phase E1/E2: region list, skip unchanged viewports | 1.62 MB → ~700 KB, often 0 | 2–3 d |
-| 6 | Phase E4: binary buffers | another 3–5× | 2 d |
-| 7 | Phase F: validate the envelope always, geometry arrays dev-only | removes a `zod` pass per event | 0.5–1 d |
+| 3 ✅ | Phase D1: `sketch_entities_changed` for the open sketch | edit → 1–3 KB | **done** |
+| 4 ✅ | Phase D2: `feature_changed` for the other families | 276 → 5–20 KB typical | **done** |
+| 5 | Phase E1 ✅ (summaries + `get_sketch_profiles`); E2: core `geometry_revision` signal ✅, UI skip ⬜ | 1.62 MB → ~700 KB, often 0 | E1 done; E2 core done, UI skip open |
+| 6 ✅ | Phase E4: binary buffers (mesh/face/cut-preview base64) | another 3–5× | **done** |
+| 7 ✅ | Phase F: validate the envelope always, geometry arrays dev-only | removes a `zod` pass per event | **done** |
 
 Steps 0–2 are shipped and measured. Skipping the staged compromise the plan
 originally proposed was the right call: the profile snapshot could be dropped

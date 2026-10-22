@@ -9,6 +9,8 @@ export const documentStateSchema = z.object({
   name: z.string(),
   units: z.string(),
   revision: z.number(),
+  // Shape revision (phase E2), defaulted for back-compat with older cores.
+  geometry_revision: z.number().default(0),
   // Undo/redo availability + history step names travel with every
   // document state (D7/D8) so the toolbar buttons and hotkeys are
   // never stale. Defaulted for back-compat with older cores.

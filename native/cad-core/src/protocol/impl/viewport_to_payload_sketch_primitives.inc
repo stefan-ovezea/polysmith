@@ -289,72 +289,13 @@ json to_payload(const polysmith::core::ViewportSketchConstraintPrimitive& primit
 }
 
 json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive) {
-  json profile_points = json::array();
-  for (const auto& point : primitive.profile_points) {
-    profile_points.push_back({
-        {"x", point.x},
-        {"y", point.y},
-    });
-  }
-  json inner_loops = json::array();
-  for (const auto& loop : primitive.inner_loops) {
-    json loop_payload = json::array();
-    for (const auto& point : loop) {
-      loop_payload.push_back({
-          {"x", point.x},
-          {"y", point.y},
-      });
-    }
-    inner_loops.push_back(loop_payload);
-  }
-  json circle_holes = json::array();
-  for (const auto& hole : primitive.circle_holes) {
-    circle_holes.push_back({
-        {"loop_index", hole.loop_index},
-        {"center_x", hole.center_x},
-        {"center_y", hole.center_y},
-        {"radius", hole.radius},
-    });
-  }
-
-  // Exact boundary edges — same shape as the document-side profile
-  // serialization, so the UI builds arc-true fills instead of the
-  // chord-sampled polygon.  Empty arrays for legacy profiles.
-  auto edge_payload = [](const polysmith::core::ProfileBoundaryEdge& edge) {
-    return json{
-        {"entity_id", edge.entity_id},
-        {"entity_kind", edge.entity_kind},
-        {"param_start", edge.param_start},
-        {"param_end", edge.param_end},
-        {"start_x", edge.start_x},
-        {"start_y", edge.start_y},
-        {"end_x", edge.end_x},
-        {"end_y", edge.end_y},
-        {"center_x", edge.center_x},
-        {"center_y", edge.center_y},
-        {"radius", edge.radius},
-        {"ccw", edge.ccw},
-        {"spline_degree", edge.spline_degree},
-        {"spline_pole_xs", edge.spline_pole_xs},
-        {"spline_pole_ys", edge.spline_pole_ys},
-        // Ellipse pieces: the pick contour follows the real ellipse, not a chord.
-        {"minor_radius", edge.minor_radius},
-        {"rotation", edge.rotation},
-    };
-  };
-  json boundary_edges = json::array();
-  for (const auto& edge : primitive.boundary_edges) {
-    boundary_edges.push_back(edge_payload(edge));
-  }
-  json inner_loop_edges = json::array();
-  for (const auto& loop_edges : primitive.inner_loop_edges) {
-    json loop_payload = json::array();
-    for (const auto& edge : loop_edges) {
-      loop_payload.push_back(edge_payload(edge));
-    }
-    inner_loop_edges.push_back(loop_payload);
-  }
-
+  // Phase E1: the full profile geometry (profile_points / boundary_edges /
+  // inner_loops — 912 KB on a dense sketch) no longer travels on the viewport
+  // snapshot.  The UI fetches the exact geometry on demand with
+  // `get_sketch_profiles` and renders the filled regions from the document's
+  // profile data (makeSketchProfileFromDocument).  Only the summary — id,
+  // plane, kind, bounds, selection — is shipped here, which is all the picker
+  // and region list need.
   return {
       {"profile_id", primitive.profile_id},
       {"plane_id", primitive.plane_id},
@@ -388,11 +329,6 @@ json to_payload(const polysmith::core::ViewportSketchProfilePrimitive& primitive
              }
            : json(nullptr)},
       {"profile_kind", primitive.profile_kind},
-      {"profile_points", profile_points},
-      {"inner_loops", inner_loops},
-      {"circle_holes", circle_holes},
-      {"boundary_edges", boundary_edges},
-      {"inner_loop_edges", inner_loop_edges},
       {"start_x", primitive.start_x},
       {"start_y", primitive.start_y},
       {"width", primitive.width},

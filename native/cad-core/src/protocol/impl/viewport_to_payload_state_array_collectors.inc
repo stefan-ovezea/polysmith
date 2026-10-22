@@ -90,9 +90,13 @@
   for (const auto& mesh : viewport.meshes) {
     meshes.push_back({
         {"primitive_id", mesh.id},
-        {"positions", mesh.positions},
-        {"normals", mesh.normals},
-        {"indices", mesh.indices},
+        // Binary (phase E4): float32/uint32 base64 blobs decode straight into
+        // Float32Array/Uint32Array on the UI, 3-5x smaller than JSON number
+        // arrays.  The field names are unchanged — the UI treats a string as
+        // base64 and a number array as the legacy JSON form.
+        {"positions", encode_f32(mesh.positions)},
+        {"normals", encode_f32(mesh.normals)},
+        {"indices", encode_u32(mesh.indices)},
         {"is_selected", mesh.is_selected},
         {"appearance_color",
          mesh.appearance_color.has_value()

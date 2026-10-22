@@ -88,6 +88,14 @@ json make_sketch_entities_changed_event(const std::string& id,
   };
 }
 
+json make_feature_changed_event(const std::string& id, const json& changes) {
+  return {
+      {"id", id},
+      {"type", "feature_changed"},
+      {"payload", changes},
+  };
+}
+
 json make_sketch_profiles_event(const std::string& id, const json& profiles) {
   return {
       {"id", id},

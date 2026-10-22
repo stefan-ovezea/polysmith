@@ -16,6 +16,15 @@ const sessionStateSchema = z.object({
   can_redo: z.boolean(),
 });
 
+// Phase F: the geometry payloads (document_state / viewport_state) are 155 KB –
+// 1.6 MB of JSON. A full zod walk of those arrays on every event is a real parse
+// cost on the hot path, and the core is the source of truth for their shape. So
+// the message ENVELOPE (id + type) is always validated, but the payload body is
+// walked only in dev, where a malformed payload should surface loudly. Production
+// keeps the payload as an opaque object and lets the store read it directly.
+const geometryPayload = <T extends z.ZodTypeAny>(schema: T): z.ZodTypeAny =>
+  import.meta.env.DEV ? schema : z.record(z.string(), z.unknown());
+
 const helloEventSchema = z.object({
   type: z.literal("hello"),
   payload: z.object({
@@ -35,13 +44,13 @@ const pongEventSchema = z.object({
 const documentCreatedEventSchema = z.object({
   id: z.string(),
   type: z.literal("document_created"),
-  payload: documentStateSchema,
+  payload: geometryPayload(documentStateSchema),
 });
 
 const documentStateEventSchema = z.object({
   id: z.string(),
   type: z.literal("document_state"),
-  payload: documentStateSchema,
+  payload: geometryPayload(documentStateSchema),
 });
 
 const sessionStateEventSchema = z.object({
@@ -53,7 +62,7 @@ const sessionStateEventSchema = z.object({
 const viewportStateEventSchema = z.object({
   id: z.string(),
   type: z.literal("viewport_state"),
-  payload: viewportStateSchema,
+  payload: geometryPayload(viewportStateSchema),
 });
 
 const documentExportedEventSchema = z.object({
@@ -460,8 +469,37 @@ export const sketchEntitiesChangedEventSchema = z.object({
   }),
 });
 
+// Incremental feature edit (wiki/IPC-Payload-Plan.md phase D2): one feature's
+// stored parameters, patched by id. The feature body is loosely typed on purpose
+// - the core owns its shape and the store replaces it field by field.
+export const featureChangedEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("feature_changed"),
+  payload: z.object({
+    revision: z.number(),
+    feature_id: z.string(),
+    feature: z.record(z.string(), z.unknown()),
+    removed_feature_ids: z.array(z.string()).default([]),
+  }),
+});
+
+// On-demand profile geometry (phase E1): the reply to get_sketch_profiles.
+// Profiles are loosely typed — the store merges them by profile_id into the
+// document's sketch_parameters.profiles, which owns their exact shape.
+export const sketchProfilesEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("sketch_profiles"),
+  payload: z.object({
+    feature_id: z.string(),
+    profile_count: z.number(),
+    profiles: z.array(z.record(z.string(), z.unknown())).default([]),
+  }),
+});
+
 export const coreMessageSchema = z.union([
   sketchEntitiesChangedEventSchema,
+  featureChangedEventSchema,
+  sketchProfilesEventSchema,
   helloEventSchema,
   pongEventSchema,
   documentCreatedEventSchema,

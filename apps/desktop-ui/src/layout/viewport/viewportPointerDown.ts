@@ -59,6 +59,7 @@ interface ViewportPointerDownParams {
   setPointerDown: (point: PointerDownPosition | null) => void;
   dimensionLabelDragRef: MutableRef<DimensionLabelDragState | null>;
   activeSketchToolRef: MutableRef<SketchTool>;
+  profileMarqueeArmedRef: MutableRef<boolean>;
   circleToolMode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines";
   activeSketchPlaneIdRef: MutableRef<string | null>;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
@@ -446,7 +447,14 @@ function beginSketchMoveRotatePointerDown(params: ViewportPointerDownParams) {
 }
 
 function beginSelectToolPointerDown(params: ViewportPointerDownParams) {
-  if (params.activeSketchToolRef.current !== "select") {
+  // The marquee starts in sketch select mode, OR in the model view when a
+  // profile-feature action (Extrude/Loft/Revolve/Sweep) is armed — that is the
+  // multi-surface marquee.  A drawable tool (line/circle/…) must NOT start it.
+  const sketchSelect = params.activeSketchToolRef.current === "select";
+  const modelSelect =
+    params.activeSketchToolRef.current == null &&
+    params.profileMarqueeArmedRef.current;
+  if (!sketchSelect && !modelSelect) {
     return false;
   }
 

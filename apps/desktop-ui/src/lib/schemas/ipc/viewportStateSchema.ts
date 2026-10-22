@@ -126,9 +126,9 @@ export const viewportStateSchema = z.object({
       }),
       // Body-derived faces carry per-face triangulation; legacy
       // analytical faces leave these empty and rely on (size, plane_frame)
-      // for the UI's pick mesh.
-      triangle_positions: z.array(z.number()).default([]),
-      triangle_indices: z.array(z.number()).default([]),
+      // for the UI's pick mesh.  Binary (phase E4): base64 blobs.
+      triangle_positions: z.string().default(""),
+      triangle_indices: z.string().default(""),
       is_selected: z.boolean(),
       appearance_color: z.string().nullable().default(null),
       // CAM surface classification + cylinder witness (drilling hole
@@ -530,12 +530,17 @@ export const viewportStateSchema = z.object({
         })
         .nullable(),
       profile_kind: z.enum(["polygon", "circle", "ellipse", "spline"]),
-      profile_points: z.array(
-        z.object({
-          x: z.number(),
-          y: z.number(),
-        }),
-      ),
+      // Phase E1: profile geometry no longer travels on the viewport
+      // snapshot — the UI fetches it via get_sketch_profiles.  Defaulted
+      // so a snapshot from a core that still ships it also validates.
+      profile_points: z
+        .array(
+          z.object({
+            x: z.number(),
+            y: z.number(),
+          }),
+        )
+        .default([]),
       inner_loops: z
         .array(z.array(z.object({ x: z.number(), y: z.number() })))
         .default([]),
@@ -611,9 +616,9 @@ export const viewportStateSchema = z.object({
     .array(
       z.object({
         primitive_id: z.string(),
-        positions: z.array(z.number()),
-        normals: z.array(z.number()),
-        indices: z.array(z.number()),
+        positions: z.string(),
+        normals: z.string(),
+        indices: z.string(),
         is_selected: z.boolean(),
         appearance_color: z.string().nullable().default(null),
       }),
@@ -623,9 +628,9 @@ export const viewportStateSchema = z.object({
     .array(
       z.object({
         id: z.string(),
-        positions: z.array(z.number()),
-        normals: z.array(z.number()),
-        indices: z.array(z.number()),
+        positions: z.string(),
+        normals: z.string(),
+        indices: z.string(),
       }),
     )
     .default([]),

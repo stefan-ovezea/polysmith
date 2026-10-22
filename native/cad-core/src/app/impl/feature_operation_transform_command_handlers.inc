@@ -10,10 +10,13 @@
   }
 
   if (command.type == "update_move_parameters") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_move_parameters(
-        read_string(command.payload, "feature_id"),
-        read_move_parameters(command.payload));
+        feature_id, read_move_parameters(command.payload));
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

@@ -412,6 +412,22 @@ export interface ViewportPanelProps {
     windowMode: boolean,
     additive: boolean,
   ) => Promise<void>;
+  // Marquee over profile SURFACES (multi-profile extrude/loft/revolve/
+  // sweep): same corners + direction; `featureId` names the sketch to resolve
+  // against (the active one when marqueeing in sketch mode, the visible one
+  // in the model view).
+  onSelectSketchProfilesRect: (
+    featureId: string,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    windowMode: boolean,
+    additive: boolean,
+  ) => Promise<void>;
+  // When true, a marquee drag selects profile surfaces instead of
+  // sketch entities (armed while a profile-feature action is active).
+  profileMarqueeArmed?: boolean;
   onPickSketchPoint: (
     pointId: string,
     kind: "endpoint" | "center" | "quadrant",

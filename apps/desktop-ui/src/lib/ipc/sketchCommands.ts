@@ -1288,6 +1288,30 @@ export function makeSelectSketchRectCommand(
   };
 }
 
+export function makeSelectSketchProfilesRectCommand(
+  featureId: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  windowMode: boolean,
+  additive = false,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "select_sketch_profiles_rect",
+    payload: {
+      feature_id: featureId,
+      x1,
+      y1,
+      x2,
+      y2,
+      window_mode: windowMode,
+      additive,
+    },
+  };
+}
+
 
 export function makeSelectSketchDimensionCommand(
   dimensionId: string,

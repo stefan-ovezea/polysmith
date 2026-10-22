@@ -15,6 +15,12 @@
   DocumentState select_vertex(const std::string& vertex_id, bool additive);
   DocumentState select_sketch_profile(const std::string& profile_id,
                                       bool additive = false);
+  // Marquee over SURFACES: selects (or toggles, in additive mode) a batch of
+  // profiles in ONE revision.  The UI owns the rubber-band hit test; the core
+  // owns the resulting selection.  Works without an active sketch — surfaces are
+  // collected in the model view, before an extrusion.
+  DocumentState select_sketch_profiles(
+      const std::vector<std::string>& profile_ids, bool additive = false);
   // Selects every profile whose boundary includes the given sketch
   // entity (line/circle/arc/ellipse/spline).  A shared edge between
   // two regions selects both — no guessing.  Throws when the entity
@@ -50,6 +56,18 @@
   DocumentState select_sketch_rect(double x1, double y1, double x2,
                                    double y2, bool window_mode,
                                    bool additive = false);
+  // Marquee over PROFILE SURFACES: selects every detected profile whose
+  // bounding box is inside (window mode) or touches (crossing mode) the
+  // rectangle, resolved CORE-side against one sketch's exact profile regions.
+  // `x1/y1/x2/y2` are sketch-local corners.  `feature_id` names the sketch to
+  // resolve against (empty = the active sketch), so the marquee also works in
+  // the model view where no sketch is active.  This is the multi-profile
+  // counterpart of select_sketch_profile — one drag replaces (or toggles in
+  // additive mode) the whole profile selection.
+  DocumentState select_sketch_profiles_rect(const std::string& feature_id,
+                                            double x1, double y1, double x2,
+                                            double y2, bool window_mode,
+                                            bool additive = false);
   DocumentState select_sketch_dimension(const std::string& dimension_id);
   DocumentState clear_selection();
   // Update the per-session selection filter. The filter controls which

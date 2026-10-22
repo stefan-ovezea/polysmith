@@ -83,6 +83,35 @@
     return;
   }
 
+  if (command.type == "select_sketch_profiles_rect") {
+    bool additive = false;
+    if (command.payload.contains("additive") &&
+        command.payload.at("additive").is_boolean()) {
+      additive = command.payload.at("additive").get<bool>();
+    }
+    bool window_mode = true;
+    if (command.payload.contains("window_mode") &&
+        command.payload.at("window_mode").is_boolean()) {
+      window_mode = command.payload.at("window_mode").get<bool>();
+    }
+    std::string feature_id;
+    if (command.payload.contains("feature_id") &&
+        command.payload.at("feature_id").is_string()) {
+      feature_id = command.payload.at("feature_id").get<std::string>();
+    }
+    const auto document = document_manager().select_sketch_profiles_rect(
+        feature_id,
+        read_dimension(command.payload, "x1"),
+        read_dimension(command.payload, "y1"),
+        read_dimension(command.payload, "x2"),
+        read_dimension(command.payload, "y2"),
+        window_mode, additive);
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
+    return;
+  }
+
   if (command.type == "select_sketch_dimension") {
     const auto document = document_manager().select_sketch_dimension(
         read_string(command.payload, "dimension_id"));

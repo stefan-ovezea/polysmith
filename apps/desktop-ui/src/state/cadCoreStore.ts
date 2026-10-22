@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type {
   CamGenerationResultEvent,
   SketchEntitiesChangedEvent,
+  FeatureChangedEvent,
+  SketchProfilesEvent,
   CoreMessage,
   DocumentState,
   DocumentExportResult,
@@ -239,6 +241,22 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
         );
       }
 
+      // Incremental feature edit (phase D2): patch one feature's stored
+      // parameters by id. Same stale-revision safety net as D1.
+      if (message.type === "feature_changed" && state.document) {
+        nextState.document = applyFeatureChanged(
+          state.document,
+          message.payload,
+        );
+      }
+
+      // On-demand profile geometry (phase E1): merge the fetched profile
+      // regions into the sketch feature that owns them, so the viewport can
+      // render the filled surfaces from the document.
+      if (message.type === "sketch_profiles" && state.document) {
+        nextState.document = applySketchProfiles(state.document, message.payload);
+      }
+
       if (message.type === "session_state") {
         nextState.session = message.payload;
       }
@@ -421,6 +439,55 @@ function applySketchEntitiesChanged(
               profile_count: change.derived?.profile_count ?? params.profile_count,
               vertex_count: change.derived?.vertex_count ?? params.vertex_count,
             },
+          }
+        : entry,
+    ),
+  };
+}
+
+/** Patch a `feature_changed` event into the document copy (phase D2). */
+function applyFeatureChanged(
+  document: DocumentState,
+  change: FeatureChangedEvent["payload"],
+): DocumentState {
+  const removed = new Set(change.removed_feature_ids ?? []);
+  const history = (document.feature_history ?? []).filter(
+    (entry) => !removed.has(entry.feature_id),
+  );
+  const index = history.findIndex(
+    (entry) => entry.feature_id === change.feature_id,
+  );
+  if (index < 0) {
+    // Unknown feature: don't invent state. Leave the document alone; the next
+    // full document_state (or a revision-gap refetch) resyncs it.
+    return document;
+  }
+  history[index] = change.feature;
+  return {
+    ...document,
+    revision: change.revision,
+    feature_history: history,
+  };
+}
+
+/** Merge an on-demand `sketch_profiles` fetch into the owning sketch feature. */
+function applySketchProfiles(
+  document: DocumentState,
+  change: SketchProfilesEvent["payload"],
+): DocumentState {
+  return {
+    ...document,
+    feature_history: (document.feature_history ?? []).map((entry) =>
+      entry.feature_id === change.feature_id
+        ? {
+            ...entry,
+            sketch_parameters: entry.sketch_parameters
+              ? {
+                  ...entry.sketch_parameters,
+                  profiles: change.profiles,
+                  profile_count: change.profile_count,
+                }
+              : entry.sketch_parameters,
           }
         : entry,
     ),

@@ -812,7 +812,10 @@ export function buildCadStateSummary(
           id: profile.profile_id,
           plane_id: profile.plane_id,
           kind: profile.profile_kind,
-          point_count: profile.profile_points.length,
+          // Phase E1: geometry no longer ships on the snapshot; the summary
+          // bounds stand in for the old point count.
+          width: profile.width,
+          height: profile.height,
           radius: profile.radius,
         })),
       }

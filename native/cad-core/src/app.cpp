@@ -66,6 +66,7 @@ using polysmith::protocol::CommandMessage;
 
 #include "app/impl/command_readers.inc"
 #include "app/impl/sketch_entities_changed.inc"
+#include "app/impl/feature_changed.inc"
 }  // namespace
 
 void CadCoreApp::init_occt() const {

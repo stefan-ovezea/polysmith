@@ -90,6 +90,7 @@ import type {
   SelectSketchEntityCommand,
   SelectSketchEntitiesCommand,
   SelectSketchRectCommand,
+  SelectSketchProfilesRectCommand,
   SelectSketchVertexCommand,
   SelectSketchDimensionCommand,
   FinishSketchCommand,
@@ -235,6 +236,7 @@ import type {
 import type {
   FeatureEntry,
   SketchTool,
+  SketchProfileRegionEntry,
 } from "./geometry/sketch";
 import type {
   CamDocumentData,
@@ -293,6 +295,10 @@ export interface DocumentState {
   name: string;
   units: string;
   revision: number;
+  // Shape revision (phase E2): bumps only when body/sketch GEOMETRY
+  // changes, not on appearance/rename.  The UI compares it across events
+  // to skip a viewport refetch when the triangles are unchanged.
+  geometry_revision: number;
   // Undo/redo availability travels with every document state (D7) —
   // the toolbar buttons and hotkeys read these instead of the
   // request-only session_state, which used to go stale after sketch
@@ -420,10 +426,11 @@ export interface ViewportState {
 export interface ViewportMeshPrimitive {
   primitive_id: string;
   // Triangulated body geometry in world space, laid out as flat arrays
-  // for direct upload to a three.js BufferGeometry.
-  positions: number[];
-  normals: number[];
-  indices: number[];
+  // for direct upload to a three.js BufferGeometry.  Binary (phase E4):
+  // base64 float32/uint32 blobs, decoded by lib/binaryDecode.
+  positions: string;
+  normals: string;
+  indices: string;
   is_selected: boolean;
   appearance_color: string | null;
 }
@@ -435,9 +442,9 @@ export interface ViewportMeshPrimitive {
 // to be removed, mirroring common CAD workflow's behavior.
 export interface ViewportCutPreview {
   id: string;
-  positions: number[];
-  normals: number[];
-  indices: number[];
+  positions: string;
+  normals: string;
+  indices: string;
 }
 
 // Lightweight summary of every body present in the current document, in
@@ -542,6 +549,33 @@ export interface SketchEntitiesChangedEvent extends BaseMessage {
     vertices?: Array<Record<string, unknown>>;
     removed?: string[];
     derived?: { profile_count?: number; vertex_count?: number };
+  };
+}
+
+// Incremental reply for a command that changed ONE feature's stored parameters
+// (extrude depth, hole size, fillet radius, ...) — phase D2. The client patches
+// `feature_history` by id; a stale revision makes it wait for a full state.
+export interface FeatureChangedEvent extends BaseMessage {
+  type: "feature_changed";
+  id: string;
+  payload: {
+    revision: number;
+    feature_id: string;
+    feature: FeatureEntry;
+    removed_feature_ids: string[];
+  };
+}
+
+// On-demand profile geometry (phase E1): the reply to `get_sketch_profiles`.
+// Carries one sketch's full profile regions, fetched when the UI needs to
+// render the filled surfaces (the viewport snapshot now ships summaries only).
+export interface SketchProfilesEvent extends BaseMessage {
+  type: "sketch_profiles";
+  id: string;
+  payload: {
+    feature_id: string;
+    profile_count: number;
+    profiles: SketchProfileRegionEntry[];
   };
 }
 
@@ -798,6 +832,8 @@ export type CoreMessage =
   | DocumentStateEvent
   | SelectionChangedEvent
   | SketchEntitiesChangedEvent
+  | FeatureChangedEvent
+  | SketchProfilesEvent
   | SessionStateEvent
   | ViewportStateEvent
   | DocumentExportedEvent
@@ -847,6 +883,14 @@ export interface GetViewportStateCommand {
   id: string;
   type: "get_viewport_state";
   payload: Record<string, never>;
+}
+
+export interface GetSketchProfilesCommand {
+  id: string;
+  type: "get_sketch_profiles";
+  payload: {
+    feature_id: string;
+  };
 }
 
 export interface ExportDocumentCommand {
@@ -1140,6 +1184,7 @@ export type CoreCommand =
   | GetDocumentStateCommand
   | GetSessionStateCommand
   | GetViewportStateCommand
+  | GetSketchProfilesCommand
   | ExportDocumentCommand
   | ExportDocumentStlCommand
   | ExportDocumentDxfCommand
@@ -1381,6 +1426,7 @@ export type CoreCommand =
   | SelectSketchEntityCommand
   | SelectSketchEntitiesCommand
   | SelectSketchRectCommand
+  | SelectSketchProfilesRectCommand
   | SelectSketchDimensionCommand
   | FinishSketchCommand
   | ReenterSketchCommand

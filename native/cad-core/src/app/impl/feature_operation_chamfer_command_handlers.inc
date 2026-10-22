@@ -30,9 +30,13 @@
         }
       }
     }
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_chamfer_edges(
-        read_string(command.payload, "feature_id"), edge_ids);
+        feature_id, edge_ids);
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -40,10 +44,13 @@
   }
 
   if (command.type == "update_chamfer_distance") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_chamfer_distance(
-        read_string(command.payload, "feature_id"),
-        read_dimension(command.payload, "distance"));
+        feature_id, read_dimension(command.payload, "distance"));
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

@@ -32,6 +32,22 @@ inline bool emit_sketch_entities_changed(
   const auto& before_params = before_feature->sketch_parameters.value();
   const auto& after_params = after_feature->sketch_parameters.value();
 
+  // The delta carries lines/vertices only.  If the DIMENSIONS changed too
+  // (add_sketch_line auto-creates length/angle dims; delete_sketch_dimension
+  // removes one), the delta would silently drop them and leave the UI's
+  // dimension list stale — which broke the auto-dimension cleanup (the
+  // post-commit deletion could not find the freshly-created dims to remove,
+  // so the preview length/angle stayed).  Fall back to the full state
+  // whenever the dimension set differs.
+  if (before_params.dimensions.size() != after_params.dimensions.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < after_params.dimensions.size(); ++i) {
+    if (before_params.dimensions[i].id != after_params.dimensions[i].id) {
+      return false;
+    }
+  }
+
   polysmith::protocol::json changed_vertices = polysmith::protocol::json::array();
   polysmith::protocol::json changed_lines = polysmith::protocol::json::array();
   polysmith::protocol::json removed_ids = polysmith::protocol::json::array();

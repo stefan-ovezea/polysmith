@@ -262,6 +262,13 @@ def build_script(document: dict) -> list[dict]:
                        "payload": {"start_x": 30.0, "start_y": 6.0,
                                    "end_x": 38.0, "end_y": 6.0,
                                    "is_construction": False}})
+    extrude = next((f for f in document.get("feature_history", [])
+                    if f.get("kind") == "extrude"), None)
+    if extrude:
+        depth = (extrude.get("extrude_parameters") or {}).get("depth", 10.0)
+        script.append({"id": "s8b", "type": "update_extrude_depth",
+                       "payload": {"feature_id": extrude.get("feature_id"),
+                                   "depth": float(depth) + 2.5}})
     script.append({"id": "s9", "type": "get_document_state", "payload": {}})
     return script
 

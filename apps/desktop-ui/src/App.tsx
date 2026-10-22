@@ -655,6 +655,31 @@ function App() {
   useEffect(() => {
     void drawingTemplatesDir().then(setDrawingTemplatesDirValue);
   }, []);
+  // Phase E1: the viewport snapshot ships profile summaries only. Fetch the
+  // full region geometry for ANY sketch whose derived profile set is stale —
+  // this covers a freshly-loaded document (no active sketch yet), a sketch
+  // being drawn (its `profile_count` rises as regions close), and a closed
+  // sketch. The fetch is gated on `profiles.length !== profile_count`, so a
+  // pure point move (count unchanged) does not refetch, and a selection-only
+  // change is a cheap no-op.
+  useEffect(() => {
+    if (!document) {
+      return;
+    }
+    for (const feature of document.feature_history ?? []) {
+      const params = feature.sketch_parameters;
+      if (feature.kind !== "sketch" || !params) {
+        continue;
+      }
+      const fetched = params.profiles?.length ?? 0;
+      const live = params.profile_count ?? 0;
+      if (fetched === live) {
+        continue;
+      }
+      void getSketchProfiles(feature.feature_id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [document]);
   // R1 "Current 3D view" capture: ViewportPanel populates this ref
   // with a function returning the LAST CAD-viewport camera frame
   // vectors (never the drawing workspace's sheet camera).
@@ -2450,8 +2475,10 @@ function App() {
     finishSketch,
     abortAllUndoGroups,
     reenterSketch,
+    getSketchProfiles,
     clearSelection,
     selectSketchRect,
+    selectSketchProfilesRect,
     updateSelectionFilter,
     camSetupCreate,
     camSetupUpdate,
@@ -5731,6 +5758,33 @@ function App() {
                   );
                 });
               }}
+              onSelectSketchProfilesRect={async (
+                featureId,
+                x1,
+                y1,
+                x2,
+                y2,
+                windowMode,
+                additive,
+              ) => {
+                await runAction(async () => {
+                  await selectSketchProfilesRect(
+                    featureId,
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    windowMode,
+                    additive,
+                  );
+                });
+              }}
+              profileMarqueeArmed={
+                extrudeAction !== null ||
+                loftAction !== null ||
+                revolveAction !== null ||
+                sweepAction !== null
+              }
               onPickSketchPoint={async (vertexId, kind, additive) => {
                 if (constructionPointAction) {
                   await createConstructionPointFeature(vertexId);

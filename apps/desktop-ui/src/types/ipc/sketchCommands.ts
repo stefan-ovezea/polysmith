@@ -828,6 +828,25 @@ export interface SelectSketchRectCommand {
   };
 }
 
+// Marquee over PROFILE SURFACES: selects every detected profile whose
+// bounding box is inside (window) or touches (crossing) the rect —
+// resolved CORE-side against the active sketch's exact profile regions.
+export interface SelectSketchProfilesRectCommand {
+  id: string;
+  type: "select_sketch_profiles_rect";
+  payload: {
+    // Sketch to resolve against (empty = the active sketch). Lets the marquee
+    // work in the model view, where no sketch is active.
+    feature_id: string;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    window_mode: boolean;
+    additive: boolean;
+  };
+}
+
 export interface SelectSketchVertexCommand {
   id: string;
   type: "select_sketch_vertex";

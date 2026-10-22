@@ -404,6 +404,15 @@ bool test_fusion_sketch_when_present() {
     std::cout << "  viewport payload: " << (viewport_payload.dump().size() / 1024)
               << " KB in " << ms(viewport_payload_done - viewport_payload_start)
               << " ms\n";
+    // What is in it?  The payload is refetched after most edits, so its size is
+    // the interaction budget for everything except a bare selection.
+    for (auto it = viewport_payload.begin(); it != viewport_payload.end(); ++it) {
+      const size_t kb = it.value().dump().size() / 1024;
+      if (kb == 0) {
+        continue;
+      }
+      std::cout << "  viewport[" << it.key() << "] = " << kb << " KB\n";
+    }
 
     // REGRESSION (reported): with exact spline edges the extrude refused every
     // spline-bounded region with "10 pairs of holes touch (gap 0.000 mm)" — the

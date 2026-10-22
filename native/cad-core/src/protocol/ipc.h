@@ -32,6 +32,11 @@ json make_sketch_profiles_event(const std::string& id, const json& profiles);
 // vertices, the removed ids and the new counts.  The client patches them by id;
 // a revision gap makes it ask for a full document_state instead.
 json make_sketch_entities_changed_event(const std::string& id, const json& changes);
+// Incremental reply for a command that changed ONE feature's stored parameters
+// (extrude depth, hole size, fillet radius, ...) in place (phase D2).  Carries
+// the feature's full trimmed payload; the client patches it by id and falls
+// back to a full document_state on a revision gap.
+json make_feature_changed_event(const std::string& id, const json& changes);
 json make_session_state_event(const std::string& id, const json& session);
 json make_viewport_state_event(const std::string& id, const json& viewport);
 json make_document_exported_event(const std::string& id,

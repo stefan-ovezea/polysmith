@@ -110,7 +110,7 @@ void DocumentManager::sync_sketch_id_counters() {
   }
 }
 
-void DocumentManager::bump_geometry_revision() {
+void DocumentManager::bump_geometry_revision(bool shape_changed) {
   require_document();
   sync_sketch_id_counters();
   refresh_history_dependencies(*document_);
@@ -135,6 +135,13 @@ void DocumentManager::bump_geometry_revision() {
   // implementation.
   const int next = document_->revision + 1;
   document_->revision = next;
+  // Shape revision (phase E2): only a mutation that actually moves the
+  // body's triangles advances it.  Appearance / rename mutators pass
+  // shape_changed=false and leave it, so the UI can skip a viewport
+  // refetch for them.
+  if (shape_changed) {
+    document_->geometry_revision = document_->geometry_revision + 1;
+  }
   // The undo/redo flags travel with the document payload (D7) so the
   // UI's buttons/hotkeys are never stale — every mutator passes
   // through this choke point.

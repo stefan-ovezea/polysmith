@@ -85,9 +85,10 @@ export interface ViewportSolidFace {
   };
   // Body-derived faces carry triangulation arrays; legacy analytical
   // faces leave these empty and the UI builds a pick mesh from
-  // (size, plane_frame) instead.
-  triangle_positions: number[];
-  triangle_indices: number[];
+  // (size, plane_frame) instead.  Binary (phase E4): base64 float32/
+  // uint32 blobs.
+  triangle_positions: string;
+  triangle_indices: string;
   is_selected: boolean;
   appearance_color: string | null;
   // Surface classification for CAM consumers (drilling hole-wall

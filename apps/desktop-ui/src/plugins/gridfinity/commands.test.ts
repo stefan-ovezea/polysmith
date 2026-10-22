@@ -712,7 +712,7 @@ describe("Gridfinity geometry recipe", () => {
       const viewport = await waitFor("viewport");
       const payload = viewport.payload as {
         bodies: unknown[];
-        meshes: Array<{ positions: number[]; indices: number[] }>;
+        meshes: Array<{ positions: string; indices: string }>;
       };
 
       expect(payload.bodies.length).toBeGreaterThan(0);
@@ -786,7 +786,7 @@ describe("Gridfinity geometry recipe", () => {
         const viewport = await waitFor("viewport");
         const payload = viewport.payload as {
           bodies: unknown[];
-          meshes: Array<{ positions: number[]; indices: number[] }>;
+          meshes: Array<{ positions: string; indices: string }>;
         };
 
         expect(payload.bodies.length).toBeGreaterThan(0);

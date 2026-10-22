@@ -23,7 +23,7 @@ DocumentState DocumentManager::set_body_color(const std::string& body_id,
   } else {
     existing->color = color;
   }
-  bump_geometry_revision();
+  bump_geometry_revision(/*shape_changed=*/false);
   return document_.value();
 }
 
@@ -66,7 +66,7 @@ DocumentState DocumentManager::set_face_color(const std::string& face_id,
     existing->signature = signature;
     existing->color = color;
   }
-  bump_geometry_revision();
+  bump_geometry_revision(/*shape_changed=*/false);
   return document_.value();
 }
 
@@ -90,7 +90,7 @@ DocumentState DocumentManager::clear_body_color(const std::string& body_id) {
                                    return entry.body_id == body_id;
                                  }),
                   overrides.end());
-  bump_geometry_revision();
+  bump_geometry_revision(/*shape_changed=*/false);
   return document_.value();
 }
 
@@ -114,7 +114,7 @@ DocumentState DocumentManager::clear_face_color(const std::string& face_id) {
                                    return entry.face_id == face_id;
                                  }),
                   overrides.end());
-  bump_geometry_revision();
+  bump_geometry_revision(/*shape_changed=*/false);
   return document_.value();
 }
 
@@ -128,6 +128,6 @@ DocumentState DocumentManager::clear_appearance_overrides() {
   clear_redo_stack();
   document_->appearance.body_colors.clear();
   document_->appearance.face_colors.clear();
-  bump_geometry_revision();
+  bump_geometry_revision(/*shape_changed=*/false);
   return document_.value();
 }

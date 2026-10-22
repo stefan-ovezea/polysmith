@@ -205,8 +205,8 @@ json to_payload(const polysmith::core::ViewportSolidFace& face) {
            {"height", face.height},
            {"radius", face.radius},
        }},
-      {"triangle_positions", face.triangle_positions},
-      {"triangle_indices", face.triangle_indices},
+      {"triangle_positions", encode_f32(face.triangle_positions)},
+      {"triangle_indices", encode_u32(face.triangle_indices)},
       {"is_selected", face.is_selected},
       {"appearance_color",
        face.appearance_color.has_value()
