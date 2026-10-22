@@ -86,12 +86,24 @@ always loads to the old or new state.
   like the existing `POLYSMITH_*_DIR`), read by the core, temp fallback when unset.
 - `<doc-id>` = `document_->id`.
 - A successful save truncates the journal (the saved file is the checkpoint).
-- Replay: list `*.jsonl`, pick one → `create_document()` + re-dispatch each line,
-  skipping (and logging) failures.
-- v1 excludes autosave timing and journal GC — follow-up increments.
+- Replay is **deferred** — see "Deferred (not in v1)" below.
 
-## Implementation order
+## Deferred (not in v1)
 
-1. A.1 + A.2 + A.3 (version, migration, corpus).
-2. B (atomic save + kill test).
-3. C (journal + replay test).
+- **Recovery replay UI** — list `*.jsonl` on launch, offer to recover, then
+  `create_document()` + re-dispatch each line (skipping/logging failures). The
+  replay logic is almost free (journal lines are the same commands the core
+  speaks), but the UI prompt is deferred: during active development the core
+  crashes often, and a recover dialog on every launch would be noise. When it
+  is built, gate it to non-dev builds and only when a journal actually holds
+  unsaved changes.
+- **Kill-loop test** — the 25× mid-save kill harness (Python).
+- **Autosave** — every N minutes and before long operations, only when dirty.
+- **Journal GC** — rotation/cleanup policy on successful save.
+- **Strip derived caches from the persisted file** (A.4).
+
+## Implementation order (shipped)
+
+1. A.1 + A.2 + A.3 (version, migration, corpus) — done.
+2. B (atomic save) — done.
+3. C (journal write + truncate + read) — done; replay deferred.
