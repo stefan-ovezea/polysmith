@@ -419,6 +419,14 @@ export interface ProfileBoundaryEdgeScene {
   center: [number, number];
   radius: number;
   ccw: boolean;
+  // Spline edges carry their poles + degree so the pick contour can follow the
+  // real curve (see lib/splineCurve.ts) instead of a straight chord.
+  splinePoleXs?: number[];
+  splinePoleYs?: number[];
+  splineDegree?: number;
+  // Ellipse edges: minor radius + major-axis angle (radius is the major one).
+  minorRadius?: number;
+  rotation?: number;
 }
 
 export interface SolidFaceScene {

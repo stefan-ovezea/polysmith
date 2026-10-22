@@ -24,7 +24,7 @@ DocumentState DocumentManager::rename_feature(const std::string& feature_id,
   push_undo_state();
   clear_redo_stack();
   feature_it->name = name;
-  bump_geometry_revision();
+  bump_geometry_revision(/*shape_changed=*/false);
   return document_.value();
 }
 

@@ -348,6 +348,8 @@ export function ViewportPanel({
   onSelectSketchEntity,
   onSelectSketchPoint,
   onSelectSketchRect,
+  onSelectSketchProfilesRect,
+  profileMarqueeArmed = false,
   onPickSketchPoint,
   armedSketchConstraint,
   mirrorFocusedSlot,
@@ -1460,6 +1462,8 @@ export function ViewportPanel({
   );
   const activeSketchPlaneIdRef = useRef(activeSketchPlaneId);
   const activeSketchPlaneFrameRef = useRef(activeSketchPlaneFrame);
+  const profileMarqueeArmedRef = useRef(profileMarqueeArmed);
+  const onSelectSketchProfilesRectRef = useRef(onSelectSketchProfilesRect);
   const showViewportGridRef = useRef(showViewportGrid);
   const showSketchGridRef = useRef(showSketchGrid);
   const showConstraintsRef = useRef(showConstraints);
@@ -1510,7 +1514,14 @@ export function ViewportPanel({
   useEffect(() => {
     activeSketchPlaneIdRef.current = activeSketchPlaneId;
     activeSketchPlaneFrameRef.current = activeSketchPlaneFrame;
-  }, [activeSketchPlaneId, activeSketchPlaneFrame]);
+    profileMarqueeArmedRef.current = profileMarqueeArmed;
+    onSelectSketchProfilesRectRef.current = onSelectSketchProfilesRect;
+  }, [
+    activeSketchPlaneId,
+    activeSketchPlaneFrame,
+    profileMarqueeArmed,
+    onSelectSketchProfilesRect,
+  ]);
   // Inactive-sketch picking refs must track their props: the CAM
   // workspace arms picking long after mount, and a stale first-render
   // value would keep sketch clicks dead.
@@ -3397,11 +3408,35 @@ export function ViewportPanel({
 
 
     async function performRectangleSelect(drag: SelectionDrag, additive: boolean) {
-      if (!activeSketchPlaneIdRef.current) return;
-
       const camera = cameraRef.current;
       const renderer = rendererRef.current;
       if (!camera || !renderer) return;
+
+      // Determine the sketch plane to resolve against: the active sketch, or —
+      // in the model view (profile-feature actions like Extrude) — the first
+      // visible sketch.
+      let planeId = activeSketchPlaneIdRef.current;
+      let planeFrame = activeSketchPlaneFrameRef.current;
+      let targetFeatureId = "";
+      if (!planeId && profileMarqueeArmedRef.current) {
+        const sketch = documentRef.current?.feature_history?.find(
+          (feature) =>
+            feature.kind === "sketch" &&
+            feature.sketch_parameters?.plane_id != null,
+        );
+        const params = sketch?.sketch_parameters;
+        if (params?.plane_id) {
+          planeId = params.plane_id;
+          // plane_frame is null for a sketch on a standard plane (e.g.
+          // ref-plane-xy); resolveSketchPlanePoint falls back to the legacy
+          // plane for those, exactly like the active-sketch path does.
+          planeFrame = params.plane_frame ?? null;
+          targetFeatureId = sketch!.feature_id;
+        }
+      }
+      if (!planeId) {
+        return;
+      }
 
       // Resolve BOTH drag corners to sketch-local coordinates and let
       // the CORE do the rectangle selection against the exact sketch
@@ -3411,28 +3446,57 @@ export function ViewportPanel({
       // delete then removed the perimeter instead of the marquee'd
       // entities. The core sees the real geometry, so the marquee can
       // never disagree with what gets deleted.
-      const startPoint = resolveSketchPlanePoint(
-        { clientX: drag.startX, clientY: drag.startY } as PointerEvent,
-        renderer,
-        camera,
-        activeSketchPlaneIdRef.current,
-        activeSketchPlaneFrameRef.current,
-      );
-      const endPoint = resolveSketchPlanePoint(
-        { clientX: drag.currentX, clientY: drag.currentY } as PointerEvent,
-        renderer,
-        camera,
-        activeSketchPlaneIdRef.current,
-        activeSketchPlaneFrameRef.current,
-      );
-      if (!startPoint || !endPoint) return;
+      // Resolve ALL FOUR screen corners of the marquee to sketch-local space
+      // and take their bounding box. With a free (angled) orthographic camera
+      // the screen rect projects to a PARALLELOGRAM on the sketch plane;
+      // resolving only the two diagonal corners over-estimates the box by the
+      // skew factor (the rectangle + circles case resolved to a box hundreds
+      // of mm away and selected nothing). Four corners give the true bounds.
+      const cornerPoints = [
+        resolveSketchPlanePoint(
+          { clientX: drag.startX, clientY: drag.startY } as PointerEvent,
+          renderer, camera, planeId, planeFrame,
+        ),
+        resolveSketchPlanePoint(
+          { clientX: drag.startX, clientY: drag.currentY } as PointerEvent,
+          renderer, camera, planeId, planeFrame,
+        ),
+        resolveSketchPlanePoint(
+          { clientX: drag.currentX, clientY: drag.startY } as PointerEvent,
+          renderer, camera, planeId, planeFrame,
+        ),
+        resolveSketchPlanePoint(
+          { clientX: drag.currentX, clientY: drag.currentY } as PointerEvent,
+          renderer, camera, planeId, planeFrame,
+        ),
+      ];
+      if (cornerPoints.some((point) => !point)) return;
+
+      const cornerXs = cornerPoints.map((point) => point!.local[0]);
+      const cornerYs = cornerPoints.map((point) => point!.local[1]);
+      const startX = Math.min(...cornerXs);
+      const startY = Math.min(...cornerYs);
+      const endX = Math.max(...cornerXs);
+      const endY = Math.max(...cornerYs);
 
       const windowMode = drag.currentX >= drag.startX;
+      if (profileMarqueeArmedRef.current) {
+        await onSelectSketchProfilesRectRef.current(
+          targetFeatureId,
+          startX,
+          startY,
+          endX,
+          endY,
+          windowMode,
+          additive,
+        );
+        return;
+      }
       await onSelectSketchRect(
-        startPoint.local[0],
-        startPoint.local[1],
-        endPoint.local[0],
-        endPoint.local[1],
+        startX,
+        startY,
+        endX,
+        endY,
         windowMode,
         additive,
       );
@@ -3470,7 +3534,13 @@ export function ViewportPanel({
       });
     }
 
-    function intersectSceneTargets(event: PointerEvent) {
+    // dvanceProfileSelection is true ONLY for clicks.  Hover must not step
+    // the candidate cycle, or the highlight flickers through every overlapping
+    // face at mouse-move rate.
+    function intersectSceneTargets(
+      event: PointerEvent,
+      advanceProfileSelection = false,
+    ) {
       return intersectViewportSceneTargets({
         event,
         renderer,
@@ -3496,6 +3566,7 @@ export function ViewportPanel({
         faceMeshes: faceMeshesRef.current,
         meshes: meshesRef.current,
         tolerancePx: readStoredFilter().tolerance_px,
+        advanceProfileSelection,
       });
     }
 
@@ -3920,6 +3991,7 @@ export function ViewportPanel({
         },
         dimensionLabelDragRef,
         activeSketchToolRef,
+        profileMarqueeArmedRef,
         circleToolMode: circleToolModeRef.current,
         activeSketchPlaneIdRef,
         activeSketchPlaneFrameRef,
@@ -4977,7 +5049,9 @@ export function ViewportPanel({
         draftStartedOnPointerDownRef,
         draftDimensionSessionRef,
         draftDimensionInputRefs,
-        intersectSceneTargets,
+        // A click is the only thing that steps the profile candidate cycle.
+        intersectSceneTargets: (event: PointerEvent) =>
+          intersectSceneTargets(event, true),
         activeSketchToolRef,
         activeSketchPlaneFrameRef,
         sketchLinesRef,
@@ -5900,7 +5974,12 @@ export function ViewportPanel({
 
   const lineCount = sketchFeature?.sketch_parameters?.lines.length ?? 0;
   const circleCount = sketchFeature?.sketch_parameters?.circles.length ?? 0;
-  const pointCount = sketchFeature?.sketch_parameters?.vertices.length ?? 0;
+  // `vertex_count` is present even when the core omits the vertex table (it is
+  // sent only for the open sketch), so this count stays correct either way.
+  const pointCount =
+    sketchFeature?.sketch_parameters?.vertex_count ??
+    sketchFeature?.sketch_parameters?.vertices.length ??
+    0;
   const arcCount = sketchFeature?.sketch_parameters?.arcs.length ?? 0;
 
   const {

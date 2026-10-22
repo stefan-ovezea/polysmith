@@ -25,14 +25,18 @@
   }
 
   if (command.type == "update_box_feature") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_box_feature(
-        read_string(command.payload, "feature_id"),
+        feature_id,
         BoxFeatureParameters{
             .width = read_dimension(command.payload, "width"),
             .height = read_dimension(command.payload, "height"),
             .depth = read_dimension(command.payload, "depth"),
         });
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -40,13 +44,17 @@
   }
 
   if (command.type == "update_cylinder_feature") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_cylinder_feature(
-        read_string(command.payload, "feature_id"),
+        feature_id,
         CylinderFeatureParameters{
             .radius = read_dimension(command.payload, "radius"),
             .height = read_dimension(command.payload, "height"),
         });
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -85,10 +93,13 @@
   }
 
   if (command.type == "update_extrude_depth") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_extrude_depth(
-        read_string(command.payload, "feature_id"),
-        read_dimension(command.payload, "depth"));
+        feature_id, read_dimension(command.payload, "depth"));
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -244,8 +255,7 @@
         document_manager().select_feature(read_string(command.payload, "feature_id"));
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 
@@ -254,8 +264,7 @@
         read_string(command.payload, "reference_id"));
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 
@@ -264,8 +273,7 @@
         document_manager().select_face(read_string(command.payload, "face_id"));
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 
@@ -282,8 +290,7 @@
         read_string(command.payload, "edge_id"), additive);
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 
@@ -300,8 +307,7 @@
         read_string(command.payload, "vertex_id"), additive);
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }
 

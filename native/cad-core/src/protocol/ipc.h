@@ -21,6 +21,22 @@ json make_hello_event();
 json make_pong_event(const std::string& id);
 json make_document_created_event(const std::string& id, const json& document);
 json make_document_state_event(const std::string& id, const json& document);
+// Selection-only reply for select_* commands (see serialization.h): the
+// document is unchanged, so re-sending it would cost a full payload per click.
+json make_selection_changed_event(const std::string& id, const json& selection);
+// Detected profiles of one sketch, fetched on demand (`get_sketch_profiles`):
+// derived data, no longer carried on the event stream.
+json make_sketch_profiles_event(const std::string& id, const json& profiles);
+// An incremental reply for a command that changed sketch entities in place
+// (serialization.h / wiki/IPC-Payload-Plan.md phase D1): the touched lines and
+// vertices, the removed ids and the new counts.  The client patches them by id;
+// a revision gap makes it ask for a full document_state instead.
+json make_sketch_entities_changed_event(const std::string& id, const json& changes);
+// Incremental reply for a command that changed ONE feature's stored parameters
+// (extrude depth, hole size, fillet radius, ...) in place (phase D2).  Carries
+// the feature's full trimmed payload; the client patches it by id and falls
+// back to a full document_state on a revision gap.
+json make_feature_changed_event(const std::string& id, const json& changes);
 json make_session_state_event(const std::string& id, const json& session);
 json make_viewport_state_event(const std::string& id, const json& viewport);
 json make_document_exported_event(const std::string& id,

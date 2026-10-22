@@ -102,6 +102,45 @@ bool profile_regions_touch(const SketchProfileRegion& a,
   return false;
 }
 
+bool profile_contains_profile(const SketchProfileRegion& outer,
+                              const SketchProfileRegion& inner) {
+  // Use a representative point of the INNER profile. Circles carry a real
+  // centre; polygons leave center_x/y at 0 (only circles populate them), so
+  // compute the vertex centroid instead — otherwise a disconnected polygon
+  // (e.g. a second rectangle) looks like it sits at (0,0) and can be wrongly
+  // grouped with an outer profile whose corner touches the origin.
+  double cx = inner.center_x;
+  double cy = inner.center_y;
+  if (inner.kind != "circle" && !inner.points.empty()) {
+    double sx = 0.0;
+    double sy = 0.0;
+    for (const auto& point : inner.points) {
+      sx += point.x;
+      sy += point.y;
+    }
+    cx = sx / static_cast<double>(inner.points.size());
+    cy = sy / static_cast<double>(inner.points.size());
+  }
+  if (outer.kind == "circle") {
+    const double dx = cx - outer.center_x;
+    const double dy = cy - outer.center_y;
+    return dx * dx + dy * dy < outer.radius * outer.radius;
+  }
+  const auto& pts = outer.points;
+  if (pts.size() < 3) {
+    return false;
+  }
+  bool inside = false;
+  for (size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
+    if (((pts[i].y > cy) != (pts[j].y > cy)) &&
+        (cx < (pts[j].x - pts[i].x) * (cy - pts[i].y) /
+                   (pts[j].y - pts[i].y) + pts[i].x)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 std::vector<std::vector<SketchProfileRegion>> group_touching_profiles(
     const std::vector<SketchProfileRegion>& profiles) {
   std::vector<std::vector<SketchProfileRegion>> groups;
@@ -125,7 +164,9 @@ std::vector<std::vector<SketchProfileRegion>> group_touching_profiles(
         if (visited[candidate]) {
           continue;
         }
-        if (!profile_regions_touch(profiles[current], profiles[candidate])) {
+        if (!profile_regions_touch(profiles[current], profiles[candidate]) &&
+            !profile_contains_profile(profiles[current], profiles[candidate]) &&
+            !profile_contains_profile(profiles[candidate], profiles[current])) {
           continue;
         }
         visited[candidate] = true;

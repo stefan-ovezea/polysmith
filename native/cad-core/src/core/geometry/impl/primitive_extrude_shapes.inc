@@ -20,6 +20,14 @@ TopoDS_Shape build_cylinder_shape(const CylinderFeatureParameters& parameters) {
 }
 
 TopoDS_Shape build_extrude_shape(const ExtrudeFeatureParameters& parameters) {
+  // An emptied extrude (every profile deselected) carries no geometry — return
+  // a null shape so the body compiler skips it.  The open-chain thin extrude
+  // also has an empty profile_ids list but is driven by open_entity_ids, so
+  // keep building it.
+  if (parameters.profile_ids.empty() &&
+      parameters.profile_kind != "open_chain") {
+    return TopoDS_Shape();
+  }
   try {
     const bool symmetric = parameters.extent_mode == "symmetric";
     const double side1_sign = parameters.depth < 0.0 ? -1.0 : 1.0;

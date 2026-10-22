@@ -17,9 +17,9 @@
          for (const auto& preview : viewport.cut_previews) {
            previews.push_back({
                {"id", preview.id},
-               {"positions", preview.positions},
-               {"normals", preview.normals},
-               {"indices", preview.indices},
+               {"positions", encode_f32(preview.positions)},
+               {"normals", encode_f32(preview.normals)},
+               {"indices", encode_u32(preview.indices)},
            });
          }
          return previews;

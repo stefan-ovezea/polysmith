@@ -1,6 +1,6 @@
 # ADR-0002: Core-Driven Drag Preview
 
-**Status:** Accepted  
+**Status:** Superseded in practice — see [Implementation Reality](#implementation-reality-2026-10-21)  
 **Date:** 2026-05-31
 
 ## Context
@@ -117,3 +117,54 @@ Implemented with the following additions beyond the original decision:
 - Performance at 60 fps is adequate for typical parametric sketches
   (tens of entities).  If profiling shows lag on larger sketches,
   the incremental update can be extended to primitives and references.
+
+## Implementation Reality (2026-10-21)
+
+The decision above is **not** what the code does today. Two weeks after it was
+accepted, the "UI constraints" work (`ae46236`, `8974857`) put a **client-side
+planegcs WASM solver** back into the drag path, and it has been the source of
+the preview ever since:
+
+| file | role |
+|---|---|
+| `lib/planegcsBridge.ts` | converts sketch data into planegcs primitives — a second constraint model (`// mirrors C++ SketchConstraint`) |
+| `lib/planegcsSolver.ts` | loads `@salusoft89/planegcs` (WASM) once, eagerly at mount |
+| `lib/speculativeSolve.ts` | solver-based snap inference |
+| `layout/viewport/endpointDrag.ts` | runs the WASM solve on every animation frame |
+| `layout/viewport/sketchMoveTool.ts`, `snapResolution.ts` | same, for the Move tool and snaps |
+
+The core is still the **commit** authority: pointer-up sends one
+`update_sketch_point`, which re-solves with the full constraint set.
+
+### Why the original decision is not viable as written
+
+The ADR assumed a pointer-move costs one small round trip. It actually costs
+three commands — `update_sketch_vertex`, `get_session_state` and
+`get_viewport_state` (`hooks/useCadCore.ts`, `updateSketchPoint`) — and both
+halves are large: the viewport snapshot measures **1.62 MB** with an 11 ms build,
+and the document state for a point move on an open sketch measures **1.44 MB**,
+85 % of it derived caches (see [IPC-Payload-Plan.md](IPC-Payload-Plan.md), which
+also scripts the measurement). Per-move that is not 60 fps.
+
+### The consequence to keep in mind
+
+The preview and the commit solve **different problems**: horizontal/vertical
+constraints are stripped during drag
+(`endpointDrag.ts`, "re-applied on commit by the C++ core"), ripple is frozen to
+one hop, the solve is loose (20 iterations, 1e-4), and any constraint kind the
+bridge does not map falls through a `default: break` (two sites in
+`planegcsBridge.ts`). Only the dragged coordinate crosses the commit boundary;
+the other points the preview moved are re-derived by the core from the pre-drag
+state. That is the visible "snap at release".
+
+### What to do instead of re-implementing this ADR
+
+1. Send the previewed coordinates on commit and have the core **verify and
+   apply** them (residual check, apply, warn past tolerance) instead of
+   re-solving from the pre-drag state.
+2. Make bridge coverage a test: every core constraint kind is either mapped or
+   explicitly listed as "preview ignores this".
+3. Keep the intentional relaxations in one table so the residual snap is
+   explainable.
+
+Tracked in [Lessons-From-SolidCraft.md](Lessons-From-SolidCraft.md) §7.

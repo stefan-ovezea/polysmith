@@ -109,7 +109,11 @@ export function handleSharedSketchSelectionHit({
   }
 
   if (hit?.kind === "sketch_profile" && typeof hit.id === "string") {
-    void selectSketchProfile(hit.id, additiveSelection);
+    // ADDITIVE by default.  Selecting surfaces one by one to extrude them is a
+    // collection task: a plain click that REPLACED the previous surface made
+    // multi-selection feel broken ("clicking another surface cancels the
+    // others").  The core toggles, so clicking a selected face again removes it.
+    void selectSketchProfile(hit.id, true);
     return true;
   }
 

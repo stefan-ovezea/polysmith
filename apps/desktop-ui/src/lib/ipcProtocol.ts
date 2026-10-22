@@ -60,6 +60,16 @@ export function makeGetViewportStateCommand(): CoreCommand {
   };
 }
 
+export function makeGetSketchProfilesCommand(featureId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "get_sketch_profiles",
+    payload: {
+      feature_id: featureId,
+    },
+  };
+}
+
 export function makeExportDocumentCommand(filePath: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

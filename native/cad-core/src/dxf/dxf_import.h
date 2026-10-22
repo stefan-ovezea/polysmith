@@ -39,11 +39,41 @@ struct DxfImportPoint {
   double y;
 };
 
+// A DXF SPLINE that the sketch's own spline entity can represent EXACTLY:
+// the model stores a clamped open-uniform B-spline whose poles are the
+// control points (see spline_math.h), so a curve with matching degree and
+// knots imports as a curve — not as tessellated lines.  Anything else
+// (weights, custom knot spacing, higher degree) falls back to tessellation.
+struct DxfImportSpline {
+  std::vector<std::pair<double, double>> poles;
+  int degree = 3;
+  int line = 0;
+};
+
+// A FULL elliptical DXF ELLIPSE, exactly representable by SketchEllipse:
+// `axis_a`/`axis_b` are endpoints relative to the centre (the model takes
+// axis POINTS).  Partial ellipses fall back to tessellation for now.
+struct DxfImportEllipse {
+  double center_x = 0.0;
+  double center_y = 0.0;
+  double axis_a_x = 0.0;
+  double axis_a_y = 0.0;
+  double axis_b_x = 0.0;
+  double axis_b_y = 0.0;
+  int line = 0;
+};
+
 struct DxfImportResult {
   std::vector<DxfImportLine> lines;
   std::vector<DxfImportCircle> circles;
   std::vector<DxfImportArc> arcs;
   std::vector<DxfImportPoint> points;
+  // Curves imported EXACTLY, as the sketch's own entities.  These are the
+  // preferred outcome: tessellating a spline into lines is what produces
+  // faceted extrusions, and the sketch model already carries B-splines and
+  // ellipses through profile detection into the B-rep.
+  std::vector<DxfImportSpline> splines;
+  std::vector<DxfImportEllipse> ellipses;
   // Entities that were skipped because they are unsupported (TEXT,
   // HATCH, INSERT blocks, ...) or degenerate/unusable (zero-length
   // lines, sub-minimum radii, non-planar polylines). Degenerate
@@ -68,7 +98,7 @@ struct DxfImportResult {
 
   int entity_count() const {
     return static_cast<int>(lines.size() + circles.size() + arcs.size() +
-                            points.size());
+                            points.size() + splines.size() + ellipses.size());
   }
 };
 

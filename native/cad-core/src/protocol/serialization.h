@@ -14,10 +14,30 @@ using json = nlohmann::json;
 // events), large opaque blobs the UI never reads — B-rep shape
 // snapshots on mesh_to_body and standalone body copies — are omitted
 // from the payload. Save/load passes true to persist them.
+//
+// `include_vertices` gates the sketch's vertex table, `include_profiles` its
+// detected profiles.  Both are DERIVED: recomputed on every refresh and, on a
+// dense sketch, 85 % of an edit's payload (measured: 916 KB profiles + 306 KB
+// vertices of a 1.44 MB `document_state`).  They are not pushed on the event
+// stream:
+//
+//  * vertices stay for the ACTIVE sketch only — hover, picking and drag read
+//    them synchronously on the interaction path;
+//  * profiles are never pushed in an event.  Consumers that need them (region
+//    list, source labels, extrude defaults) fetch them with
+//    `get_sketch_profiles`; saves pass include_opaque and keep them, so a reload
+//    can re-resolve the profile references extrudes depend on;
+//  * `profile_count`/`vertex_count` are always reported, for presence checks and
+//    to tell the client when to refetch.
 json to_payload(const polysmith::core::FeatureEntry& feature,
-                bool include_opaque = false);
+                bool include_opaque = false,
+                bool include_vertices = false,
+                bool include_profiles = false);
 json to_payload(const polysmith::core::DocumentState& document,
                 bool include_opaque = false);
+// Just the selection fields (see impl/selection_to_payload.inc): the payload a
+// select_* command replies with instead of the whole document.
+json to_selection_payload(const polysmith::core::DocumentState& document);
 json to_payload(const polysmith::core::SessionState& session);
 json to_payload(const polysmith::core::ViewportBoxPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportCylinderPrimitive& primitive);

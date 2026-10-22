@@ -400,6 +400,11 @@ export interface SketchFeatureParameters {
   // Parametric slots. Empty on older saves; the schema defaults to [].
   slots: SketchSlotEntry[];
   profiles: SketchProfileRegionEntry[];
+  // Derived-cache counts. The core sends `profiles` and `vertices` only for the
+  // sketch the user has open; these counts are always present, so anything that
+  // needs a size or a presence check works for every sketch.
+  profile_count?: number;
+  vertex_count?: number;
   // Optional pending mirror tool state. Null when no mirror is in
   // progress.
   pending_mirror: PendingMirrorEntry | null;

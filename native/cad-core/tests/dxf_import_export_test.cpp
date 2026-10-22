@@ -1,10 +1,10 @@
 // Regression tests for the DXF import/export feature:
-//   - import_dxf (ASCII DXF → new sketch on a reference plane)
-//   - entity mapping: LINE/CIRCLE/ARC/LWPOLYLINE/POLYLINE (bulge→arc),
+//   - import_dxf (ASCII DXF - new sketch on a reference plane)
+//   - entity mapping: LINE/CIRCLE/ARC/LWPOLYLINE/POLYLINE (bulge-arc),
 //     POINT, SPLINE (de Boor tessellation), ELLIPSE
-//   - $INSUNITS inches → mm scaling
+//   - $INSUNITS inches - mm scaling
 //   - unsupported/degenerate entities skipped + counted
-//   - export_document_as_dxf (active sketch → ASCII DXF) + round-trip
+//   - export_document_as_dxf (active sketch - ASCII DXF) + round-trip
 //   - error paths: missing/garbage files, no active sketch
 //   - save/load round-trip of an imported sketch.
 //
@@ -24,6 +24,8 @@
 #include <vector>
 
 #include "core/document/document.h"
+#include "core/cam/cam_profile_reference.h"
+#include "core/sketch/sketch_profile.h"
 #include "core/viewport/viewport.h"
 #include "dxf/dxf_export.h"
 #include "dxf/dxf_import.h"
@@ -32,6 +34,8 @@
 namespace {
 
 using polysmith::core::DocumentManager;
+using polysmith::core::SketchProfilePoint;
+using polysmith::core::SketchProfileRegion;
 using polysmith::core::DocumentState;
 
 bool expect(bool condition, const char* message) {
@@ -266,13 +270,13 @@ bool test_fusion_sketch_when_present() {
   // Deterministic guard for the thing that made this sketch unusable: a fixed
   // 64-segment tessellation produced 12.5k entities for 191 short splines, and
   // the sketch refresh is superlinear in entity count (1k lines 0.2 s, 10.7k
-  // 14 s).  Douglas–Peucker at 0.02 mm turns that into ~850.  Bounding the
+  // 14 s).  Douglas-Peucker at 0.02 mm turns that into ~850.  Bounding the
   // count is what keeps the import editable; wall-clock assertions would be
   // flaky on other machines.
   ok &= expect(parsed.lines.size() < 2000,
                "the tessellation is simplified, not emitted point for point");
   // The app calls build_viewport_state on every refresh, so anything it throws
-  // becomes one logged error PER REQUEST — which is exactly what the user saw
+  // becomes one logged error PER REQUEST - which is exactly what the user saw
   // as a flood of "Sketch lines must have non-zero length" after the import.
   bool viewport_threw = false;
   std::string viewport_error;
@@ -338,6 +342,20 @@ bool test_fusion_sketch_when_present() {
               << " ms (" << profiles.polygons.size() << " polygons, "
               << profiles.circles.size() << " circles)\n";
 
+    // detect_sketch_profiles returns the CACHED list; the refresh pays for the
+    // REBUILD, and that is where exact splines get expensive (OCCT
+    // intersections per curve pair).  Measure it on its own.
+    const auto rebuild_start = clock::now();
+    (void)polysmith::core::build_sketch_profile_regions(
+        *feature.sketch_parameters);
+    const auto rebuild_done = clock::now();
+    std::cout << "  timing: rebuild profiles " << ms(rebuild_done - rebuild_start)
+              << " ms (sketch: " << feature.sketch_parameters->lines.size()
+              << " lines, " << feature.sketch_parameters->arcs.size()
+              << " arcs, " << feature.sketch_parameters->splines.size()
+              << " splines, " << feature.sketch_parameters->ellipses.size()
+              << " ellipses)\n";
+
     // What a single selection costs the UI: the whole document state goes over
     // IPC on every selection change, so its size is the interaction budget.
     const auto payload_start = clock::now();
@@ -346,7 +364,121 @@ bool test_fusion_sketch_when_present() {
     const auto payload_done = clock::now();
     std::cout << "  timing: document payload "
               << (payload.dump().size() / 1024) << " KB in "
-              << ms(payload_done - payload_start) << " ms\n";
+              << ms(payload_done - payload_start) << " ms (sketch active)\n";
+
+    // The interaction case that made the UI feel broken: selecting surfaces in
+    // the model view, with NO sketch open.  Only the active sketch ships its
+    // derived caches, so this is the payload a click costs.
+    DocumentState idle = timing.get_document().value();
+    idle.active_sketch_feature_id.reset();
+    const auto idle_start = clock::now();
+    const auto idle_payload = polysmith::protocol::to_payload(idle);
+    const auto idle_done = clock::now();
+    const size_t idle_kb = idle_payload.dump().size() / 1024;
+    std::cout << "  timing: document payload with no sketch open " << idle_kb
+              << " KB in " << ms(idle_done - idle_start) << " ms\n";
+    ok &= expect(idle_kb < 400,
+                 "the document payload stays small when no sketch is open");
+
+    // Phase B: a select_* command replies with the selection fields only, so a
+    // click costs bytes rather than a document.  Assert the shape is tiny and
+    // actually carries the selection (a wrong payload here breaks every click).
+    DocumentState selected = timing.get_document().value();
+    selected.selected_sketch_profile_ids = {"polygon-1", "polygon-2"};
+    const auto selection = polysmith::protocol::to_selection_payload(selected);
+    const size_t selection_kb = selection.dump().size() / 1024;
+    std::cout << "  selection payload: " << selection.dump().size()
+              << " bytes\n";
+    ok &= expect(selection_kb < 2, "a selection reply is not a document");
+    ok &= expect(selection["selected_sketch_profile_ids"].size() == 2,
+                 "the selection reply carries the selected profiles");
+
+    // Every selection is followed by a viewport refetch in the UI, so that is
+    // the other half of a click's cost.
+    const auto viewport_payload_start = clock::now();
+    const auto viewport_state =
+        polysmith::core::build_viewport_state(timing.get_document());
+    const auto viewport_payload =
+        polysmith::protocol::to_payload(viewport_state);
+    const auto viewport_payload_done = clock::now();
+    std::cout << "  viewport payload: " << (viewport_payload.dump().size() / 1024)
+              << " KB in " << ms(viewport_payload_done - viewport_payload_start)
+              << " ms\n";
+    // What is in it?  The payload is refetched after most edits, so its size is
+    // the interaction budget for everything except a bare selection.
+    for (auto it = viewport_payload.begin(); it != viewport_payload.end(); ++it) {
+      const size_t kb = it.value().dump().size() / 1024;
+      if (kb == 0) {
+        continue;
+      }
+      std::cout << "  viewport[" << it.key() << "] = " << kb << " KB\n";
+    }
+
+    // REGRESSION (reported): with exact spline edges the extrude refused every
+    // spline-bounded region with "10 pairs of holes touch (gap 0.000 mm)" — the
+    // hole-separation check sampled spline edges as circular arcs with centre
+    // and radius 0, collapsing them to the origin.  Extruding the largest
+    // region must now succeed.
+    {
+      size_t biggest = 0;
+      size_t biggest_points = 0;
+      const auto& profiles = loaded.feature_history.back()
+                                 .sketch_parameters->profiles;
+      for (size_t i = 0; i < profiles.size(); ++i) {
+        if (profiles[i].points.size() > biggest_points) {
+          biggest_points = profiles[i].points.size();
+          biggest = i;
+        }
+      }
+      if (biggest < profiles.size()) {
+        DocumentManager extruder;
+        extruder.create_document();
+        (void)extruder.import_dxf(path);
+        const std::string profile_id = profiles[biggest].id;
+        const auto extrude_start = clock::now();
+        bool refused = false;
+        std::string message;
+        try {
+          (void)extruder.extrude_profiles({profile_id}, 1.0, "", std::nullopt,
+                                          std::nullopt);
+        } catch (const std::exception& error) {
+          refused = true;
+          message = error.what();
+        }
+        const auto extrude_done = clock::now();
+        std::cout << "  extrude largest region: "
+                  << (refused ? "refused" : "ok") << " in "
+                  << ms(extrude_done - extrude_start) << " ms\n";
+        if (refused) {
+          std::cout << "    reason: " << message << "\n";
+        }
+        ok &= expect(!refused,
+                     "a spline-bounded region extrudes (hole separation is "
+                     "measured on real geometry, not at the origin)");
+      }
+    }
+
+    // Reported: "each surface selection increases the reply from selection to
+    // extrusion by one second".  Measure the two candidates at N profiles.
+    for (const size_t count : {size_t{1}, size_t{4}, size_t{8}}) {
+      if (feature.sketch_parameters->profiles.size() < count) {
+        continue;
+      }
+      std::vector<std::string> ids;
+      for (size_t i = 0; i < count; ++i) {
+        ids.push_back(feature.sketch_parameters->profiles[i].id);
+      }
+      DocumentState doc_copy = timing.get_document().value();
+      polysmith::core::CamOperation op;
+      const auto capture_start = clock::now();
+      const bool captured =
+          polysmith::core::capture_profile_references_from_profile_ids(
+              doc_copy, ids, op);
+      const auto capture_done = clock::now();
+      std::cout << "  capture " << count << " profile(s): "
+                << ms(capture_done - capture_start) << " ms (ok=" << captured
+                << ")\n";
+    }
 
     // Per-key breakdown: WHICH part of the document is the payload?  Any
     // interaction fix has to target the big one, not the whole.
@@ -399,7 +531,7 @@ bool test_fusion_sketch_when_present() {
 
 // A segment can be longer than the reader's minimum yet shorter than the
 // sketch's coincidence tolerance (0.01 mm).  Both endpoints then snap onto the
-// same existing vertex and the stored line would have zero length — which every
+// same existing vertex and the stored line would have zero length - which every
 // later validation rejects.  It used to THROW, aborting the whole import; it
 // must be dropped instead, with the rest of the sketch intact.
 bool test_collapsed_segment_is_dropped_not_thrown() {
@@ -454,11 +586,12 @@ bool test_sub_tolerance_tessellation_does_not_abort_import() {
   if (!expect(sketch != nullptr, "a sketch was created")) {
     return false;
   }
-  std::cout << "  tiny spline segments: " << sketch->lines.size() << "\n";
-  // Douglas–Peucker now emits only the segments a 0.02 mm tolerance needs, so a
-  // 0.4 mm curve is a handful of segments rather than dozens.  What this case
-  // guards is that the import survives and keeps the curve — not the count.
-  ok &= expect(sketch->lines.size() >= 2,
+  std::cout << "  tiny spline: " << sketch->splines.size() << " spline(s), "
+            << sketch->lines.size() << " line(s)\n";
+  // The curve must survive in SOME form: as an exact spline entity (the normal
+  // path now) or as segments (the fallback for an unrepresentable curve).  The
+  // regression this guards is the import ABORTING, not the entity kind.
+  ok &= expect(!sketch->splines.empty() || sketch->lines.size() >= 2,
                "the curve survives at the sketch model's resolution");
   return ok;
 }
@@ -498,7 +631,7 @@ bool test_import_lines_circles_arcs() {
               "arc center/radius wrong")) {
     return false;
   }
-  // DXF arcs sweep CCW from 0° to 90°: start on +x, end on +y.
+  // DXF arcs sweep CCW from 0- to 90-: start on +x, end on +y.
   if (!expect(near(arc.start_x, 5.0) && near(arc.start_y, 10.0), "arc start wrong")) {
     return false;
   }
@@ -530,6 +663,8 @@ bool test_import_lines_circles_arcs() {
   return true;
 }
 
+// must still import, as tessellated lines - the fallback has to keep working,
+
 bool test_import_insunits_inches() {
   std::ostringstream dxf;
   dxf << dxf_header(/*insunits=*/1) << dxf_line(0.0, 0.0, 1.0, 0.0)
@@ -544,7 +679,7 @@ bool test_import_insunits_inches() {
               "inches import missing line")) {
     return false;
   }
-  // 1 inch → 25.4 mm.
+  // 1 inch - 25.4 mm.
   return expect(near(sketch->lines[0].end_x, 25.4) &&
                     near(sketch->lines[0].start_x, 0.0),
                 "inches scaling wrong");
@@ -633,7 +768,7 @@ bool test_polyline_legacy_closed() {
   return expect(sketch->lines.size() == 3, "legacy polyline segment count");
 }
 
-bool test_spline_tessellation() {
+bool test_spline_imports_as_exact_spline() {
   std::ostringstream dxf;
   dxf << dxf_header() << dxf_spline() << dxf_footer();
   const std::string path = write_fixture("dxf_spline.dxf", dxf.str());
@@ -643,38 +778,579 @@ bool test_spline_tessellation() {
   const DocumentState document = manager.import_dxf(path);
   const auto* sketch = active_sketch_params(document);
   if (!expect(sketch != nullptr, "spline import no sketch")) return false;
-  // The tessellation is simplified with Douglas–Peucker (0.02 mm), so the count
-  // is a handful of segments rather than a fixed 64.  What must hold is that the
-  // curve is there, chained end to end, and that it tracks the spline closely.
-  if (!expect(sketch->lines.size() >= 4,
-              "a spline imports as a chain of segments")) {
+  // NO FACETING: a clamped open-uniform spline is representable by the sketch's
+  // own spline entity, so it must arrive as ONE curve - not as tessellated
+  // lines.  Tessellating is what produced faceted extrusions.
+  if (!expect(sketch->lines.empty(),
+              "an exactly representable spline produces no tessellated lines")) {
     return false;
   }
-  // Chained: each segment must start where the previous one ended, or the
-  // simplification would have broken the polyline into unrelated pieces.
-  for (size_t i = 1; i < sketch->lines.size(); ++i) {
-    const auto& previous = sketch->lines[i - 1];
-    const auto& current = sketch->lines[i];
-    if (!expect(near(previous.end_x, current.start_x) &&
-                    near(previous.end_y, current.start_y),
-                "simplified spline segments stay chained")) {
-      return false;
-    }
+  if (!expect(sketch->splines.size() == 1, "the spline imports as one entity")) {
+    return false;
   }
-  // Bezier end points equal the end control points.
-  const auto& first = sketch->lines.front();
-  const auto& last = sketch->lines.back();
-  if (!expect(near(first.start_x, 0.0) && near(first.start_y, 0.0),
+  const auto& spline = sketch->splines.front();
+  if (!expect(spline.degree == 3, "imported spline keeps its degree")) {
+    return false;
+  }
+  if (!expect(spline.pole_xs.size() == 4,
+              "imported spline keeps all control points")) {
+    return false;
+  }
+  // End points of a clamped B-spline are its end poles: (0,0) - (0,10).
+  if (!expect(near(spline.pole_xs.front(), 0.0) &&
+                  near(spline.pole_ys.front(), 0.0),
               "spline start wrong")) {
     return false;
   }
-  return expect(near(last.end_x, 0.0) && near(last.end_y, 10.0),
+  return expect(near(spline.pole_xs.back(), 0.0) &&
+                    near(spline.pole_ys.back(), 10.0),
                 "spline end wrong");
+}
+
+// NO-FACETING CONTRACT.  A closed region bounded by an imported spline must
+// keep a SPLINE boundary edge in profile detection - that edge is what the
+// sketch wire builder turns into a Geom_BSplineCurve, i.e. what makes the
+// extruded surface smooth.  If this ever reports "line" edges instead, the
+// importer started tessellating and the user gets faceted surfaces.
+bool test_spline_profile_keeps_curve() {
+  std::ostringstream dxf;
+  // The cubic from (0,0) to (0,10) bulging right, closed by a straight line.
+  dxf << dxf_header() << dxf_spline() << dxf_line(0.0, 10.0, 0.0, 0.0)
+      << dxf_footer();
+  const std::string path = write_fixture("dxf_spline_profile.dxf", dxf.str());
+
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.import_dxf(path);
+  const auto* sketch = active_sketch_params(document);
+  if (!expect(sketch != nullptr, "spline profile no sketch")) return false;
+  if (!expect(sketch->splines.size() == 1,
+              "the spline is an exact entity before profiling")) {
+    return false;
+  }
+  if (!expect(!sketch->profiles.empty(), "a region is detected")) return false;
+  bool found_spline_edge = false;
+  for (const auto& region : sketch->profiles) {
+    for (const auto& edge : region.boundary_edges) {
+      if (edge.entity_kind == "spline" && !edge.spline_pole_xs.empty()) {
+        found_spline_edge = true;
+      }
+    }
+  }
+  return expect(found_spline_edge,
+                "the region keeps a spline edge with its poles, not a "
+                "tessellated run");
+}
+
+// Diagnostics on a SAVED sketch the user is trying to select surfaces in.
+//
+// Reported symptom: individual surfaces inside the big circle select and extrude
+// fine, but clicking the region BETWEEN them ("the circle surface") also selects
+// the areas inside surfaces that look closed.  That is what a region looks like
+// when its inner holes were not attached — the outer disc swallows them.  So:
+// find open chains, sub-tolerance gaps, degenerate entities and nested regions.
+bool test_saved_sketch_diagnostics() {
+  const std::string path = "projects/Sketch4.polysmith";
+  if (!std::filesystem::exists(path)) {
+    std::cout << "  (no " << path << ", skipping)\n";
+    return true;
+  }
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.load_document_from_path(path);
+  // After a load no sketch is "active", so find the sketch feature directly.
+  const polysmith::core::SketchFeatureParameters* sketch = nullptr;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+      sketch = &feature.sketch_parameters.value();
+    }
+  }
+  if (!expect(sketch != nullptr, "the saved document has a sketch")) return false;
+
+  std::cout << "  entities: " << sketch->lines.size() << " lines, "
+            << sketch->arcs.size() << " arcs, " << sketch->circles.size()
+            << " circles, " << sketch->splines.size() << " splines, "
+            << sketch->ellipses.size() << " ellipses\n";
+  std::cout << "  regions: " << sketch->profiles.size() << ", inner loops: ";
+  size_t total_inner = 0;
+  for (const auto& region : sketch->profiles) {
+    total_inner += region.inner_loops.size();
+  }
+  std::cout << total_inner << "\n";
+
+  // Endpoint inventory: how many endpoints are NOT shared by another entity?
+  const auto key = [](double x, double y) {
+    // 1e-3 mm grid — coarse enough to treat "the same point" as the same key.
+    return std::make_pair(std::llround(x * 1000.0), std::llround(y * 1000.0));
+  };
+  std::map<std::pair<long long, long long>, int> endpoint_uses;
+  // Which entity owns each end: an open end must be NAMED, not guessed at.
+  std::map<std::pair<long long, long long>, std::vector<std::string>>
+      endpoint_owners;
+  const auto add_endpoint = [&](double x, double y, const std::string& owner) {
+    const auto at = key(x, y);
+    endpoint_uses[at] += 1;
+    endpoint_owners[at].push_back(owner);
+  };
+  for (const auto& line : sketch->lines) {
+    add_endpoint(line.start_x, line.start_y, "line:" + line.id);
+    add_endpoint(line.end_x, line.end_y, "line:" + line.id);
+  }
+  for (const auto& arc : sketch->arcs) {
+    add_endpoint(arc.start_x, arc.start_y, "arc:" + arc.id);
+    add_endpoint(arc.end_x, arc.end_y, "arc:" + arc.id);
+  }
+  for (const auto& spline : sketch->splines) {
+    if (!spline.pole_xs.empty()) {
+      add_endpoint(spline.pole_xs.front(), spline.pole_ys.front(),
+                   "spline:" + spline.id);
+      add_endpoint(spline.pole_xs.back(), spline.pole_ys.back(),
+                   "spline:" + spline.id);
+    }
+  }
+  size_t dangling = 0;
+  for (const auto& [point, uses] : endpoint_uses) {
+    if (uses == 1) {
+      ++dangling;
+    }
+  }
+  std::cout << "  distinct endpoints: " << endpoint_uses.size()
+            << ", used once (dangling): " << dangling << "\n";
+
+  // Near-miss pairs: endpoints within 0.05 mm that are NOT the same point.
+  // Those are the gaps that stop a chain from closing.
+  struct Point {
+    double x, y;
+  };
+  std::vector<Point> single_points;
+  for (const auto& [point, uses] : endpoint_uses) {
+    if (uses == 1) {
+      single_points.push_back({point.first / 1000.0, point.second / 1000.0});
+    }
+  }
+  size_t near_misses = 0;
+  double smallest_gap = 1e9;
+  for (size_t a = 0; a < single_points.size(); ++a) {
+    for (size_t b = a + 1; b < single_points.size(); ++b) {
+      const double distance = std::hypot(single_points[a].x - single_points[b].x,
+                                         single_points[a].y - single_points[b].y);
+      if (distance > 1e-9 && distance < 0.05) {
+        ++near_misses;
+        smallest_gap = std::min(smallest_gap, distance);
+      }
+    }
+  }
+  std::cout << "  near-miss endpoint pairs (<0.05 mm, not welded): "
+            << near_misses;
+  if (near_misses > 0) {
+    std::cout << ", smallest gap " << smallest_gap << " mm";
+  }
+  std::cout << "\n";
+
+  // Degenerate entities.
+  size_t zero_length = 0;
+  for (const auto& line : sketch->lines) {
+    if (std::hypot(line.end_x - line.start_x, line.end_y - line.start_y) <=
+        0.001) {
+      ++zero_length;
+    }
+  }
+  std::cout << "  zero-length lines: " << zero_length << "\n";
+  // Where exactly are the open ends?  Nothing here is a sub-tolerance gap, so
+  // these are real open chains (curves whose neighbour is missing) and the user
+  // needs their locations to judge what got deleted.
+  for (const auto& [point, uses] : endpoint_uses) {
+    if (uses != 1) {
+      continue;
+    }
+    const double px = point.first / 1000.0;
+    const double py = point.second / 1000.0;
+    double nearest = 1e9;
+    for (const auto& [other, other_uses] : endpoint_uses) {
+      if (other_uses != 1 || other == point) continue;
+      nearest = std::min(nearest,
+                         std::hypot(px - other.first / 1000.0,
+                                    py - other.second / 1000.0));
+    }
+    std::cout << "  open end at " << px << ", " << py << " r="
+              << std::hypot(px, py) << " owner=";
+    const auto owners = endpoint_owners.find(point);
+    if (owners != endpoint_owners.end()) {
+      for (size_t i = 0; i < owners->second.size(); ++i) {
+        std::cout << (i > 0 ? "," : "") << owners->second[i];
+      }
+    }
+    std::cout << " (nearest open end " << nearest << " mm)\n";
+  }
+
+  // Nested regions: is one region's outline inside another region that does NOT
+  // list it as a hole?  That is the "selects inside other surfaces" case.
+  const auto bbox_of = [](const SketchProfileRegion& region) {
+    double min_x = 1e9, max_x = -1e9, min_y = 1e9, max_y = -1e9;
+    for (const auto& point : region.points) {
+      min_x = std::min(min_x, point.x);
+      max_x = std::max(max_x, point.x);
+      min_y = std::min(min_y, point.y);
+      max_y = std::max(max_y, point.y);
+    }
+    return std::array<double, 4>{min_x, min_y, max_x, max_y};
+  };
+  size_t nested_without_hole = 0;
+  for (size_t a = 0; a < sketch->profiles.size(); ++a) {
+    const auto outer = bbox_of(sketch->profiles[a]);
+    for (size_t b = 0; b < sketch->profiles.size(); ++b) {
+      if (a == b) continue;
+      const auto inner = bbox_of(sketch->profiles[b]);
+      const bool inside =
+          inner[0] > outer[0] + 0.01 && inner[1] > outer[1] + 0.01 &&
+          inner[2] < outer[2] - 0.01 && inner[3] < outer[3] - 0.01;
+      if (!inside) continue;
+      // Is b one of a's holes?  Compare the inner loop centroid to b's centre.
+      bool is_hole = false;
+      for (const auto& loop : sketch->profiles[a].inner_loops) {
+        if (loop.empty()) continue;
+        double cx = 0, cy = 0;
+        for (const auto& point : loop) {
+          cx += point.x;
+          cy += point.y;
+        }
+        cx /= static_cast<double>(loop.size());
+        cy /= static_cast<double>(loop.size());
+        if (cx > inner[0] - 0.5 && cx < inner[2] + 0.5 && cy > inner[1] - 0.5 &&
+            cy < inner[3] + 0.5) {
+          is_hole = true;
+          break;
+        }
+      }
+      if (!is_hole) {
+        ++nested_without_hole;
+        if (nested_without_hole <= 6) {
+          std::cout << "  region " << b << " sits inside region " << a
+                    << " without being one of its holes\n";
+        }
+      }
+    }
+  }
+  std::cout << "  nested regions without a hole: " << nested_without_hole
+            << "\n";
+
+  // Concentric-band diagnosis.  The user has two long arcs (dia 51.56, so r ~
+  // 25.78) split by a gap and closed with lines, plus concentric arcs, forming
+  // annular bands.  One band selects, the neighbouring one does not — so list
+  // the arcs by radius and then every region with its edges, area and bbox.
+  std::cout << "  arcs by radius:\n";
+  for (const auto& arc : sketch->arcs) {
+    if (arc.radius < 20.0) {
+      continue;  // only the outer bands matter here
+    }
+    std::cout << "    r=" << arc.radius << " start=(" << arc.start_x << ","
+              << arc.start_y << ") end=(" << arc.end_x << "," << arc.end_y
+              << ") ccw=" << (arc.ccw ? 1 : 0) << " id=" << arc.id << "\n";
+  }
+  for (const auto& circle : sketch->circles) {
+    if (circle.radius < 20.0) {
+      continue;
+    }
+    std::cout << "    circle r=" << circle.radius << " at (" << circle.center_x
+              << "," << circle.center_y << ")\n";
+  }
+
+  std::cout << "  regions (area, edges, kinds):\n";
+  for (size_t i = 0; i < sketch->profiles.size(); ++i) {
+    const auto& region = sketch->profiles[i];
+    // Shoelace area of the sampled outline.
+    double area = 0.0;
+    const auto& points = region.points;
+    for (size_t p = 0; p + 1 < points.size(); ++p) {
+      area += points[p].x * points[p + 1].y - points[p + 1].x * points[p].y;
+    }
+    area = std::abs(area) * 0.5;
+    size_t lines = 0, arcs = 0, splines = 0, others = 0;
+    for (const auto& edge : region.boundary_edges) {
+      if (edge.entity_kind == "line") ++lines;
+      else if (edge.entity_kind == "arc" || edge.entity_kind == "circle") ++arcs;
+      else if (edge.entity_kind == "spline") ++splines;
+      else ++others;
+    }
+    const auto box = bbox_of(region);
+    if (area < 5.0) {
+      continue;  // skip the tiny decorative regions
+    }
+    std::cout << "    region " << i << ": area=" << area
+              << " holes=" << region.inner_loops.size() << " edges="
+              << region.boundary_edges.size() << " (line " << lines << ", arc "
+              << arcs << ", spline " << splines << ", other " << others
+              << ") bbox=[" << box[0] << "," << box[1] << " .. " << box[2]
+              << "," << box[3] << "]\n";
+  }
+
+  // Which region CONTAINS a given point?  This is what a click does.  Probe the
+  // band between r=42.5 and r=45 (the concentric circle pair) and report the
+  // smallest region that contains each sample, holes honoured — i.e. exactly the
+  // UI's pick rule.
+  const auto point_in_loop = [](double x, double y,
+                                const std::vector<SketchProfilePoint>& loop) {
+    bool inside = false;
+    for (size_t i = 0, j = loop.size() - 1; i < loop.size(); j = i++) {
+      if (((loop[i].y > y) != (loop[j].y > y)) &&
+          (x < (loop[j].x - loop[i].x) * (y - loop[i].y) /
+                           (loop[j].y - loop[i].y) +
+                       loop[i].x)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  };
+  std::cout << "  band probes (r=43.75, every 30 deg):\n";
+  for (int step = 0; step < 12; ++step) {
+    const double angle = step * (2.0 * 3.14159265358979 / 12.0);
+    const double x = 43.75 * std::cos(angle);
+    const double y = 43.75 * std::sin(angle);
+    std::string hits;
+    double smallest_area = 1e18;
+    int smallest_id = -1;
+    for (size_t i = 0; i < sketch->profiles.size(); ++i) {
+      const auto& region = sketch->profiles[i];
+      if (!point_in_loop(x, y, region.points)) {
+        continue;
+      }
+      bool in_hole = false;
+      for (const auto& loop : region.inner_loops) {
+        if (!loop.empty() && point_in_loop(x, y, loop)) {
+          in_hole = true;
+          break;
+        }
+      }
+      if (in_hole) {
+        continue;
+      }
+      hits += (hits.empty() ? "" : ",") + std::to_string(i);
+      double area = 0.0;
+      for (size_t p = 0; p + 1 < region.points.size(); ++p) {
+        area += region.points[p].x * region.points[p + 1].y -
+                region.points[p + 1].x * region.points[p].y;
+      }
+      area = std::abs(area) * 0.5;
+      if (area < smallest_area) {
+        smallest_area = area;
+        smallest_id = static_cast<int>(i);
+      }
+    }
+    std::cout << "    (" << x << "," << y << ") -> regions [" << hits
+              << "] pick=" << smallest_id << "\n";
+  }
+
+  // The user marked the failing arc by drawing a line from the origin to one of
+  // its ends.  Find that line, then probe the surface on BOTH sides of the arc
+  // it touches: if one side belongs to no region, the face was never built.
+  const auto probe = [&](double x, double y) {
+    std::string hits;
+    for (size_t i = 0; i < sketch->profiles.size(); ++i) {
+      const auto& region = sketch->profiles[i];
+      if (!point_in_loop(x, y, region.points)) continue;
+      bool in_hole = false;
+      for (const auto& loop : region.inner_loops) {
+        if (!loop.empty() && point_in_loop(x, y, loop)) {
+          in_hole = true;
+          break;
+        }
+      }
+      if (!in_hole) hits += (hits.empty() ? "" : ",") + std::to_string(i);
+    }
+    return hits;
+  };
+  for (const auto& line : sketch->lines) {
+    const double start_r = std::hypot(line.start_x, line.start_y);
+    const double end_r = std::hypot(line.end_x, line.end_y);
+    if (std::min(start_r, end_r) > 0.5 || std::max(start_r, end_r) < 20.0) {
+      continue;  // want the user's marker: one end at the origin, one far out
+    }
+    const double far_x = start_r > end_r ? line.start_x : line.end_x;
+    const double far_y = start_r > end_r ? line.start_y : line.end_y;
+    std::cout << "  marker line " << line.id << " ends at (" << far_x << ","
+              << far_y << ") r=" << std::hypot(far_x, far_y) << "\n";
+    // Nearest arc end to the marker.
+    const polysmith::core::SketchArc* touch = nullptr;
+    double best = 1e9;
+    for (const auto& arc : sketch->arcs) {
+      for (const auto dx : {arc.start_x, arc.end_x}) {
+        (void)dx;
+      }
+      const double d1 =
+          std::hypot(arc.start_x - far_x, arc.start_y - far_y);
+      const double d2 = std::hypot(arc.end_x - far_x, arc.end_y - far_y);
+      const double d = std::min(d1, d2);
+      if (d < best) {
+        best = d;
+        touch = &arc;
+      }
+    }
+    if (touch == nullptr) {
+      std::cout << "    no arc near the marker end\n";
+      continue;
+    }
+    std::cout << "    nearest arc " << touch->id << " r=" << touch->radius
+              << " centre=(" << touch->center_x << "," << touch->center_y
+              << ") gap=" << best << " mm\n";
+    // Probe on both sides of the ring RIGHT AT the marker end (where the user
+    // actually clicks), not at the arc's parametric midpoint.
+    const double mark_angle = std::atan2(far_y, far_x);
+    for (const double offset : {-0.2, -0.05, 0.05, 0.2}) {
+      const double radius = touch->radius + offset;
+      const double x = radius * std::cos(mark_angle);
+      const double y = radius * std::sin(mark_angle);
+      std::cout << "    marker-side probe (" << x << "," << y << ") r=" << radius
+                << " -> regions [" << probe(x, y) << "]\n";
+    }
+    // Detail on the two regions that own that area, so the UI pick can be
+    // compared against what the core actually built.
+    for (const auto& region : sketch->profiles) {
+      if (region.id.empty()) continue;
+      const auto box = bbox_of(region);
+      const bool owns = point_in_loop(-3.63124, 25.4709, region.points) ||
+                        point_in_loop(-3.64536, 25.5699, region.points);
+      if (!owns) continue;
+      std::cout << "    owning region " << region.id << ": points="
+                << region.points.size() << " holes=" << region.inner_loops.size()
+                << " edges=" << region.boundary_edges.size() << " bbox=["
+                << box[0] << "," << box[1] << " .. " << box[2] << ","
+                << box[3] << "]\n";
+    }
+  }
+  // The user's failing surface: TWO CONCENTRIC ARCS closed by two lines at their
+  // ends — an annular band.  Find the concentric arc pair around the origin, the
+  // two closing lines, and probe the middle of the band.  If nothing contains
+  // that point, the band face was never built.
+  {
+    std::vector<double> radii;
+    for (const auto& arc : sketch->arcs) {
+      if (std::hypot(arc.center_x, arc.center_y) > 0.01) continue;
+      bool known = false;
+      for (const double r : radii) {
+        if (std::abs(r - arc.radius) < 0.01) known = true;
+      }
+      if (!known) radii.push_back(arc.radius);
+    }
+    std::sort(radii.begin(), radii.end());
+    std::cout << "  concentric arc radii around origin:";
+    for (const double r : radii) std::cout << " " << r;
+    std::cout << "\n";
+    if (radii.size() >= 2) {
+      for (size_t i = 0; i + 1 < radii.size(); ++i) {
+        const double r_inner = radii[i];
+        const double r_outer = radii[i + 1];
+        const double mid_radius = 0.5 * (r_inner + r_outer);
+        // Closing lines: both endpoints land on the two circles.
+        std::vector<double> angles;
+        for (const auto& line : sketch->lines) {
+          const double a_in = std::hypot(line.start_x, line.start_y);
+          const double a_out = std::hypot(line.end_x, line.end_y);
+          const bool inner_ok =
+              std::abs(std::min(a_in, a_out) - r_inner) < 0.05;
+          const bool outer_ok =
+              std::abs(std::max(a_in, a_out) - r_outer) < 0.05;
+          if (!inner_ok || !outer_ok) continue;
+          const double far_x = a_in > a_out ? line.start_x : line.end_x;
+          const double far_y = a_in > a_out ? line.start_y : line.end_y;
+          angles.push_back(std::atan2(far_y, far_x));
+        }
+        std::cout << "  band " << r_inner << ".." << r_outer << ": closing lines="
+                  << angles.size();
+        if (!angles.empty()) {
+          std::sort(angles.begin(), angles.end());
+          // Probe EVERY side of the band: the user reports one half selectable
+          // and the other not, so the widest span alone is not enough.
+          for (size_t a = 0; a < angles.size(); ++a) {
+            const double next =
+                a + 1 < angles.size()
+                    ? angles[a + 1]
+                    : angles.front() + 2.0 * 3.14159265358979;
+            const double span = next - angles[a];
+            if (span < 0.02) continue;
+            const double side_angle = angles[a] + 0.5 * span;
+            const double x = mid_radius * std::cos(side_angle);
+            const double y = mid_radius * std::sin(side_angle);
+            std::cout << "\n    side span=" << span << " rad probe (" << x
+                      << "," << y << ") -> regions [" << probe(x, y) << "]";
+          }
+        }
+        std::cout << "\n";
+        // Do the closing lines actually MEET the arcs?  If they stop short (or
+      // cross), the sliver between them falls on the wrong side of the walk.
+      // Report the raw ends for the innermost band, where the user's 3.3 deg
+      // sliver lives.
+      if (std::abs(r_inner - 25.7785) < 0.01) {
+        std::cout << "    arc ends near the band:\n";
+        for (const auto& arc : sketch->arcs) {
+          if (std::hypot(arc.center_x, arc.center_y) > 0.01) continue;
+          if (std::abs(arc.radius - r_inner) > 0.01 &&
+              std::abs(arc.radius - r_outer) > 0.01) {
+            continue;
+          }
+          std::cout << "      arc " << arc.id << " r=" << arc.radius
+                    << " start=(" << arc.start_x << "," << arc.start_y
+                    << ") a=" << std::atan2(arc.start_y, arc.start_x) * 180.0 /
+                                       3.14159265358979
+                    << "deg end=(" << arc.end_x << "," << arc.end_y
+                    << ") a=" << std::atan2(arc.end_y, arc.end_x) * 180.0 /
+                                       3.14159265358979
+                    << "deg\n";
+        }
+        std::cout << "    closing line ends:\n";
+        for (const auto& line : sketch->lines) {
+          const double r1 = std::hypot(line.start_x, line.start_y);
+          const double r2 = std::hypot(line.end_x, line.end_y);
+          if (std::abs(std::min(r1, r2) - r_inner) > 0.05 ||
+              std::abs(std::max(r1, r2) - r_outer) > 0.05) {
+            continue;
+          }
+          std::cout << "      line " << line.id << " (" << line.start_x << ","
+                    << line.start_y << ") r=" << r1 << " a="
+                    << std::atan2(line.start_y, line.start_x) * 180.0 /
+                           3.14159265358979
+                    << "deg -> (" << line.end_x << "," << line.end_y
+                    << ") r=" << r2 << " a="
+                    << std::atan2(line.end_y, line.end_x) * 180.0 /
+                           3.14159265358979
+                    << "deg\n";
+        }
+      }
+    }
+  }
+  }  // end of the concentric-band diagnostic block
+
+  return true;
+}
+
+// must still import, as tessellated lines - the fallback has to keep working,
+// and it is the only path that legitimately produces facets.
+bool test_unrepresentable_spline_falls_back_to_lines() {
+  std::ostringstream dxf;
+  // Degree 2 with 5 poles: the model's degree would be min(3, 5-1) = 3, i.e. a
+  // different curve, so this is not exactly representable.
+  dxf << dxf_header()
+      << "0\nSPLINE\n8\n0\n70\n8\n71\n2\n72\n8\n73\n5\n"
+         "40\n0\n40\n0\n40\n0\n40\n1\n40\n2\n40\n3\n40\n3\n40\n3\n"
+         "10\n0\n20\n0\n30\n0\n10\n1\n20\n2\n30\n0\n10\n3\n20\n0\n30\n0\n"
+         "10\n4\n20\n2\n30\n0\n10\n5\n20\n0\n30\n0\n0\nENDSEC\n0\nEOF\n";
+  const std::string path = write_fixture("dxf_spline_degree2.dxf", dxf.str());
+
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.import_dxf(path);
+  const auto* sketch = active_sketch_params(document);
+  if (!expect(sketch != nullptr, "fallback spline no sketch")) return false;
+  if (!expect(sketch->splines.empty(),
+              "a non-representable spline is not imported as an entity")) {
+    return false;
+  }
+  return expect(!sketch->lines.empty(),
+                "the fallback still delivers the curve as segments");
 }
 
 bool test_near_axis_lines_import_exact() {
   // A line 0.005 off horizontal is within the H/V constraint hint
-  // tolerance (0.01) — imported geometry must NOT be snapped to an
+  // tolerance (0.01) - imported geometry must NOT be snapped to an
   // axis (regression: constraint inference deformed tessellated
   // splines/ellipses and near-axis DXF lines).
   std::ostringstream dxf;
@@ -700,7 +1376,7 @@ bool test_near_axis_lines_import_exact() {
 }
 
 bool test_ellipse_circular_and_elliptical() {
-  // ratio 1.0 → circle of radius |major|.
+  // ratio 1.0 - circle of radius |major|.
   std::ostringstream dxf;
   dxf << dxf_header() << dxf_ellipse(5.0, 0.0, 1.0) << dxf_footer();
   const std::string path = write_fixture("dxf_ell_circ.dxf", dxf.str());
@@ -709,7 +1385,7 @@ bool test_ellipse_circular_and_elliptical() {
   const DocumentState document = manager.import_dxf(path);
   const auto* sketch = active_sketch_params(document);
   if (!expect(sketch != nullptr, "circular ellipse no sketch")) return false;
-  if (!expect(sketch->circles.size() == 1, "circular ellipse → 1 circle")) {
+  if (!expect(sketch->circles.size() == 1, "circular ellipse - 1 circle")) {
     return false;
   }
   if (!expect(near(sketch->circles[0].radius, 5.0) &&
@@ -718,7 +1394,7 @@ bool test_ellipse_circular_and_elliptical() {
     return false;
   }
 
-  // ratio 0.5 → tessellated segments; bounding box ±5 in x, ±2.5 in y.
+  // ratio 0.5 - tessellated segments; bounding box -5 in x, -2.5 in y.
   std::ostringstream dxf2;
   dxf2 << dxf_header() << dxf_ellipse(5.0, 0.0, 0.5) << dxf_footer();
   const std::string path2 = write_fixture("dxf_ell_flat.dxf", dxf2.str());
@@ -729,8 +1405,8 @@ bool test_ellipse_circular_and_elliptical() {
   if (!expect(sketch2 != nullptr, "elliptical ellipse no sketch")) {
     return false;
   }
-  // Douglas–Peucker (0.02 mm) keeps the count shape-dependent, so assert the
-  // ellipse is a chained curve of several segments whose EXTENTS are right —
+  // Douglas-Peucker (0.02 mm) keeps the count shape-dependent, so assert the
+  // ellipse is a chained curve of several segments whose EXTENTS are right -
   // that is what matters, not a fixed 64.
   if (!expect(sketch2->lines.size() >= 8,
               "ellipse imports as a chain of segments")) {
@@ -810,7 +1486,7 @@ bool test_points_into_projected_points() {
     return false;
   }
 
-  // Imported points are editable too — no fix badges.
+  // Imported points are editable too - no fix badges.
   for (const auto& point : sketch->projected_points) {
     if (!expect(vertex_unfixed(*sketch, point.id),
                 "imported point should not be fixed")) {
@@ -837,6 +1513,8 @@ bool test_points_into_projected_points() {
   }
   return true;
 }
+
+// must still import, as tessellated lines - the fallback has to keep working,
 
 bool test_export_import_round_trip() {
   std::ostringstream dxf;
@@ -1021,8 +1699,14 @@ int main() {
   if (!test_closed_lwpolyline()) return 1;
   std::cerr << "[dxf_import_export_test] test 5: legacy polyline\n";
   if (!test_polyline_legacy_closed()) return 1;
-  std::cerr << "[dxf_import_export_test] test 6: spline tessellation\n";
-  if (!test_spline_tessellation()) return 1;
+  std::cerr << "[dxf_import_export_test] test 6: exact spline import\n";
+  if (!test_spline_imports_as_exact_spline()) return 1;
+  std::cerr << "[dxf_import_export_test] test 6b: unrepresentable spline fallback\n";
+  if (!test_unrepresentable_spline_falls_back_to_lines()) return 1;
+  std::cerr << "[dxf_import_export_test] test 6c: spline profile keeps its curve\n";
+  if (!test_spline_profile_keeps_curve()) return 1;
+  std::cerr << "[dxf_import_export_test] test 6d: saved sketch diagnostics\n";
+  if (!test_saved_sketch_diagnostics()) return 1;
   std::cerr << "[dxf_import_export_test] test 7: near-axis lines exact\n";
   if (!test_near_axis_lines_import_exact()) return 1;
   std::cerr << "[dxf_import_export_test] test 8: ellipses\n";

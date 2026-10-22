@@ -32,9 +32,13 @@
         }
       }
     }
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_fillet_edges(
-        read_string(command.payload, "feature_id"), edge_ids);
+        feature_id, edge_ids);
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -42,10 +46,13 @@
   }
 
   if (command.type == "update_fillet_radius") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_fillet_radius(
-        read_string(command.payload, "feature_id"),
-        read_dimension(command.payload, "radius"));
+        feature_id, read_dimension(command.payload, "radius"));
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

@@ -4,6 +4,7 @@
         command.payload.at("is_construction").is_boolean()) {
       is_construction = command.payload.at("is_construction").get<bool>();
     }
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().add_sketch_line(
         read_dimension(command.payload, "start_x"),
         read_dimension(command.payload, "start_y"),
@@ -11,6 +12,9 @@
         read_dimension(command.payload, "end_y"),
         is_construction);
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -73,6 +77,7 @@
         command.payload.at("is_construction").is_boolean()) {
       is_construction = command.payload.at("is_construction").get<bool>();
     }
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().add_sketch_rectangle(
         read_dimension(command.payload, "start_x"),
         read_dimension(command.payload, "start_y"),
@@ -80,6 +85,9 @@
         read_dimension(command.payload, "end_y"),
         is_construction);
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -92,6 +100,7 @@
         command.payload.at("is_construction").is_boolean()) {
       is_construction = command.payload.at("is_construction").get<bool>();
     }
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().add_sketch_arc(
         read_dimension(command.payload, "start_x"),
         read_dimension(command.payload, "start_y"),
@@ -102,6 +111,9 @@
         read_string(command.payload, "mode"),
         is_construction);
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -132,6 +144,7 @@
       }
       return 0.0;
     };
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().add_sketch_circle(
         read_dimension(command.payload, "center_x"),
         read_dimension(command.payload, "center_y"),
@@ -150,6 +163,9 @@
         optional_dimension("hint_x"),
         optional_dimension("hint_y"));
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -162,6 +178,7 @@
         command.payload.at("is_construction").is_boolean()) {
       is_construction = command.payload.at("is_construction").get<bool>();
     }
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().add_sketch_polygon(
         static_cast<int>(read_dimension(command.payload, "sides")),
         read_string(command.payload, "mode"),
@@ -171,6 +188,9 @@
         read_dimension(command.payload, "end_y"),
         is_construction);
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -183,6 +203,7 @@
         command.payload.at("is_construction").is_boolean()) {
       is_construction = command.payload.at("is_construction").get<bool>();
     }
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().add_sketch_ellipse(
         read_dimension(command.payload, "center_x"),
         read_dimension(command.payload, "center_y"),
@@ -192,6 +213,9 @@
         read_dimension(command.payload, "axis_b_y"),
         is_construction);
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -212,9 +236,13 @@
                           read_dimension(point, "y")});
       }
     }
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().add_sketch_spline(
         points, is_construction);
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -227,6 +255,7 @@
         command.payload.at("is_construction").is_boolean()) {
       is_construction = command.payload.at("is_construction").get<bool>();
     }
+    const auto before_document = document_manager().get_document();
     const auto document = document_manager().add_sketch_slot(
         read_dimension(command.payload, "center_x"),
         read_dimension(command.payload, "center_y"),
@@ -235,6 +264,9 @@
         read_dimension(command.payload, "rotation"),
         is_construction);
 
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

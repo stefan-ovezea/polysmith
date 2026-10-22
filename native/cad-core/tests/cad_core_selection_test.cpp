@@ -71,9 +71,15 @@ bool test_extrude_clears_selections() {
   document = manager.select_sketch_profile(profile_id, false);
   document = manager.extrude_profiles({profile_id}, 5.0, "new_body");
 
-  if (!expect(!document.selected_sketch_profile_id.has_value() &&
-                  document.selected_sketch_profile_ids.empty(),
-              "extrude: profile selection cleared")) {
+  // The profile selection is PRESERVED so the interactive extrude panel can
+  // toggle surfaces (click a selected face to deselect just that one).  The
+  // singular id stays consistent with the plural (it is derived as the last
+  // selected profile), and every other selection kind is cleared below.
+  if (!expect(document.selected_sketch_profile_id.has_value() &&
+                  document.selected_sketch_profile_id.value() == profile_id &&
+                  document.selected_sketch_profile_ids.size() == 1 &&
+                  document.selected_sketch_profile_ids.front() == profile_id,
+              "extrude: profile selection preserved")) {
     return false;
   }
   if (!expect(!document.selected_sketch_entity_id.has_value() &&

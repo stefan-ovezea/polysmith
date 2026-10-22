@@ -1,3 +1,5 @@
+import { splineEval, splineOpenUniformKnots } from "@/lib/splineCurve";
+import { decodeF32, decodeU32 } from "@/lib/binaryDecode";
 import type {
   ViewportBoxPrimitive,
   ViewportCylinderPrimitive,
@@ -119,16 +121,16 @@ function makeCylinderPrimitive(
 function makeMeshPrimitive(
   primitive: ViewportMeshPrimitive,
 ): MeshScenePrimitive {
-  // Wire format uses plain number[] arrays. We materialize typed arrays
-  // here so the renderer can hand them straight to BufferGeometry without
-  // an extra copy on every frame the scene rebuilds.
+  // Wire format ships binary base64 blobs (phase E4); decode straight into
+  // typed arrays here so the renderer hands them to BufferGeometry without an
+  // extra copy on every frame the scene rebuilds.
   return {
     kind: "mesh",
     primitiveId: primitive.primitive_id,
     label: primitive.primitive_id,
-    positions: Float32Array.from(primitive.positions),
-    normals: Float32Array.from(primitive.normals),
-    indices: Uint32Array.from(primitive.indices),
+    positions: decodeF32(primitive.positions),
+    normals: decodeF32(primitive.normals),
+    indices: decodeU32(primitive.indices),
     isSelected: primitive.is_selected,
     appearanceColor: primitive.appearance_color ?? null,
   };
@@ -670,6 +672,11 @@ function makeSketchProfile(profile: ViewportSketchProfile): SketchProfileScene {
         center: [edge.center_x, edge.center_y],
         radius: edge.radius,
         ccw: edge.ccw,
+        splinePoleXs: edge.spline_pole_xs,
+        splinePoleYs: edge.spline_pole_ys,
+        splineDegree: edge.spline_degree,
+        minorRadius: edge.minor_radius,
+        rotation: edge.rotation,
       })),
     ),
     start: [profile.start_x, profile.start_y],
@@ -751,6 +758,11 @@ function makeSketchProfileFromDocument(
         center: [edge.center_x, edge.center_y],
         radius: edge.radius,
         ccw: edge.ccw,
+        splinePoleXs: edge.spline_pole_xs,
+        splinePoleYs: edge.spline_pole_ys,
+        splineDegree: edge.spline_degree,
+        minorRadius: edge.minor_radius,
+        rotation: edge.rotation,
       })),
     ),
     start: [profile.center_x, profile.center_y],
@@ -784,8 +796,49 @@ function sampleBoundaryEdges(
       push(edge.end[0], edge.end[1]);
       continue;
     }
+    // Spline edges follow the REAL clamped B-spline.  A chord across a curved
+    // edge cuts corners, and where the chord crosses a neighbouring edge the
+    // pick polygon self-intersects — the region then cannot be selected
+    // (reported: a band selectable on one side only, and splitting it in half
+    // made both halves selectable).
+    if (
+      edge.entityKind === "spline" &&
+      (edge.splinePoleXs?.length ?? 0) >= 2 &&
+      (edge.splinePoleYs?.length ?? 0) === edge.splinePoleXs?.length
+    ) {
+      const poleXs = edge.splinePoleXs as number[];
+      const poleYs = edge.splinePoleYs as number[];
+      const degree = Math.min(edge.splineDegree ?? Math.min(3, poleXs.length - 1), poleXs.length - 1);
+      const knots = splineOpenUniformKnots(poleXs.length, degree);
+      const steps = Math.max(2, Math.min(128, Math.ceil(poleXs.length * 8)));
+      for (let i = 1; i <= steps; i += 1) {
+        const t =
+          edge.paramStart + (edge.paramEnd - edge.paramStart) * (i / steps);
+        const [x, y] = splineEval(degree, knots, poleXs, poleYs, t);
+        push(x, y);
+      }
+      continue;
+    }
+    // Ellipse edges: major radius + minor radius rotated by `rotation`.
+    if (edge.entityKind === "ellipse" && (edge.minorRadius ?? 0) > 0) {
+      const minor = edge.minorRadius as number;
+      const cos = Math.cos(edge.rotation ?? 0);
+      const sin = Math.sin(edge.rotation ?? 0);
+      const steps = 32;
+      for (let i = 1; i <= steps; i += 1) {
+        const t =
+          edge.paramStart + (edge.paramEnd - edge.paramStart) * (i / steps);
+        const localX = edge.radius * Math.cos(t);
+        const localY = minor * Math.sin(t);
+        push(
+          edge.center[0] + localX * cos - localY * sin,
+          edge.center[1] + localX * sin + localY * cos,
+        );
+      }
+      continue;
+    }
     if (edge.entityKind !== "arc" && edge.entityKind !== "circle") {
-      // Ellipse/spline edges: the stored endpoints are the fallback.
+      // Unknown kinds: the stored endpoints are the fallback.
       push(edge.end[0], edge.end[1]);
       continue;
     }
@@ -1016,8 +1069,8 @@ function makeSolidFace(face: ViewportSolidFace): SolidFaceScene {
     size: face.size,
     // Materialize typed arrays up-front so the renderer hands them
     // straight to a BufferAttribute without re-allocating per frame.
-    trianglePositions: Float32Array.from(face.triangle_positions ?? []),
-    triangleIndices: Uint32Array.from(face.triangle_indices ?? []),
+    trianglePositions: decodeF32(face.triangle_positions ?? ""),
+    triangleIndices: decodeU32(face.triangle_indices ?? ""),
     isSelected: face.is_selected,
     appearanceColor: face.appearance_color ?? null,
     surfaceKind: face.surface_kind,
@@ -1058,7 +1111,7 @@ export function createViewportScene(
     options.pendingEdgeOpBodyIds ?? new Set<string>();
   const document = options.document ?? null;
 
-  const primitives = [
+  let primitives = [
     ...viewport.boxes.map(makeBoxPrimitive),
     ...viewport.cylinders.map(makeCylinderPrimitive),
     ...viewport.polygon_extrudes.map(makePolygonExtrudePrimitive),
@@ -1238,6 +1291,14 @@ export function createViewportScene(
   const profileIds = new Set(sketchProfiles.map((profile) => profile.profileId));
   if (document) {
     const selectedProfileIds = new Set(document.selected_sketch_profile_ids);
+    // Phase E1: the viewport ships profile SUMMARIES (geometry trimmed).  Index
+    // the document's full profiles (fetched via get_sketch_profiles) and
+    // REPLACE each summary with its exact geometry, then append any
+    // document-only profiles the viewport did not list.
+    const fullProfiles = new Map<
+      string,
+      { feature: FeatureEntry; profile: SketchProfileRegionEntry }
+    >();
     for (const feature of document.feature_history) {
       const sketch = feature.sketch_parameters;
       if (
@@ -1249,23 +1310,41 @@ export function createViewportScene(
         continue;
       }
       for (const profile of sketch.profiles) {
-        if (profileIds.has(profile.profile_id)) {
-          continue;
-        }
-        const sceneProfile = makeSketchProfileFromDocument(
-          feature,
-          profile,
+        fullProfiles.set(profile.profile_id, { feature, profile });
+      }
+    }
+    const seen = new Set<string>();
+    sketchProfiles = sketchProfiles.map((sceneProfile) => {
+      seen.add(sceneProfile.profileId);
+      const full = fullProfiles.get(sceneProfile.profileId);
+      if (!full) {
+        return sceneProfile;
+      }
+      return (
+        makeSketchProfileFromDocument(
+          full.feature,
+          full.profile,
           selectedProfileIds,
-        );
-        if (sceneProfile) {
-          sketchProfiles.push(sceneProfile);
-          profileIds.add(sceneProfile.profileId);
-        }
+        ) ?? sceneProfile
+      );
+    });
+    for (const [id, full] of fullProfiles) {
+      if (seen.has(id)) {
+        continue;
+      }
+      const sceneProfile = makeSketchProfileFromDocument(
+        full.feature,
+        full.profile,
+        selectedProfileIds,
+      );
+      if (sceneProfile) {
+        sketchProfiles.push(sceneProfile);
+        profileIds.add(sceneProfile.profileId);
       }
     }
   }
   sketchProfiles = withDisplayProfileHoles(sketchProfiles);
-  const solidFaces = viewport.solid_faces
+  let solidFaces = viewport.solid_faces
     .filter((face) => !hiddenFeatureIds.has(face.owner_id))
     .map(makeSolidFace);
   const edges: SceneEdge[] = viewport.edges
@@ -1294,11 +1373,40 @@ export function createViewportScene(
       id: preview.id,
       // Materialize typed arrays up-front so the renderer hands them
       // straight to a BufferAttribute without re-allocating per frame.
-      positions: Float32Array.from(preview.positions),
-      normals: Float32Array.from(preview.normals),
-      indices: Uint32Array.from(preview.indices),
+      positions: decodeF32(preview.positions),
+      normals: decodeF32(preview.normals),
+      indices: decodeU32(preview.indices),
     }),
   );
+
+  // Phase E2: appearance-only edits skip the viewport refetch
+  // (sendAndRefreshSession), so the scene re-derives the resolved color from
+  // the document's override map here.  When the viewport is fresh this map and
+  // the viewport already agree, so it is a no-op on the normal path.
+  if (document) {
+    const bodyColor = new Map(
+      document.appearance.body_colors.map((entry) => [
+        entry.body_id,
+        entry.color,
+      ]),
+    );
+    const faceColor = new Map(
+      document.appearance.face_colors.map((entry) => [
+        entry.face_id,
+        entry.color,
+      ]),
+    );
+    primitives = primitives.map((primitive) =>
+      bodyColor.has(primitive.primitiveId)
+        ? { ...primitive, appearanceColor: bodyColor.get(primitive.primitiveId)! }
+        : primitive,
+    );
+    solidFaces = solidFaces.map((face) =>
+      faceColor.has(face.faceId)
+        ? { ...face, appearanceColor: faceColor.get(face.faceId)! }
+        : face,
+    );
+  }
 
   return {
     bounds: {

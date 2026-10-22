@@ -1,6 +1,14 @@
+                 {"profile_count", feature.sketch_parameters->profiles.size()},
                  {"profiles",
-                  [&feature]() {
+                  [&feature, include_profiles]() {
                     json profiles = json::array();
+                    // Derived cache (serialization.h): detected regions ship only
+                    // for the sketch the user has open; `profile_count` above
+                    // carries the size and the viewport state carries the geometry
+                    // used for rendering and picking.
+                    if (!include_profiles) {
+                      return profiles;
+                    }
                     for (const auto& profile : feature.sketch_parameters->profiles) {
                       json point_ids = json::array();
                       for (const auto& point_id : profile.vertex_ids) {

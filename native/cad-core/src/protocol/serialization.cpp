@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "core/sketch/dof_counter.h"
+#include "protocol/impl/binary_payload.h"
 
 namespace polysmith::protocol {
 
@@ -19,6 +20,7 @@ namespace {
 #include "protocol/impl/drawing_from_payload.inc"
 #include "protocol/impl/feature_to_payload.inc"
 #include "protocol/impl/document_session_to_payload.inc"
+#include "protocol/impl/selection_to_payload.inc"
 #include "protocol/impl/viewport_to_payload.inc"
 #include "protocol/impl/feature_from_payload.inc"
 #include "protocol/impl/document_from_payload.inc"

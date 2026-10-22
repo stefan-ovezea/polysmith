@@ -79,7 +79,40 @@ json make_document_state_event(const std::string& id, const json& document) {
   };
 }
 
-json make_session_state_event(const std::string& id, const json& session) {
+json make_sketch_entities_changed_event(const std::string& id,
+                                            const json& changes) {
+  return {
+      {"id", id},
+      {"type", "sketch_entities_changed"},
+      {"payload", changes},
+  };
+}
+
+json make_feature_changed_event(const std::string& id, const json& changes) {
+  return {
+      {"id", id},
+      {"type", "feature_changed"},
+      {"payload", changes},
+  };
+}
+
+json make_sketch_profiles_event(const std::string& id, const json& profiles) {
+  return {
+      {"id", id},
+      {"type", "sketch_profiles"},
+      {"payload", profiles},
+  };
+}
+
+json make_selection_changed_event(const std::string& id, const json& selection) {
+    return {
+        {"id", id},
+        {"type", "selection_changed"},
+        {"payload", selection},
+    };
+  }
+
+  json make_session_state_event(const std::string& id, const json& session) {
   return {
       {"id", id},
       {"type", "session_state"},

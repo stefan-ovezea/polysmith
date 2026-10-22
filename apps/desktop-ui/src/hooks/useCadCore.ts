@@ -142,6 +142,7 @@ import {
   makeGetDocumentStateCommand,
   makeGetSessionStateCommand,
   makeGetViewportStateCommand,
+  makeGetSketchProfilesCommand,
   makePingCommand,
   makeRedoCommand,
   makeUndoManyCommand,
@@ -155,6 +156,7 @@ import {
   makeSelectSketchDimensionCommand,
   makeSelectSketchEntityCommand,
   makeSelectSketchRectCommand,
+  makeSelectSketchProfilesRectCommand,
   makeSelectSketchVertexCommand,
   makeSetTimelineCursorCommand,
   makeRenameFeatureCommand,
@@ -294,6 +296,7 @@ import {
 import {
   sendAndRefreshSessionViewport,
   sendAndRefreshViewport,
+  sendAndRefreshSession,
 } from "./cadCoreCommandRefresh";
 import { reportCoreError } from "./coreLogReporting";
 import { useCadCoreEventBridge } from "./useCadCoreEventBridge";
@@ -477,6 +480,10 @@ export function useCadCore() {
       );
     },
     renameFeature: async (featureId: string, name: string) => {
+      // Rename changes the body label, which the UI reads from the viewport
+      // snapshot (selection readout + target pickers), so keep the viewport
+      // refetch here.  The geometry_revision signal still marks it as
+      // shape-unchanged for future consumers.
       await sendAndRefreshSessionViewport(
         makeRenameFeatureCommand(featureId, name),
       );
@@ -565,19 +572,19 @@ export function useCadCore() {
       await sendAndRefreshViewport(makeSelectVertexCommand(vertexId, additive));
     },
     setBodyColor: async (bodyId: string, color: string) => {
-      await sendAndRefreshSessionViewport(makeSetBodyColorCommand(bodyId, color));
+      await sendAndRefreshSession(makeSetBodyColorCommand(bodyId, color));
     },
     setFaceColor: async (faceId: string, color: string) => {
-      await sendAndRefreshSessionViewport(makeSetFaceColorCommand(faceId, color));
+      await sendAndRefreshSession(makeSetFaceColorCommand(faceId, color));
     },
     clearBodyColor: async (bodyId: string) => {
-      await sendAndRefreshSessionViewport(makeClearBodyColorCommand(bodyId));
+      await sendAndRefreshSession(makeClearBodyColorCommand(bodyId));
     },
     clearFaceColor: async (faceId: string) => {
-      await sendAndRefreshSessionViewport(makeClearFaceColorCommand(faceId));
+      await sendAndRefreshSession(makeClearFaceColorCommand(faceId));
     },
     clearAppearanceOverrides: async () => {
-      await sendAndRefreshSessionViewport(makeClearAppearanceOverridesCommand());
+      await sendAndRefreshSession(makeClearAppearanceOverridesCommand());
     },
     createFillet: async (edgeIds: readonly string[], radius: number) => {
       await sendAndRefreshSessionViewport(
@@ -1557,18 +1564,22 @@ export function useCadCore() {
     },
     selectSketchPoint: async (vertexId: string, additive = false) => {
       await sendCoreCommand(makeSelectSketchVertexCommand(vertexId, additive));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      // No viewport refetch after a selection: the geometry does not change and
+      // the UI derives the highlight from document.selected_* .  A viewport
+      // state is ~2 MB on an imported sketch, and this was paid per click.
     },
     selectSketchEntity: async (entityId: string, additive = false) => {
       await sendCoreCommand(makeSelectSketchEntityCommand(entityId, additive));
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchDimension: async (dimensionId: string) => {
       await sendCoreCommand(makeSelectSketchDimensionCommand(dimensionId));
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchProfile: async (profileId: string, additive = false) => {
       await sendCoreCommand(makeSelectSketchProfileCommand(profileId, additive));
+      // Refresh the viewport so the summaries' is_selected (and the profile
+      // highlight) update immediately — the marquee path already does this,
+      // but a plain click only sent the selection delta and left the viewport
+      // summaries stale until some other refresh.
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     selectSketchProfileByEntity: async (
@@ -1583,7 +1594,6 @@ export function useCadCore() {
           smallestOnly,
         ),
       );
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     extrudeProfile: async (
       profileIds: string | readonly string[],
@@ -1740,6 +1750,9 @@ export function useCadCore() {
       await sendCoreCommand(makeReenterSketchCommand(featureId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    getSketchProfiles: async (featureId: string) => {
+      await sendCoreCommand(makeGetSketchProfilesCommand(featureId));
+    },
     selectSketchRect: async (
       x1: number,
       y1: number,
@@ -1756,6 +1769,31 @@ export function useCadCore() {
       // stale-selection delete race.
       await sendCoreCommand(
         makeSelectSketchRectCommand(x1, y1, x2, y2, windowMode, additive),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    selectSketchProfilesRect: async (
+      featureId: string,
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number,
+      windowMode: boolean,
+      additive: boolean,
+    ) => {
+      // Marquee over profile SURFACES, resolved CORE-side against the given
+      // sketch's exact profile regions — one command selects the whole batch so
+      // an N-surface extrude is one round trip.
+      await sendCoreCommand(
+        makeSelectSketchProfilesRectCommand(
+          featureId,
+          x1,
+          y1,
+          x2,
+          y2,
+          windowMode,
+          additive,
+        ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },

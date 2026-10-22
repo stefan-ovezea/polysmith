@@ -2,7 +2,18 @@ json to_payload(const polysmith::core::DocumentState& document,
                 bool include_opaque) {
   json feature_history = json::array();
   for (const auto& feature : document.feature_history) {
-    feature_history.push_back(to_payload(feature, include_opaque));
+    // Derived caches (serialization.h).  The vertex table stays for the sketch
+    // the user has open: hover, picking and drag read it synchronously.  The
+    // detected profiles are not pushed at all -- consumers fetch them with
+    // get_sketch_profiles, which is worth 916 KB on a dense sketch.  Saves
+    // (include_opaque) keep both, so a reload can re-resolve profile references
+    // before any refresh runs.
+    const bool is_active_sketch =
+        include_opaque ||
+        (document.active_sketch_feature_id.has_value() &&
+         *document.active_sketch_feature_id == feature.id);
+    feature_history.push_back(
+        to_payload(feature, include_opaque, is_active_sketch, include_opaque));
   }
 
   return {
@@ -10,6 +21,7 @@ json to_payload(const polysmith::core::DocumentState& document,
       {"name", document.name},
       {"units", document.units},
       {"revision", document.revision},
+      {"geometry_revision", document.geometry_revision},
       {"can_undo", document.can_undo},
       {"can_redo", document.can_redo},
       {"undo_step_names", document.undo_step_names},

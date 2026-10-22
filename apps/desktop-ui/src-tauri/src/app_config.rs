@@ -73,13 +73,31 @@ pub fn bootstrap_app_config(
             write_json(&theme_path, &theme.contents)?;
             continue;
         }
+        // A bundled theme that changed its VALUES has to reach users who have
+        // already run the app: the stored copy wins otherwise, and a rebuild
+        // looks like it did nothing.  Each bundled theme carries a `revision`;
+        // a stored copy behind it is replaced wholesale.  Same revision: only
+        // MISSING keys are backfilled, so user edits to existing values stay.
+        let bundled_revision = theme
+            .contents
+            .get("revision")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let stored = fs::read_to_string(&theme_path).map_err(|error| error.to_string())?;
+        let mut stored_value: Value =
+            serde_json::from_str(&stored).map_err(|error| error.to_string())?;
+        let stored_revision = stored_value
+            .get("revision")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        if bundled_revision > stored_revision {
+            write_json(&theme_path, &theme.contents)?;
+            continue;
+        }
         // The stored file may predate tokens added to the bundled theme
         // (e.g. --cad-muted) — backfill the missing color keys so the
         // UI never renders against an unresolved CSS variable.  Only
         // MISSING keys are added: user edits to existing values stay.
-        let stored = fs::read_to_string(&theme_path).map_err(|error| error.to_string())?;
-        let mut stored_value: Value =
-            serde_json::from_str(&stored).map_err(|error| error.to_string())?;
         let Some(stored_colors) = stored_value.get_mut("colors").and_then(|v| v.as_object_mut())
         else {
             continue;

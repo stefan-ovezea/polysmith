@@ -106,6 +106,35 @@ Response rules:
 - the core may also emit independent events such as lifecycle or state updates
 - response and event types must be documented and schema-backed
 
+### `selection_changed` — the reply to `select_*` commands
+
+Selection is interaction state, and the document does not change when it moves,
+so the 11 `select_*` commands reply with the selection fields instead of the
+whole document.  Payload:
+
+```json
+{ "revision": 42,
+  "selected_feature_id": "feature-7",
+  "selected_reference_id": null,
+  "selected_face_id": null,
+  "selected_edge_ids": [],
+  "selected_vertex_ids": [],
+  "selected_sketch_vertex_id": null,
+  "selected_sketch_entity_id": null,
+  "selected_sketch_vertex_ids": [],
+  "selected_sketch_entity_ids": [],
+  "selected_sketch_dimension_id": null,
+  "selected_sketch_text_id": null,
+  "selected_sketch_profile_id": "polygon-3",
+  "selected_sketch_profile_ids": ["polygon-3"] }
+```
+
+Measured on a dense imported sketch: the reply is **446 bytes** where a
+`document_state` was 1,219 KB (and 155 KB after the derived-cache trim).  The UI
+patches these fields into its document copy; the viewport highlight is derived
+client-side from `selected_sketch_profile_ids`, so no `viewport_state` refetch is
+needed.  Commands that change the DOCUMENT still reply with `document_state`.
+
 ## Error Handling
 
 Errors must be explicit protocol messages, not implied by missing output or mixed into free-form logs.

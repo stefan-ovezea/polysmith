@@ -12,7 +12,13 @@
   // suppress, delete, undo/redo, sketch profile edits, etc.). Pure
   // selection mutators stick with the plain revision bump because the
   // refresh would be a no-op.
-  void bump_geometry_revision();
+  //
+  // `shape_changed` (default true) also bumps `geometry_revision`, the
+  // signal the UI uses to skip a viewport refetch.  Appearance-only and
+  // rename-only mutators pass false: they run the dependency refresh
+  // (so CAM/drawing caches stay coherent) but do not change the body's
+  // triangles.
+  void bump_geometry_revision(bool shape_changed = true);
   // Erase sketch-selection ids (singular + plural + text) that no
   // longer exist in any sketch feature. Runs on every geometry revision
   // so deleted or regenerated entities (trim-as-delete, delete

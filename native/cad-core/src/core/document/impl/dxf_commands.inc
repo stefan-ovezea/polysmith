@@ -28,6 +28,8 @@ DocumentState DocumentManager::import_dxf(
   const size_t lines_before = sketch.sketch_parameters->lines.size();
   const size_t circles_before = sketch.sketch_parameters->circles.size();
   const size_t arcs_before = sketch.sketch_parameters->arcs.size();
+  const size_t splines_before = sketch.sketch_parameters->splines.size();
+  const size_t ellipses_before = sketch.sketch_parameters->ellipses.size();
 
   for (const auto& line : parsed.lines) {
     // Imported geometry stays EXACT: no coincident-line-body snapping
@@ -83,6 +85,31 @@ DocumentState DocumentManager::import_dxf(
                                     /*auto_dimensions=*/false,
                                     /*refresh_immediately=*/false);
   }
+  // Curves the reader could represent EXACTLY become the sketch's own spline
+  // and ellipse entities — one entity each, and the profile engine carries them
+  // into the B-rep, so an extrusion is smooth instead of faceted.  This is why
+  // the reader prefers them over tessellated lines.
+  for (const auto& spline : parsed.splines) {
+    polysmith::core::add_sketch_spline(sketch,
+                                       next_sketch_spline_id_++,
+                                       spline.poles,
+                                       /*is_construction=*/false,
+                                       /*refresh_immediately=*/false);
+  }
+  for (const auto& ellipse : parsed.ellipses) {
+    // add_sketch_ellipse takes axis POINTS, so offset the axis vectors by the
+    // centre.  (The model derives the major radius and the rotation from them.)
+    polysmith::core::add_sketch_ellipse(sketch,
+                                        next_sketch_ellipse_id_++,
+                                        ellipse.center_x,
+                                        ellipse.center_y,
+                                        ellipse.center_x + ellipse.axis_a_x,
+                                        ellipse.center_y + ellipse.axis_a_y,
+                                        ellipse.center_x + ellipse.axis_b_x,
+                                        ellipse.center_y + ellipse.axis_b_y,
+                                        /*is_construction=*/false,
+                                        /*refresh_immediately=*/false);
+  }
   int point_index = 0;
   for (const auto& point : parsed.points) {
     // Standalone points live in projected_points so the vertex rebuild
@@ -116,6 +143,14 @@ DocumentState DocumentManager::import_dxf(
   for (size_t i = arcs_before; i < sketch.sketch_parameters->arcs.size();
        ++i) {
     focus_ids.push_back(sketch.sketch_parameters->arcs[i].id);
+  }
+  for (size_t i = splines_before; i < sketch.sketch_parameters->splines.size();
+       ++i) {
+    focus_ids.push_back(sketch.sketch_parameters->splines[i].id);
+  }
+  for (size_t i = ellipses_before;
+       i < sketch.sketch_parameters->ellipses.size(); ++i) {
+    focus_ids.push_back(sketch.sketch_parameters->ellipses[i].id);
   }
   polysmith::core::refresh_sketch_with_append_focus(sketch, focus_ids);
 
@@ -166,10 +201,21 @@ DocumentState DocumentManager::import_dxf(
             " imported segment(s) at the 0.01 mm sketch resolution (the source "
             "has geometry finer than the sketch model can represent)");
   }
+  // Report what actually arrived: naming only lines said "0 line(s)" for a file
+  // whose curves imported exactly, which reads like a failure.
+  std::string imported_detail = std::to_string(lines_added) + " line(s)";
+  if (!parsed.splines.empty()) {
+    imported_detail +=
+        ", " + std::to_string(parsed.splines.size()) + " spline(s)";
+  }
+  if (!parsed.ellipses.empty()) {
+    imported_detail +=
+        ", " + std::to_string(parsed.ellipses.size()) + " ellipse(s)";
+  }
   polysmith::core::log_info(
       "dxf_import",
       "Imported " + std::to_string(parsed.entity_count()) + " entities (" +
-          std::to_string(lines_added) + " line(s)) from " + file_path +
+          imported_detail + ") from " + file_path +
           (parsed.units_scaled ? " (inches scaled to mm)" : ""));
   // One line per KIND, never one per entity: a sketch export carries hundreds
   // of splines, and a message each filled the Logs panel's 500-entry rolling

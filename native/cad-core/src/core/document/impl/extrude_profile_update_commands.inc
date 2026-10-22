@@ -2,9 +2,6 @@ DocumentState DocumentManager::update_extrude_profiles(
     const std::string& feature_id,
     const std::vector<std::string>& profile_ids) {
   require_document();
-  if (profile_ids.empty()) {
-    throw std::runtime_error("No sketch profiles selected");
-  }
 
   const auto extrude_it = std::find_if(
       document_->feature_history.begin(),
@@ -17,6 +14,32 @@ DocumentState DocumentManager::update_extrude_profiles(
       !extrude_it->extrude_parameters.has_value()) {
     throw std::runtime_error(
         "update_extrude_profiles requires an extrude feature: " + feature_id);
+  }
+
+  if (profile_ids.empty()) {
+    // Deselecting every surface empties the extrude.  Clear the profile
+    // geometry so the body compiler emits no shape, but keep the feature in
+    // the timeline so the panel can show "0 selected" and a later re-select
+    // rebuilds it through the normal parameter builder.
+    auto& params = extrude_it->extrude_parameters.value();
+    params.profile_id.clear();
+    params.profile_ids.clear();
+    params.profile_points.clear();
+    params.inner_loops.clear();
+    params.additional_profile_points.clear();
+    params.additional_inner_loops.clear();
+    params.sketch_lines.clear();
+    params.sketch_arcs.clear();
+    params.sketch_circles.clear();
+    params.sketch_edge_ids.clear();
+    params.boundary_edges.clear();
+    params.arc_descriptors.clear();
+    params.inner_loop_edges.clear();
+    params.additional_sketch_edge_ids.clear();
+    params.additional_arc_descriptors.clear();
+    params.additional_boundary_edges.clear();
+    bump_geometry_revision();
+    return document_.value();
   }
 
   const auto sketch_it = find_sketch_feature_owning_profile(

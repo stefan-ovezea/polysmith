@@ -314,8 +314,74 @@ std::vector<SketchProfileRegion> build_exact_profiles(
       };
 
   // 2. Intersection and touch records.
+  //
+  // Bounding-box prefilter: the pair loop is O(n²) and, once splines are exact,
+  // every spline pair pays for an OCCT intersection.  On an imported sketch
+  // (312 lines + 64 arcs + 191 splines = 567 curves, ~160k pairs) that measured
+  // as 711 ms of a single refresh.  Two curves whose boxes do not touch cannot
+  // intersect, and an endpoint cannot lie on a curve outside its box, so
+  // skipping those pairs changes nothing but the time.  Boxes are computed
+  // conservatively (full circle for an arc, control-polygon for a spline) so
+  // this can only ever test MORE pairs than necessary, never fewer.
+  struct CurveBounds {
+    double min_x = 0.0, max_x = 0.0, min_y = 0.0, max_y = 0.0;
+  };
+  std::vector<CurveBounds> curve_bounds(curves.size());
+  for (size_t i = 0; i < curves.size(); ++i) {
+    const ExactCurve& c = curves[i];
+    CurveBounds box;
+    switch (c.kind) {
+      case ExactCurve::Kind::kLine:
+        box.min_x = std::min(c.x0, c.x1);
+        box.max_x = std::max(c.x0, c.x1);
+        box.min_y = std::min(c.y0, c.y1);
+        box.max_y = std::max(c.y0, c.y1);
+        break;
+      case ExactCurve::Kind::kSpline:
+        box.min_x = box.max_x = c.pole_xs.front();
+        box.min_y = box.max_y = c.pole_ys.front();
+        for (size_t p = 1; p < c.pole_xs.size(); ++p) {
+          box.min_x = std::min(box.min_x, c.pole_xs[p]);
+          box.max_x = std::max(box.max_x, c.pole_xs[p]);
+          box.min_y = std::min(box.min_y, c.pole_ys[p]);
+          box.max_y = std::max(box.max_y, c.pole_ys[p]);
+        }
+        break;
+      case ExactCurve::Kind::kEllipse: {
+        // Conservative: the ellipse fits inside the circle of radius a + b.
+        const double reach = std::abs(c.r) + std::abs(c.b);
+        box.min_x = c.cx - reach;
+        box.max_x = c.cx + reach;
+        box.min_y = c.cy - reach;
+        box.max_y = c.cy + reach;
+        break;
+      }
+      case ExactCurve::Kind::kArc:
+      case ExactCurve::Kind::kCircle:
+      default:
+        box.min_x = c.cx - std::abs(c.r);
+        box.max_x = c.cx + std::abs(c.r);
+        box.min_y = c.cy - std::abs(c.r);
+        box.max_y = c.cy + std::abs(c.r);
+        break;
+    }
+    curve_bounds[i] = box;
+  }
+  // A hair of slack so exactly-touching boxes (shared endpoints) still count as
+  // overlapping — erring towards testing a pair is always safe.
+  constexpr double kBoundsSlack = 1e-6;
+  const auto boxes_overlap = [&](size_t a, size_t b) {
+    return !(curve_bounds[a].max_x + kBoundsSlack < curve_bounds[b].min_x ||
+             curve_bounds[b].max_x + kBoundsSlack < curve_bounds[a].min_x ||
+             curve_bounds[a].max_y + kBoundsSlack < curve_bounds[b].min_y ||
+             curve_bounds[b].max_y + kBoundsSlack < curve_bounds[a].min_y);
+  };
+
   for (int a = 0; a < nc; ++a) {
     for (int b = a + 1; b < nc; ++b) {
+      if (!boxes_overlap(static_cast<size_t>(a), static_cast<size_t>(b))) {
+        continue;
+      }
       const ExactCurve& ca = curves[a];
       const ExactCurve& cb = curves[b];
       std::vector<std::pair<double, double>> recs;

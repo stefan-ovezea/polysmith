@@ -18,6 +18,12 @@ struct DocumentState {
   std::string name;
   std::string units;
   int revision;
+  // Shape revision (phase E2): bumps only when the actual body/sketch
+  // GEOMETRY changes, not on appearance-only or rename-only mutations.
+  // The UI compares this across events to skip a ~2 MB viewport refetch
+  // when the triangles are unchanged.  Never persisted meaningfully
+  // (recomputed on load); serialized for the UI.
+  int geometry_revision = 0;
   // Undo/redo availability, kept inside the document so every
   // document_state event carries fresh values (D7) — the UI's buttons
   // and hotkeys read these instead of the request-only session_state,

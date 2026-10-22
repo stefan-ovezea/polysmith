@@ -45,6 +45,8 @@
 | 🔌 **[PCB / Gerber Workspace](PCB-Workspace)** | **Planning + P1.** Separate `pcb` workspace: Gerber/Excellon import → isolation routing and laser CAM operations |
 | ⚡ **[Interaction Performance](Interaction-Performance)** | **Investigation.** Why a click on a big sketch ships 1.2 MB, and the plan: wire-format trim, selection events, region picker |
 | 📐 **[Drawing Workspace UI Study](Drawing-Workspace-UI-Study)** | Fusion-style ISO drawing workspace: design study and phased implementation plan (R1 shipped) |
+| 📉 **[IPC Payload Plan](IPC-Payload-Plan)** | **Plan.** Phases C–F: stop shipping profile snapshots, feature/entity deltas, viewport budget, validation — with measured byte counts |
+| 📚 **[Lessons from SolidCraft](Lessons-From-SolidCraft)** | What to adopt from comparing with SolidCraft (atomic save, oracle tests, fuzzing, format versioning, command registry, executable rules) and what not to |
 
 ### 🤖 AI / Agent
 

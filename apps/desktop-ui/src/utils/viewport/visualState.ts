@@ -150,9 +150,9 @@ export function applySolidFaceVisualState(
 
   if (state.isSelected) {
     visual.fillMaterial.color.set(
-      themeColor("--color-primary-soft", "#c3f5ff"),
+      themeColor("--color-primary-bright", "#4be7ff"),
     );
-    visual.fillMaterial.opacity = 0.24;
+    visual.fillMaterial.opacity = 0.5;
     return;
   }
 
@@ -175,10 +175,10 @@ export function applySketchProfileVisualState(
   if (state.isHovered || state.isSelected) {
     visual.fillMaterial.color.set(
       state.isSelected
-        ? themeColor("--color-primary-soft", "#c3f5ff")
+        ? themeColor("--color-primary-bright", "#4be7ff")
         : themeColor("--color-tertiary-plane-fill", "#fff7c0"),
     );
-    visual.fillMaterial.opacity = state.isSelected ? 0.24 : 0.18;
+    visual.fillMaterial.opacity = state.isSelected ? 0.5 : 0.18;
     for (const material of visual.edgeMaterials) {
       material.color.set(
         state.isSelected

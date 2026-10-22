@@ -6,6 +6,7 @@ import catppuccinMacchiatoTheme from "./themes/catppuccin-macchiato.json";
 import catppuccinMochaTheme from "./themes/catppuccin-mocha.json";
 import darkTheme from "./themes/dark.json";
 import lightTheme from "./themes/light.json";
+import solidcraftTheme from "./themes/solidcraft.json";
 import type {
   AppConfig,
   CrosshairMode,
@@ -21,6 +22,7 @@ const bundledThemes: Record<string, ThemeConfig> = {
   "catppuccin-frappe": catppuccinFrappeTheme,
   "catppuccin-macchiato": catppuccinMacchiatoTheme,
   "catppuccin-mocha": catppuccinMochaTheme,
+  solidcraft: solidcraftTheme,
 };
 
 const CONFIG_STORAGE_KEY = "polysmith.appConfig";
@@ -32,6 +34,7 @@ const DEFAULT_THEME_FILES = [
   { fileName: "catppuccin-frappe.json", contents: catppuccinFrappeTheme },
   { fileName: "catppuccin-macchiato.json", contents: catppuccinMacchiatoTheme },
   { fileName: "catppuccin-mocha.json", contents: catppuccinMochaTheme },
+  { fileName: "solidcraft.json", contents: solidcraftTheme },
 ];
 
 export const defaultAppConfig = defaultConfig as AppConfig;

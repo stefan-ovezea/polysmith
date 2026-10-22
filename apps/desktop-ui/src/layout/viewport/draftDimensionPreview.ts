@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { SketchPlaneFrame } from "@/types";
 import {
   projectWorldPointToViewport,
+  themeColor,
   toWorldPoint,
 } from "@/utils";
 import {
@@ -286,7 +287,7 @@ function addReferenceLine({
     new THREE.Vector3(...referenceEndWorld),
   ]);
   const referenceMaterial = new THREE.LineDashedMaterial({
-    color: new THREE.Color(0x8feaf7),
+    color: themeColor("--cad-sketch-dimension-label", "#8feaf7"),
     transparent: true,
     opacity: 0.4,
     dashSize: 2,
@@ -488,7 +489,7 @@ function addLineSegmentGeometry(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const material = new THREE.LineBasicMaterial({
-    color: new THREE.Color(0x8feaf7),
+    color: themeColor("--cad-sketch-dimension-label", "#8feaf7"),
     transparent: true,
     opacity: 0.78,
     depthTest: false,
@@ -506,7 +507,7 @@ function addArrowMesh(
   const arrowMesh = buildFilledArrowMesh({
     arrowPositions,
     arrowIndices,
-    color: new THREE.Color(0x8feaf7),
+    color: themeColor("--cad-sketch-dimension-label", "#8feaf7"),
     opacity: 0.78,
     renderOrder: 6,
   });
@@ -545,3 +546,4 @@ function lineDraftScreenPositions({
   }
   return screenPositions;
 }
+

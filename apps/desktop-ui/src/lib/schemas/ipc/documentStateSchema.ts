@@ -9,6 +9,8 @@ export const documentStateSchema = z.object({
   name: z.string(),
   units: z.string(),
   revision: z.number(),
+  // Shape revision (phase E2), defaulted for back-compat with older cores.
+  geometry_revision: z.number().default(0),
   // Undo/redo availability + history step names travel with every
   // document state (D7/D8) so the toolbar buttons and hotkeys are
   // never stale. Defaulted for back-compat with older cores.
@@ -778,6 +780,9 @@ export const documentStateSchema = z.object({
               }),
             )
             .default([]),
+          // The core sends the vertex table only for the sketch the user has
+          // open (it is a derived cache); every other sketch reports a count.
+          vertex_count: z.number().int().nonnegative().optional(),
           vertices: z.array(
             z.object({
               vertex_id: z.string(),
@@ -792,7 +797,7 @@ export const documentStateSchema = z.object({
               source_feature_id: z.string().optional(),
               source_edge_id: z.string().optional(),
             }).passthrough(),
-          ),
+          ).default([]),
           dimensions: z.array(
             z.object({
               dimension_id: z.string(),
@@ -835,6 +840,8 @@ export const documentStateSchema = z.object({
               second_line_id: z.string(),
             }),
           ),
+          // Detected regions are a derived cache: sent only for the open sketch.
+          profile_count: z.number().int().nonnegative().optional(),
           profiles: z.array(
             z.object({
               profile_id: z.string(),
@@ -914,9 +921,8 @@ export const documentStateSchema = z.object({
               center_y: z.number(),
               radius: z.number(),
             }),
-          ),
-          // Optional pending mirror tool state. Present only while
-          // the user has the mirror tool open. The UI uses the
+          ).default([]),
+          // Optional pending mirror tool state. Present only while          // the user has the mirror tool open. The UI uses the
           // presence of this object to mount the floating panel.
           pending_mirror: z
             .object({

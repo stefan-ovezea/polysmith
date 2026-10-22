@@ -1,3 +1,28 @@
+  if (command.type == "select_sketch_profiles") {
+    // Rubber-band over surfaces: one command, one revision, one small event.
+    std::vector<std::string> profile_ids;
+    if (command.payload.contains("profile_ids") &&
+        command.payload.at("profile_ids").is_array()) {
+      for (const auto& entry : command.payload.at("profile_ids")) {
+        if (entry.is_string()) {
+          profile_ids.push_back(entry.get<std::string>());
+        }
+      }
+    }
+    bool additive = false;
+    if (command.payload.contains("additive") &&
+        command.payload.at("additive").is_boolean()) {
+      additive = command.payload.at("additive").get<bool>();
+    }
+    const auto document =
+        document_manager().select_sketch_profiles(profile_ids, additive);
+
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_selection_changed_event(
+            command.id, polysmith::protocol::to_selection_payload(document)));
+    return;
+  }
+
   if (command.type == "select_sketch_profile") {
     bool additive = false;
     if (command.payload.contains("additive") &&
@@ -26,7 +51,6 @@
                   read_string(command.payload, "profile_id"), additive);
 
     polysmith::protocol::write_message(
-        polysmith::protocol::make_document_state_event(
-            command.id, polysmith::protocol::to_payload(document)));
+        polysmith::protocol::make_selection_changed_event(command.id, polysmith::protocol::to_selection_payload(document)));
     return;
   }

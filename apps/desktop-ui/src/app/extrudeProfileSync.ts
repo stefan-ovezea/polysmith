@@ -52,7 +52,11 @@ export function syncExtrudeProfileSelection({
     return;
   }
   if (context.selectedSketchProfileIds.length === 0) {
-    syncPendingFaceExtrude(extrudeAction, context);
+    if (extrudeAction.phase === "active") {
+      syncActiveProfileExtrudeEmpty(extrudeAction, context);
+    } else {
+      syncPendingFaceExtrude(extrudeAction, context);
+    }
     return;
   }
   if (extrudeAction.phase === "pending") {
@@ -60,6 +64,30 @@ export function syncExtrudeProfileSelection({
     return;
   }
   syncActiveProfileExtrude(extrudeAction, context);
+}
+
+function syncActiveProfileExtrudeEmpty(
+  extrudeAction: ActiveExtrudeAction,
+  context: Omit<ExtrudeProfileSelectionSyncContext, "extrudeAction">,
+) {
+  if (!extrudeAction.featureId) {
+    return;
+  }
+  // Guard against re-entry: updating the feature mutates the document, which
+  // re-triggers this sync before the action's profileIds clear. Mark the ref
+  // empty so a second pass bails instead of issuing a duplicate update.
+  if (context.lastExtrudeProfileUpdateRef.current === "") {
+    return;
+  }
+  context.lastExtrudeProfileUpdateRef.current = "";
+  void context.runAction(async () => {
+    await context.updateExtrudeProfiles(extrudeAction.featureId!, []);
+    context.setExtrudeAction((current) =>
+      current?.phase === "active" && current.featureId === extrudeAction.featureId
+        ? { ...current, profileIds: [], profileCount: 0 }
+        : current,
+    );
+  });
 }
 
 function syncPendingFaceExtrude(

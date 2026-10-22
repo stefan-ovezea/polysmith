@@ -61,8 +61,14 @@
                      return ids;
                    }()},
                   {"sketch_lines",
-                   [&feature]() {
+                   [&feature, include_opaque]() {
                      json lines = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return lines;
+                    }
                      for (const auto& line :
                           feature.extrude_parameters->sketch_lines) {
                        lines.push_back({
@@ -80,8 +86,14 @@
                      return lines;
                    }()},
                   {"sketch_arcs",
-                   [&feature]() {
+                   [&feature, include_opaque]() {
                      json arcs = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return arcs;
+                    }
                      for (const auto& arc :
                           feature.extrude_parameters->sketch_arcs) {
                        arcs.push_back({
@@ -100,8 +112,14 @@
                      return arcs;
                    }()},
                   {"sketch_circles",
-                   [&feature]() {
+                   [&feature, include_opaque]() {
                      json circles = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return circles;
+                    }
                      for (const auto& circ :
                           feature.extrude_parameters->sketch_circles) {
                        circles.push_back({
@@ -121,8 +139,14 @@
                  {"height", feature.extrude_parameters->height},
                  {"radius", feature.extrude_parameters->radius},
                  {"profile_points",
-                  [&feature]() {
+                  [&feature, include_opaque]() {
                     json points = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return points;
+                    }
                     for (const auto& point :
                          feature.extrude_parameters->profile_points) {
                       points.push_back({
@@ -133,8 +157,14 @@
                     return points;
                   }()},
                  {"inner_loops",
-                  [&feature]() {
+                  [&feature, include_opaque]() {
                     json loops = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return loops;
+                    }
                     for (const auto& loop :
                          feature.extrude_parameters->inner_loops) {
                       json loop_payload = json::array();
@@ -146,8 +176,14 @@
                     return loops;
                   }()},
                  {"additional_profile_points",
-                  [&feature]() {
+                  [&feature, include_opaque]() {
                     json profiles = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return profiles;
+                    }
                     for (const auto& profile :
                          feature.extrude_parameters->additional_profile_points) {
                       json points = json::array();
@@ -159,8 +195,14 @@
                     return profiles;
                   }()},
                  {"additional_inner_loops",
-                  [&feature]() {
+                  [&feature, include_opaque]() {
                     json profiles = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return profiles;
+                    }
                     for (const auto& profile_loops :
                          feature.extrude_parameters->additional_inner_loops) {
                       json loops = json::array();
@@ -208,8 +250,14 @@
                     return profiles;
                   }()},
                  {"additional_boundary_edges",
-                  [&feature]() {
+                  [&feature, include_opaque]() {
                     json groups = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return groups;
+                    }
                     for (const auto& edges :
                          feature.extrude_parameters->additional_boundary_edges) {
                       json arr = json::array();
@@ -234,8 +282,14 @@
                     return groups;
                   }()},
                  {"boundary_edges",
-                  [&feature]() {
+                  [&feature, include_opaque]() {
                     json arr = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return arr;
+                    }
                     for (const auto& edge :
                          feature.extrude_parameters->boundary_edges) {
                       arr.push_back({
@@ -259,8 +313,14 @@
                     return arr;
                   }()},
                  {"inner_loop_edges",
-                  [&feature]() {
+                  [&feature, include_opaque]() {
                     json loops = json::array();
+                    // Profile snapshot: derived from the sketch this
+                    // feature names, kept in saves so a reload can
+                    // re-resolve profile references. Not on the wire.
+                    if (!include_opaque) {
+                      return loops;
+                    }
                     for (const auto& edges :
                          feature.extrude_parameters->inner_loop_edges) {
                       json arr = json::array();

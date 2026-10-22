@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import type {
   CamGenerationResultEvent,
+  SketchEntitiesChangedEvent,
+  FeatureChangedEvent,
+  SketchProfilesEvent,
   CoreMessage,
   DocumentState,
   DocumentExportResult,
@@ -193,7 +196,65 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
 
       const document = getDocumentFromMessage(message);
       if (document) {
-        nextState.document = document;
+        // Detected profiles are derived and no longer travel on the event
+        // stream (see serialization.h): the core ships them when a sketch is
+        // opened or loaded, and omits them from every later event, so keep the
+        // set the client already has for a feature whose live count still
+        // matches. The region list, source labels and extrude defaults read
+        // them synchronously, exactly as before.
+        nextState.document = keepKnownProfiles(document, state.document);
+      }
+
+      // Selection-only reply: the core no longer re-sends the whole document for
+      // a click (that was 1,219 KB on a dense sketch).  Patch exactly the fields
+      // the event carries; everything else in the document is unchanged.
+      if (message.type === "selection_changed" && state.document) {
+        const selection = message.payload;
+        nextState.document = {
+          ...state.document,
+          revision: selection.revision,
+          selected_feature_id: selection.selected_feature_id ?? null,
+          selected_reference_id: selection.selected_reference_id ?? null,
+          selected_face_id: selection.selected_face_id ?? null,
+          selected_edge_ids: selection.selected_edge_ids,
+          selected_vertex_ids: selection.selected_vertex_ids,
+          selected_sketch_vertex_id: selection.selected_sketch_vertex_id ?? null,
+          selected_sketch_entity_id: selection.selected_sketch_entity_id ?? null,
+          selected_sketch_vertex_ids: selection.selected_sketch_vertex_ids,
+          selected_sketch_entity_ids: selection.selected_sketch_entity_ids,
+          selected_sketch_dimension_id:
+            selection.selected_sketch_dimension_id ?? null,
+          selected_sketch_text_id: selection.selected_sketch_text_id ?? null,
+          selected_sketch_profile_id:
+            selection.selected_sketch_profile_id ?? null,
+          selected_sketch_profile_ids: selection.selected_sketch_profile_ids,
+        } as typeof state.document;
+      }
+
+      // Incremental sketch edit (phase D1): patch only what the core touched.
+      // A stale revision or an unknown feature leaves the document alone; the
+      // next full state corrects it, so a missed patch can never be silent.
+      if (message.type === "sketch_entities_changed" && state.document) {
+        nextState.document = applySketchEntitiesChanged(
+          state.document,
+          message.payload,
+        );
+      }
+
+      // Incremental feature edit (phase D2): patch one feature's stored
+      // parameters by id. Same stale-revision safety net as D1.
+      if (message.type === "feature_changed" && state.document) {
+        nextState.document = applyFeatureChanged(
+          state.document,
+          message.payload,
+        );
+      }
+
+      // On-demand profile geometry (phase E1): merge the fetched profile
+      // regions into the sketch feature that owns them, so the viewport can
+      // render the filled surfaces from the document.
+      if (message.type === "sketch_profiles" && state.document) {
+        nextState.document = applySketchProfiles(state.document, message.payload);
       }
 
       if (message.type === "session_state") {
@@ -273,4 +334,162 @@ function getStatusFromMessage(
     return "connected";
   }
   return prevStatus;
+}
+
+/**
+ * Carry the detected profiles forward across an event that omitted them.
+ *
+ * profiles is a derived cache: the core ships it when a sketch is opened or
+ * loaded and omits it from every later event (see serialization.h), which is
+ * most of an edit's payload on a dense sketch. Every consumer here -- region
+ * list, source labels, extrude defaults -- reads the array synchronously, so we
+ * keep the last set the core sent for a feature whose live profile_count still
+ * matches it. When the count moves, the set is dropped rather than kept stale,
+ * and get_sketch_profiles can refetch it.
+ */
+function keepKnownProfiles(
+  incoming: DocumentState,
+  previous: DocumentState | null,
+): DocumentState {
+  if (!previous) {
+    return incoming;
+  }
+  const known = new Map(
+    (previous.feature_history ?? [])
+      .filter((feature) => feature.kind === 'sketch' && feature.sketch_parameters)
+      .map((feature) => [feature.feature_id, feature.sketch_parameters!]),
+  );
+  let patched = false;
+  for (const feature of incoming.feature_history ?? []) {
+    const params = feature.sketch_parameters;
+    if (feature.kind !== 'sketch' || !params) {
+      continue;
+    }
+    if ((params.profiles?.length ?? 0) > 0) {
+      continue;
+    }
+    const old = known.get(feature.feature_id);
+    const oldProfiles = old?.profiles ?? [];
+    if (!old || oldProfiles.length === 0) {
+      continue;
+    }
+    if ((params.profile_count ?? 0) !== oldProfiles.length) {
+      continue;
+    }
+    params.profiles = oldProfiles;
+    patched = true;
+  }
+  return patched ? { ...incoming } : incoming;
+}
+
+
+/** Patch a `sketch_entities_changed` event into the document copy. */
+function applySketchEntitiesChanged(
+  document: DocumentState,
+  change: SketchEntitiesChangedEvent["payload"],
+): DocumentState {
+  const feature = (document.feature_history ?? []).find(
+    (entry) => entry.feature_id === change.feature_id,
+  );
+  const params = feature?.sketch_parameters;
+  if (!feature || !params || change.revision <= document.revision) {
+    return document;
+  }
+  const patchById = (
+    current: any[] | undefined,
+    incoming: Array<Record<string, unknown>> | undefined,
+    idKey: string,
+  ): any[] | undefined => {
+    if (!incoming?.length) {
+      return current;
+    }
+    const byId = new Map((current ?? []).map((entry) => [entry[idKey], entry]));
+    for (const entry of incoming) {
+      const existing = byId.get(entry[idKey]);
+      byId.set(entry[idKey], existing ? { ...existing, ...entry } : entry);
+    }
+    return [...byId.values()];
+  };
+  const removed = new Set(change.removed ?? []);
+  const lines = patchById(
+    params.lines as any[],
+    change.lines,
+    "line_id",
+  )?.filter((line) => !removed.has(line.line_id as string)) as
+    | typeof params.lines
+    | undefined;
+  const vertices = patchById(
+    params.vertices as any[],
+    change.vertices,
+    "vertex_id",
+  )?.filter((vertex) => !removed.has(vertex.vertex_id as string)) as
+    | typeof params.vertices
+    | undefined;
+  return {
+    ...document,
+    revision: change.revision,
+    feature_history: (document.feature_history ?? []).map((entry) =>
+      entry.feature_id === change.feature_id
+        ? {
+            ...entry,
+            sketch_parameters: {
+              ...params,
+              lines: lines ?? params.lines,
+              vertices: vertices ?? params.vertices,
+              profile_count: change.derived?.profile_count ?? params.profile_count,
+              vertex_count: change.derived?.vertex_count ?? params.vertex_count,
+            },
+          }
+        : entry,
+    ),
+  };
+}
+
+/** Patch a `feature_changed` event into the document copy (phase D2). */
+function applyFeatureChanged(
+  document: DocumentState,
+  change: FeatureChangedEvent["payload"],
+): DocumentState {
+  const removed = new Set(change.removed_feature_ids ?? []);
+  const history = (document.feature_history ?? []).filter(
+    (entry) => !removed.has(entry.feature_id),
+  );
+  const index = history.findIndex(
+    (entry) => entry.feature_id === change.feature_id,
+  );
+  if (index < 0) {
+    // Unknown feature: don't invent state. Leave the document alone; the next
+    // full document_state (or a revision-gap refetch) resyncs it.
+    return document;
+  }
+  history[index] = change.feature;
+  return {
+    ...document,
+    revision: change.revision,
+    feature_history: history,
+  };
+}
+
+/** Merge an on-demand `sketch_profiles` fetch into the owning sketch feature. */
+function applySketchProfiles(
+  document: DocumentState,
+  change: SketchProfilesEvent["payload"],
+): DocumentState {
+  return {
+    ...document,
+    feature_history: (document.feature_history ?? []).map((entry) =>
+      entry.feature_id === change.feature_id
+        ? {
+            ...entry,
+            sketch_parameters: entry.sketch_parameters
+              ? {
+                  ...entry.sketch_parameters,
+                  profiles: change.profiles,
+                  profile_count: change.profile_count,
+                }
+              : entry.sketch_parameters,
+          }
+        : entry,
+    ),
+  };
 }

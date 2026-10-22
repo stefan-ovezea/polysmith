@@ -169,9 +169,16 @@
                      }
                      return polygons;
                    }()},
+                  {"vertex_count", feature.sketch_parameters->vertices.size()},
                   {"vertices",
-                  [&feature]() {
+                  [&feature, include_vertices]() {
                     json vertices = json::array();
+                    // Derived cache (serialization.h): the vertex table ships
+                    // only for the sketch the user has open; `vertex_count`
+                    // above carries the size for count/presence consumers.
+                    if (!include_vertices) {
+                      return vertices;
+                    }
                     for (const auto& vtx : feature.sketch_parameters->vertices) {
                       json pt{
                           {"vertex_id", vtx.id},

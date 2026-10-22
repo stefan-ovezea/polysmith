@@ -4,6 +4,13 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
   document.name = read_string(payload, "name");
   document.units = read_string(payload, "units");
   document.revision = read_int(payload, "revision");
+  // geometry_revision (phase E2) is recomputed on load; default it to the
+  // revision so older saves keep a monotonic value.
+  document.geometry_revision =
+      payload.contains("geometry_revision") &&
+              payload.at("geometry_revision").is_number()
+          ? payload.at("geometry_revision").get<int>()
+          : document.revision;
   // can_undo/can_redo are session state, not file state — parsed only
   // so an in-memory round-trip (tests, IPC echoes) keeps them; load
   // recomputes the real values on its bump.

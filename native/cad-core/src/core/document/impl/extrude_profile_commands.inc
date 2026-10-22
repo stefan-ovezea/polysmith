@@ -121,7 +121,11 @@ DocumentState DocumentManager::extrude_profiles(
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
   document_->selected_sketch_profile_id = std::nullopt;
-  document_->selected_sketch_profile_ids.clear();
+  // Keep selected_sketch_profile_ids: the interactive extrude panel uses it to
+  // toggle surfaces Fusion-style (click a selected face to deselect just that
+  // one). Clearing it here left the document selection empty while the panel
+  // still showed N selected, so the first toggle re-added a single surface and
+  // looked like it deselected everything.
   document_->selected_sketch_entity_ids.clear();
   document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_text_id = std::nullopt;

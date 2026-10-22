@@ -118,6 +118,52 @@ Also fixed along the way: `rebuild_sketch_vertices` and
 overlap") is the source geometry's own topology — curves that touch — not a
 regression from this change; the profile needs separated loops.
 
+### Curves import as curves: no faceting, and no cost for it
+
+The user's standing rule: **no faceting on curved surfaces**.  The DXF importer
+violated it twice over — every `SPLINE` and elliptical `ELLIPSE` was tessellated
+into lines, and that tessellation was then simplified with Douglas–Peucker at
+0.02 mm (added the day before, for speed).  A tessellated import cannot produce a
+smooth extrusion: the profile walk consumes polyline edges, so the B-rep ends up
+faceted.
+
+The sketch already has exact curves, and profile detection already carries them
+into the B-rep (`ProfileBoundaryEdge::spline_degree/spline_pole_xs/ys`, ellipse
+minor radius + rotation, `SketchEllipse::has_sweep`).  The importer now imports:
+
+- **SPLINE → `SketchSpline`** when the curve is a clamped open-uniform B-spline of
+  degree min(3, poles−1) — exactly what the model stores.  The reported file
+  qualifies: 191 splines, all degree 2, 3 poles, knots `0,0,0,1,1,1`.
+- **Full ELLIPSE → `SketchEllipse`** (centre plus axis points; the reader passes
+  the minor axis perpendicular to the major at `ratio × |major|`).
+- Arcs, circles and bulge arcs were already exact.
+- Tessellation survives ONLY as the fallback for curves the model cannot
+  represent (non-clamped knots, a degree it would have to change, a partial
+  ellipse), and it warns per kind — faceting is never silent.
+
+On the reported file: **847 tessellated lines → 313 lines + 191 splines**, and
+`test_spline_profile_keeps_curve` asserts a region keeps a **spline boundary edge
+with its poles** — the contract that keeps extrusions smooth.
+
+**Exact curves cost nothing here**, because the profile engine had no
+bounding-box prefilter: 567 curves meant ~160k pairs and every spline pair paid
+for an OCCT intersection — **711 ms** per refresh.  Pairs whose boxes cannot
+touch are skipped now (conservative boxes: full circle for an arc, control
+polygon for a spline).  That is safe by construction: a skipped pair provably
+cannot intersect, and an endpoint cannot lie outside its curve's box.
+
+| | tessellated (before) | exact curves (now) |
+|---|---|---|
+| entities | 847 lines | 313 lines + 191 splines |
+| import | 216 ms | **204 ms** |
+| refresh (one edit) | 106 ms | **100 ms** |
+| profile rebuild | 97 ms | **97 ms** (711 ms without the prefilter) |
+| curve fidelity | ≤ 0.02 mm polyline | **exact** |
+
+`pnpm test:core` 73/73 suites green — required, because
+`sketch_profile_exact.inc` changed.  Everything landed on branch
+`interaction-perf`, not `dev`.
+
 **Still open in the DXF importer (P6):** layer names are ignored
 (`addLayer` is an empty stub, so everything lands in one sketch), TEXT/MTEXT and
 SOLID/HATCH are skipped with a count, and blocks are dropped.  A Fusion sketch

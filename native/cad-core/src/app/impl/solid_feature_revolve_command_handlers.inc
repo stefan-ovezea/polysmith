@@ -16,10 +16,13 @@
   }
 
   if (command.type == "update_revolve_profile") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_revolve_profile(
-        read_string(command.payload, "feature_id"),
-        read_string(command.payload, "profile_id"));
+        feature_id, read_string(command.payload, "profile_id"));
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -27,10 +30,13 @@
   }
 
   if (command.type == "update_revolve_axis") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_revolve_axis(
-        read_string(command.payload, "feature_id"),
-        read_string(command.payload, "axis_entity_id"));
+        feature_id, read_string(command.payload, "axis_entity_id"));
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -38,10 +44,13 @@
   }
 
   if (command.type == "update_revolve_angle") {
+    const std::string feature_id = read_string(command.payload, "feature_id");
     const auto document = document_manager().update_revolve_angle(
-        read_string(command.payload, "feature_id"),
-        read_dimension(command.payload, "angle_degrees"));
+        feature_id, read_dimension(command.payload, "angle_degrees"));
 
+    if (emit_feature_changed(command.id, feature_id, document)) {
+      return;
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
