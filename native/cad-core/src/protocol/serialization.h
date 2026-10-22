@@ -23,10 +23,10 @@ using json = nlohmann::json;
 //
 //  * vertices stay for the ACTIVE sketch only — hover, picking and drag read
 //    them synchronously on the interaction path;
-//  * profiles are never pushed in an event.  Consumers that need them (region
-//    list, source labels, extrude defaults) fetch them with
-//    `get_sketch_profiles`; saves pass include_opaque and keep them, so a reload
-//    can re-resolve the profile references extrudes depend on;
+//  * profiles are never persisted — they are recomputed on load from the
+//    sketch entities (their ids are deterministic), so save/load both strip
+//    them.  Consumers that need them (region list, source labels, extrude
+//    defaults) fetch them with `get_sketch_profiles`;
 //  * `profile_count`/`vertex_count` are always reported, for presence checks and
 //    to tell the client when to refetch.
 json to_payload(const polysmith::core::FeatureEntry& feature,
