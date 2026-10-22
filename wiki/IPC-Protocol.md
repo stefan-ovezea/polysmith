@@ -83,6 +83,10 @@ Command rules:
 - every command type must be documented
 - every command type must be represented in schema
 
+The full command → payload-keys reference is generated from the app handlers —
+see [Command-Reference.generated.md](./Command-Reference.generated.md)
+(regenerate with `pnpm registry:write`).
+
 ## Events and Responses (Core -> UI)
 
 The core replies with structured protocol messages.

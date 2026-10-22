@@ -22,6 +22,7 @@
 | | |
 |---|---|
 | 📚 **[Glossary](Glossary)** | Canonical terminology — use these definitions in commits, bugs, and design discussions |
+| 📡 **[Command Reference (generated)](Command-Reference.generated)** | Auto-generated command → payload-keys table (regenerate with `pnpm registry:write`) |
 
 ### 🏛️ Architecture & Design
 
