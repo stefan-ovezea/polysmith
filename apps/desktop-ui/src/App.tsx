@@ -574,13 +574,10 @@ function App() {
   const [hiddenFeatureIds, setHiddenFeatureIds] = useState<Set<string>>(
     () => new Set<string>(),
   );
-  // Source sketch a feature-edit session had to un-hide, so the panel closing
-  // can put the visibility back the way the user left it (see
+  // Sketch(es) a feature-edit session had to un-hide, so the panel closing can
+  // put the visibility back the way the user left it (see
   // `revealSourceProfiles`).
-  const extrudeEditSketchVisibilityRef = useRef<{
-    sketchId: string;
-    wasHidden: boolean;
-  } | null>(null);
+  const featuredRevealRef = useRef<{ sketchIds: string[] } | null>(null);
   const [hiddenCategories, setHiddenCategories] = useState<Set<CategoryId>>(
     () => new Set<CategoryId>(),
   );
@@ -4112,27 +4109,46 @@ function App() {
   });
 
   // Re-editing a feature whose inputs were consumed used to start from an empty
-  // selection: confirming the extrude hides its source sketch, so the panel
+  // selection: confirming the feature hides its source sketch, so the panel
   // opened showing "0 faces selected" and its confirm did nothing until the
   // sketch was made visible and the faces re-picked by hand. Restore both
   // halves — the sketch's visibility and the profile selection — when the edit
   // session opens, and put the visibility back when the session ends (see the
   // effect below), so an edit no longer leaves the sketch shown for good.
-  async function revealSourceProfiles(
-    sketchFeatureId: string | null,
-    profileIds: readonly string[],
-  ) {
-    if (sketchFeatureId) {
-      extrudeEditSketchVisibilityRef.current = {
-        sketchId: sketchFeatureId,
-        wasHidden: hiddenFeatureIds.has(sketchFeatureId),
-      };
+  //
+  // Takes profile ids rather than a sketch id because the caller may not know
+  // which sketches own them: a loft's sections can come from several sketches,
+  // and a revolve/sweep references one profile plus a sketch-level axis/path.
+  async function revealSourceProfiles(profileIds: readonly string[]) {
+    if (profileIds.length === 0) {
+      return;
+    }
+
+    const profileIdSet = new Set(profileIds);
+    const owningSketchIds: string[] = [];
+    for (const feature of document?.feature_history ?? []) {
+      const sketch = feature.sketch_parameters;
+      if (!sketch) {
+        continue;
+      }
+      if (sketch.profiles.some((profile) => profileIdSet.has(profile.profile_id))) {
+        owningSketchIds.push(feature.feature_id);
+      }
+    }
+
+    const hiddenAtOpen = owningSketchIds.filter((sketchId) =>
+      hiddenFeatureIds.has(sketchId),
+    );
+    if (hiddenAtOpen.length > 0) {
+      featuredRevealRef.current = { sketchIds: hiddenAtOpen };
       setHiddenFeatureIds((current) => {
-        if (!current.has(sketchFeatureId)) {
+        if (!hiddenAtOpen.some((sketchId) => current.has(sketchId))) {
           return current;
         }
         const next = new Set(current);
-        next.delete(sketchFeatureId);
+        for (const sketchId of hiddenAtOpen) {
+          next.delete(sketchId);
+        }
         return next;
       });
     }
@@ -4168,26 +4184,36 @@ function App() {
     }
   }
 
-  // Ends the reveal: when the extrude panel closes (confirm or cancel), hide the
-  // source sketch again if it was hidden when the session opened.
+  // Ends the reveal: when the feature panel closes (confirm or cancel), hide the
+  // source sketch(es) again if they were hidden when the session opened.
   useEffect(() => {
-    if (extrudeAction !== null) {
+    if (
+      extrudeAction !== null ||
+      loftAction !== null ||
+      revolveAction !== null ||
+      sweepAction !== null
+    ) {
       return;
     }
-    const restored = extrudeEditSketchVisibilityRef.current;
-    extrudeEditSketchVisibilityRef.current = null;
-    if (!restored || !restored.wasHidden) {
+    const restored = featuredRevealRef.current;
+    featuredRevealRef.current = null;
+    if (!restored || restored.sketchIds.length === 0) {
       return;
     }
     setHiddenFeatureIds((current) => {
-      if (current.has(restored.sketchId)) {
+      const missing = restored.sketchIds.filter(
+        (sketchId) => !current.has(sketchId),
+      );
+      if (missing.length === 0) {
         return current;
       }
       const next = new Set(current);
-      next.add(restored.sketchId);
+      for (const sketchId of missing) {
+        next.add(sketchId);
+      }
       return next;
     });
-  }, [extrudeAction]);
+  }, [extrudeAction, loftAction, revolveAction, sweepAction]);
 
   const handleTimelineFeatureEdit = createTimelineFeatureEditHandler({
     document,

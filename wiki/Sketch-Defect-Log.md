@@ -233,6 +233,21 @@ Covered by `test_rebinding_profiles_heals_a_broken_extrude` (delete a circle →
 
 Same class of fix is needed for loft/revolve/sweep; they are not touched here.
 
+**Parity pass (2026-10-23).** Checked every profile-consuming feature for the same two faults:
+
+| feature | core repair path clears the flag | UI edit session reveals inputs |
+|---|---|---|
+| extrude | was broken — fixed here | was missing — fixed here |
+| loft | already correct (`loft_commands.inc:58-60`) | **was missing — now fixed** |
+| revolve | already correct (`revolve_commands.inc:77-79`) | **was missing — now fixed** |
+| sweep | already correct (`sweep_commands.inc`) | **was missing — now fixed** |
+
+So only the extrude path had the sticky-flag bug; the other three already cleared `status`/`dependency_broken`/`dependency_warning` on a successful re-bind. Their *edit sessions*, however, all opened with the same empty selection, so they got the reveal treatment too.
+
+`revealSourceProfiles` now takes **profile ids** instead of a sketch id, because the caller may not know what owns them: a loft's sections can span several sketches, and revolve/sweep reference one profile plus a sketch-level axis or path. It resolves the owning sketches from the feature history, un-hides only those that were hidden, and the visibility restore covers all four session types (extrude/loft/revolve/sweep).
+
+Their panels have no `previewError` gate, so the inhibited-Confirm fault was extrude-only.
+
 ### D-001f — Clicking a timeline item clears the sketch-profile selection
 
 Reported alongside D-001e, marked "not extremely important for now": *"clicking with the mouse on any item in the timeline deselects all the surface in the panel."*

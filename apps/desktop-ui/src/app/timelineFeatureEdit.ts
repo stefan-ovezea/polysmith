@@ -24,12 +24,9 @@ interface TimelineFeatureEditContext {
   featureId: string;
   canStartTimelineFeatureEdit: boolean;
   beginTimelineEditSession: (featureId: string, featureKind: string) => void;
-  /** Un-hides a feature's source sketch and re-selects its profiles, so a
+  /** Un-hides the sketch(es) owning these profiles and re-selects them, so a
    *  re-edit session opens with its inputs restored (see editExtrudeFeature). */
-  revealSourceProfiles: (
-    sketchFeatureId: string | null,
-    profileIds: readonly string[],
-  ) => Promise<void>;
+  revealSourceProfiles: (profileIds: readonly string[]) => Promise<void>;
   runAction: RunAction;
   reenterSketch: (featureId: string) => Promise<void>;
   setEditingFeatureId: (featureId: string | null) => void;
@@ -137,7 +134,7 @@ function editExtrudeFeature(
   // with nothing selected — the panel showed "0 faces selected" and its confirm
   // did nothing until the sketch was made visible and the faces re-picked by
   // hand. Restore the visibility and the selection up front.
-  void revealSourceProfiles(params.sketch_feature_id ?? null, params.profile_ids ?? []);
+  void revealSourceProfiles(params.profile_ids ?? []);
   setExtrudeAction({
     phase: "active",
     featureId,
@@ -163,6 +160,7 @@ function editLoftFeature(
   {
     featureId,
     beginTimelineEditSession,
+    revealSourceProfiles,
     setLoftAction,
     lastLoftProfileUpdateRef,
   }: TimelineFeatureEditContext,
@@ -175,6 +173,9 @@ function editLoftFeature(
 
   const profileIds = params.sections.map((section) => section.profile_id);
   beginTimelineEditSession(featureId, feature.kind);
+  // Same as the extrude session: a sketch hidden by the confirm flow leaves the
+  // panel with nothing selected, and its confirm then does nothing.
+  void revealSourceProfiles(profileIds);
   lastLoftProfileUpdateRef.current = profileIds.join("|");
   setLoftAction({
     phase: "active",
@@ -192,6 +193,7 @@ function editRevolveFeature(
   {
     featureId,
     beginTimelineEditSession,
+    revealSourceProfiles,
     setRevolveAction,
     lastRevolveInputsRef,
   }: TimelineFeatureEditContext,
@@ -203,6 +205,7 @@ function editRevolveFeature(
   }
 
   beginTimelineEditSession(featureId, feature.kind);
+  void revealSourceProfiles([params.profile_id]);
   lastRevolveInputsRef.current = `${params.profile_id}|${params.axis_entity_id}`;
   setRevolveAction({
     phase: "active",
@@ -222,6 +225,7 @@ function editSweepFeature(
   {
     featureId,
     beginTimelineEditSession,
+    revealSourceProfiles,
     setSweepAction,
     lastSweepInputsRef,
   }: TimelineFeatureEditContext,
@@ -233,6 +237,7 @@ function editSweepFeature(
   }
 
   beginTimelineEditSession(featureId, feature.kind);
+  void revealSourceProfiles([params.profile_id]);
   lastSweepInputsRef.current = `${params.profile_id}|${params.path_entity_id}`;
   setSweepAction({
     phase: "active",
