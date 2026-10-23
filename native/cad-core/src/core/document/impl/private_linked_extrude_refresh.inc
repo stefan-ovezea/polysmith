@@ -20,18 +20,24 @@ void refresh_linked_extrude_features(DocumentState &document,
         feature.extrude_parameters->profile_ids.empty()
             ? std::vector<std::string>{feature.extrude_parameters->profile_id}
             : feature.extrude_parameters->profile_ids;
+    // S30b: a profile that no longer resolves used to take the WHOLE extrude
+    // with it (dependency_broken, no body at all): deleting one hole circle
+    // destroyed the plate. Keep the profiles that still resolve and report the
+    // shortfall instead, so the feature degrades to "fewer holes" rather than
+    // vanishing.
     std::vector<SketchProfileRegion> source_profiles;
+    std::vector<std::string> missing_profile_ids;
     for (const auto &profile_id : source_profile_ids) {
       const SketchProfileRegion *profile =
           find_equivalent_profile(sketch.profiles, profile_id);
       if (profile == nullptr) {
-        mark_source_profile_warning(feature);
-        source_profiles.clear();
-        break;
+        missing_profile_ids.push_back(profile_id);
+        continue;
       }
       source_profiles.push_back(*profile);
     }
     if (source_profiles.empty()) {
+      mark_source_profile_warning(feature);
       continue;
     }
 
@@ -82,5 +88,16 @@ void refresh_linked_extrude_features(DocumentState &document,
     feature.parameters_summary =
         feature.extrude_parameters->profile_id + " · " +
         std::to_string(feature.extrude_parameters->depth) + " mm";
+    if (!missing_profile_ids.empty()) {
+      // S30b: the body is rebuilt from the survivors; say what was dropped and
+      // keep the feature usable. dependency_broken stays false on purpose - the
+      // geometry is intact, it is simply smaller than before.
+      feature.status = "warning";
+      feature.dependency_warning =
+          std::to_string(missing_profile_ids.size()) + " of " +
+          std::to_string(source_profile_ids.size()) +
+          " profiles no longer exist after the sketch edit; extruding the " +
+          std::to_string(source_profiles.size()) + " that remain.";
+    }
   }
 }

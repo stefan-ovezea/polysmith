@@ -1,5 +1,6 @@
     if (feature.kind == "extrude" && feature.extrude_parameters.has_value()) {
-      if (feature.dependency_broken || feature.status == "warning") {
+      // A warning status alone must not hide the primitive (S30b).
+      if (feature.dependency_broken) {
         continue;
       }
       if (feature_consumed_by_boolean) {

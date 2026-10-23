@@ -301,12 +301,29 @@ bool test_rebinding_profiles_heals_a_broken_extrude() {
     return false;
   }
 
-  // Break it the way a user does: delete one of the two circles.
+  // Delete one of the two circles. S30b changed what that means: the extrude no
+  // longer breaks - it rebuilds from the profiles that survive and reports the
+  // shortfall (see extrude_profile_degrade_test.cpp). Assert that here, then
+  // mark the feature broken directly, because THIS test is about the repair
+  // path (re-binding profiles), not about how a feature got broken.
   document = manager.reenter_sketch(sketch_id);
   document = manager.delete_sketch_selection({"circle-1"}, {}, {});
+  const FeatureEntry* degraded = find_feature_of_kind(document, "extrude");
+  if (!expect(degraded != nullptr && !degraded->dependency_broken &&
+                  degraded->status == "warning",
+              "fixture: deleting a source circle degrades the extrude instead "
+              "of breaking it (S30b)")) {
+    return false;
+  }
+  for (auto& feature : document.feature_history) {
+    if (feature.kind != "extrude") continue;
+    feature.dependency_broken = true;
+    feature.status = "warning";
+    feature.dependency_warning = "simulated broken dependency";
+  }
   const FeatureEntry* broken = find_feature_of_kind(document, "extrude");
   if (!expect(broken != nullptr && broken->dependency_broken,
-              "fixture: deleting a source circle flags the extrude broken")) {
+              "fixture: the extrude is broken and needs re-binding")) {
     return false;
   }
 

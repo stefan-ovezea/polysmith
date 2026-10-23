@@ -431,6 +431,23 @@ If this had shipped, creating a collinear constraint would have made the documen
 
 ---
 
+## D-007 — A `warning` status silently deleted the body (S30b, fixed)
+
+**Found:** 2026-10-24, while making S30b work. **Status:** fixed, with three tests.
+
+**The reported defect.** Deleting one circle from a sketch took the whole extrude with it: the stored profile id of the deleted circle stopped resolving, `refresh_linked_extrude_features` set `dependency_broken` and skipped the rebuild, so a plate with one hole vanished instead of becoming a plate with no hole.
+
+**Two separate faults, and the second is the general one.**
+
+1. *The refresh treated "one profile gone" as "everything gone".* It now keeps the profiles that still resolve, rebuilds from them, and reports the shortfall ("1 of 2 profiles no longer exist after the sketch edit; extruding the 1 that remain.") with `status = "warning"` and `dependency_broken = false`.
+
+2. *`status == "warning"` was overloaded to mean "do not build".* Three places skipped any feature whose status was `warning`: `compile_bodies_modifier_replay.inc` (body building), `compile_bodies_mesh_requirement.inc` (whether meshes are needed) and `viewport/impl/extrude_feature_emit.inc` (the legacy primitive emitter). So the moment the refresh reported the degrade the honest way, the body disappeared anyway — with no error, no warning in the viewport, and a "warning" feature in the timeline. The first attempt at S30b produced exactly that, which is why it was reverted the same day and investigated instead of shipped.
+
+**Fix (the general rule).** `dependency_broken` is the flag that means "there is nothing to build"; `status == "warning"` is advisory and must not suppress geometry. All three sites now skip on `dependency_broken` alone, and the body-build loop wraps `build_feature_shape` in a `try/catch` so a feature that genuinely cannot produce geometry (a degenerate profile, an OCCT failure) is skipped without aborting every other body in the scene — previously the warning skip was also what kept those throws from escaping.
+
+**Tests.** `tests/extrude_profile_degrade_test.cpp`: (a) deleting the hole circle keeps the plate — not broken, warning set, warning text explains the shortfall, the body is the full slab, undo restores the holed plate; (b) a feature whose status is `warning` but whose dependency is intact still produces a body (the general rule, independent of S30b); (c) a broken dependency still suppresses the body (the rule's other half). `tests/extrude_refresh_test.cpp`'s repair-path fixture was updated: deleting a circle no longer breaks the extrude, so that test now asserts the degrade and then marks the feature broken directly, because it is about re-binding profile ids, not about how a feature got broken.
+
+---
 ## Why this matters for the plan
 
 D-001a is a **trust** defect of exactly the kind P0 exists for: the user did something ordinary, the app warned once, and the model was destroyed with no way back. If D-001b confirms, the pair becomes the strongest argument for making profile identity provenance-based rather than boundary-name-based — which is the same fix shape as `dependency_ambiguous` in S4.

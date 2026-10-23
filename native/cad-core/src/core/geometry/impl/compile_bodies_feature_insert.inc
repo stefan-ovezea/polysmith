@@ -1,4 +1,12 @@
-    const TopoDS_Shape shape = build_feature_shape(feature);
+    // A feature that cannot produce geometry must not abort the whole scene:
+    // warned-but-invalid parameters (a sketch edit left a degenerate profile)
+    // throw out of the shape builders. Skipping keeps every other body alive.
+    TopoDS_Shape shape;
+    try {
+      shape = build_feature_shape(feature);
+    } catch (const std::exception&) {
+      continue;
+    }
     if (shape.IsNull()) {
       continue;
     }

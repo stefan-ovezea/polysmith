@@ -6,7 +6,13 @@
     if (feature.suppressed) {
       continue;
     }
-    if (feature.dependency_broken || feature.status == "warning") {
+    // Only a BROKEN dependency means there is nothing to build. A plain
+    // "warning" status is advisory - e.g. an extrude rebuilt from the profiles
+    // that survived a sketch edit, whose geometry is valid but smaller than
+    // before (S30b). Treating "warning" as "do not build" silently deleted such
+    // bodies; the shape-null / exception checks below already skip features
+    // that genuinely cannot produce geometry.
+    if (feature.dependency_broken) {
       continue;
     }
     // Fillet / chamfer modify an existing body in place rather than
