@@ -119,6 +119,7 @@ React UI  ──IPC (JSON)──>  Tauri (Rust)  ──stdin/stdout──>  C++ 
 ### UI Theme Rules
 
 - Do not hardcode colors in React components or viewport utilities.
+- **A theme token that carries alpha must be split at the Three.js boundary.** THREE.Color silently drops the alpha of rgba(...), so a material colour uses themeColorSolid(token, fallback) and sets transparent/opacity explicitly; themeColor() stays correct for CSS, SVG and canvas 2D, where alpha applies. Precedent: D-002 (the dimension-label token's 82 % was being discarded, with a console warning).
 - Use existing CSS/theme variables, or add a new token to every theme JSON file under `apps/desktop-ui/src/config/themes/` before consuming it.
 - Keep theme-specific palette values, including Catppuccin colors, inside the theme JSON files. Components should remain theme-agnostic.
 - When adding a third-party palette theme, preserve clear attribution in `wiki/Design-System.md` and keep user-visible theme names properly credited.

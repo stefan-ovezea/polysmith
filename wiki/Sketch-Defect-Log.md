@@ -334,7 +334,7 @@ Three.js ignores the alpha channel of a CSS `rgba()` passed to `Color.set`/`new 
 
 **Severity:** cosmetic (wrong opacity, log noise), but it is a real instance of the theme rule's blind spot — "no hardcoded colours" is enforced, while "no alpha in material colours" is not. Worth an architecture grep later: `themeColor(...)` results must not reach `THREE.Color` with an `rgba` string.
 
-**Status:** Open — cause confirmed, fix chosen, not scheduled. Belongs with S19 (theme-token the sketch render path), which touches the same files.
+**Fixed:** the split now happens at the boundary. `utils/viewport/themeColor.ts` gained `splitCssColorAlpha`, `themeColorSolid` and `themeColorWithAlpha`; the three material sites in `draftDimensionPreview.ts` use `themeColorSolid`, so the material receives an alpha-free colour (no Three warning) and keeps its explicit `opacity`/`transparent`. The canvas-2D consumers in `sketchObjects.ts` deliberately keep `themeColor`: CSS applies alpha there correctly, so stripping it would *introduce* a bug. A token-driven sweep confirmed those are the only material consumers of the two alpha-bearing sketch tokens (`--cad-sketch-dimension-label`, `--cad-sketch-label`), and the other sixty alpha tokens in the theme files are never fed to a `THREE.Color`. Five tests in `themeColor.test.ts` pin the parser (rgba, rgb, eight/six-digit hex, plain names, clamped and non-numeric alpha). The rule is written into CLAUDE.md's UI Theme Rules.
 
 ---
 

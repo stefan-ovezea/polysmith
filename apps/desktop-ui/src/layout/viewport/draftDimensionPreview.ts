@@ -4,6 +4,7 @@ import type { SketchPlaneFrame } from "@/types";
 import {
   projectWorldPointToViewport,
   themeColor,
+  themeColorSolid,
   toWorldPoint,
 } from "@/utils";
 import {
@@ -287,7 +288,8 @@ function addReferenceLine({
     new THREE.Vector3(...referenceEndWorld),
   ]);
   const referenceMaterial = new THREE.LineDashedMaterial({
-    color: themeColor("--cad-sketch-dimension-label", "#8feaf7"),
+    // D-002: material colour - the token carries alpha, which THREE.Color drops.
+    color: themeColorSolid("--cad-sketch-dimension-label", "#8feaf7"),
     transparent: true,
     opacity: 0.4,
     dashSize: 2,
@@ -489,7 +491,8 @@ function addLineSegmentGeometry(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const material = new THREE.LineBasicMaterial({
-    color: themeColor("--cad-sketch-dimension-label", "#8feaf7"),
+    // D-002: material colour - the token carries alpha, which THREE.Color drops.
+    color: themeColorSolid("--cad-sketch-dimension-label", "#8feaf7"),
     transparent: true,
     opacity: 0.78,
     depthTest: false,
@@ -507,7 +510,8 @@ function addArrowMesh(
   const arrowMesh = buildFilledArrowMesh({
     arrowPositions,
     arrowIndices,
-    color: themeColor("--cad-sketch-dimension-label", "#8feaf7"),
+    // D-002: material colour - the token carries alpha, which THREE.Color drops.
+    color: themeColorSolid("--cad-sketch-dimension-label", "#8feaf7"),
     opacity: 0.78,
     renderOrder: 6,
   });

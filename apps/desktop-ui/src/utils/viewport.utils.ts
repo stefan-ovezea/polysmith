@@ -25,7 +25,12 @@ export {
   buildSketchPolygonObject,
   buildSketchProfileObject,
 } from "./viewport/sketchObjects";
-export { themeColor } from "./viewport/themeColor";
+export {
+  themeColor,
+  themeColorSolid,
+  themeColorWithAlpha,
+  splitCssColorAlpha,
+} from "./viewport/themeColor";
 export {
   applyEdgeVisualColor,
   applyPrimitiveVisualState,
