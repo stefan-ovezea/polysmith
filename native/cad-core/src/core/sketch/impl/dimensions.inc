@@ -64,8 +64,8 @@ static bool finalize_new_dimension(
         [&](SketchDimension& d) { return d.id == dimension_id; });
     if (it == parameters.dimensions.end()) return false;
     it->driven = true;
-    fprintf(stderr, "[INFO] sketch: dimension %s marked driven (%s)\n",
-            it->id.c_str(), reason);
+    polysmith::core::log_info(
+        "sketch", "dimension " + it->id + " marked driven (" + reason + ")");
     refresh_sketch_derived_state(feature);
     return true;
   };

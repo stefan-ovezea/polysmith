@@ -150,6 +150,12 @@ Conic, blend curves (G1–G4), G2 curvature constraint, regular-polygon constrai
 
 ## 8. Progress log
 
+**2026-10-24 — S2 and S7 (plan items audit).** Two P0/P1 items were already satisfied and were verified rather than redone: **S2** (schema and dispatch integrity) — the unknown-command fallback in pp.cpp answers with UNKNOWN_COMMAND and the request id, and pnpm lint:architecture keeps the dispatch table and commands.schema.json in step in both directions; the missing regression test was added (unknownCommand.core.test.ts: the error carries the id, the loop keeps serving commands afterwards, and a handler-level failure also settles instead of hanging). **S30** (linked-extrude refresh corruption) — private_linked_extrude_refresh.inc already copies the existing parameters and overwrites only the profile-derived fields, and 	ests/extrude_refresh_test.cpp pins it.
+
+**S7 done — the sketch core no longer writes to stderr.** Fifteen printf(stderr, ...) / std::cerr sites across six files became polysmith::core::log_error/log_warn/log_info("sketch", ...), so they now reach the in-app Logs panel with level and source instead of the shell's metadata-less stderr bridge (the app has no terminal). The messages were rewritten in ASCII: the existing literals carried mojibake from an earlier encoding round-trip, which the logger would have shown verbatim. pnpm lint:architecture gained a fifth check, 
+o raw stdio in the sketch core, proven to fire by planting a probe printf and watching it fail. Core suite 79/79.
+
+
 **2026-10-24 — S1, i18n-proof layout.** A first attempt at the line-type control as a one-row segmented picker put "Infinite" outside the 288 px panel; it was reverted to a dropdown (the four-way mapping stays, now unit-tested in lineTypeSelection.ts). The audit that followed hardened every remaining row of choices: the arc-mode pair, the text-panel alignment rows, the CAM post import/export pair, and the path+browse rows all wrap now (lex flex-wrap on the container, min-w-0 flex-1 basis-* + wrapping text on each button) instead of relying on English labels fitting. pnpm lint:architecture gained a fourth check, layout option rows are wrap-safe, which fails a plain lex gap-2 row of choices — verified by removing lex-wrap from the arc row and watching the check fire. The rule is written down in CLAUDE.md so the next mode selector starts from a dropdown.
 
 

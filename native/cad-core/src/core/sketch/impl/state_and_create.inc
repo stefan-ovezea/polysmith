@@ -250,22 +250,27 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           }
         }
         if (zero_count > 0) {
-          fprintf(stderr,
-                  "ERROR solver produced %d zero-length line(s): %s%s\n",
-                  zero_count, zero_ids.c_str(),
-                  zero_count > 3 ? " ..." : "");
+          polysmith::core::log_error(
+              "sketch",
+              "solver produced " + std::to_string(zero_count) +
+                  " zero-length line(s): " + zero_ids.c_str() +
+                  (zero_count > 3 ? " ..." : ""));
         }
 
         bool solver_exploded = false;
         if (pre_total_length > 1.0 &&
             (post_total_length > pre_total_length * 100.0 ||
              post_total_length < pre_total_length / 100.0)) {
-          fprintf(stderr,
-                  "ERROR solver exploded geometry — "
-                  "total line length %.0f → %.0f mm (%.0fx change), "
-                  "reverting to pre-solve positions\n",
-                  pre_total_length, post_total_length,
-                  post_total_length / pre_total_length);
+          polysmith::core::log_error(
+              "sketch",
+              "solver exploded geometry - total line length " +
+                  std::to_string(static_cast<long long>(pre_total_length)) +
+                  " -> " +
+                  std::to_string(static_cast<long long>(post_total_length)) +
+                  " mm (" +
+                  std::to_string(static_cast<long long>(
+                      post_total_length / pre_total_length)) +
+                  "x change), reverting to pre-solve positions");
           solver_exploded = true;
         }
 
@@ -301,8 +306,9 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           }
           if (!solver_zero_ids.empty()) {
             for (const auto &zid : solver_zero_ids) {
-              fprintf(stderr, "ERROR deleted solver-produced zero-length line %s\n",
-                      zid.c_str());
+              polysmith::core::log_error(
+                  "sketch",
+                  "deleted solver-produced zero-length line " + zid);
 
               feature.sketch_parameters->constraints.erase(
                   std::remove_if(
@@ -379,10 +385,12 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
       if (result.conflicting.size() > 0 || result.redundant.size() > 0 ||
           result.dofs < 0) {
-        fprintf(stderr,
-                "ERROR sketch over-constrained — dofs=%d conflicting=%zu redundant=%zu\n",
-                result.dofs, result.conflicting.size(),
-                result.redundant.size());
+        polysmith::core::log_error(
+            "sketch",
+            "sketch over-constrained - dofs=" + std::to_string(result.dofs) +
+                " conflicting=" +
+                std::to_string(result.conflicting.size()) + " redundant=" +
+                std::to_string(result.redundant.size()));
       }
       if (!result.ok()) {
         const char* reason =
@@ -390,9 +398,11 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
             result.status == GCS::SuccessfulSolutionInvalid
                 ? "solution invalid (redundant/conflicting constraints)"
                 : "unknown error";
-        fprintf(stderr,
-                "ERROR sketch solver failed — %s (status=%d, dofs=%d)\n",
-                reason, static_cast<int>(result.status), result.dofs);
+        polysmith::core::log_error(
+            "sketch",
+            std::string("sketch solver failed - ") + reason + " (status=" +
+                std::to_string(static_cast<int>(result.status)) +
+                ", dofs=" + std::to_string(result.dofs) + ")");
       }
 
       // Redundant constraint detection is handled by each dimension/
@@ -435,15 +445,21 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   enforce_line_HV_constraints(*feature.sketch_parameters);
   try { enforce_all_equal_length_relations(*feature.sketch_parameters); }
   catch (const std::exception& e) {
-    fprintf(stderr, "ERROR equal-length relation enforcement failed: %s\n", e.what());
+    polysmith::core::log_error(
+        "sketch",
+        std::string("equal-length relation enforcement failed: ") + e.what());
   }
   try { enforce_all_perpendicular_relations(*feature.sketch_parameters); }
   catch (const std::exception& e) {
-    fprintf(stderr, "ERROR perpendicular relation enforcement failed: %s\n", e.what());
+    polysmith::core::log_error(
+        "sketch",
+        std::string("perpendicular relation enforcement failed: ") + e.what());
   }
   try { enforce_all_parallel_relations(*feature.sketch_parameters); }
   catch (const std::exception& e) {
-    fprintf(stderr, "ERROR parallel relation enforcement failed: %s\n", e.what());
+    polysmith::core::log_error(
+        "sketch",
+        std::string("parallel relation enforcement failed: ") + e.what());
   }
 
   // Fillets must run *after* the tangent passes (so they see the

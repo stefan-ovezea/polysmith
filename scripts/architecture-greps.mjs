@@ -171,11 +171,31 @@ function checkWrappingOptionRows() {
   return violations;
 }
 
+// ── Check 5: no raw stdio in the sketch core ─────────────────────────────
+// The app is a Tauri desktop app with no terminal: fprintf(stderr) / std::cerr /
+// std::cout / printf() are invisible to the user, and the raw stderr bridge in
+// the shell strips them of level and source. Every diagnostic must go through
+// polysmith::core::log_info/log_warn/log_error so it reaches the Logs panel.
+// The sketch core had fifteen such sites before S7 (2026-10-24).
+const RAW_STDIO = /\bfprintf\s*\(\s*stderr|\bstd::cerr\b|\bstd::cout\b|(?<!f)\bprintf\s*\(/;
+function checkSketchCoreLogging() {
+  const dir = join(ROOT, "native", "cad-core", "src", "core", "sketch");
+  const violations = [];
+  for (const file of walk(dir)) {
+    if (!/\.(cpp|h|inc)$/.test(file)) continue;
+    read(file).split("\n").forEach((line, i) => {
+      if (RAW_STDIO.test(line)) violations.push(`${rel(file)}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  return violations;
+}
+
 const checks = [
   ["OCCT headers in protocol/ or core/document/", checkOcctHeaders],
   ["make_document_state_event from a read-only handler", checkReadOnlyEmitter],
   ["command dispatch matches commands.schema.json", checkCommandSchema],
   ["layout option rows are wrap-safe (i18n overflow)", checkWrappingOptionRows],
+  ["no raw stdio in the sketch core (Logs panel only)", checkSketchCoreLogging],
 ];
 
 let failed = false;

@@ -32,8 +32,9 @@ void apply_line_constraint_respecting_fixed_points(
     // zero length (X is already equal, now Y becomes equal too).  Clear
     // the constraint instead — same safeguard as enforce_line_HV_constraints.
     if (nearly_equal(line.start_x, line.end_x)) {
-      fprintf(stderr, "WARN cleared horizontal constraint on %s "
-              "(would create zero-length line)\n", line.id.c_str());
+      polysmith::core::log_warn(
+          "sketch", "cleared horizontal constraint on " + line.id +
+          " (would create zero-length line)");
       line.constraint = std::nullopt;
       return;
     }
@@ -51,8 +52,9 @@ void apply_line_constraint_respecting_fixed_points(
           "Cannot make a line vertical when both endpoints are fixed");
     }
     if (nearly_equal(line.start_y, line.end_y)) {
-      fprintf(stderr, "WARN cleared vertical constraint on %s "
-              "(would create zero-length line)\n", line.id.c_str());
+      polysmith::core::log_warn(
+          "sketch", "cleared vertical constraint on " + line.id +
+          " (would create zero-length line)");
       line.constraint = std::nullopt;
       return;
     }

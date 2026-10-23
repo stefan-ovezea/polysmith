@@ -68,8 +68,9 @@ void set_sketch_line_constraint(FeatureEntry& feature,
         params.solver_redundant_count > 0 ||
         params.solver_dofs < 0) {
       line_it->constraint_driven = true;
-      fprintf(stderr, "[INFO] sketch: constraint on %s marked driven "
-              "(solver reported over-constrained)\n", line_id.c_str());
+      polysmith::core::log_info(
+          "sketch", "constraint on " + line_id +
+          " marked driven (solver reported over-constrained)");
     }
   }
 }

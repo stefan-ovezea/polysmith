@@ -6,8 +6,9 @@ void enforce_line_HV_constraints(SketchFeatureParameters& parameters) {
       if (nearly_equal(line.start_y, line.end_y)) continue;
       if (points_match(line.start_x, line.start_y, line.end_x, line.start_y)) {
         line.constraint = std::nullopt;
-        fprintf(stderr, "WARN cleared horizontal constraint on %s "
-                "(would create zero-length line)\n", line.id.c_str());
+        polysmith::core::log_warn(
+            "sketch", "cleared horizontal constraint on " + line.id +
+            " (would create zero-length line)");
         continue;
       }
       if (vertex_is_fixed(parameters, line.end_vertex_id)) {
@@ -19,8 +20,9 @@ void enforce_line_HV_constraints(SketchFeatureParameters& parameters) {
       if (nearly_equal(line.start_x, line.end_x)) continue;
       if (points_match(line.start_x, line.start_y, line.start_x, line.end_y)) {
         line.constraint = std::nullopt;
-        fprintf(stderr, "WARN cleared vertical constraint on %s "
-                "(would create zero-length line)\n", line.id.c_str());
+        polysmith::core::log_warn(
+            "sketch", "cleared vertical constraint on " + line.id +
+            " (would create zero-length line)");
         continue;
       }
       if (vertex_is_fixed(parameters, line.end_vertex_id)) {
@@ -210,8 +212,9 @@ void sync_driven_dimensions(SketchFeatureParameters& parameters) {
       }
     }
     } catch (const std::exception& e) {
-      fprintf(stderr, "sync_driven_dimensions: skipping %s '%s': %s\n",
-              dimension.kind.c_str(), dimension.id.c_str(), e.what());
+      polysmith::core::log_warn(
+          "sketch", "sync_driven_dimensions: skipping " + dimension.kind +
+          " '" + dimension.id + "': " + e.what());
       // Un-drive the broken dimension so it won't throw on every
       // subsequent refresh.  The user can delete it from the UI.
       dimension.driven = false;
