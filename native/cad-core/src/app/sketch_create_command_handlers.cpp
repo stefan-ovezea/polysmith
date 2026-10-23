@@ -97,6 +97,28 @@ bool handle_sketch_create_command(
     return true;
   }
 
+  if (command.type == "add_sketch_rounded_rectangle") {
+    bool is_construction = false;
+    if (command.payload.contains("is_construction") &&
+        command.payload.at("is_construction").is_boolean()) {
+      is_construction = command.payload.at("is_construction").get<bool>();
+    }
+    const auto before_document = manager.get_document();
+    const auto document = manager.add_sketch_rounded_rectangle(
+        read_dimension(command.payload, "start_x"),
+        read_dimension(command.payload, "start_y"),
+        read_dimension(command.payload, "end_x"),
+        read_dimension(command.payload, "end_y"),
+        read_dimension(command.payload, "radius"), is_construction);
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return true;
+    }
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return true;
+  }
+
   if (command.type == "add_sketch_arc") {
     bool is_construction = false;
     if (command.payload.contains("is_construction") &&

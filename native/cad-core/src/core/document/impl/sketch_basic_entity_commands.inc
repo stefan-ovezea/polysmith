@@ -117,6 +117,97 @@ DocumentState DocumentManager::add_sketch_rectangle(double start_x,
   return document_.value();
 }
 
+DocumentState DocumentManager::add_sketch_rounded_rectangle(
+    double start_x,
+    double start_y,
+    double end_x,
+    double end_y,
+    double radius,
+    bool is_construction) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const double width = std::abs(end_x - start_x);
+  const double height = std::abs(end_y - start_y);
+  if (width <= 0.0 || height <= 0.0) {
+    throw std::runtime_error(
+        "Rounded rectangle needs two corners that differ in x and y");
+  }
+  if (!(radius > 0.0)) {
+    throw std::runtime_error(
+        "Rounded rectangle radius must be greater than zero");
+  }
+  if (radius * 2.0 >= std::min(width, height)) {
+    throw std::runtime_error(
+        "Rounded rectangle radius must be less than half the shorter side");
+  }
+
+  // The rectangle and its four corner fillets are one user intent, so they are
+  // one undo step: the group collapses the individual pushes into a single
+  // entry (undo_group_commands.inc) and an abort restores the start snapshot.
+  begin_undo_group("Rounded Rectangle");
+  try {
+    add_sketch_rectangle(start_x, start_y, end_x, end_y, is_construction);
+
+    const auto feature_it = std::find_if(
+        document_->feature_history.begin(),
+        document_->feature_history.end(),
+        [&](const FeatureEntry& feature) {
+          return feature.id == document_->active_sketch_feature_id.value();
+        });
+    if (feature_it == document_->feature_history.end() ||
+        !feature_it->sketch_parameters.has_value()) {
+      throw std::runtime_error("Active sketch feature not found");
+    }
+    const auto& lines = feature_it->sketch_parameters->lines;
+    if (lines.size() < 4) {
+      throw std::runtime_error("Rounded rectangle lines were not created");
+    }
+
+    // Capture the ids first: each fillet mutates the line and point tables, so
+    // holding references across the loop would dangle.
+    struct Corner {
+      std::string vertex_id;
+      std::string line_a_id;
+      std::string line_b_id;
+    };
+    std::vector<Corner> corners;
+    const size_t base = lines.size() - 4;
+    for (size_t index = 0; index < 4; ++index) {
+      const auto& a = lines[base + index];
+      const auto& b = lines[base + ((index + 1) % 4)];
+      std::string vertex_id;
+      if (a.end_vertex_id == b.start_vertex_id) {
+        vertex_id = a.end_vertex_id;
+      } else if (a.start_vertex_id == b.end_vertex_id) {
+        vertex_id = a.start_vertex_id;
+      } else if (a.end_vertex_id == b.end_vertex_id) {
+        vertex_id = a.end_vertex_id;
+      } else if (a.start_vertex_id == b.start_vertex_id) {
+        vertex_id = a.start_vertex_id;
+      }
+      if (vertex_id.empty()) {
+        throw std::runtime_error("Rounded rectangle corners are not connected");
+      }
+      corners.push_back(Corner{vertex_id, a.id, b.id});
+    }
+
+    for (const auto& corner : corners) {
+      add_sketch_fillet(corner.vertex_id, corner.line_a_id, corner.line_b_id,
+                        radius);
+    }
+  } catch (...) {
+    abort_undo_group();
+    throw;
+  }
+  end_undo_group();
+  document_->active_sketch_tool = "rectangle";
+  bump_geometry_revision();
+  return document_.value();
+}
+
 DocumentState DocumentManager::add_sketch_arc(double start_x,
                                               double start_y,
                                               double end_x,

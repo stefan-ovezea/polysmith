@@ -519,6 +519,8 @@ polysmith_add_core_test(cad_core_extrude_quality_test tests/extrude_quality_test
 
 polysmith_add_core_test(cad_core_extrude_refresh_test tests/extrude_refresh_test.cpp)
 
+polysmith_add_core_test(cad_core_sketch_rounded_rectangle_test tests/sketch_rounded_rectangle_test.cpp)
+
 polysmith_add_core_test(cad_core_sketch_move_test tests/sketch_move_test.cpp)
 
 # Ellipse entity regression suite — creation, exact profile edge,

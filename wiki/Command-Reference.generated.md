@@ -26,6 +26,7 @@
 | `add_sketch_polygon` | sides (dimension), mode (string), start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
 | `add_sketch_polygon_radius_dimension` | polygon_id (string) |
 | `add_sketch_rectangle` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
+| `add_sketch_rounded_rectangle` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension), radius (dimension) |
 | `add_sketch_slot` | center_x (dimension), center_y (dimension), length (dimension), radius (dimension), rotation (dimension) |
 | `add_sketch_spline` |  |
 | `add_sketch_text` | font_path (optional_string), anchor_x (dimension), anchor_y (dimension), path_entity_id (optional_string) |

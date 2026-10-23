@@ -17,6 +17,17 @@
                                      double end_x,
                                      double end_y,
                                      bool is_construction = false);
+  // Rectangle whose four corners are filleted alike, as ONE undoable intent:
+  // the rectangle is created, then its corners are filleted through the ordinary
+  // fillet path inside an undo group, so the result keeps parametric fillet
+  // records (radius edits, delete restores the corner) instead of four arcs
+  // welded on. `radius` must be less than half the shorter side.
+  DocumentState add_sketch_rounded_rectangle(double start_x,
+                                             double start_y,
+                                             double end_x,
+                                             double end_y,
+                                             double radius,
+                                             bool is_construction = false);
   DocumentState add_sketch_circle(
       double center_x,
       double center_y,
