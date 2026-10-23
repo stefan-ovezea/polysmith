@@ -33,6 +33,8 @@ export interface DraftPointerPreviewControls {
   /** Spline creation mode (T2.1): "control" samples the placed poles,
    *  "fit" solves the interpolation through them. */
   splineToolMode: "control" | "fit";
+  /** Requested spline degree (1..5); clamped to the placed point count. */
+  splineToolDegree: number;
   arcSecondPoint: [number, number] | null;
   circleSecondPoint: [number, number] | null;
   rectSecondPoint: [number, number] | null;
@@ -121,6 +123,7 @@ function renderSplinePointerPreview({
   previewSplineRef,
   clearPreviewSpline,
   splineToolMode,
+  splineToolDegree,
   isConstruction,
 }: DraftPointerPreviewParams) {
   clearPreviewSpline();
@@ -134,6 +137,7 @@ function renderSplinePointerPreview({
     // same interpolation the core will, so the curve you see is the curve you
     // get. The dashed polygon still follows the clicks.
     mode: splineToolMode,
+    degree: splineToolDegree,
   });
   if (preview) {
     previewSplineRef.current = preview;

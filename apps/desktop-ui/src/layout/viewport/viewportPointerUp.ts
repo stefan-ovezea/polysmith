@@ -196,6 +196,7 @@ interface ViewportPointerUpParams {
     points: Array<{ x: number; y: number }>,
     isConstruction: boolean,
     mode?: "control" | "fit",
+    degree?: number,
   ) => Promise<void> | void;
   chainBreakRequestedRef: MutableRef<boolean>;
   previousLineAngleRef: MutableRef<number | null>;
@@ -210,6 +211,8 @@ interface ViewportPointerUpParams {
   // T2.1: "control" (clicks are poles) or "fit" (curve passes through the
   // clicks). Read by the spline draft commit.
   splineToolMode: "control" | "fit";
+  /** Requested spline degree; the core clamps it to the point count. */
+  splineToolDegree: number;
   circleToolMode: DraftPointerUpCommitOptions["modes"]["circle"];
   polygonToolMode: PolygonToolMode;
   dimensionToolMode: import("@/types").DimensionToolMode;
@@ -577,6 +580,7 @@ function handleSplineDraftPointerUp(params: ViewportPointerUpParams) {
         params.isConstruction,
         // T2.1: "fit" solves the curve through the clicked points.
         params.splineToolMode,
+        params.splineToolDegree,
       );
       params.splineDraftPolesRef.current = [];
       params.clearPreviewSpline();

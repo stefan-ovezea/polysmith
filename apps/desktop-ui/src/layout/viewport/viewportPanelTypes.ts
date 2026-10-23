@@ -325,6 +325,7 @@ export interface ViewportPanelProps {
     points: Array<{ x: number; y: number }>,
     isConstruction: boolean,
     mode?: "control" | "fit",
+    degree?: number,
   ) => Promise<void>;
   onAddSketchSlot: (
     centerX: number,

@@ -31,7 +31,7 @@
 
 1. **T2.1 polish** (core + creation UI are done):
    - Done: `mode: "control" | "fit"` with true interpolation at the Greville parameters of the pipeline's knot vector, degree up to 5, a mode selector in the sketch tool panel (Control Point / Fit Point), the fit preview solving the same interpolation in TS, and the De Boor evaluator bug fixed on both sides (D-005).
-   - Left: (a) a **degree picker** in the panel (core accepts `degree` 1–5; nothing in the UI sends it yet); (b) the spline **split button** on the toolbar — the mode currently lives in the floating panel; (c) **fit points are not stored**, so dragging a pole loses the interpolation (Fusion stores fit points and refines; that is the bigger follow-up); (d) trim/offset on splines still rejected.
+   - Left: (a) the spline **split button** on the toolbar — the mode and degree currently live in the floating panel (degree picker 1–5 shipped, clamped in both preview and core); (b) **fit points are not stored**, so dragging a pole loses the interpolation (Fusion stores fit points and refines; that is the bigger follow-up); (c) trim/offset on splines still rejected.
 2. **T2.3 arc slots** — the riskiest remaining T2 item (the stadium becomes a slot with arc ends rather than straight ends; touches `sketch_profile_exact.inc`). Read the profile-test discipline rules in CLAUDE.md before touching the face walk, and run `pnpm test:core` in full.
 3. **S1 solver coverage / S9 reach** from `Sketch-Completion-Plan.md` — unchanged by this session.
 

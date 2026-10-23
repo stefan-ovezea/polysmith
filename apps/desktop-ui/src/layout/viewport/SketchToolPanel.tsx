@@ -23,6 +23,8 @@ interface SketchToolPanelProps {
   slotToolMode: SlotToolMode;
   /** Spline creation mode (T2.1): control points or fit points. */
   splineToolMode: "control" | "fit";
+  /** Requested spline degree (1..5). */
+  splineToolDegree: number;
   polygonToolMode: PolygonToolMode;
   polygonSides: number;
   dimensionToolMode: DimensionToolMode;
@@ -34,6 +36,7 @@ interface SketchToolPanelProps {
   onLineTypeChange: (lineType: "" | "centerline" | "infinite") => void;
   onSetSlotToolMode: (mode: SlotToolMode) => void;
   onSetSplineToolMode: (mode: "control" | "fit") => void;
+  onSplineToolDegreeChange: (degree: number) => void;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onPolygonSidesChange: (sides: number) => void;
@@ -50,6 +53,7 @@ export function SketchToolPanel({
   lineType,
   slotToolMode,
   splineToolMode,
+  splineToolDegree,
   polygonToolMode,
   polygonSides,
   dimensionToolMode,
@@ -61,6 +65,7 @@ export function SketchToolPanel({
   onLineTypeChange,
   onSetSlotToolMode,
   onSetSplineToolMode,
+  onSplineToolDegreeChange,
   onSetPolygonToolMode,
   onSetDimensionToolMode,
   onPolygonSidesChange,
@@ -435,6 +440,19 @@ export function SketchToolPanel({
                   : "viewport.splineControlHint",
               )}
             </p>
+            <div className="mt-3">
+              <Dropdown
+                value={String(splineToolDegree)}
+                options={["1", "2", "3", "4", "5"].map((degree) => ({
+                  value: degree,
+                  label: `${translate("viewport.splineDegree")} ${degree}`,
+                }))}
+                label={translate("viewport.splineDegree")}
+                onChange={(value) => {
+                  onSplineToolDegreeChange(Number(value));
+                }}
+              />
+            </div>
           </div>
         ) : null}
         {activeSketchTool === "polygon" ? (

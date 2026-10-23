@@ -5407,9 +5407,9 @@ function App() {
                   );
                 });
               }}
-              onAddSketchSpline={async (points, isConstruction, mode) => {
+              onAddSketchSpline={async (points, isConstruction, mode, degree) => {
                 await runAction(async () => {
-                  await addSketchSpline(points, isConstruction, mode);
+                  await addSketchSpline(points, isConstruction, mode, degree);
                 });
               }}
               onAddSketchSlot={async (

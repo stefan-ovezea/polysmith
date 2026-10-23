@@ -26,6 +26,10 @@ export interface SplineDraftPreviewOptions {
   // "control" (default): the points are poles. "fit": the points are fit
   // points and the preview solves the interpolation through them.
   mode?: "control" | "fit";
+  // Requested degree (1..5), clamped to the placed point count exactly like
+  // the core clamps it, so the preview never shows a curve the commit cannot
+  // create.
+  degree?: number;
   // Live cursor position: a dashed rubber segment connects the last
   // placed pole to the mouse until the next click lands.
   cursor: [number, number] | null;
@@ -39,25 +43,27 @@ export function buildSplineDraftPreview({
   planeFrame,
   isConstruction,
   mode = "control",
+  degree = 3,
   cursor,
 }: SplineDraftPreviewOptions): THREE.Group | null {
   if (poles.length < 1) {
     return null;
   }
-  const degree = Math.min(3, poles.length - 1);
+  // Same clamp the core applies: at most point_count - 1, at most 5.
+  const resolvedDegree = Math.max(1, Math.min(degree, 5, poles.length - 1));
   // In fit mode the CURVE follows the solved poles (the same solve the core
   // runs); the dashed polygon below always follows the clicked points.
   let curvePoles = poles;
   if (mode === "fit" && poles.length >= 2) {
     try {
-      curvePoles = fitSplinePoles(poles, degree);
+      curvePoles = fitSplinePoles(poles, resolvedDegree);
     } catch {
       // Degenerate point set: keep drawing the polygon; the core reports the
       // refusal on commit.
       curvePoles = poles;
     }
   }
-  const knots = splineOpenUniformKnots(curvePoles.length, degree);
+  const knots = splineOpenUniformKnots(curvePoles.length, resolvedDegree);
   const poleXs = curvePoles.map((p) => p[0]);
   const poleYs = curvePoles.map((p) => p[1]);
 
@@ -107,7 +113,7 @@ export function buildSplineDraftPreview({
   const curvePoints: THREE.Vector3[] = [];
   for (let i = 0; i <= samples; i++) {
     const u = i / samples;
-    const [x, y] = splineEval(degree, knots, poleXs, poleYs, u);
+    const [x, y] = splineEval(resolvedDegree, knots, poleXs, poleYs, u);
     curvePoints.push(
       new THREE.Vector3(...toWorldPoint(planeId, [x, y], planeFrame)),
     );

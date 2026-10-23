@@ -2135,6 +2135,7 @@
     "lineType": "Line type",
     "splineControlHint": "Each click places a control point (pole) — the curve is pulled toward it.",
     "splineFitHint": "Each click places a fit point — the curve passes through it.",
+    "splineDegree": "Degree",
     "lineTypeSolid": "Solid",
     "lineTypeConstruction": "Construction",
     "lineTypeCenterline": "Centerline",
