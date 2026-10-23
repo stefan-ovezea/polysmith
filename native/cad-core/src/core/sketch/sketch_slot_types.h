@@ -29,14 +29,26 @@ struct SketchSlot {
   double center_x = 0.0;
   double center_y = 0.0;
   // Distance between the two arc centers. Must be >= 2 * radius so the
-  // two arcs never overlap.
+  // two arcs never overlap. ("straight" only.)
   double length = 10.0;
+  // Half the slot's width: the end-cap radius (straight) or the radial
+  // half-width (arc).
   double radius = 2.0;
   // Slot axis angle in radians (sketch-plane coordinates), mirrors
-  // SketchEllipse::rotation.
+  // SketchEllipse::rotation. ("straight" only.)
   double rotation = 0.0;
-  // Only "straight" exists in v1 (curved slots deferred).
+  // "straight" (stadium: 2 lines + 2 arcs) or "arc" (a slot whose
+  // centreline is a circular arc: 2 concentric arcs + 2 straight radial
+  // end caps). Arc slots use center_x/center_y as the ARC CENTRE and the
+  // three fields below.
   std::string mode = "straight";
+  // Arc mode: radius of the centreline arc. Must be > radius (so the
+  // inner boundary radius arc_radius - radius stays positive).
+  double arc_radius = 10.0;
+  // Arc mode: angle of the first end cap and the (positive) sweep to the
+  // second, in radians, measured from +X about the arc centre.
+  double start_angle = 0.0;
+  double sweep_angle = 1.5707963267948966;
   bool is_construction = false;
 };
 

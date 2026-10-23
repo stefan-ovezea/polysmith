@@ -482,7 +482,11 @@ DocumentState DocumentManager::add_sketch_slot(double center_x,
                                                double length,
                                                double radius,
                                                double rotation,
-                                               bool is_construction) {
+                                               bool is_construction,
+                                               const std::string& mode,
+                                               double arc_radius,
+                                               double start_angle,
+                                               double sweep_angle) {
   require_document();
   if (!document_->active_sketch_feature_id.has_value()) {
     throw std::runtime_error("No active sketch");
@@ -499,7 +503,8 @@ DocumentState DocumentManager::add_sketch_slot(double center_x,
   clear_redo_stack();
   polysmith::core::add_sketch_slot(*feature_it, next_sketch_slot_id_++,
                                     center_x, center_y, length, radius,
-                                    rotation, is_construction);
+                                    rotation, is_construction, mode, arc_radius,
+                                    start_angle, sweep_angle);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
@@ -514,7 +519,10 @@ DocumentState DocumentManager::update_sketch_slot(const std::string& slot_id,
                                                   double center_y,
                                                   double length,
                                                   double radius,
-                                                  double rotation) {
+                                                  double rotation,
+                                                  double arc_radius,
+                                                  double start_angle,
+                                                  double sweep_angle) {
   require_document();
   if (!document_->active_sketch_feature_id.has_value()) {
     throw std::runtime_error("No active sketch");
@@ -530,7 +538,8 @@ DocumentState DocumentManager::update_sketch_slot(const std::string& slot_id,
   push_undo_state();
   clear_redo_stack();
   polysmith::core::update_sketch_slot(*feature_it, slot_id, center_x,
-                                       center_y, length, radius, rotation);
+                                       center_y, length, radius, rotation,
+                                       arc_radius, start_angle, sweep_angle);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_entity_id = std::nullopt;

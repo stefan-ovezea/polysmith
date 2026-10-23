@@ -138,6 +138,9 @@ void add_sketch_spline(FeatureEntry& feature,
 
 // Straight slot (stadium): parametric record expanded by
 // refresh_sketch_slots into 2 lines + 2 arcs (generated_by).
+// `mode` is "straight" (stadium; length + rotation) or "arc" (a slot whose
+// centreline is an arc: `arc_radius`, `start_angle`, `sweep_angle`, with
+// center_x/center_y as the ARC centre and `radius` as the radial half-width).
 void add_sketch_slot(FeatureEntry& feature,
                      int slot_index,
                      double center_x,
@@ -145,7 +148,11 @@ void add_sketch_slot(FeatureEntry& feature,
                      double length,
                      double radius,
                      double rotation,
-                     bool is_construction = false);
+                     bool is_construction = false,
+                     const std::string& mode = "straight",
+                     double arc_radius = 0.0,
+                     double start_angle = 0.0,
+                     double sweep_angle = 0.0);
 
 // Strips previously generated "slot:" entities and re-expands every
 // slot record into 2 lines + 2 arcs. Called right after
@@ -158,6 +165,9 @@ void update_sketch_slot(FeatureEntry& feature,
                         double center_y,
                         double length,
                         double radius,
-                        double rotation);
+                        double rotation,
+                        double arc_radius = 0.0,
+                        double start_angle = 0.0,
+                        double sweep_angle = 0.0);
 
 void delete_sketch_slot(FeatureEntry& feature, const std::string& slot_id);

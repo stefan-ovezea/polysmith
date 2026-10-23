@@ -43,6 +43,99 @@ void refresh_sketch_slots(SketchFeatureParameters& parameters) {
       parameters.arcs.end());
 
   for (const auto& slot : parameters.slots) {
+    // slot.id already carries the "slot-N" form; the generated ids are
+    // "line-slot-N-...", "arc-slot-N-...", "vertex-slot-N-...".
+    const std::string prefix = slot.id;
+
+    if (slot.mode == "arc") {
+      // Curved slot: the centreline is an arc of radius `arc_radius` about
+      // (center_x, center_y); the boundary is the outer arc (radius + half
+      // width), the inner arc (radius - half width) and two straight RADIAL
+      // end caps. The caps are perpendicular to both arcs, so the loop closes
+      // with the same line/arc entity mix the profile walk already handles.
+      const double r_out = slot.arc_radius + slot.radius;
+      const double r_in = slot.arc_radius - slot.radius;
+      const double a0 = slot.start_angle;
+      const double a1 = slot.start_angle + slot.sweep_angle;
+      const auto on_arc = [&](double angle, double r) {
+        return std::pair<double, double>{
+            slot.center_x + r * std::cos(angle),
+            slot.center_y + r * std::sin(angle)};
+      };
+      const auto [outer_start_x, outer_start_y] = on_arc(a0, r_out);
+      const auto [outer_end_x, outer_end_y] = on_arc(a1, r_out);
+      const auto [inner_end_x, inner_end_y] = on_arc(a1, r_in);
+      const auto [inner_start_x, inner_start_y] = on_arc(a0, r_in);
+
+      const auto vertex = [&](const std::string& corner) {
+        return "vertex-" + prefix + "-" + corner;
+      };
+      const std::string owner = "slot:" + slot.id;
+
+      // Outer arc: outer_start -> outer_end, counter-clockwise.
+      parameters.arcs.push_back(SketchArc{
+          .id = "arc-" + prefix + "-outer",
+          .start_vertex_id = vertex("outer-start"),
+          .end_vertex_id = vertex("outer-end"),
+          .center_vertex_id = vertex("arc-center"),
+          .center_x = slot.center_x,
+          .center_y = slot.center_y,
+          .radius = r_out,
+          .start_x = outer_start_x,
+          .start_y = outer_start_y,
+          .end_x = outer_end_x,
+          .end_y = outer_end_y,
+          .ccw = true,
+          .is_construction = false,
+          .generated_by = owner,
+      });
+      // End cap at the far angle: straight radial segment outer -> inner.
+      parameters.lines.push_back(SketchLine{
+          .id = "line-" + prefix + "-end",
+          .start_vertex_id = vertex("outer-end"),
+          .end_vertex_id = vertex("inner-end"),
+          .start_x = outer_end_x,
+          .start_y = outer_end_y,
+          .end_x = inner_end_x,
+          .end_y = inner_end_y,
+          .constraint = std::nullopt,
+          .is_construction = false,
+          .generated_by = owner,
+      });
+      // Inner arc: inner_end -> inner_start, clockwise (walking the loop
+      // back along the inner boundary).
+      parameters.arcs.push_back(SketchArc{
+          .id = "arc-" + prefix + "-inner",
+          .start_vertex_id = vertex("inner-end"),
+          .end_vertex_id = vertex("inner-start"),
+          .center_vertex_id = vertex("arc-center"),
+          .center_x = slot.center_x,
+          .center_y = slot.center_y,
+          .radius = r_in,
+          .start_x = inner_end_x,
+          .start_y = inner_end_y,
+          .end_x = inner_start_x,
+          .end_y = inner_start_y,
+          .ccw = false,
+          .is_construction = false,
+          .generated_by = owner,
+      });
+      // End cap at the start angle: straight radial segment inner -> outer.
+      parameters.lines.push_back(SketchLine{
+          .id = "line-" + prefix + "-start",
+          .start_vertex_id = vertex("inner-start"),
+          .end_vertex_id = vertex("outer-start"),
+          .start_x = inner_start_x,
+          .start_y = inner_start_y,
+          .end_x = outer_start_x,
+          .end_y = outer_start_y,
+          .constraint = std::nullopt,
+          .is_construction = false,
+          .generated_by = owner,
+      });
+      continue;
+    }
+
     const double half_length = slot.length / 2.0;
     const double ux = std::cos(slot.rotation);
     const double uy = std::sin(slot.rotation);
@@ -63,9 +156,6 @@ void refresh_sketch_slots(SketchFeatureParameters& parameters) {
     const double br_x = right_cx - slot.radius * nx;
     const double br_y = right_cy - slot.radius * ny;
 
-    // slot.id already carries the "slot-N" form; the generated ids are
-    // "line-slot-N-...", "arc-slot-N-...", "vertex-slot-N-...".
-    const std::string prefix = slot.id;
     const auto vertex = [&](const std::string& corner) {
       return "vertex-" + prefix + "-" + corner;
     };

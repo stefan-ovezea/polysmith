@@ -28,7 +28,7 @@
 | `add_sketch_polygon_radius_dimension` | polygon_id (string) |
 | `add_sketch_rectangle` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
 | `add_sketch_rounded_rectangle` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension), radius (dimension) |
-| `add_sketch_slot` | center_x (dimension), center_y (dimension), length (dimension), radius (dimension), rotation (dimension) |
+| `add_sketch_slot` | center_x (dimension), center_y (dimension), length (dimension), radius (dimension), rotation (dimension), mode (optional_string_value), arc_radius (optional_dimension), start_angle (optional_dimension), sweep_angle (optional_dimension) |
 | `add_sketch_spline` | degree (optional_dimension), mode (optional_string_value) |
 | `add_sketch_text` | font_path (optional_string), anchor_x (dimension), anchor_y (dimension), path_entity_id (optional_string) |
 | `add_sketch_vertex_distance_dimension` | vertex_a_id (string), vertex_b_id (string) |
@@ -261,7 +261,7 @@
 | `update_sketch_dimension_label_position` | dimension_id (string), label_x (dimension), label_y (dimension) |
 | `update_sketch_fillet_radius` | fillet_id (string), radius (dimension) |
 | `update_sketch_line` | line_id (string), start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
-| `update_sketch_slot` | slot_id (string), center_x (dimension), center_y (dimension), length (dimension), radius (dimension), rotation (dimension) |
+| `update_sketch_slot` | slot_id (string), center_x (dimension), center_y (dimension), length (dimension), radius (dimension), rotation (dimension), arc_radius (optional_dimension), start_angle (optional_dimension), sweep_angle (optional_dimension) |
 | `update_sketch_text` | text_id (string), font_path (optional_string), path_entity_id (optional_string) |
 | `update_sketch_vertex` | vertex_id (string), x (dimension), y (dimension), bind_to_vertex_id (optional_string_value) |
 | `update_sweep_path` | feature_id (string), path_entity_id (string) |

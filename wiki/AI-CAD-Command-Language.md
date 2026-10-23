@@ -2006,25 +2006,43 @@ Payload:
 
 #### `add_sketch_slot` / `update_sketch_slot`
 
-Adds / updates a straight slot (stadium). The core expands every slot into
-2 lines + 2 arcs (tangent by construction, `generated_by = "slot:<id>"`)
-at the top of every recompute — profiles / extrude / viewport consume the
-plain entities with zero downstream changes. `length` is the distance
-between the two arc centers and must stay >= 2 * radius. The slot center
-is a regular movable vertex (distance dimensions work).
+Adds / updates a parametric slot. The core expands every slot into generated
+entities (`generated_by = "slot:<id>"`) at the top of every recompute, so
+profiles / extrude / viewport consume plain lines and arcs with no downstream
+changes. The slot centre is a regular movable vertex (distance dimensions
+work).
+
+Two modes:
+
+- `"straight"` (default) — a stadium: 2 lines + 2 arcs. `length` is the
+  distance between the two arc centres and must stay >= `2 * radius`;
+  `rotation` is the axis angle in radians.
+- `"arc"` (T2.3) — the centreline is an arc: 2 concentric arcs + 2 straight
+  **radial** end caps, one closed region. `center_x/center_y` is the ARC
+  centre, `arc_radius` the centreline radius (must exceed `radius`, the radial
+  half width), and `start_angle` / `sweep_angle` the partial turn in radians
+  (`0 < sweep < 2π`; a full turn would overlap the caps).
 
 Payload (both):
 
 ```ts
 {
   center_x: number; center_y: number;
-  length: number;
-  radius: number;
-  rotation: number;   // radians
+  length: number;      // straight only
+  radius: number;      // half width, both modes
+  rotation: number;    // radians, straight only
+  mode?: "straight" | "arc";
+  arc_radius?: number; // arc only
+  start_angle?: number;
+  sweep_angle?: number;
   // update only:
   slot_id: string;
 }
 ```
+
+`update_sketch_slot` keeps the slot's stored mode. On an arc slot, omitted arc
+fields keep their stored values, so a plain centre/width edit cannot silently
+collapse the arc.
 
 #### `add_sketch_chamfer` / `update_sketch_chamfer` / `delete_sketch_chamfer`
 

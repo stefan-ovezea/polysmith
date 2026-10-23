@@ -289,12 +289,18 @@ bool handle_sketch_create_command(
       is_construction = command.payload.at("is_construction").get<bool>();
     }
     const auto before_document = manager.get_document();
+    // T2.3 arc slot: `mode` "arc" plus the centreline parameters. Straight
+    // slots ignore the extra fields; an arc slot ignores length/rotation.
     const auto document = manager.add_sketch_slot(
         read_dimension(command.payload, "center_x"),
         read_dimension(command.payload, "center_y"),
         read_dimension(command.payload, "length"),
         read_dimension(command.payload, "radius"),
-        read_dimension(command.payload, "rotation"), is_construction);
+        read_dimension(command.payload, "rotation"), is_construction,
+        read_optional_string_value(command.payload, "mode", "straight"),
+        read_optional_dimension(command.payload, "arc_radius", 0.0),
+        read_optional_dimension(command.payload, "start_angle", 0.0),
+        read_optional_dimension(command.payload, "sweep_angle", 0.0));
     if (emit_sketch_entities_changed(command.id, before_document, document)) {
       return true;
     }
@@ -305,13 +311,18 @@ bool handle_sketch_create_command(
   }
 
   if (command.type == "update_sketch_slot") {
+    // The arc fields are optional: an arc slot keeps its stored arc radius /
+    // sweep when they are omitted, and a straight slot ignores them.
     const auto document = manager.update_sketch_slot(
         read_string(command.payload, "slot_id"),
         read_dimension(command.payload, "center_x"),
         read_dimension(command.payload, "center_y"),
         read_dimension(command.payload, "length"),
         read_dimension(command.payload, "radius"),
-        read_dimension(command.payload, "rotation"));
+        read_dimension(command.payload, "rotation"),
+        read_optional_dimension(command.payload, "arc_radius", 0.0),
+        read_optional_dimension(command.payload, "start_angle", 0.0),
+        read_optional_dimension(command.payload, "sweep_angle", 0.0));
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

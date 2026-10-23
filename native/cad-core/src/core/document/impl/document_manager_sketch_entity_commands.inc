@@ -204,15 +204,25 @@
       int degree = 0);
 
   // Straight slot (stadium): center + length + radius + rotation (rad).
+  // Straight slot (stadium) by default, or — with mode "arc" — a slot whose
+  // centreline is an arc (`arc_radius`, `start_angle`, `sweep_angle`; centre is
+  // the ARC centre, radius is the radial half-width).
   DocumentState add_sketch_slot(double center_x,
                                 double center_y,
                                 double length,
                                 double radius,
                                 double rotation,
-                                bool is_construction = false);
+                                bool is_construction = false,
+                                const std::string& mode = "straight",
+                                double arc_radius = 0.0,
+                                double start_angle = 0.0,
+                                double sweep_angle = 0.0);
   DocumentState update_sketch_slot(const std::string& slot_id,
                                    double center_x,
                                    double center_y,
                                    double length,
                                    double radius,
-                                   double rotation);
+                                   double rotation,
+                                   double arc_radius = 0.0,
+                                   double start_angle = 0.0,
+                                   double sweep_angle = 0.0);

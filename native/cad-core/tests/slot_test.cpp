@@ -393,6 +393,117 @@ bool test_slot_extrude_smoke_and_delete() {
                 "slot: delete removes record + generated entities + profile");
 }
 
+// ── T2.3: arc slots ──────────────────────────────────────────────
+// A slot whose centreline is an arc: outer arc (path + half width), inner arc
+// (path - half width) and two straight RADIAL end caps. Same generated-entity
+// contract as the straight slot (deterministic ids, generated_by owner, fixed
+// generated vertices), so the profile walk sees ordinary lines + arcs.
+
+constexpr double kPi = 3.14159265358979323846;
+
+std::vector<std::string> arc_slot_entity_ids(const std::string& slot_id) {
+  return {"arc-" + slot_id + "-outer", "line-" + slot_id + "-end",
+          "arc-" + slot_id + "-inner", "line-" + slot_id + "-start"};
+}
+
+bool test_arc_slot_expands_to_two_arcs_two_caps() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  // Centre (0,0), centreline radius 10, half width 2, quarter turn from +X.
+  const DocumentState document = manager.add_sketch_slot(
+      0.0, 0.0, /*length=*/0.0, /*radius=*/2.0, /*rotation=*/0.0,
+      /*is_construction=*/false, /*mode=*/"arc",
+      /*arc_radius=*/10.0, /*start_angle=*/0.0, /*sweep_angle=*/kPi / 2.0);
+  const auto params = sketch_params(document);
+  if (!expect(params.slots.size() == 1, "arc slot: one record")) {
+    return false;
+  }
+  const std::string slot_id = params.slots[0].id;
+  if (!expect(params.slots[0].mode == "arc", "arc slot: mode is arc")) {
+    return false;
+  }
+  if (!expect(params.lines.size() == 2 && params.arcs.size() == 2,
+              "arc slot: expands to 2 caps + 2 arcs")) {
+    return false;
+  }
+  const auto* outer = find_arc(params, "arc-" + slot_id + "-outer");
+  const auto* inner = find_arc(params, "arc-" + slot_id + "-inner");
+  if (!expect(outer != nullptr && inner != nullptr,
+              "arc slot: outer and inner arcs present")) {
+    return false;
+  }
+  if (!expect(near(outer->radius, 12.0) && near(inner->radius, 8.0),
+              "arc slot: radii are path +/- half width")) {
+    return false;
+  }
+  if (!expect(near(outer->start_x, 12.0) && near(outer->start_y, 0.0) &&
+                  near(outer->end_x, 0.0) && near(outer->end_y, 12.0),
+              "arc slot: outer arc spans the requested quarter turn")) {
+    return false;
+  }
+  if (!expect(outer->ccw && !inner->ccw,
+              "arc slot: loop winds along the outer and back along the inner")) {
+    return false;
+  }
+  std::string reason;
+  const std::vector<ExpectedProfile> expected = {
+      {.entity_ids = arc_slot_entity_ids(slot_id), .kind = "polygon"},
+  };
+  return expect(profiles_match(document, expected, &reason),
+                ("arc slot profile: " + reason).c_str());
+}
+
+bool test_arc_slot_validation() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  const auto throws_for = [&](double arc_radius, double sweep,
+                              const std::string& mode) {
+    try {
+      (void)manager.add_sketch_slot(0.0, 0.0, 0.0, 2.0, 0.0, false, mode,
+                                    arc_radius, 0.0, sweep);
+      return false;
+    } catch (const std::exception&) {
+      return true;
+    }
+  };
+
+  return expect(throws_for(2.0, kPi / 2.0, "arc"),
+                "arc slot: radius equal to half width is refused") &&
+         expect(throws_for(10.0, 0.0, "arc"),
+                "arc slot: zero sweep is refused") &&
+         expect(throws_for(10.0, 2.0 * kPi, "arc"),
+                "arc slot: a full turn is refused") &&
+         expect(throws_for(10.0, kPi / 2.0, "curve"),
+                "arc slot: unknown mode is refused");
+}
+
+bool test_arc_slot_centre_drag_moves_geometry() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_slot(
+      0.0, 0.0, 0.0, 2.0, 0.0, false, "arc", 10.0, 0.0, kPi / 2.0);
+  const std::string slot_id = sketch_params(document).slots[0].id;
+  const std::string centre_vertex =
+      sketch_params(document).slots[0].center_vertex_id;
+
+  // The centre vertex is a regular movable vertex; moving it must move the
+  // whole slot (the arc centre is the record's center_x/center_y).
+  document = manager.update_sketch_vertex(centre_vertex, 5.0, 5.0);
+  const auto params = sketch_params(document);
+  const auto* outer = find_arc(params, "arc-" + slot_id + "-outer");
+  return expect(outer != nullptr && near(outer->center_x, 5.0) &&
+                    near(outer->center_y, 5.0),
+                "arc slot: dragging the centre moves the arc") &&
+         expect(near(outer->radius, 12.0),
+                "arc slot: dragging the centre keeps the radii");
+}
+
 }  // namespace
 
 int main() {
@@ -404,6 +515,9 @@ int main() {
   if (!test_slot_center_drag_and_move_preserve_shape()) return 1;
   if (!test_slot_distance_dimension_between_slots()) return 1;
   if (!test_slot_extrude_smoke_and_delete()) return 1;
+  if (!test_arc_slot_expands_to_two_arcs_two_caps()) return 1;
+  if (!test_arc_slot_validation()) return 1;
+  if (!test_arc_slot_centre_drag_moves_geometry()) return 1;
 
   std::cout << "slot_test passed\n";
   return 0;

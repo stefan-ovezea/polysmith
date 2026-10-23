@@ -11,6 +11,9 @@
                           {"radius", slot.radius},
                           {"rotation", slot.rotation},
                           {"mode", slot.mode},
+                          {"arc_radius", slot.arc_radius},
+                          {"start_angle", slot.start_angle},
+                          {"sweep_angle", slot.sweep_angle},
                           {"is_construction", slot.is_construction},
                       });
                     }
