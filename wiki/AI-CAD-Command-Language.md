@@ -1915,6 +1915,33 @@ Modes:
 
 The core rejects colinear and zero-radius arcs.
 
+#### `add_sketch_point`
+
+Places a standalone point on the active sketch (the Point tool). The point
+participates in dimensions, constraints and snapping, but bounds no profile —
+it never changes the region set.
+
+```ts
+{ x: number; y: number }   // sketch-local position
+```
+
+Rules:
+
+- The point is stored as a record and re-emitted into the vertex table with
+  kind `point`; its `vertex_id` is the record's `point_id`, so
+  `update_sketch_vertex { vertex_id, x, y }` moves it and
+  `add_sketch_vertex_distance_dimension` measures it.
+- A click within 0.001 mm of an existing Point-tool point selects that point
+  instead of creating a duplicate (no undo step, no revision bump).
+- `delete_sketch_selection { point_ids: [...] }` removes the point (and any
+  dimension that measured it).
+- The point is an `endpoint` snap candidate, so a line/arc endpoint dragged
+  onto it snaps (the viewport marker reads "Point"). Pass
+  `bind_to_vertex_id: <point_id>` on `update_sketch_vertex` to bind the drop:
+  the point becomes coincident with the dragged vertex, its record is
+  absorbed, and the whole gesture is one undo step — the sketch ends up with
+  a shared vertex instead of a duplicate point hiding under the endpoint.
+
 #### `add_sketch_text`
 
 Places parametric text on the active sketch.

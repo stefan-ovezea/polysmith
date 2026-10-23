@@ -23,6 +23,7 @@
 | `add_sketch_line` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension), line_type (optional_string) |
 | `add_sketch_line_angle_dimension` | line_id (string) |
 | `add_sketch_line_length_dimension` | line_id (string) |
+| `add_sketch_point` | x (dimension), y (dimension) |
 | `add_sketch_polygon` | sides (dimension), mode (string), start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
 | `add_sketch_polygon_radius_dimension` | polygon_id (string) |
 | `add_sketch_rectangle` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
@@ -262,7 +263,7 @@
 | `update_sketch_line` | line_id (string), start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
 | `update_sketch_slot` | slot_id (string), center_x (dimension), center_y (dimension), length (dimension), radius (dimension), rotation (dimension) |
 | `update_sketch_text` | text_id (string), font_path (optional_string), path_entity_id (optional_string) |
-| `update_sketch_vertex` | vertex_id (string), x (dimension), y (dimension) |
+| `update_sketch_vertex` | vertex_id (string), x (dimension), y (dimension), bind_to_vertex_id (optional_string_value) |
 | `update_sweep_path` | feature_id (string), path_entity_id (string) |
 | `update_sweep_profile` | feature_id (string), profile_id (string) |
 | `update_thread_parameters` | feature_id (string) |

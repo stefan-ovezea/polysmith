@@ -15,10 +15,11 @@
 | **T1.2 chamfer `equal` / `two_distance` / `distance_angle`** | Core: `SketchChamfer.mode` + `angle_degrees`; distance along B is **derived from the angle on every recompute**. Update keeps the record's mode/angle when not supplied. UI: three-mode split button + a panel that shows only the fields the mode needs. Tests: four new C++ cases, a real-core IPC test, schema coverage. |
 | **T1.5 centerline / infinite line** | `SketchLine.line_type` flag (`""` / `"centerline"` / `"infinite"`), both flavours force construction (so profile/dimension rules are unchanged), persisted + emitted in the viewport payload. UI: Line type dropdown replaces the Construction checkbox for the line tool; centerlines dash-dot, infinite lines drawn 100 000 mm past their endpoints (presentation only — scene bounds come from the core). Tests: new C++ suite, IPC round-trip, renderer rules. |
 | **S0 (T2.1 first sub-step)** | `cad_core_spline_test` passes. Root cause: `load_document_from_path` never re-derived sketch-derived features after refreshing sketch profiles, so a reloaded extrude whose opaque profile snapshot was absent compiled with an empty profile (`BRep_API: command not done`). Fix: `refresh_linked_features_after_load`. |
+| **T1.4 standalone point** | `add_sketch_point { x, y }` + a Point tool. Record `sketch_parameters.points[]`, re-emitted as vertex kind `point`; the id IS the vertex id, so drag/dimension/constraint/delete all work through the vertex model. The rebuild writes dragged coordinates back into the record; `update_sketch_vertex` has an explicit `kind == "point"` branch; `will_delete` in `delete_sketch_selection` counts a lone point. Repeat clicks dedup within 1e-3 mm. Tests: new C++ suite (incl. save/load) and a real-core IPC suite. |
 | **D-003 — uncaught "sketch object vertex-N not found"** | The partial `sketch_entities_changed` reply was emitted for edits that change arcs/circles/fillets/etc., leaving the UI's document stale and the planegcs bridge throwing mid-drag. Guarded by `sketch_partial_event_safe`; the bridge now degrades to "solve failed"; a degenerate endpoint drop onto a connected neighbour is refused locally instead of provoking the core's zero-length error. See the defect log. |
 | **D-004 — "Unsupported sketch tool: split"** | `corner` and `split` were missing from `kSupportedSketchTools()` while the toolbar could arm both, so every click on Split logged a core error and left the core's active tool stale. Added both; the C++ whitelist suite now asserts the canonical list covers the UI's whole `SketchTool` union, and an IPC test drives all 20 ids. |
 
-**Gates, all green at the end of the session:** `pnpm test:core` **78/78**, `pnpm --filter desktop-ui exec tsc --noEmit`, `pnpm lint:architecture` 3/3, offline UI suites **94 passed / 5 skipped** (the two previously-red files are fixed), `pnpm registry:write` (no drift beyond the new optional chamfer keys).
+**Gates, all green at the end of the session:** `pnpm test:core` **79/79**, `pnpm --filter desktop-ui exec tsc --noEmit`, `pnpm lint:architecture` 3/3, offline UI suites **98 passed / 5 skipped** (the two previously-red files are fixed), `pnpm registry:write` (261 commands; the new `add_sketch_point` included).
 
 ## 2. Read these, in this order
 
@@ -28,16 +29,13 @@
 
 ## 3. What is left, in order
 
-1. **T1.4 — standalone point entity.** The last T1 item and the only one with model risk.
-   - `add_sketch_point { x, y }`, a point that participates in holes/patterns/constraints but never in profile loops.
-   - The model precedent is the **projected point** (`SketchProjectedPoint`, minted by `project_vertex_into_sketch`): a standalone vertex that survives `rebuild_sketch_vertices`. Reuse that path rather than inventing a new entity kind, but do not mark user points `is_projected` (they must stay movable and unconstrained by `enforce_derived_points_fixed`).
-   - The vertex table is **not** on the document_state wire (`include_vertices=false`): the UI reads points from `viewport_state.sketch_points`, so the point must be emitted there.
-   - Ship it with a C++ suite asserting the complete profile set (a point alone produces none; a point inside a rectangle does not change it) and a real-core IPC test.
-2. **T2.1 proper — fit-point spline (+ degree 5).**
+1. **T2.1 proper — fit-point spline (+ degree 5).**
    - `mode: "fit" | "control"` on `add_sketch_spline`; least-squares fit of a clamped B-spline through the clicked points (`spline_math.h` has the sampler/evaluator; `BRepBuilderAPI_MakeEdge`/`Geom_BSplineCurve` already consume the exact poles).
    - Raise the degree cap from 3 to 5 in `add_sketch_spline` and in the wire builder (it already takes `spline_degree` from the boundary edge).
    - UI: a third creation mode in the spline split button (there is no spline split button yet) + the draft preview fitting through the placed points.
    - S0 is already fixed; keep `cad_core_spline_test` green.
+2. **T2.3 arc slots** — the riskiest remaining T2 item (the stadium becomes a slot with arc ends rather than straight ends; touches `sketch_profile_exact.inc`). Read the profile-test discipline rules in CLAUDE.md before touching the face walk, and run `pnpm test:core` in full.
+3. **S1 solver coverage / S9 reach** from `Sketch-Completion-Plan.md` — unchanged by this session.
 
 ## 4. Gates
 
