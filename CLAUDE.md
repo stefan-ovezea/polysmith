@@ -109,6 +109,13 @@ React UI  ──IPC (JSON)──>  Tauri (Rust)  ──stdin/stdout──>  C++ 
 - **Never expose internal ids in the UI.** Entity ids, feature ids, point ids, etc. are implementation details. User-visible copy describes things by their kind ("Line", "Circle"), their count ("3 selected"), or by user-meaningful labels ("Sketch on XY"). Ids are allowed in debug overlays gated behind a flag, never in default UI.
 - When adding or changing user-visible UI labels, put the English string in `apps/desktop-ui/src/i18n/en.json` and render it through the translation layer. Do not hardcode new labels in React components. You do not need to translate every other locale in the same change; make the label translatable and let missing locales fall back to English.
 
+### UI Layout Rules (narrow panels, translations)
+
+- **Floating panels are narrow (the sketch tool panel is `w-72` = 288 px) and every label is translated.** English fitting is not evidence the layout works: German and Japanese are routinely 1.5–2× longer.
+- **Mode selectors use a `Dropdown`.** A side-by-side row only for two very short labels, and then the row must be wrap-safe: `flex flex-wrap gap-2` on the container, and each button `min-w-0 flex-1 basis-* whitespace-normal break-words text-center` so a long translation wraps inside its button instead of pushing the row out of the panel. Precedent: a four-option "segmented control" for line type pushed "Infinite" outside the panel (2026-10-24) — it was reverted to a dropdown.
+- `pnpm lint:architecture` enforces the wrap rule on option rows (`layout option rows are wrap-safe`); a plain `flex gap-2` row of choices fails the build.
+- Dropdowns already truncate the trigger (`text-overflow: ellipsis`) and cap the menu (`max-width: min(260px, 100vw - 48px)`), so long option labels are safe there.
+
 ### UI Theme Rules
 
 - Do not hardcode colors in React components or viewport utilities.

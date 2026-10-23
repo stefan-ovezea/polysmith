@@ -138,10 +138,44 @@ function checkCommandSchema() {
   return violations;
 }
 
+// ── Check 4: horizontal option rows must be wrap-safe ────────────────────
+// Panels are narrow (the sketch tool panel is w-72 = 288 px) and labels come
+// from i18n, so an English layout that fits can clip in German or Japanese.
+// A row of buttons/inputs laid out with `flex gap-2` must therefore allow
+// wrapping instead of overflowing. This is the class of bug that pushed
+// "Infinite" out of the line-type row (2026-10-24).
+const OPTION_ROW = /(^|\s)flex(\s|$)/;
+// Rows of side-by-side choices: a plain flex row with a 0.5rem gap. Checkbox
+// rows (items-center), right-aligned dialog footers (justify-end), context-menu
+// items, stacked columns and toasts are not option rows and are skipped — their
+// labels are short or they wrap on their own.
+const NOT_OPTION_ROW =
+  /flex-col|items-center|items-end|items-start|justify-end|justify-between|cad-context-menu-item|pointer-events-none/;
+function checkWrappingOptionRows() {
+  const dir = join(ROOT, "apps", "desktop-ui", "src", "layout");
+  const violations = [];
+  for (const file of walk(dir)) {
+    if (!file.endsWith(".tsx")) continue;
+    const lines = read(file).split("\n");
+    lines.forEach((line, i) => {
+      for (const match of line.matchAll(/className=(?:"([^"]*)"|`([^`]*)`)/g)) {
+        const classes = match[1] ?? match[2] ?? "";
+        if (!OPTION_ROW.test(classes)) continue;
+        if (!(/(^|\s)gap-2(\s|$)/.test(classes))) continue;
+        if (NOT_OPTION_ROW.test(classes)) continue;
+        if (/\bflex-wrap\b/.test(classes)) continue;
+        violations.push(`${rel(file)}:${i + 1}: ${classes}`);
+      }
+    });
+  }
+  return violations;
+}
+
 const checks = [
   ["OCCT headers in protocol/ or core/document/", checkOcctHeaders],
   ["make_document_state_event from a read-only handler", checkReadOnlyEmitter],
   ["command dispatch matches commands.schema.json", checkCommandSchema],
+  ["layout option rows are wrap-safe (i18n overflow)", checkWrappingOptionRows],
 ];
 
 let failed = false;
