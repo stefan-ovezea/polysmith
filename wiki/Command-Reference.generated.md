@@ -149,6 +149,7 @@
 | `finish_sketch` |  |
 | `get_document_state` |  |
 | `get_session_state` |  |
+| `get_sketch_diagnostics` | feature_id (string) |
 | `get_sketch_profiles` | feature_id (string) |
 | `get_viewport_state` |  |
 | `import_dxf` | file_path (string), plane_id (optional_string) |

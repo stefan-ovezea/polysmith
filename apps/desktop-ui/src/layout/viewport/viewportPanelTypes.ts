@@ -321,6 +321,12 @@ export interface ViewportPanelProps {
     axisBY: number,
     isConstruction: boolean,
   ) => Promise<void>;
+  /** S5: ask the core for the loose ends of this sketch (read-only command). */
+  onRefreshSketchDiagnostics: (featureId: string) => Promise<void>;
+  /** S5: tie the given untied vertex pairs with coincident constraints. */
+  onTieLooseEnds: (
+    pairs: Array<{ vertexAId: string; vertexBId: string }>,
+  ) => Promise<void>;
   onAddSketchSpline: (
     points: Array<{ x: number; y: number }>,
     isConstruction: boolean,

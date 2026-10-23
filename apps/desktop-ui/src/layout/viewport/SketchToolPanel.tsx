@@ -1,5 +1,5 @@
 import { Checkbox, Dropdown } from "@/lib";
-import type { SketchTool, DimensionToolMode } from "@/types";
+import type { SketchTool, DimensionToolMode, SketchDiagnosticsEvent } from "@/types";
 import type { CircleToolMode } from "./circleDraftPreview";
 import { isDrawableSketchTool, sketchToolLabelKey } from "./draftDimensions";
 import { lineTypeFlagsToSelection } from "./lineTypeSelection";
@@ -47,6 +47,10 @@ interface SketchToolPanelProps {
   onSplineToolDegreeChange: (degree: number) => void;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
+  /** S5: loose ends of the sketch being drawn (null until fetched). */
+  sketchDiagnostics: SketchDiagnosticsEvent["payload"] | null;
+  /** Tie every untied pair with a coincident constraint. */
+  onTieEnds: () => void;
   onPolygonSidesChange: (sides: number) => void;
 }
 
@@ -80,6 +84,8 @@ export function SketchToolPanel({
   onSplineToolDegreeChange,
   onSetPolygonToolMode,
   onSetDimensionToolMode,
+  sketchDiagnostics,
+  onTieEnds,
   onPolygonSidesChange,
 }: SketchToolPanelProps) {
   // The spline tool draws a draft preview but is deliberately not part of
@@ -175,6 +181,30 @@ export function SketchToolPanel({
           )}
         </p>
       )}
+      {/* S5: the sketch looks closed but the profile walk disagrees. Say where,
+          and offer the one-click fix. */}
+      {sketchDiagnostics &&
+      (sketchDiagnostics.open_count > 0 ||
+        sketchDiagnostics.untied_count > 0) ? (
+        <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/5 px-3 py-2">
+          <p className="cad-kicker">{translate("viewport.looseEndsTitle")}</p>
+          <p className="mt-1 text-xs text-on-surface/70">
+            {translate("viewport.looseEndsSummary", {
+              open: sketchDiagnostics.open_count,
+              untied: sketchDiagnostics.untied_count,
+            })}
+          </p>
+          {sketchDiagnostics.untied_count > 0 ? (
+            <button
+              type="button"
+              className="cad-action-ghost mt-2 w-full px-2 py-1 text-xs"
+              onClick={onTieEnds}
+            >
+              {translate("viewport.tieEnds")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {activeSketchTool === "dimension" && (
         <p className="text-xs text-on-surface/50 mt-1">
           {translate(`toolbar.dimension${DIMENSION_MODE_LABEL_SUFFIX[dimensionToolMode]}`)}

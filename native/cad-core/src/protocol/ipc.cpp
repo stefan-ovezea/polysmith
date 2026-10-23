@@ -104,6 +104,15 @@ json make_sketch_profiles_event(const std::string& id, const json& profiles) {
   };
 }
 
+json make_sketch_diagnostics_event(const std::string& id,
+                                   const json& diagnostics) {
+  return {
+      {"id", id},
+      {"type", "sketch_diagnostics"},
+      {"payload", diagnostics},
+  };
+}
+
 json make_selection_changed_event(const std::string& id, const json& selection) {
     return {
         {"id", id},

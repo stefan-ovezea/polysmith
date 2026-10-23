@@ -321,6 +321,8 @@ export function ViewportPanel({
   onAddSketchArc,
   onAddSketchEllipse,
   onAddSketchSlot,
+  onRefreshSketchDiagnostics,
+  onTieLooseEnds,
   onAddSketchSpline,
   arcToolMode,
   onSetArcToolMode,
@@ -402,6 +404,26 @@ export function ViewportPanel({
 }: ViewportPanelProps) {
   const { config, activeTheme, updateConfig } = useAppConfig();
   const addMessage = useCadCoreStore((state) => state.addMessage);
+  // S5: loose-end diagnostics of the active sketch (fetched from the core).
+  const sketchDiagnostics = useCadCoreStore((state) => state.sketchDiagnostics);
+  const setSketchDiagnostics = useCadCoreStore(
+    (state) => state.setSketchDiagnostics,
+  );
+
+  const tieLooseEnds = useCallback(() => {
+    const diagnostics = sketchDiagnosticsRef.current;
+    if (!diagnostics) {
+      return;
+    }
+    const pairs = diagnostics.untied.map((pair) => ({
+      vertexAId: pair.vertex_a_id,
+      vertexBId: pair.vertex_b_id,
+    }));
+    if (pairs.length === 0) {
+      return;
+    }
+    void onTieLooseEnds(pairs);
+  }, [onTieLooseEnds]);
   const addLogEntry = useCadCoreStore((state) => state.addLogEntry);
   const { t: translate } = useTranslation();
   const [showReferencePlanes, setShowReferencePlanes] = useState(true);
@@ -519,6 +541,10 @@ export function ViewportPanel({
   const splineToolModeRef = useRef<"control" | "fit">(splineToolMode);
   splineToolModeRef.current = splineToolMode;
   // Requested spline degree (T2.1); the core clamps it to the placed count.
+  // S5: the diagnostics the tie action reads (state is async; the ref is the
+  // value at click time).
+  const sketchDiagnosticsRef = useRef(sketchDiagnostics);
+  sketchDiagnosticsRef.current = sketchDiagnostics;
   const [splineToolDegree, setSplineToolDegree] = useState(3);
   const splineToolDegreeRef = useRef(3);
   // Line tool reference-line flavour: "" (solid), "centerline", "infinite".
@@ -1313,6 +1339,22 @@ export function ViewportPanel({
   );
   const activeSketchPlaneFrame =
     sketchFeature?.sketch_parameters?.plane_frame ?? null;
+  // S5: refresh the loose-end diagnostics whenever the open sketch changes (or
+  // any edit lands). Read-only command, so it cannot disturb the document.
+  const activeSketchFeatureId = document?.active_sketch_feature_id ?? null;
+  const geometryRevision = document?.geometry_revision ?? 0;
+  useEffect(() => {
+    if (!activeSketchFeatureId) {
+      setSketchDiagnostics(null);
+      return;
+    }
+    void onRefreshSketchDiagnostics(activeSketchFeatureId);
+  }, [
+    activeSketchFeatureId,
+    geometryRevision,
+    onRefreshSketchDiagnostics,
+    setSketchDiagnostics,
+  ]);
   useEffect(() => {
     placePendingCircleDimensionLabel({
       pendingCircleDimensionPlacementRef,
@@ -2917,7 +2959,9 @@ export function ViewportPanel({
       onAddSketchArc,
       onAddSketchEllipse,
       onAddSketchSlot,
-      onAddSketchSpline,
+      onRefreshSketchDiagnostics,
+  onTieLooseEnds,
+  onAddSketchSpline,
       onAddSketchChamfer,
       onAddSketchAngleDimension,
       onAddSketchDistanceDimension,
@@ -6302,6 +6346,8 @@ export function ViewportPanel({
         lineTypeRef.current = value;
       }}
       onSetSplineToolMode={onSetSplineToolMode}
+      sketchDiagnostics={sketchDiagnostics}
+      onTieEnds={tieLooseEnds}
       onSplineToolDegreeChange={(value) => {
         setSplineToolDegree(value);
         splineToolDegreeRef.current = value;

@@ -178,3 +178,7 @@ void delete_sketch_slot(FeatureEntry& feature, const std::string& slot_id);
 // `format_collapsed_line_warning(...)`.
 CollapsedLineCleanupReport remove_collapsed_line_records(
     SketchFeatureParameters& parameters, const std::string& line_id);
+// Loose-end diagnostics (S5): names the chain ends and the near-miss pairs that
+// stop a sketch from closing. Pure - reads the vertex table only.
+SketchDiagnostics compute_sketch_diagnostics(
+    const SketchFeatureParameters& parameters);

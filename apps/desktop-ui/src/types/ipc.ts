@@ -585,6 +585,30 @@ export interface SketchProfilesEvent extends BaseMessage {
   };
 }
 
+// S5: loose-end diagnostics for one sketch, fetched on demand. Names the chain
+// ends and the near-miss pairs that keep a sketch from closing, so an extrude
+// refusal can say WHERE instead of only "no profile found".
+export interface SketchDiagnosticsEvent extends BaseMessage {
+  type: "sketch_diagnostics";
+  id: string;
+  payload: {
+    feature_id: string;
+    open_count: number;
+    untied_count: number;
+    open: Array<{
+      vertex_id: string;
+      x: number;
+      y: number;
+      owner_ids: string[];
+    }>;
+    untied: Array<{
+      vertex_a_id: string;
+      vertex_b_id: string;
+      gap: number;
+    }>;
+  };
+}
+
 export interface SelectionChangedEvent extends BaseMessage {
   type: "selection_changed";
   id: string;
@@ -840,6 +864,7 @@ export type CoreMessage =
   | SketchEntitiesChangedEvent
   | FeatureChangedEvent
   | SketchProfilesEvent
+  | SketchDiagnosticsEvent
   | SessionStateEvent
   | ViewportStateEvent
   | DocumentExportedEvent
@@ -894,6 +919,14 @@ export interface GetViewportStateCommand {
 export interface GetSketchProfilesCommand {
   id: string;
   type: "get_sketch_profiles";
+  payload: {
+    feature_id: string;
+  };
+}
+
+export interface GetSketchDiagnosticsCommand {
+  id: string;
+  type: "get_sketch_diagnostics";
   payload: {
     feature_id: string;
   };
@@ -1191,6 +1224,7 @@ export type CoreCommand =
   | GetSessionStateCommand
   | GetViewportStateCommand
   | GetSketchProfilesCommand
+  | GetSketchDiagnosticsCommand
   | ExportDocumentCommand
   | ExportDocumentStlCommand
   | ExportDocumentDxfCommand

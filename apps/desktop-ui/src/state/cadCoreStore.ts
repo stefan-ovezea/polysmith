@@ -3,6 +3,7 @@ import type {
   CamGenerationResultEvent,
   SketchEntitiesChangedEvent,
   FeatureChangedEvent,
+  SketchDiagnosticsEvent,
   SketchProfilesEvent,
   CoreMessage,
   DocumentState,
@@ -32,12 +33,18 @@ interface CadCoreStoreState {
   // Latest cam_generation_result payload (generate-only core event).
   // The CAM result popup reads this and dismisses it on close.
   generationResult: CamGenerationResultEvent["payload"] | null;
+  // S5: loose-end diagnostics for the sketch the UI last asked about. Derived
+  // data with no home in the document, so it lives beside it.
+  sketchDiagnostics: SketchDiagnosticsEvent["payload"] | null;
   setStatus: (status: CadCoreStoreState["status"]) => void;
   handleCoreStopped: () => void;
   addMessage: (message: string) => void;
   addLogEntry: (entry: LogEntry) => void;
   clearLogs: () => void;
   dismissGenerationResult: () => void;
+  setSketchDiagnostics: (
+    diagnostics: SketchDiagnosticsEvent["payload"] | null,
+  ) => void;
   handleCoreMessage: (message: CoreMessage) => void;
 }
 
@@ -157,6 +164,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
   lastExport: null,
   lastEvent: null,
   generationResult: null,
+  sketchDiagnostics: null,
   setStatus: (status) => set({ status }),
   handleCoreStopped: () =>
     set({
@@ -167,6 +175,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       lastExport: null,
       lastEvent: null,
       generationResult: null,
+  sketchDiagnostics: null,
     }),
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message].slice(-500) })),
@@ -187,12 +196,17 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
     }),
   clearLogs: () => set({ logs: [] }),
   dismissGenerationResult: () => set({ generationResult: null }),
+  setSketchDiagnostics: (sketchDiagnostics) => set({ sketchDiagnostics }),
   handleCoreMessage: (message) =>
     set((state) => {
       const nextState: Partial<CadCoreStoreState> = {
         lastEvent: message,
         status: getStatusFromMessage(message, state.status),
       };
+
+      if (message.type === "sketch_diagnostics") {
+        nextState.sketchDiagnostics = message.payload;
+      }
 
       const document = getDocumentFromMessage(message);
       if (document) {

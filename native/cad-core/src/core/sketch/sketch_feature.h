@@ -3,6 +3,7 @@
 #include "core/document/feature.h"
 #include "core/document/parameter.h"
 #include "core/sketch/collapsed_line_cleanup.h"
+#include "core/sketch/sketch_diagnostics.h"
 
 namespace polysmith::core {
 

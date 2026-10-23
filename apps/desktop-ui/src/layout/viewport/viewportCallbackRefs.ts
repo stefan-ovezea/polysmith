@@ -360,6 +360,10 @@ interface ViewportCallbackRefValues
   onAddSketchFillet: ViewportCallbackRefTargets["addSketchFilletRef"]["current"];
   onAddSketchChamfer: ViewportCallbackRefTargets["addSketchChamferRef"]["current"];
   onAddSketchEllipse: ViewportCallbackRefTargets["addSketchEllipseRef"]["current"];
+  onRefreshSketchDiagnostics: (featureId: string) => Promise<void> | void;
+  onTieLooseEnds: (pairs: Array<{ vertexAId: string; vertexBId: string }>) =>
+    | Promise<void>
+    | void;
   onAddSketchSpline: ViewportCallbackRefTargets["addSketchSplineRef"]["current"];
   onAddSketchSlot: ViewportCallbackRefTargets["addSketchSlotRef"]["current"];
   onAddSketchText: ViewportCallbackRefTargets["addSketchTextRef"]["current"];

@@ -155,6 +155,7 @@
         "get_document_state",
         "get_session_state",
         "get_sketch_profiles",
+        "get_sketch_diagnostics",
         "get_viewport_state",
         "import_dxf",
         "import_iges",

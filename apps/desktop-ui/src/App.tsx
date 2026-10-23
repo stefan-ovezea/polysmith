@@ -2503,6 +2503,7 @@ function App() {
     abortAllUndoGroups,
     reenterSketch,
     getSketchProfiles,
+    getSketchDiagnostics,
     clearSelection,
     selectSketchRect,
     selectSketchProfilesRect,
@@ -5421,6 +5422,21 @@ function App() {
                     axisBY,
                     isConstruction,
                   );
+                });
+              }}
+              onRefreshSketchDiagnostics={async (featureId) => {
+                await getSketchDiagnostics(featureId);
+              }}
+              onTieLooseEnds={async (pairs) => {
+                // S5: one coincident constraint per untied pair, in one action
+                // so the whole repair lands in one undo step.
+                await runAction(async () => {
+                  for (const pair of pairs) {
+                    await setSketchCoincidentConstraint(
+                      pair.vertexAId,
+                      pair.vertexBId,
+                    );
+                  }
                 });
               }}
               onAddSketchSpline={async (points, isConstruction, mode, degree) => {

@@ -563,4 +563,63 @@ CollapsedLineCleanupReport remove_collapsed_line_records(
   return report;
 }
 
+// ── Loose-end diagnostics (S5) ───────────────────────────────
+// Names the chain ends and the near-miss pairs that keep a sketch from closing,
+// from the vertex table the profile walk already builds. No solver involvement:
+// this is a read of the same data the profile walk uses, so it can never
+// disagree with it about what is connected.
+SketchDiagnostics compute_sketch_diagnostics(
+    const SketchFeatureParameters& parameters) {
+  SketchDiagnostics diagnostics;
+
+  // Generated / projected vertices belong to derived entities the user cannot
+  // tie: text glyphs, slot corners, projected body edges.
+  const auto is_derived_vertex = [](const SketchVertex& vertex) {
+    return vertex.is_projected ||
+           vertex.id.rfind("vertex-text-", 0) == 0 ||
+           vertex.id.rfind("vertex-slot-", 0) == 0 ||
+           vertex.id.rfind("vertex-project", 0) == 0;
+  };
+
+  for (const auto& vertex : parameters.vertices) {
+    if (vertex.kind != "endpoint" || is_derived_vertex(vertex)) {
+      continue;
+    }
+    // Exactly one owning curve = the end of a chain. A corner where two curves
+    // meet carries two owners and is not an end.
+    if (vertex.geometry_owner_ids.size() != 1) {
+      continue;
+    }
+    diagnostics.open.push_back(SketchLooseEnd{
+        .vertex_id = vertex.id,
+        .x = vertex.x,
+        .y = vertex.y,
+        .owner_ids = vertex.geometry_owner_ids,
+    });
+  }
+
+  // Two OPEN ends from different curves that sit within the tolerance of each
+  // other: they look joined, the profile walk sees a gap.
+  for (std::size_t a = 0; a < diagnostics.open.size(); ++a) {
+    for (std::size_t b = a + 1; b < diagnostics.open.size(); ++b) {
+      const SketchLooseEnd& end_a = diagnostics.open[a];
+      const SketchLooseEnd& end_b = diagnostics.open[b];
+      if (end_a.owner_ids == end_b.owner_ids) {
+        continue;
+      }
+      const double gap =
+          std::hypot(end_a.x - end_b.x, end_a.y - end_b.y);
+      if (gap <= kUntiedEndToleranceMm) {
+        diagnostics.untied.push_back(SketchUntiedPair{
+            .vertex_a_id = end_a.vertex_id,
+            .vertex_b_id = end_b.vertex_id,
+            .gap = gap,
+        });
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
 #include "core/sketch/impl/sketch_create_and_tool_commands.inc"

@@ -84,6 +84,63 @@ bool handle_document_session_command(
     return true;
   }
 
+  if (command.type == "get_sketch_diagnostics") {
+    const auto document = manager.get_document();
+    if (!document.has_value()) {
+      polysmith::core::log_error("cad_core", "No active document");
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return true;
+    }
+    const std::string feature_id = read_string(command.payload, "feature_id");
+    for (const auto& feature : document->feature_history) {
+      if (feature.id != feature_id) {
+        continue;
+      }
+      if (!feature.sketch_parameters.has_value()) {
+        polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+            command.id, "NOT_A_SKETCH",
+            "Feature '" + feature_id + "' is not a sketch"));
+        return true;
+      }
+      // S5: loose ends, from the same vertex table the profile walk uses.
+      const polysmith::core::SketchDiagnostics diagnostics =
+          polysmith::core::compute_sketch_diagnostics(
+              feature.sketch_parameters.value());
+      polysmith::protocol::json open = polysmith::protocol::json::array();
+      for (const auto& end : diagnostics.open) {
+        open.push_back({
+            {"vertex_id", end.vertex_id},
+            {"x", end.x},
+            {"y", end.y},
+            {"owner_ids", end.owner_ids},
+        });
+      }
+      polysmith::protocol::json untied = polysmith::protocol::json::array();
+      for (const auto& pair : diagnostics.untied) {
+        untied.push_back({
+            {"vertex_a_id", pair.vertex_a_id},
+            {"vertex_b_id", pair.vertex_b_id},
+            {"gap", pair.gap},
+        });
+      }
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_sketch_diagnostics_event(
+              command.id,
+              polysmith::protocol::json{
+                  {"feature_id", feature.id},
+                  {"open_count", open.size()},
+                  {"untied_count", untied.size()},
+                  {"open", open},
+                  {"untied", untied},
+              }));
+      return true;
+    }
+    polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+        command.id, "FEATURE_NOT_FOUND", "No feature '" + feature_id + "'"));
+    return true;
+  }
+
   if (command.type == "get_viewport_state") {
     polysmith::protocol::write_message(
         polysmith::protocol::make_viewport_state_event(

@@ -496,10 +496,42 @@ export const sketchProfilesEventSchema = z.object({
   }),
 });
 
+// S5: loose-end diagnostics (reply to get_sketch_diagnostics). Declared here or
+// the parser rejects the reply and the request hangs (the documented zod trap).
+export const sketchDiagnosticsEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("sketch_diagnostics"),
+  payload: z.object({
+    feature_id: z.string(),
+    open_count: z.number(),
+    untied_count: z.number(),
+    open: z
+      .array(
+        z.object({
+          vertex_id: z.string(),
+          x: z.number(),
+          y: z.number(),
+          owner_ids: z.array(z.string()).default([]),
+        }),
+      )
+      .default([]),
+    untied: z
+      .array(
+        z.object({
+          vertex_a_id: z.string(),
+          vertex_b_id: z.string(),
+          gap: z.number(),
+        }),
+      )
+      .default([]),
+  }),
+});
+
 export const coreMessageSchema = z.union([
   sketchEntitiesChangedEventSchema,
   featureChangedEventSchema,
   sketchProfilesEventSchema,
+  sketchDiagnosticsEventSchema,
   helloEventSchema,
   pongEventSchema,
   documentCreatedEventSchema,

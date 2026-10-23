@@ -46,6 +46,7 @@ import {
 } from "./ViewportDimensionEditors";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
 import type { SlotToolMode } from "./slotDraftPreview";
+import type { SketchDiagnosticsEvent } from "@/types";
 import type { PolygonToolMode } from "./viewportPanelTypes";
 
 type ViewportTranslate = (
@@ -188,6 +189,10 @@ interface ViewportPanelShellProps {
   onSlotTypeChange: (slotType: "straight" | "arc") => void;
   onSlotArcSweepChange: (degrees: number) => void;
   onSetSplineToolMode: (mode: "control" | "fit") => void;
+  /** S5: loose ends of the active sketch (null until fetched). */
+  sketchDiagnostics: SketchDiagnosticsEvent["payload"] | null;
+  /** Tie every untied loose end with a coincident constraint. */
+  onTieEnds: () => void;
   onSplineToolDegreeChange: (degree: number) => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onSketchToolConstructionChange: (checked: boolean) => void;
@@ -299,6 +304,8 @@ export function ViewportPanelShell({
   onSlotTypeChange,
   onSlotArcSweepChange,
   onSetSplineToolMode,
+  sketchDiagnostics,
+  onTieEnds,
   onSplineToolDegreeChange,
   onSetDimensionToolMode,
   onSketchToolConstructionChange,
@@ -441,6 +448,8 @@ export function ViewportPanelShell({
             onSlotTypeChange={onSlotTypeChange}
             onSlotArcSweepChange={onSlotArcSweepChange}
             onSetSplineToolMode={onSetSplineToolMode}
+            sketchDiagnostics={sketchDiagnostics}
+            onTieEnds={onTieEnds}
             onSplineToolDegreeChange={onSplineToolDegreeChange}
             onSetPolygonToolMode={onSetPolygonToolMode}
             onSetDimensionToolMode={onSetDimensionToolMode}

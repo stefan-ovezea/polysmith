@@ -70,6 +70,16 @@ export function makeGetSketchProfilesCommand(featureId: string): CoreCommand {
   };
 }
 
+export function makeGetSketchDiagnosticsCommand(featureId: string): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "get_sketch_diagnostics",
+    payload: {
+      feature_id: featureId,
+    },
+  };
+}
+
 export function makeExportDocumentCommand(filePath: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

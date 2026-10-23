@@ -144,6 +144,7 @@ import {
   makeGetDocumentStateCommand,
   makeGetSessionStateCommand,
   makeGetViewportStateCommand,
+  makeGetSketchDiagnosticsCommand,
   makeGetSketchProfilesCommand,
   makePingCommand,
   makeRedoCommand,
@@ -1851,6 +1852,9 @@ export function useCadCore() {
     reenterSketch: async (featureId: string) => {
       await sendCoreCommand(makeReenterSketchCommand(featureId));
       await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    getSketchDiagnostics: async (featureId: string) => {
+      await sendCoreCommand(makeGetSketchDiagnosticsCommand(featureId));
     },
     getSketchProfiles: async (featureId: string) => {
       await sendCoreCommand(makeGetSketchProfilesCommand(featureId));
