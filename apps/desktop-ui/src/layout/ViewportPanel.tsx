@@ -1342,6 +1342,22 @@ export function ViewportPanel({
       pendingDraftDimensionExpressionsRef,
       sketch: sketchFeature?.sketch_parameters,
       updateSketchDimension: updateSketchDimensionRef.current,
+      // S8: a refused drive used to be swallowed. Say which dimension and why,
+      // in the Logs panel and the message bar, so the number on screen is not
+      // silently ahead of the model.
+      onDriveFailed: ({ dimensionId, expression, error }) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        addLogEntry(
+          makeUiLogEntry(
+            "warn",
+            "sketch_dimension",
+            `dimension drive failed for ${dimensionId} (${expression}): ${reason}`,
+          ),
+        );
+        addMessage(
+          `Could not apply "${expression}" to ${dimensionId} — ${reason}`,
+        );
+      },
     });
     if (
       draftUndoGroupOpenRef.current &&

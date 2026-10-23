@@ -2,6 +2,7 @@
 
 #include "core/document/feature.h"
 #include "core/document/parameter.h"
+#include "core/sketch/collapsed_line_cleanup.h"
 
 namespace polysmith::core {
 

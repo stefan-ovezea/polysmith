@@ -171,3 +171,10 @@ void update_sketch_slot(FeatureEntry& feature,
                         double sweep_angle = 0.0);
 
 void delete_sketch_slot(FeatureEntry& feature, const std::string& slot_id);
+
+// Removes a line the solver collapsed (both endpoints on one point) together
+// with every constraint, dimension, relation, fillet and anchor that referenced
+// it, and reports what went with it (S6). Returns the counts; the caller logs
+// `format_collapsed_line_warning(...)`.
+CollapsedLineCleanupReport remove_collapsed_line_records(
+    SketchFeatureParameters& parameters, const std::string& line_id);

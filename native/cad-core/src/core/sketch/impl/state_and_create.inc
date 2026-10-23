@@ -292,91 +292,30 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
           }
         }
 
-        // Clean up any zero-length lines the solver produced before
-        // running the ad‑hoc enforce functions below (which throw on
-        // zero‑length geometry — see drive_line_parallel_to_reference,
-        // drive_line_perpendicular_to_reference).
+        // Clean up any zero-length lines the solver produced before running the
+        // ad-hoc enforce functions below (which throw on zero-length geometry).
+        // S6: the removal is reported, not silent.
         {
           std::vector<std::string> solver_zero_ids;
           for (const auto &line : feature.sketch_parameters->lines) {
-            if (points_match(line.start_x, line.start_y,
-                             line.end_x, line.end_y)) {
+            if (points_match(line.start_x, line.start_y, line.end_x,
+                             line.end_y)) {
               solver_zero_ids.push_back(line.id);
             }
           }
-          if (!solver_zero_ids.empty()) {
-            for (const auto &zid : solver_zero_ids) {
-              polysmith::core::log_error(
-                  "sketch",
-                  "deleted solver-produced zero-length line " + zid);
-
-              feature.sketch_parameters->constraints.erase(
-                  std::remove_if(
-                      feature.sketch_parameters->constraints.begin(),
-                      feature.sketch_parameters->constraints.end(),
-                      [&](const SketchConstraint &c) {
-                        for (const auto &tid : c.target_ids) {
-                          if (tid == zid) return true;
-                        }
-                        return false;
-                      }),
-                  feature.sketch_parameters->constraints.end());
-              feature.sketch_parameters->dimensions.erase(
-                  std::remove_if(
-                      feature.sketch_parameters->dimensions.begin(),
-                      feature.sketch_parameters->dimensions.end(),
-                      [&](const SketchDimension &d) {
-                        return d.entity_id == zid ||
-                               d.secondary_entity_id == zid;
-                      }),
-                  feature.sketch_parameters->dimensions.end());
-              feature.sketch_parameters->line_relations.erase(
-                  std::remove_if(
-                      feature.sketch_parameters->line_relations.begin(),
-                      feature.sketch_parameters->line_relations.end(),
-                      [&](const SketchLineRelation &rel) {
-                        return rel.first_line_id == zid ||
-                               rel.second_line_id == zid;
-                      }),
-                  feature.sketch_parameters->line_relations.end());
-              feature.sketch_parameters->fillets.erase(
-                  std::remove_if(
-                      feature.sketch_parameters->fillets.begin(),
-                      feature.sketch_parameters->fillets.end(),
-                      [&](const SketchFillet &f) {
-                        return f.line_a_id == zid ||
-                               f.line_b_id == zid;
-                      }),
-                  feature.sketch_parameters->fillets.end());
-              feature.sketch_parameters->midpoint_anchors.erase(
-                  std::remove_if(
-                      feature.sketch_parameters->midpoint_anchors.begin(),
-                      feature.sketch_parameters->midpoint_anchors.end(),
-                      [&](const SketchMidpointAnchor &a) {
-                        return a.line_id == zid;
-                      }),
-                  feature.sketch_parameters->midpoint_anchors.end());
-              feature.sketch_parameters->point_line_anchors.erase(
-                  std::remove_if(
-                      feature.sketch_parameters->point_line_anchors.begin(),
-                      feature.sketch_parameters->point_line_anchors.end(),
-                      [&](const SketchVertexLineAnchor &a) {
-                        return a.line_id == zid;
-                      }),
-                  feature.sketch_parameters->point_line_anchors.end());
-              feature.sketch_parameters->lines.erase(
-                  std::remove_if(
-                      feature.sketch_parameters->lines.begin(),
-                      feature.sketch_parameters->lines.end(),
-                      [&](const SketchLine &line) {
-                        return line.id == zid;
-                      }),
-                  feature.sketch_parameters->lines.end());
+          for (const auto &zid : solver_zero_ids) {
+            const CollapsedLineCleanupReport report =
+                remove_collapsed_line_records(*feature.sketch_parameters, zid);
+            if (report.total_removed() > 0) {
+              polysmith::core::log_warn(
+                  "sketch", format_collapsed_line_warning(zid, report));
+            } else {
+              polysmith::core::log_warn(
+                  "sketch", "deleted solver-produced zero-length line " + zid);
             }
           }
         }
-      }
-      feature.sketch_parameters->solver_dofs = result.dofs;
+      }      feature.sketch_parameters->solver_dofs = result.dofs;
       feature.sketch_parameters->solver_ok = result.ok();
       feature.sketch_parameters->solver_conflicting_count =
           static_cast<int>(result.conflicting.size());
@@ -558,6 +497,70 @@ void refresh_sketch_with_append_focus(FeatureEntry& feature,
     feature.sketch_parameters->pending_append_focus_ids = focus_ids;
     refresh_sketch_derived_state(feature);
   }
+}
+
+// ── Collapsed-line cleanup (S6) ───────────────────────────────
+// Removes a line the solver collapsed and every record that referenced it.
+// Extracted from the refresh so the counts and the resulting warning are
+// testable without a solver run or a logger sink.
+CollapsedLineCleanupReport remove_collapsed_line_records(
+    SketchFeatureParameters& parameters, const std::string& line_id) {
+  CollapsedLineCleanupReport report;
+
+  const auto erase_and_count = [](auto& container, auto&& predicate,
+                                  int& counter) {
+    const std::size_t before = container.size();
+    container.erase(
+        std::remove_if(container.begin(), container.end(), predicate),
+        container.end());
+    counter += static_cast<int>(before - container.size());
+  };
+
+  erase_and_count(
+      parameters.constraints,
+      [&](const SketchConstraint& constraint) {
+        return std::find(constraint.target_ids.begin(),
+                         constraint.target_ids.end(),
+                         line_id) != constraint.target_ids.end();
+      },
+      report.constraints);
+  erase_and_count(
+      parameters.dimensions,
+      [&](const SketchDimension& dimension) {
+        return dimension.entity_id == line_id ||
+               dimension.secondary_entity_id == line_id;
+      },
+      report.dimensions);
+  erase_and_count(
+      parameters.line_relations,
+      [&](const SketchLineRelation& relation) {
+        return relation.first_line_id == line_id ||
+               relation.second_line_id == line_id;
+      },
+      report.relations);
+  erase_and_count(
+      parameters.fillets,
+      [&](const SketchFillet& fillet) {
+        return fillet.line_a_id == line_id || fillet.line_b_id == line_id;
+      },
+      report.relations);
+  erase_and_count(
+      parameters.midpoint_anchors,
+      [&](const SketchMidpointAnchor& anchor) {
+        return anchor.line_id == line_id;
+      },
+      report.relations);
+  erase_and_count(
+      parameters.point_line_anchors,
+      [&](const SketchVertexLineAnchor& anchor) {
+        return anchor.line_id == line_id;
+      },
+      report.relations);
+  erase_and_count(
+      parameters.lines, [&](const SketchLine& line) { return line.id == line_id; },
+      report.lines);
+
+  return report;
 }
 
 #include "core/sketch/impl/sketch_create_and_tool_commands.inc"

@@ -11,6 +11,18 @@ type SketchDimensionUpdater = (
   dimensionId: string,
   value: number | string,
 ) => Promise<void>;
+/**
+ * Called when a typed draft value could not be driven onto its dimension (S8).
+ * The old code swallowed the rejection with `.catch(() => {})`, so a refused
+ * value — an over-constrained sketch, a formula the solver rejects — left the
+ * number on screen but not in the model, with no feedback at all.
+ */
+export type DimensionDriveFailure = {
+  dimensionId: string;
+  expression: string;
+  error: unknown;
+};
+export type OnDimensionDriveFailed = (failure: DimensionDriveFailure) => void;
 type SketchDimensionDeleter = (dimensionId: string) => Promise<void>;
 
 export interface PendingCircleDimensionPlacement {
@@ -279,10 +291,13 @@ export function applyPendingDraftDimensionExpressions({
   pendingDraftDimensionExpressionsRef,
   sketch,
   updateSketchDimension,
+  onDriveFailed,
 }: {
   pendingDraftDimensionExpressionsRef: MutableRef<PendingDraftDimensionExpressions | null>;
   sketch: SketchFeatureParameters | null | undefined;
   updateSketchDimension: SketchDimensionUpdater;
+  /** Reports a refused drive instead of silently swallowing it (S8). */
+  onDriveFailed?: OnDimensionDriveFailed;
 }) {
   const pending = pendingDraftDimensionExpressionsRef.current;
   if (!pending || !sketch) {
@@ -293,6 +308,7 @@ export function applyPendingDraftDimensionExpressions({
     pending,
     sketch,
     updateSketchDimension,
+    onDriveFailed,
   });
   if (didApply) {
     pendingDraftDimensionExpressionsRef.current = null;
@@ -303,30 +319,33 @@ function applyPendingExpressionForTool({
   pending,
   sketch,
   updateSketchDimension,
+  onDriveFailed,
 }: {
   pending: PendingDraftDimensionExpressions;
   sketch: SketchFeatureParameters;
   updateSketchDimension: SketchDimensionUpdater;
+  onDriveFailed?: OnDimensionDriveFailed;
 }) {
   if (pending.tool === "line") {
-    return applyLineExpressions(pending, sketch, updateSketchDimension);
+    return applyLineExpressions(pending, sketch, updateSketchDimension, onDriveFailed);
   }
   if (pending.tool === "rectangle") {
-    return applyRectangleExpressions(pending, sketch, updateSketchDimension);
+    return applyRectangleExpressions(pending, sketch, updateSketchDimension, onDriveFailed);
   }
   if (pending.tool === "circle") {
-    return applyCircleExpression(pending, sketch, updateSketchDimension);
+    return applyCircleExpression(pending, sketch, updateSketchDimension, onDriveFailed);
   }
   if (pending.tool === "arc") {
-    return applyArcExpression(pending, sketch, updateSketchDimension);
+    return applyArcExpression(pending, sketch, updateSketchDimension, onDriveFailed);
   }
-  return applyPolygonExpression(pending, sketch, updateSketchDimension);
+  return applyPolygonExpression(pending, sketch, updateSketchDimension, onDriveFailed);
 }
 
 function applyArcExpression(
   pending: PendingDraftDimensionExpressions,
   sketch: SketchFeatureParameters,
   updateSketchDimension: SketchDimensionUpdater,
+  onDriveFailed?: OnDimensionDriveFailed,
 ) {
   const arcs = sketch.arcs ?? [];
   const arc = arcs[pending.fromArcCount] ?? arcs[arcs.length - 1];
@@ -340,6 +359,7 @@ function applyArcExpression(
     `dim-arc-${arc.arc_id}`,
     pending.expressions.radius,
     updateSketchDimension,
+    onDriveFailed,
   );
   return true;
 }
@@ -348,6 +368,7 @@ function applyLineExpressions(
   pending: PendingDraftDimensionExpressions,
   sketch: SketchFeatureParameters,
   updateSketchDimension: SketchDimensionUpdater,
+  onDriveFailed?: OnDimensionDriveFailed,
 ) {
   const line = sketch.lines[pending.fromLineCount] ?? null;
   if (!line) {
@@ -357,11 +378,13 @@ function applyLineExpressions(
     `dim-line-${line.line_id}`,
     pending.expressions.length,
     updateSketchDimension,
+    onDriveFailed,
   );
   updateDimensionExpression(
     `dim-line-angle-${line.line_id}`,
     pending.expressions.angle,
     updateSketchDimension,
+    onDriveFailed,
   );
   return true;
 }
@@ -370,6 +393,7 @@ function applyRectangleExpressions(
   pending: PendingDraftDimensionExpressions,
   sketch: SketchFeatureParameters,
   updateSketchDimension: SketchDimensionUpdater,
+  onDriveFailed?: OnDimensionDriveFailed,
 ) {
   if (sketch.lines.length < pending.fromLineCount + 4) {
     return false;
@@ -381,6 +405,7 @@ function applyRectangleExpressions(
       `dim-line-${topLine.line_id}`,
       pending.expressions.width,
       updateSketchDimension,
+      onDriveFailed,
     );
   }
   if (rightLine) {
@@ -388,6 +413,7 @@ function applyRectangleExpressions(
       `dim-line-${rightLine.line_id}`,
       pending.expressions.length,
       updateSketchDimension,
+      onDriveFailed,
     );
   }
   return true;
@@ -397,6 +423,7 @@ function applyCircleExpression(
   pending: PendingDraftDimensionExpressions,
   sketch: SketchFeatureParameters,
   updateSketchDimension: SketchDimensionUpdater,
+  onDriveFailed?: OnDimensionDriveFailed,
 ) {
   const circle =
     sketch.circles[pending.fromCircleCount] ??
@@ -408,6 +435,7 @@ function applyCircleExpression(
     `dim-circle-${circle.circle_id}`,
     pending.expressions.diameter,
     updateSketchDimension,
+    onDriveFailed,
   );
   return true;
 }
@@ -416,6 +444,7 @@ function applyPolygonExpression(
   pending: PendingDraftDimensionExpressions,
   sketch: SketchFeatureParameters,
   updateSketchDimension: SketchDimensionUpdater,
+  onDriveFailed?: OnDimensionDriveFailed,
 ) {
   const polygons = sketch.polygons ?? [];
   const polygon =
@@ -427,6 +456,7 @@ function applyPolygonExpression(
     `dim-polygon-${polygon.polygon_id}`,
     pending.expressions.radius,
     updateSketchDimension,
+    onDriveFailed,
   );
   return true;
 }
@@ -435,8 +465,15 @@ function updateDimensionExpression(
   dimensionId: string,
   expression: string | undefined,
   updateSketchDimension: SketchDimensionUpdater,
+  onDriveFailed?: OnDimensionDriveFailed,
 ) {
-  if (expression) {
-    void updateSketchDimension(dimensionId, expression).catch(() => {});
+  if (!expression) {
+    return;
   }
+  // S8: never swallow the rejection. A refused drive is reported to the caller
+  // (which puts it in the Logs panel and the message bar) and the promise is
+  // still consumed here so it cannot surface as an unhandled rejection.
+  void updateSketchDimension(dimensionId, expression).catch((error: unknown) => {
+    onDriveFailed?.({ dimensionId, expression, error });
+  });
 }
