@@ -36,55 +36,34 @@ void refresh_linked_extrude_features(DocumentState &document,
     }
 
     const double depth = feature.extrude_parameters->depth;
-    const std::string mode = feature.extrude_parameters->mode;
-    const auto target_body_id = feature.extrude_parameters->target_body_id;
-    std::optional<ExtrudeFeatureParameters> next_parameters;
-    if (source_profiles.size() == 1 &&
-        source_profiles.front().kind == "circle") {
-      next_parameters = make_extrude_parameters_for_profile(
-          sketch_feature, source_profiles.front(), depth);
-    } else {
-      const auto &first = source_profiles.front();
-      const std::string plane_id =
-          sketch.plane_frame.has_value()
-              ? plane_id_from_frame(sketch.plane_frame.value())
-              : sketch.plane_id;
-      const std::optional<PlaneFrame> plane_frame =
-          sketch.plane_frame.has_value()
-              ? std::optional<PlaneFrame>(
-                    make_plane_frame(sketch.plane_frame.value()))
-              : std::nullopt;
-      std::vector<std::string> ids;
-      for (const auto &profile : source_profiles) {
-        ids.push_back(profile.id);
-      }
-      next_parameters = ExtrudeFeatureParameters{
-          .sketch_feature_id = sketch_feature.id,
-          .profile_id = ids.front(),
-          .profile_ids = ids,
-          .plane_id = plane_id,
-          .plane_frame = plane_frame,
-          .profile_kind = "polygon",
-          .start_x = 0.0,
-          .start_y = 0.0,
-          .width = 0.0,
-          .height = 0.0,
-          .radius = 0.0,
-          .profile_points = first.kind == "circle"
-                                ? sample_circle_profile_points(first)
-                                : first.points,
-          .inner_loops = first.inner_loops,
-          .depth = depth,
-      };
-      for (size_t index = 1; index < source_profiles.size(); ++index) {
-        const auto &profile = source_profiles[index];
-        next_parameters->additional_profile_points.push_back(
-            profile.kind == "circle" ? sample_circle_profile_points(profile)
-                                     : profile.points);
-        next_parameters->additional_inner_loops.push_back(profile.inner_loops);
-      }
+
+    // Re-derive the profile geometry with the same builder the creation path
+    // uses, then copy ONLY the profile-derived fields onto the existing
+    // parameters.
+    //
+    // Rebuilding the whole struct here (the previous behaviour) reset every
+    // other field to its default: side1 fell back to its 10 mm "unset"
+    // sentinel (the body came out half as thick), operation reset from join to
+    // new_body (each selected profile became its own body), and the boundary
+    // edges the renderer needs were dropped — which is what fed an empty
+    // contour to THREE.Path.closePath() and blanked the window.  Any field
+    // added later is preserved by the copy instead of silently lost.
+    // See wiki/Sketch-Defect-Log.md D-001b.
+    std::optional<ExtrudeFeatureParameters> built_parameters;
+    try {
+      built_parameters = make_extrude_parameters_for_profiles(
+          sketch_feature, source_profiles, depth);
+    } catch (const std::exception &error) {
+      // A sketch edit must not fail because this extrude's profile became
+      // invalid (e.g. two holes now touch).  Report it on the feature and let
+      // the edit stand; re-extruding surfaces the message to the user.
+      feature.status = "warning";
+      feature.parameters_summary = "Source profile invalid";
+      feature.dependency_broken = true;
+      feature.dependency_warning = error.what();
+      continue;
     }
-    if (!next_parameters.has_value()) {
+    if (!built_parameters.has_value()) {
       feature.status = "warning";
       feature.parameters_summary = "Source profile unsupported";
       feature.dependency_broken = true;
@@ -93,9 +72,10 @@ void refresh_linked_extrude_features(DocumentState &document,
       continue;
     }
 
-    feature.extrude_parameters = next_parameters.value();
-    feature.extrude_parameters->mode = mode;
-    feature.extrude_parameters->target_body_id = target_body_id;
+    ExtrudeFeatureParameters next_parameters = *feature.extrude_parameters;
+    preserve_extrude_source_geometry(next_parameters, *built_parameters);
+    next_parameters.depth = depth;
+    feature.extrude_parameters = next_parameters;
     feature.status = "healthy";
     feature.dependency_broken = false;
     feature.dependency_warning.clear();

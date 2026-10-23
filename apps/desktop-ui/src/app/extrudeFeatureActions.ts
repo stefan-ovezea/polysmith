@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import type { DocumentState } from "../types/ipc";
 import { awaitDocumentChange, useCadCoreStore } from "../state";
+import { reportUiError } from "../lib/uiErrorReporting";
 import {
   activeExtrudeActionFromCreatedFeature,
   canCombineExtrudeWithExistingBody,
@@ -176,6 +177,13 @@ export function useExtrudeFeatureActions({
           }),
         );
       } catch (error) {
+        // Reported durably as well: a failed preview create is invisible in the
+        // viewport (the feature was rolled back to enter edit mode), and the
+        // panel merely stops responding.
+        reportUiError(
+          `extrude preview create failed (${profileIds.length} profile(s))`,
+          error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error),
+        );
         addMessage(`extrude action error: ${String(error)}`);
       } finally {
         extrudeCreateInFlightRef.current = false;

@@ -68,31 +68,31 @@ DocumentState DocumentManager::update_extrude_profiles(
   }
 
   const double depth = extrude_it->extrude_parameters->depth;
-  const std::string mode = extrude_it->extrude_parameters->mode;
-  const auto target_body_id = extrude_it->extrude_parameters->target_body_id;
-  std::optional<ExtrudeFeatureParameters> next_parameters;
-  if (selected_profiles.size() == 1 && selected_profiles.front().kind == "circle") {
-    next_parameters =
-        make_extrude_parameters_for_profile(*sketch_it,
-                                            selected_profiles.front(),
-                                            depth);
-  } else {
-    // Delegate to the shared parameter builder — it handles multi-profile
-    // groups, sets up additional profiles and inner loops, and deliberately
-    // leaves sketch curve data empty so the shape builder routes through
-    // the polygon-prism path (which handles every profile in the group).
-    next_parameters =
-        make_extrude_parameters_for_profiles(*sketch_it,
-                                             selected_profiles,
-                                             depth);
-  }
-  if (!next_parameters.has_value()) {
+  // Delegate to the shared parameter builder — it handles multi-profile
+  // groups, sets up additional profiles and inner loops, and deliberately
+  // leaves sketch curve data empty so the shape builder routes through
+  // the polygon-prism path (which handles every profile in the group).
+  const std::optional<ExtrudeFeatureParameters> built_parameters =
+      make_extrude_parameters_for_profiles(*sketch_it, selected_profiles, depth);
+  if (!built_parameters.has_value()) {
     throw std::runtime_error("Sketch profile not found");
   }
-  next_parameters->mode = mode;
-  next_parameters->target_body_id = target_body_id;
-  next_parameters->side1.distance = std::abs(depth);
-  extrude_it->extrude_parameters = next_parameters.value();
+
+  // Copy the existing parameters and overwrite only what the profile
+  // determines. Re-binding used to force `side1.distance` back to `depth` and
+  // drop everything else the user had set (two-sided/symmetric extents, thin
+  // walls, targets, taper).
+  ExtrudeFeatureParameters next_parameters = *extrude_it->extrude_parameters;
+  preserve_extrude_source_geometry(next_parameters, *built_parameters);
+  next_parameters.depth = depth;
+  extrude_it->extrude_parameters = next_parameters;
+
+  // This is the repair path for a feature that lost a source region: a
+  // successful re-bind must clear the stale failure state, or the body stays
+  // suppressed and confirming the panel looks like it did nothing.
+  extrude_it->status = "healthy";
+  extrude_it->dependency_broken = false;
+  extrude_it->dependency_warning.clear();
   extrude_it->parameters_summary =
       extrude_it->extrude_parameters->profile_id + " · " +
       std::to_string(extrude_it->extrude_parameters->depth) + " mm";

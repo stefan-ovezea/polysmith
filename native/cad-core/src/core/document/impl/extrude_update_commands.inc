@@ -146,6 +146,12 @@ DocumentState DocumentManager::update_extrude_parameters(
 
   ExtrudeFeatureParameters next = parameters;
   preserve_extrude_source_geometry(next, feature_it->extrude_parameters.value());
+  // The payload strips the derived profile geometry, so a UI round-trip (the
+  // extrude panel's cancel restoring its snapshot, say) arrives with empty
+  // profile_points/boundary_edges. Rebuild them from the profile ids rather
+  // than rejecting the update; falls back to whatever was already stored when
+  // the sketch or the profiles no longer resolve.
+  refresh_extrude_profile_geometry(*document_, next);
   if (next.depth == 0.0 || next.side1.distance == 0.0 ||
       (next.side2.has_value() && next.side2->distance == 0.0)) {
     return document_.value();

@@ -574,6 +574,13 @@ function App() {
   const [hiddenFeatureIds, setHiddenFeatureIds] = useState<Set<string>>(
     () => new Set<string>(),
   );
+  // Source sketch a feature-edit session had to un-hide, so the panel closing
+  // can put the visibility back the way the user left it (see
+  // `revealSourceProfiles`).
+  const extrudeEditSketchVisibilityRef = useRef<{
+    sketchId: string;
+    wasHidden: boolean;
+  } | null>(null);
   const [hiddenCategories, setHiddenCategories] = useState<Set<CategoryId>>(
     () => new Set<CategoryId>(),
   );
@@ -4104,11 +4111,90 @@ function App() {
     pluginAction: activePluginAction,
   });
 
+  // Re-editing a feature whose inputs were consumed used to start from an empty
+  // selection: confirming the extrude hides its source sketch, so the panel
+  // opened showing "0 faces selected" and its confirm did nothing until the
+  // sketch was made visible and the faces re-picked by hand. Restore both
+  // halves — the sketch's visibility and the profile selection — when the edit
+  // session opens, and put the visibility back when the session ends (see the
+  // effect below), so an edit no longer leaves the sketch shown for good.
+  async function revealSourceProfiles(
+    sketchFeatureId: string | null,
+    profileIds: readonly string[],
+  ) {
+    if (sketchFeatureId) {
+      extrudeEditSketchVisibilityRef.current = {
+        sketchId: sketchFeatureId,
+        wasHidden: hiddenFeatureIds.has(sketchFeatureId),
+      };
+      setHiddenFeatureIds((current) => {
+        if (!current.has(sketchFeatureId)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(sketchFeatureId);
+        return next;
+      });
+    }
+
+    // A feature that lost a source region keeps the ids it was created with, and
+    // they no longer all resolve (deleting a circle rewrites the plate's id).
+    // Select the ones that still exist and say how many are gone, rather than
+    // silently arriving with a partial selection.
+    const liveProfileIds = new Set(
+      (viewport?.sketch_profiles ?? []).map((profile) => profile.profile_id),
+    );
+    const resolvable = profileIds.filter((profileId) =>
+      liveProfileIds.has(profileId),
+    );
+    if (resolvable.length < profileIds.length) {
+      addMessage(
+        t("sketch.sourceProfilesMissing", {
+          found: resolvable.length,
+          expected: profileIds.length,
+        }),
+      );
+    }
+
+    // Additive after the first: the batch select lives in the core
+    // (`select_sketch_profiles`) but has no TS builder yet, and chaining the
+    // single-profile command keeps this to one code path.
+    for (let index = 0; index < resolvable.length; index += 1) {
+      const profileId = resolvable[index];
+      if (!profileId) {
+        continue;
+      }
+      await selectSketchProfile(profileId, index > 0);
+    }
+  }
+
+  // Ends the reveal: when the extrude panel closes (confirm or cancel), hide the
+  // source sketch again if it was hidden when the session opened.
+  useEffect(() => {
+    if (extrudeAction !== null) {
+      return;
+    }
+    const restored = extrudeEditSketchVisibilityRef.current;
+    extrudeEditSketchVisibilityRef.current = null;
+    if (!restored || !restored.wasHidden) {
+      return;
+    }
+    setHiddenFeatureIds((current) => {
+      if (current.has(restored.sketchId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(restored.sketchId);
+      return next;
+    });
+  }, [extrudeAction]);
+
   const handleTimelineFeatureEdit = createTimelineFeatureEditHandler({
     document,
     viewport,
     canStartTimelineFeatureEdit,
     beginTimelineEditSession,
+    revealSourceProfiles,
     runAction,
     reenterSketch,
     setEditingFeatureId,
@@ -6084,6 +6170,7 @@ function App() {
                 updateExtrudeMode={updateExtrudeMode}
                 updateExtrudeTargetBody={updateExtrudeTargetBody}
                 updateExtrudeParameters={updateExtrudeParameters}
+                updateExtrudeProfiles={updateExtrudeProfiles}
                 recreateNewProfileExtrudePreview={
                   recreateNewProfileExtrudePreview
                 }

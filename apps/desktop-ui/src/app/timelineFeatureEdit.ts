@@ -24,6 +24,12 @@ interface TimelineFeatureEditContext {
   featureId: string;
   canStartTimelineFeatureEdit: boolean;
   beginTimelineEditSession: (featureId: string, featureKind: string) => void;
+  /** Un-hides a feature's source sketch and re-selects its profiles, so a
+   *  re-edit session opens with its inputs restored (see editExtrudeFeature). */
+  revealSourceProfiles: (
+    sketchFeatureId: string | null,
+    profileIds: readonly string[],
+  ) => Promise<void>;
   runAction: RunAction;
   reenterSketch: (featureId: string) => Promise<void>;
   setEditingFeatureId: (featureId: string | null) => void;
@@ -109,7 +115,13 @@ export function createTimelineFeatureEditHandler(
 }
 
 function editExtrudeFeature(
-  { viewport, featureId, beginTimelineEditSession, setExtrudeAction }: TimelineFeatureEditContext,
+  {
+    viewport,
+    featureId,
+    beginTimelineEditSession,
+    revealSourceProfiles,
+    setExtrudeAction,
+  }: TimelineFeatureEditContext,
   feature: FeatureEntry,
 ) {
   const params = feature.extrude_parameters;
@@ -121,6 +133,11 @@ function editExtrudeFeature(
     (body) => body.id !== featureId,
   );
   beginTimelineEditSession(featureId, feature.kind);
+  // Confirming an extrude hides its source sketch, so a re-edit used to start
+  // with nothing selected — the panel showed "0 faces selected" and its confirm
+  // did nothing until the sketch was made visible and the faces re-picked by
+  // hand. Restore the visibility and the selection up front.
+  void revealSourceProfiles(params.sketch_feature_id ?? null, params.profile_ids ?? []);
   setExtrudeAction({
     phase: "active",
     featureId,

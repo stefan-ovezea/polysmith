@@ -419,6 +419,69 @@ void preserve_extrude_source_geometry(ExtrudeFeatureParameters& target,
   target.inner_loop_edges = source.inner_loop_edges;
 }
 
+// Re-derives the profile-derived fields of `parameters` from the sketch that
+// owns them, leaving extents, operation, thin-wall settings and targets alone.
+//
+// The document-state payload deliberately ships extrude parameters WITHOUT
+// their profile geometry (`profile_points`, `boundary_edges`, `sketch_*`
+// caches are derived and stripped from the wire). A UI round-trip — the extrude
+// panel's cancel restoring the snapshot it was given, for instance — therefore
+// arrives here with those arrays empty, and treating them as authoritative
+// rejected a perfectly valid extrude with "Polygon extrude requires at least
+// three profile points" (user-reported 2026-10-23). The profile ids are the
+// durable reference; this rebuilds the cache from them.
+//
+// Returns false when the owning sketch or one of the profiles cannot be
+// resolved, or when the profile is now invalid (e.g. two holes touch). The
+// caller keeps whatever geometry it already had in that case.
+bool refresh_extrude_profile_geometry(const DocumentState& document,
+                                      ExtrudeFeatureParameters& parameters) {
+  const FeatureEntry* sketch_feature = nullptr;
+  for (const auto& feature : document.feature_history) {
+    if (feature.id == parameters.sketch_feature_id &&
+        feature.sketch_parameters.has_value()) {
+      sketch_feature = &feature;
+      break;
+    }
+  }
+  if (sketch_feature == nullptr) {
+    return false;
+  }
+
+  std::vector<std::string> profile_ids = parameters.profile_ids;
+  if (profile_ids.empty() && !parameters.profile_id.empty()) {
+    profile_ids.push_back(parameters.profile_id);
+  }
+  if (profile_ids.empty()) {
+    return false;
+  }
+
+  std::vector<SketchProfileRegion> profiles;
+  profiles.reserve(profile_ids.size());
+  for (const auto& profile_id : profile_ids) {
+    const SketchProfileRegion* profile =
+        find_equivalent_profile(sketch_feature->sketch_parameters->profiles,
+                                profile_id);
+    if (profile == nullptr) {
+      return false;
+    }
+    profiles.push_back(*profile);
+  }
+
+  std::optional<ExtrudeFeatureParameters> built;
+  try {
+    built = make_extrude_parameters_for_profiles(*sketch_feature, profiles,
+                                                 parameters.depth);
+  } catch (const std::exception&) {
+    return false;
+  }
+  if (!built.has_value()) {
+    return false;
+  }
+  preserve_extrude_source_geometry(parameters, *built);
+  return true;
+}
+
 void normalize_extrude_operation_mode(ExtrudeFeatureParameters& parameters) {
   if (parameters.operation.empty()) {
     parameters.operation =

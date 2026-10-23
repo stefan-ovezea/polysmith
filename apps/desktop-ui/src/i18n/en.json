@@ -1500,6 +1500,7 @@
     },
     "extrude": {
       "center": "Center",
+      "selectFacesFirst": "Select the sketch faces this extrusion should use, then confirm.",
       "combineNeedsBody": "Cut and Intersect need an existing body. Join can combine selected touching profiles.",
       "cut": "Cut",
       "distance": "Distance",
@@ -2154,6 +2155,7 @@
   "sketch": {
     "removeProjections": "Remove projections",
     "unlinkProjections": "Unlink projections",
-    "mergeCoincidentPoints": "Merge coincident points"
+    "mergeCoincidentPoints": "Merge coincident points",
+    "sourceProfilesMissing": "{{found}} of {{expected}} source faces still exist — the others were deleted from the sketch. Select the regions you want, then confirm."
   }
 }

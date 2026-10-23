@@ -29,6 +29,10 @@ interface ExtrudePreviewPanelProps {
   selectedFaceTargetId?: string | null;
   initialTargetBodyId: string | null;
   previewError?: string | null;
+  /** False when the caller can repair the error with the current selection
+   *  (a broken feature plus re-picked faces), so the message stays visible
+   *  without blocking Confirm. */
+  previewErrorBlocksConfirm?: boolean;
   disabled: boolean;
   onPreviewDepth: (depth: number) => Promise<void>;
   onPreviewMode: (mode: ExtrudeMode) => Promise<void>;
@@ -84,6 +88,7 @@ export function ExtrudePreviewPanel({
   selectedFaceTargetId = null,
   initialTargetBodyId,
   previewError = null,
+  previewErrorBlocksConfirm = true,
   disabled,
   onPreviewDepth,
   onPreviewMode,
@@ -596,7 +601,7 @@ export function ExtrudePreviewPanel({
               (phase === "pending" && selectedProfileCount === 0) ||
               Number(depth) === 0 ||
               !Number.isFinite(Number(depth)) ||
-              hasPreviewError
+              (hasPreviewError && previewErrorBlocksConfirm !== false)
             }
           >
             {t("common.confirm")}
