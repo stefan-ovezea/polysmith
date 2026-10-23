@@ -26,6 +26,14 @@ export function shapeFromProfileLoops(
   innerLoops: readonly (readonly (readonly [number, number])[])[],
 ) {
   const shape = new THREE.Shape();
+  // A loop with fewer than three points produces no curves, and
+  // `Path.closePath()` then reads `this.curves[0].getPoint(0)` on undefined
+  // (TypeError: Cannot read properties of undefined (reading 'getPoint')).
+  // Returning an empty shape lets callers skip the mesh instead of crashing
+  // the renderer — a malformed viewport payload must never blank the window.
+  if (outerLoop.length < 3) {
+    return shape;
+  }
   outerLoop.forEach((point, index) => {
     if (index === 0) {
       shape.moveTo(point[0], point[1]);
@@ -250,21 +258,35 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
       geometry.applyMatrix4(rotationMatrix);
     }
   } else if (primitive.kind === "polygon_extrude") {
-    const shape = shapeFromProfileLoops(
-      primitive.profilePoints,
-      primitive.innerLoops,
-    );
+    if (primitive.profilePoints.length < 3) {
+      // Degenerate payload (e.g. a profile whose boundary dissolved after a
+      // sketch edit). An empty shape would still go through ExtrudeGeometry's
+      // triangulation, so emit a no-op mesh instead — but it must carry an
+      // (empty) position attribute: WebGLRenderer's non-indexed draw path reads
+      // `attributes.position.count`, and a bare BufferGeometry crashes it with
+      // "Cannot read properties of undefined (reading 'count')".
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(new Float32Array(0), 3),
+      );
+    } else {
+      const shape = shapeFromProfileLoops(
+        primitive.profilePoints,
+        primitive.innerLoops,
+      );
 
-    geometry = new THREE.ExtrudeGeometry(shape, {
-      depth: primitive.depth,
-      bevelEnabled: false,
-      curveSegments: 1,
-    });
-    geometry.applyMatrix4(
-      primitive.planeFrame
-        ? makePlaneTransformMatrixFromFrame(primitive.planeFrame)
-        : makePlaneTransformMatrix(primitive.planeId),
-    );
+      geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: primitive.depth,
+        bevelEnabled: false,
+        curveSegments: 1,
+      });
+      geometry.applyMatrix4(
+        primitive.planeFrame
+          ? makePlaneTransformMatrixFromFrame(primitive.planeFrame)
+          : makePlaneTransformMatrix(primitive.planeId),
+      );
+    }
   } else {
     // Boolean'd body tessellated by the native core. Vertices are already
     // in world space, so no extra transform is needed.

@@ -874,7 +874,13 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
     };
   }
 
-  if (profile.profilePoints.length < 3) {
+  // The contour can be empty even when the chord sample is not: the exact
+  // boundary edges are preferred when the profile carries them, and a
+  // degenerate edge list yields fewer than three points. Feeding that to
+  // THREE.Shape hits `Path.closePath()` → `this.curves[0].getPoint(0)` on
+  // undefined — the render error that blanked the window (2026-10-23).
+  const contour = exactProfileContour(profile);
+  if (profile.profilePoints.length < 3 || contour.length < 3) {
     return {
       group,
       visual: {
@@ -895,8 +901,6 @@ export function buildSketchProfileObject(profile: SketchProfileScene) {
   // The outer contour comes from the exact boundary edges when the
   // profile carries them — arc-bounded surfaces then render as true
   // arcs instead of the coarse chord-sampled polygon.
-  const contour = exactProfileContour(profile);
-
   const shape = shapeFromProfileLoops(contour, holeLoops);
 
   const geometry = new THREE.ShapeGeometry(shape);

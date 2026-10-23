@@ -103,6 +103,55 @@ fn project_file_exists(file_path: String) -> Result<bool, String> {
     project_metadata::project_file_exists(file_path)
 }
 
+/// Appends a UI-side failure to `<config dir>/ui-errors.log` and echoes it to
+/// stderr.
+///
+/// The in-app Logs panel lives inside the React tree, so a render failure that
+/// unmounts the tree takes the panel with it — which is precisely when the
+/// message is needed. This file outlives the UI, so a black screen still leaves
+/// evidence. Read it at `%APPDATA%\polysmith\ui-errors.log` on Windows.
+#[tauri::command]
+fn log_ui_error(message: String, stack: Option<String>) -> Result<(), String> {
+    use std::io::Write;
+
+    let dir = app_config::config_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|error| format!("create config dir: {error}"))?;
+    let path = dir.join("ui-errors.log");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|error| format!("open {}: {error}", path.display()))?;
+    writeln!(file, "[{stamp}] {message}").map_err(|error| format!("write log: {error}"))?;
+    if let Some(stack) = stack.filter(|value| !value.is_empty()) {
+        writeln!(file, "{stack}").map_err(|error| format!("write log: {error}"))?;
+    }
+
+    eprintln!("[ui-error] {message}");
+    Ok(())
+}
+
+/// Opens the WebView devtools. Bound to F12 / Ctrl+Shift+I by the frontend;
+/// available in debug builds (or a build compiled with the `devtools` feature).
+#[tauri::command]
+fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(any(debug_assertions, feature = "devtools"))]
+    {
+        window.open_devtools();
+        Ok(())
+    }
+    #[cfg(not(any(debug_assertions, feature = "devtools")))]
+    {
+        let _ = window;
+        Err("devtools are disabled in this build".to_string())
+    }
+}
+
 fn center_window_over_window(
     window: &tauri::WebviewWindow,
     anchor: &tauri::WebviewWindow,
@@ -271,6 +320,8 @@ pub fn run() {
             write_project_thumbnail,
             delete_project_file,
             project_file_exists,
+            log_ui_error,
+            open_devtools,
             show_main_window,
             prepare_orca_export_path,
             launch_orca_slicer,
