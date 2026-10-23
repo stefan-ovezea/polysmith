@@ -29,7 +29,7 @@
 | `add_sketch_rectangle` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
 | `add_sketch_rounded_rectangle` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension), radius (dimension) |
 | `add_sketch_slot` | center_x (dimension), center_y (dimension), length (dimension), radius (dimension), rotation (dimension) |
-| `add_sketch_spline` |  |
+| `add_sketch_spline` | degree (optional_dimension), mode (optional_string_value) |
 | `add_sketch_text` | font_path (optional_string), anchor_x (dimension), anchor_y (dimension), path_entity_id (optional_string) |
 | `add_sketch_vertex_distance_dimension` | vertex_a_id (string), vertex_b_id (string) |
 | `cam_capture_edge_reference` |  |

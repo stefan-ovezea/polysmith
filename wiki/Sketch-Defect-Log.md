@@ -395,6 +395,28 @@ The second log line, `Sketch lines must have non-zero length (moving connected p
 
 ---
 
+## D-005 — The B-spline evaluator iterated upward, so curves missed their own poles
+
+**Found:** 2026-10-23, while building the fit-point spline (T2.1). Not reported by a user; the fit test (`test_spline_fit_mode_interpolates_points`) failed with a mismatch at u = 1/3 and the printed poles turned out to be *correct*, which pointed at the evaluator.
+
+**Cause (confirmed).** `spline_eval` in `native/cad-core/src/core/sketch/spline_math.h` — and its byte-for-byte TS twin in `apps/desktop-ui/src/lib/splineCurve.ts` — implemented De Boor with an **upward** inner loop:
+
+```cpp
+for (int r = 1; r <= degree; ++r)
+  for (int i = span - degree + r; i <= span; ++i)   // wrong direction
+    d[i] = (1 - alpha) * d[i - 1] + alpha * d[i];
+```
+
+De Boor must walk **down** from the span (`i = span → span - degree + r`) so `d[i-1]` is still the previous round's value. Going up blends a value the same round has already overwritten, which evaluates a different curve: a degree-3 spline with poles (0,0) (3,4) (7,5) (10,0) — a single clamped segment, i.e. a plain Bézier — returned (1.89, 2.37) at u = 1/3 where the curve is (3, 4).
+
+**Impact.** Every sampled spline point (profile walk guards, viewport/pick sampling, draft preview, trim-engine probes) was computed from that wrong evaluator, so a spline's interior could sit away from both its poles and its exact OCCT edge. Endpoints were unaffected (both sides short-circuit at u = 0/1) and the wire builder uses `Geom_BSplineCurve`, which is why extrudes still looked plausible.
+
+**Fix.** Downward loop on both sides, with a comment naming the failure mode. Regression tests: `test_spline_eval_matches_the_bezier_form` style assertions live in `tests/spline_test.cpp` (fit interpolation at Greville parameters) and `apps/desktop-ui/src/lib/splineCurve.test.ts` (direct Bézier value at u = 1/3, endpoints, degree 5 finiteness, plus the fit-solver cross-check against the core's exact poles).
+
+**Status:** Fixed. `pnpm test:core` 79/79 and the offline UI suites green afterwards; no test had encoded the wrong values.
+
+---
+
 ## Why this matters for the plan
 
 D-001a is a **trust** defect of exactly the kind P0 exists for: the user did something ordinary, the app warned once, and the model was destroyed with no way back. If D-001b confirms, the pair becomes the strongest argument for making profile identity provenance-based rather than boundary-name-based — which is the same fix shape as `dependency_ambiguous` in S4.

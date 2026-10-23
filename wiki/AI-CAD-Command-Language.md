@@ -2062,18 +2062,30 @@ Payloads:
 
 #### `add_sketch_spline`
 
-Adds a control-point B-spline: `points` ARE the poles — regular movable
-vertices. The drawn curve is the clamped open-uniform B-spline they define
-(degree = min(3, count - 1); `spline_math.h` is the single evaluation
-source for the profile walk, the viewport, the draft preview and the wire
-builder). No solver registration — pole drags re-fit the curve through the
-ordinary vertex sync. At least 2 points are required; 3+ give curvature.
-The profile engine treats the spline as an open exact curve
-(`entity_kind "spline"`); intersections delegate to OCCT 2D algorithms.
-A control polygon whose end pole coincides with its start pole CLOSES the
-loop and bounds a region by itself (like a full circle). The extrude wire
-builder emits the exact `Geom_BSplineCurve` edge trimmed to the walked
-sub-span. Trim / extend / offset on splines are rejected (v1).
+Adds a B-spline. Two modes:
+
+- `"control"` (default) — `points` ARE the poles (regular movable vertices).
+  The curve is the clamped open-uniform B-spline they define: it is pulled
+  toward each pole but passes through the first and last only.
+- `"fit"` — `points` are FIT points. The core solves the poles so the curve
+  passes through every one of them (Greville parameters of the open-uniform
+  knot vector + a dense solve). One pole per fit point.
+
+`degree` defaults to 3, is clamped to `[1, 5]` and to `point_count - 1`, and is
+stored on the entity — the profile walk, viewport and wire builder all take it
+from there. `spline_math.h` is the single evaluation source. No solver
+registration: pole drags re-fit the curve through the ordinary vertex sync. At
+least 2 points are required; 3+ give curvature. The profile engine treats the
+spline as an open exact curve (`entity_kind "spline"`); intersections delegate
+to OCCT 2D algorithms. A control polygon whose end pole coincides with its
+start pole CLOSES the loop and bounds a region by itself (like a full circle).
+The extrude wire builder emits the exact `Geom_BSplineCurve` edge trimmed to
+the walked sub-span. Trim / extend / offset on splines are rejected (v1).
+
+In fit mode the original fit points are NOT stored. The entity you get is a
+control-point spline through them, so dragging a pole reshapes the curve and
+the interpolation property is lost (the same trade Fusion makes for an
+unrefined fit spline).
 
 Payload:
 
@@ -2081,6 +2093,8 @@ Payload:
 {
   points: Array<{ x: number; y: number }>;
   is_construction?: boolean;
+  mode?: "control" | "fit";   // default "control"
+  degree?: number;            // default 3, clamped to [1, 5] and count - 1
 }
 ```
 

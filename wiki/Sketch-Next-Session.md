@@ -29,17 +29,15 @@
 
 ## 3. What is left, in order
 
-1. **T2.1 proper — fit-point spline (+ degree 5).**
-   - `mode: "fit" | "control"` on `add_sketch_spline`; least-squares fit of a clamped B-spline through the clicked points (`spline_math.h` has the sampler/evaluator; `BRepBuilderAPI_MakeEdge`/`Geom_BSplineCurve` already consume the exact poles).
-   - Raise the degree cap from 3 to 5 in `add_sketch_spline` and in the wire builder (it already takes `spline_degree` from the boundary edge).
-   - UI: a third creation mode in the spline split button (there is no spline split button yet) + the draft preview fitting through the placed points.
-   - S0 is already fixed; keep `cad_core_spline_test` green.
+1. **T2.1 polish** (core + creation UI are done):
+   - Done: `mode: "control" | "fit"` with true interpolation at the Greville parameters of the pipeline's knot vector, degree up to 5, a mode selector in the sketch tool panel (Control Point / Fit Point), the fit preview solving the same interpolation in TS, and the De Boor evaluator bug fixed on both sides (D-005).
+   - Left: (a) a **degree picker** in the panel (core accepts `degree` 1–5; nothing in the UI sends it yet); (b) the spline **split button** on the toolbar — the mode currently lives in the floating panel; (c) **fit points are not stored**, so dragging a pole loses the interpolation (Fusion stores fit points and refines; that is the bigger follow-up); (d) trim/offset on splines still rejected.
 2. **T2.3 arc slots** — the riskiest remaining T2 item (the stadium becomes a slot with arc ends rather than straight ends; touches `sketch_profile_exact.inc`). Read the profile-test discipline rules in CLAUDE.md before touching the face walk, and run `pnpm test:core` in full.
 3. **S1 solver coverage / S9 reach** from `Sketch-Completion-Plan.md` — unchanged by this session.
 
 ## 4. Gates
 
-`pnpm core:rebuild`, `pnpm test:core` (must stay **77/77** — S0 included), `pnpm --filter desktop-ui exec tsc --noEmit`, `pnpm lint:architecture`, `pnpm registry:write` after any command change.
+`pnpm core:rebuild`, `pnpm test:core` (must stay **79/79**), `pnpm --filter desktop-ui exec tsc --noEmit`, `pnpm lint:architecture`, `pnpm registry:write` after any command change.
 
 ## 5. Environment notes that will waste your time otherwise
 
