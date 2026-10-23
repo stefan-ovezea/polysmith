@@ -32,7 +32,20 @@
 ## 3. What is left, in order
 
 1. **S4 — name the conflict (`determined_by`).** The solver already returns `conflicting` / `redundant` / `partially_redundant` as **constraint indices**, and the core reports only counts. The work, in order:
-   - Build the missing map `solver constraint index → owner id`. planegcs assigns indices in *add* order, but one sketch constraint can add several solver constraints (equal_length → P2PDistance; midpoint → three), so the map must be appended at **every** `addConstraint*` site in `constraint_solver_geometric_constraints.inc` (~20). Assert the map's size against the system's constraint count after building, so a missed site fails loudly instead of shifting ids.
+   - Build the missing map `solver constraint index → owner id`. **Every typed `GCS::System::addConstraint*` helper returns the index planegcs assigned** (`int addConstraintP2PCoincident(...)`, `addConstraintP2PDistance`, `addConstraintCircleRadius`, …), so the map must be recorded from that return value at **every** add site in `constraint_solver_geometric_constraints.inc` (~24 calls), never from a running counter — one sketch constraint can add several solver constraints (equal_length → P2PDistance, midpoint → three, tangent pair → two radius pins plus the tangency). Pattern:
+
+     ```cpp
+     const auto record_owner = [this](int index, const std::string& owner_id) {
+         if (index < 0) return;
+         if (constraint_owner_ids_.size() <= static_cast<std::size_t>(index)) {
+             constraint_owner_ids_.resize(static_cast<std::size_t>(index) + 1);
+         }
+         constraint_owner_ids_[static_cast<std::size_t>(index)] = owner_id;
+     };
+     record_owner(system_->addConstraintP2PCoincident(a, b), sc.constraint_id);
+     ```
+
+     Then assert **no holes**: every index in `[0, clist.size())` must have a non-empty owner id, checked once after `build()` (a missed site must fail loudly, not shift ids). Sites in `params.constraints` are the ones that matter first (coincident, concentric, midpoint, symmetric, tangent pair) because that is where a user-visible conflict comes from.
    - Carry `conflicting_constraint_ids` / `redundant_constraint_ids` on `SketchFeatureParameters` and emit them in the viewport payload (the counts are already there).
    - UI: the DOF badge tooltip and a small conflict panel list the determining constraints by kind; then the "refuse an over-constraining edit, naming the determining constraints" half, plus `if_redundant: "driven"` for demotion.
    - Acceptance from the plan: editing a dimension on a fully constrained sketch produces "determined by <kind>" text, with a test locking the wording.
