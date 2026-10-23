@@ -1,4 +1,5 @@
 import type { SketchFeatureParameters } from "@/types";
+import { dimensionModeAcceptsEntity } from "./dimensionModeRules";
 
 type EntityKind = "line" | "circle" | "polygon" | "arc";
 
@@ -518,38 +519,39 @@ export function handleDimensionToolClick(context: DimensionToolClickContext) {
     case "radius":
     case "diameter": {
       // Radius/diameter: circle -> radius dimension (diameter is the
-      // default display); arc -> arc radius dimension.
+      // default display); arc -> arc radius dimension. The acceptance table
+      // is shared with the panel hint (dimensionModeRules.ts).
       const hit = context.hit;
-      if (hit?.kind === "sketch_entity" && hit.entityKind === "circle") {
-        context.createCircle(hit.id, "");
-        return;
-      }
-      if (hit?.kind === "sketch_entity" && hit.entityKind === "arc") {
+      if (
+        hit?.kind === "sketch_entity" &&
+        dimensionModeAcceptsEntity(context.dimensionToolMode, hit.entityKind)
+      ) {
+        if (hit.entityKind === "circle") {
+          context.createCircle(hit.id, "");
+          return;
+        }
         context.createArc(hit.id);
         return;
       }
-      break;
+      // S1: radius/diameter accept CIRCULAR entities only. Clicking a line in
+      // these modes used to fall through to the auto path and quietly create a
+      // linear dimension; consume the click instead.
+      return true;
     }
     case "arc_length": {
       const hit = context.hit;
-      if (hit?.kind === "sketch_entity" && hit.entityKind === "arc") {
+      if (
+        hit?.kind === "sketch_entity" &&
+        dimensionModeAcceptsEntity("arc_length", hit.entityKind)
+      ) {
         context.createArcLength(hit.id);
         return;
       }
-      break;
+      // S1: arc length applies to arcs only. Anything else is consumed here —
+      // falling through to the auto path would silently create a LINEAR
+      // dimension from a mode that promises arc length.
+      return true;
     }
-    // --- Drawing-sheet modes (reserved for ISO dimensioning) ---
-    case "ordinate":
-    case "jogged_radial":
-    case "curve_min_max":
-    case "baseline":
-    case "chain":
-    case "tidy_up":
-    case "arrange":
-    case "flip_arrows":
-    case "match":
-    case "dimension_break":
-      break;
   }
 
   if (context.hit?.kind === "sketch_dimension") {

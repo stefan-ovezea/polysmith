@@ -682,6 +682,11 @@ type PolygonToolMode = "circumscribed" | "inscribed" | "edge";
 /** Dimension tool modes for the split tool button.
  *  Only "auto" is functional today; the rest are reserved for
  *  future ISO drawing-sheet dimensioning. */
+// Sketch dimension modes only. The drawing-sheet modes (baseline, chain,
+// ordinate, jogged_radial, curve_min_max, tidy_up, arrange, flip_arrows, match,
+// dimension_break) belong to the ISO drawing workspace and were removed from
+// this union in S1: none of them had a sketch implementation, so offering them
+// here only produced silent no-ops.
 export type DimensionToolMode =
   | "auto"
   | "linear"
@@ -689,14 +694,4 @@ export type DimensionToolMode =
   | "angular"
   | "radius"
   | "diameter"
-  | "ordinate"
-  | "jogged_radial"
-  | "arc_length"
-  | "curve_min_max"
-  | "baseline"
-  | "chain"
-  | "tidy_up"
-  | "arrange"
-  | "flip_arrows"
-  | "match"
-  | "dimension_break";
+  | "arc_length";

@@ -3,6 +3,7 @@ import type { SketchTool, DimensionToolMode } from "@/types";
 import type { CircleToolMode } from "./circleDraftPreview";
 import { isDrawableSketchTool, sketchToolLabelKey } from "./draftDimensions";
 import { lineTypeFlagsToSelection } from "./lineTypeSelection";
+import { DIMENSION_MODE_LABEL_SUFFIX, dimensionModeHintKey } from "./dimensionModeRules";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
 import type { SlotToolMode } from "./slotDraftPreview";
 import type { PolygonToolMode } from "./viewportPanelTypes";
@@ -176,43 +177,7 @@ export function SketchToolPanel({
       )}
       {activeSketchTool === "dimension" && (
         <p className="text-xs text-on-surface/50 mt-1">
-          {translate(
-            `toolbar.dimension${
-              dimensionToolMode === "auto"
-                ? "Auto"
-                : dimensionToolMode === "linear"
-                  ? "Linear"
-                  : dimensionToolMode === "aligned"
-                    ? "Aligned"
-                    : dimensionToolMode === "angular"
-                      ? "Angular"
-                      : dimensionToolMode === "radius"
-                        ? "Radius"
-                        : dimensionToolMode === "diameter"
-                          ? "Diameter"
-                          : dimensionToolMode === "ordinate"
-                            ? "Ordinate"
-                            : dimensionToolMode === "jogged_radial"
-                              ? "JoggedRadial"
-                              : dimensionToolMode === "arc_length"
-                                ? "ArcLength"
-                                : dimensionToolMode === "curve_min_max"
-                                  ? "CurveMinMax"
-                                  : dimensionToolMode === "baseline"
-                                    ? "Baseline"
-                                    : dimensionToolMode === "chain"
-                                      ? "Chain"
-                                      : dimensionToolMode === "tidy_up"
-                                        ? "TidyUp"
-                                        : dimensionToolMode === "arrange"
-                                          ? "Arrange"
-                                          : dimensionToolMode === "flip_arrows"
-                                            ? "FlipArrows"
-                                            : dimensionToolMode === "match"
-                                              ? "Match"
-                                              : "Break"
-            }`,
-          )}
+          {translate(`toolbar.dimension${DIMENSION_MODE_LABEL_SUFFIX[dimensionToolMode]}`)}
         </p>
       )}
       <div className="mt-5 flex flex-col gap-4">
@@ -587,6 +552,11 @@ export function SketchToolPanel({
                 }}
               />
             </div>
+            {/* S1: say what the armed mode accepts, so a click that is
+                ignored (a line in Radius mode) reads as a rule, not a bug. */}
+            <p className="text-xs text-on-surface/50 mt-2">
+              {translate(dimensionModeHintKey(dimensionToolMode))}
+            </p>
           </div>
         ) : null}
       </div>
