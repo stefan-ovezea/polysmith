@@ -1,58 +1,63 @@
 # Sketch — next session handoff
 
-**Read this first, then the three documents it points at.** Written 2026-10-23 at the end of the session that shipped most of tool parity T1 and fixed S0.
+**Read this first, then the three documents it points at.** Written 2026-10-24 at the end of the session that finished S1, S2, S5–S8, S30/S30b, D-002, D-001f and closed T2.3.
 
-**Branch:** `feature/sketch-refactor` (local only). The previous handoff's commits are on it; **this session's work is uncommitted in the working tree** (see §3) and needs review + an approved commit.
+**Branch:** `feature/sketch-refactor` (local only). **The tree is clean** — everything below is committed; `git log --oneline -20` shows the session's work.
 
 ---
 
-## 1. What is done and verified
+## 1. Where the plan stands
 
-| Item | State |
+| Plan item | State |
 |---|---|
-| **T1.3 rounded rectangle (UI)** | Toolbar fourth mode, panel radius field, both commit paths send `add_sketch_rounded_rectangle`, live rounded preview, auto side dimensions dropped on purpose. Tests: preview maths, click-commit, **real core through the real builder**. |
-| **T1.1 slot `center_point` / `center_to_center` / `overall`** | One shared `slotDraftGeometry()` drives preview + commit. Split button + panel dropdown. Tests: mode arithmetic, `length >= 2r` across a span sweep, commit args. |
-| **T1.2 chamfer `equal` / `two_distance` / `distance_angle`** | Core: `SketchChamfer.mode` + `angle_degrees`; distance along B is **derived from the angle on every recompute**. Update keeps the record's mode/angle when not supplied. UI: three-mode split button + a panel that shows only the fields the mode needs. Tests: four new C++ cases, a real-core IPC test, schema coverage. |
-| **T1.5 centerline / infinite line** | `SketchLine.line_type` flag (`""` / `"centerline"` / `"infinite"`), both flavours force construction (so profile/dimension rules are unchanged), persisted + emitted in the viewport payload. UI: Line type dropdown replaces the Construction checkbox for the line tool; centerlines dash-dot, infinite lines drawn 100 000 mm past their endpoints (presentation only — scene bounds come from the core). Tests: new C++ suite, IPC round-trip, renderer rules. |
-| **S0 (T2.1 first sub-step)** | `cad_core_spline_test` passes. Root cause: `load_document_from_path` never re-derived sketch-derived features after refreshing sketch profiles, so a reloaded extrude whose opaque profile snapshot was absent compiled with an empty profile (`BRep_API: command not done`). Fix: `refresh_linked_features_after_load`. |
-| **T1.4 standalone point** | `add_sketch_point { x, y }` + a Point tool. Record `sketch_parameters.points[]`, re-emitted as vertex kind `point`; the id IS the vertex id, so drag/dimension/constraint/delete all work through the vertex model. The rebuild writes dragged coordinates back into the record; `update_sketch_vertex` has an explicit `kind == "point"` branch; `will_delete` in `delete_sketch_selection` counts a lone point. Repeat clicks dedup within 1e-3 mm. Tests: new C++ suite (incl. save/load) and a real-core IPC suite. |
-| **D-003 — uncaught "sketch object vertex-N not found"** | The partial `sketch_entities_changed` reply was emitted for edits that change arcs/circles/fillets/etc., leaving the UI's document stale and the planegcs bridge throwing mid-drag. Guarded by `sketch_partial_event_safe`; the bridge now degrades to "solve failed"; a degenerate endpoint drop onto a connected neighbour is refused locally instead of provoking the core's zero-length error. See the defect log. |
-| **D-004 — "Unsupported sketch tool: split"** | `corner` and `split` were missing from `kSupportedSketchTools()` while the toolbar could arm both, so every click on Split logged a core error and left the core's active tool stale. Added both; the C++ whitelist suite now asserts the canonical list covers the UI's whole `SketchTool` union, and an IPC test drives all 20 ids. |
+| **S1** constraint buttons, line flavours, dimension modes | **Done.** Five new constraint buttons (collinear, midpoint, tangent, tangent pair, symmetric) with pick flows, glyphs, badges (`L`/`M`/`T`/`S`) and hints; `DimensionToolMode` cut to the seven sketch modes with real target filtering (`dimensionModeRules.ts`); line-type flavours stay a dropdown (a one-row segmented control pushed "Infinite" out of the 288 px panel — reverted, see CLAUDE.md's UI Layout Rules). |
+| **S2** schema/dispatch integrity | **Done.** Unknown commands answer `UNKNOWN_COMMAND` with the request id; `lint:architecture` keeps dispatch and `commands.schema.json` in step both ways; `unknownCommand.core.test.ts` pins the reply and that the loop keeps serving. |
+| **S5** loose-ends diagnostic | **Done.** `get_sketch_diagnostics { feature_id }` → open ends + untied pairs (< 0.05 mm) from the profile walk's own vertex table; sketch panel block with counts and a **Tie ends** action (one undo step); the extrude panel points at it when nothing is extrudable. |
+| **S6** report destructive cleanup | **Done.** `remove_collapsed_line_records` returns a report and the refresh logs "collapsed line … removed N dimension(s), N constraint(s), N relation(s)". The cleanup is a safety net — the D-003 guard refuses a degenerate drag. |
+| **S7** logging hygiene | **Done.** Fifteen `fprintf(stderr)` sites in the sketch core → `log_*("sketch", …)`; lint check 5 rejects raw stdio there. |
+| **S8** stop swallowing drive failures | **Done.** `onDriveFailed` threads out of `draftDimensionPostCommit.ts`; the viewport logs a warn entry and shows a message naming the expression. |
+| **S30 / S30b** extrude refresh | **Done.** Parameters are copied and only profile fields overwritten (S30); a missing profile degrades to the survivors with a warning instead of `dependency_broken` (S30b, D-007) — which required the general rule that `warning` never suppresses geometry. |
+| **T2.1 / T2.3** | **Done**, including the spline split button, arc slots (core + UI) and the degree picker. |
+| **D-002** theme alpha | **Fixed** — `themeColorSolid` / `themeColorWithAlpha`; the token sweep proved only the two sketch tokens reached a `THREE.Color`. |
+| **D-001f** timeline click cleared the profile selection | **Fixed in the core** — selecting a profile-consuming feature carries its consumed profiles into the selection. |
 
-**Gates, all green at the end of the session:** `pnpm test:core` **79/79**, `pnpm --filter desktop-ui exec tsc --noEmit`, `pnpm lint:architecture` 3/3, offline UI suites **98 passed / 5 skipped** (the two previously-red files are fixed), `pnpm registry:write` (261 commands; the new `add_sketch_point` included).
+**Gates at the end of the session:** `pnpm test:core` **83/83**, `pnpm --filter desktop-ui exec tsc --noEmit`, `pnpm lint:architecture` **5/5**, UI suites **106 passed** in the touched areas, `pnpm registry:write` (262 commands).
 
 ## 2. Read these, in this order
 
-1. **[Sketch-Tools-Parity.md](Sketch-Tools-Parity.md)** — the SolidCraft↔PolySmith matrix, the T1/T2/T3 plan, and the session-by-session progress log (§8).
-2. **[Sketch-Defect-Log.md](Sketch-Defect-Log.md)** — D-001a–f and "behaviour confirmed as intended".
-3. **[Sketch-Completion-Plan.md](Sketch-Completion-Plan.md)** — solver coverage, reach, legibility. Tool parity is the tools half.
+1. **[Sketch-Tools-Parity.md](Sketch-Tools-Parity.md)** — the SolidCraft↔PolySmith matrix and the session-by-session progress log (§8).
+2. **[Sketch-Defect-Log.md](Sketch-Defect-Log.md)** — D-001a–f, D-002, D-003, D-004, D-005 (De Boor direction), D-006 (a new constraint kind wiped the document state), D-007 (`warning` deleted the body), **D-008 (S10's blocker)**.
+3. **[Sketch-Completion-Plan.md](Sketch-Completion-Plan.md)** — solver coverage, reach, legibility.
 
 ## 3. What is left, in order
 
-1. **T2.1 polish** (core + creation UI are done):
-   - Done: `mode: "control" | "fit"` with true interpolation at the Greville parameters of the pipeline's knot vector, degree up to 5, a mode selector in the sketch tool panel (Control Point / Fit Point), the fit preview solving the same interpolation in TS, and the De Boor evaluator bug fixed on both sides (D-005).
-   - Left: (a) the spline **split button** on the toolbar — the mode and degree currently live in the floating panel (degree picker 1–5 shipped, clamped in both preview and core); (b) **fit points are not stored**, so dragging a pole loses the interpolation (Fusion stores fit points and refines; that is the bigger follow-up); (c) trim/offset on splines still rejected.
-2. **T2.3 arc slots** — **done** (core + creation UI). Core: `mode: "arc"` with concentric arcs and radial caps, validation, serialization, three C++ cases. UI: Slot type selector (Straight / Arc), Sweep (deg) field, a preview that draws the same derived geometry the commit sends, and arc-aware commit paths. `sketch_profile_exact.inc` needed no change. Tests: 79/79 core, five new preview cases, an arc commit case, three IPC cases. Left for a later pass: editing an arc slot from the panel (currently centre drags + re-create), and screen-space hit-testing of the generated arc segment beyond the standard entity picking.
-3. **S1 solver coverage / S9 reach** from `Sketch-Completion-Plan.md` — unchanged by this session.
+1. **S4 — name the conflict (`determined_by`).** The solver already returns `conflicting` / `redundant` / `partially_redundant` as **constraint indices**, and the core reports only counts. The work, in order:
+   - Build the missing map `solver constraint index → owner id`. planegcs assigns indices in *add* order, but one sketch constraint can add several solver constraints (equal_length → P2PDistance; midpoint → three), so the map must be appended at **every** `addConstraint*` site in `constraint_solver_geometric_constraints.inc` (~20). Assert the map's size against the system's constraint count after building, so a missed site fails loudly instead of shifting ids.
+   - Carry `conflicting_constraint_ids` / `redundant_constraint_ids` on `SketchFeatureParameters` and emit them in the viewport payload (the counts are already there).
+   - UI: the DOF badge tooltip and a small conflict panel list the determining constraints by kind; then the "refuse an over-constraining edit, naming the determining constraints" half, plus `if_redundant: "driven"` for demotion.
+   - Acceptance from the plan: editing a dimension on a fully constrained sketch produces "determined by <kind>" text, with a test locking the wording.
+2. **S11 — auto-constrain / fully-constrain** (`auto_constrain_sketch {tolerance, angle_tolerance, dimensions}`): infer, dimension the remaining DOF, keep a candidate only if DOF drops, one undo step; entry from a sketch-panel button, the command, and a single dismissible offer when a sketch finishes with DOF > 20.
+3. **S3 — one DOF source.** `dof_status_emit.inc` still computes per-entity statuses with the heuristic `count_sketch_dof(...)` while `solver_dofs` comes from the solver, and `SolveResult` has **no per-variable determined information** — planegcs only reports dependent/redundant constraints. This needs the bridge to expose which variables were determined (rank analysis) plus a variable→entity map before the emitter can be switched over.
+4. **S10 — point-on-object for curves.** **Blocked, see D-008.** `point_on_circle` was implemented (P2PDistance(center, point) == radius), stored correctly, `solver_ok=1` — and the point did not move while `solver_dofs` stayed 2. Reverted rather than shipped. Next: compare a line endpoint's vs a standalone point's solver parameters, check the appended-focus path for kind `point`, then re-add **with a test that proves the geometry moves**.
 
 ## 4. Gates
 
-`pnpm core:rebuild`, `pnpm test:core` (must stay **79/79**), `pnpm --filter desktop-ui exec tsc --noEmit`, `pnpm lint:architecture`, `pnpm registry:write` after any command change.
+`pnpm core:build`, `pnpm test:core` (must stay **83/83**), `pnpm --filter desktop-ui exec tsc --noEmit`, `pnpm lint:architecture` (5 checks), `pnpm registry:write` after any command change.
 
 ## 5. Environment notes that will waste your time otherwise
 
-- **The app holds `native/cad-core/build/cad_core.exe`.** `pnpm core:build` then fails at the post-build copy with `MSB3073` — the compile and link succeed, only the copy fails. Close the app first, or ignore it and copy `Release/cad_core.exe` afterwards. A stale copy means you test the old core.
-- **The zod schemas strip unknown keys.** Any new field in a core payload must be added to `apps/desktop-ui/src/lib/schemas/ipc/*` or it silently disappears at the UI boundary (this cost real time twice this session: chamfer `mode`, line `line_type`). Note string enums must include `""` when the core emits an empty string for "none".
-- **`latestDocument()` can be stale after a sketch edit.** Edits that leave the dimension list unchanged answer with a partial `sketch_entities_changed` event; core-harness tests must send `get_document_state` before reading the document. Copy the pattern in `apps/desktop-ui/src/lib/ipc/sketchLineType.core.test.ts`.
-- **The core harness is the fastest end-to-end test available.** `apps/desktop-ui/src/lib/ipc/*.core.test.ts` drive the real `cad_core` binary through the real TS command builders; they skip when the binary is missing. `pnpm --filter desktop-ui exec vitest run <file>`.
-- **The partial sketch reply is guarded (D-003).** `sketch_entities_changed` carries only line endpoints and vertex coordinates; `sketch_partial_event_safe` sends the full `document_state` for anything else. Do not assume the partial event is available for a new command — see D-003 in the defect log.
-- A render crash used to blank the window with no trace; it now logs to `%APPDATA%\polysmith\ui-errors.log` and F12 opens the WebView devtools.
-- The extrude panel's input is the global profile selection (D-001f, known, not fixed).
+- **The app holds `native/cad-core/build/cad_core.exe`.** `pnpm core:build` then fails at the post-build copy; the compile and link succeed. Close the app first, or copy `Release/cad_core.exe` afterwards — a stale copy means you test the old core.
+- **The zod schemas strip unknown keys and reject undeclared events.** A new field, enum value or event type must be declared in `apps/desktop-ui/src/lib/schemas/ipc/*` or `ipcSchema.ts`, or the whole reply is dropped. This has now cost time four times: chamfer `mode`, line `line_type`, the `collinear` line relation (D-006), and the `sketch_diagnostics` event (which surfaced as a 15 s command timeout, not an error).
+- **A command timeout usually means "the reply failed to parse", not "the core is stuck".** Probe the core directly with a PowerShell pipeline of NDJSON lines before believing a hang.
+- **`latestDocument()` can be stale after a sketch edit** — send `get_document_state` before reading. Pattern: `apps/desktop-ui/src/lib/ipc/sketchLineType.core.test.ts`.
+- **The core harness is the fastest end-to-end test available.** `apps/desktop-ui/src/lib/ipc/*.core.test.ts` drive the real binary through the real TS builders; they skip when it is missing.
+- **The app has no terminal.** C++ diagnostics go through `log_*` (lint check 5 enforces it in the sketch core); UI diagnostics through `addMessage`/`addLogEntry`.
+- **Do not rewrite UTF-8 files with PowerShell `Get-Content`/`Set-Content`** — it double-encodes em dashes and arrows (this session's only self-inflicted damage). Use the file tools, or `[System.IO.File]::ReadAllText/WriteAllText` with an explicit `UTF8Encoding($false)`.
 
 ## 6. Things deliberately not done
 
-- Line tool parity — **explicitly out of scope**; PolySmith's is better than SolidCraft's.
-- Arc slots (T2.3) — highest risk, touches `sketch_profile_exact.inc`.
+- Line tool parity — out of scope; PolySmith's is better than SolidCraft's.
 - Conic, blend curves, G2/regular-polygon constraints, 3D sketch curves — T3.
-- D-001f (timeline click clearing the selection) — recorded, wants a design fix rather than a patch.
-- The completion plan's solver work (S1/S9) — separate effort, not started.
+- Fit points are not stored for fit splines (the entity becomes a control-point spline through them); Fusion-style refinement is a follow-up.
+- Editing an arc slot from the panel (centre drags + re-create for now).
+- **S3 and S10** — see above; both need a focused session, not a slice at the end of a long one.
