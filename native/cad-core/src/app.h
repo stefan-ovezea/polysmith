@@ -12,7 +12,11 @@ class CadCoreApp {
 
  private:
   void init_occt() const;
-  void handle_command_line(const polysmith::protocol::CommandMessage& command);
+  // Returns false when no handler claimed the command. The caller answers
+  // with an error event carrying the real id — a silent fall-through leaves
+  // the UI's awaited promise unsettled (see the id-correlation comment in
+  // run()).
+  bool handle_command_line(const polysmith::protocol::CommandMessage& command);
 };
 
 }  // namespace polysmith

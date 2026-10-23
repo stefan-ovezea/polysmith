@@ -92,9 +92,56 @@ function checkReadOnlyEmitter() {
   return violations;
 }
 
+// ── Check 3: dispatched commands match protocol/schema/commands.schema.json ──
+// `CadCoreApp::handle_command_line` chains the per-area handlers with no
+// fallback, so the JSON schema and the dispatch table are two halves of one
+// contract:
+//   * a command the schema allows but nothing handles produces no event at all,
+//     and the UI's awaited promise never settles;
+//   * a command the app sends but the schema rejects fails any validating
+//     client (the five sketch commands this check was written for).
+// Both directions are checked. `shutdown` is special-cased in
+// protocol/ipc.cpp (empty-id carve-out) rather than dispatched, so it is
+// allowed to appear in the schema only.
+//
+// The scan is global rather than block-split so that `||` chains (one handler
+// covering two commands) and `!=` early-return guards (trim_preview) are both
+// seen; block-splitting on `if (command.type == ` missed those.
+const SCHEMA_SPECIAL_CASES = new Set(["shutdown"]);
+
+function checkCommandSchema() {
+  const dir = join(ROOT, "native", "cad-core", "src", "app");
+  const dispatched = new Set();
+  for (const file of walk(dir)) {
+    if (!file.endsWith(".cpp")) continue;
+    const content = read(file);
+    for (const match of content.matchAll(/command\.type\s*(?:==|!=)\s*"([a-z0-9_]+)"/g)) {
+      dispatched.add(match[1]);
+    }
+  }
+
+  const schemaPath = join(ROOT, "protocol", "schema", "commands.schema.json");
+  const schema = JSON.parse(read(schemaPath));
+  const allowed = new Set(schema.properties.type.enum);
+
+  const violations = [];
+  for (const name of [...dispatched].sort()) {
+    if (!allowed.has(name)) {
+      violations.push(`dispatched but missing from commands.schema.json: ${name}`);
+    }
+  }
+  for (const name of [...allowed].sort()) {
+    if (!dispatched.has(name) && !SCHEMA_SPECIAL_CASES.has(name)) {
+      violations.push(`in commands.schema.json but never dispatched: ${name}`);
+    }
+  }
+  return violations;
+}
+
 const checks = [
   ["OCCT headers in protocol/ or core/document/", checkOcctHeaders],
   ["make_document_state_event from a read-only handler", checkReadOnlyEmitter],
+  ["command dispatch matches commands.schema.json", checkCommandSchema],
 ];
 
 let failed = false;

@@ -122,64 +122,65 @@ void CadCoreApp::init_occt() const {
   polysmith::core::log_info("cad_core", "OCCT box created successfully");
 }
 
-void CadCoreApp::handle_command_line(const CommandMessage& command) {
+bool CadCoreApp::handle_command_line(const CommandMessage& command) {
   if (handle_document_session_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_import_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_pcb_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_feature_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_fillet_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_body_modifier_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_threaded_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_construction_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_sketch_edit_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_extrude_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_solid_feature_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_sketch_create_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_sketch_utility_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_sketch_tool_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_corner_trim_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_trim_preview_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_cam_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_drawing_command(command, document_manager())) {
-    return;
+    return true;
   }
   if (handle_drawing_template_command(command, document_manager())) {
-    return;
+    return true;
   }
+  return false;
 }
 
 void CadCoreApp::run() {
@@ -223,7 +224,19 @@ void CadCoreApp::run() {
     polysmith::protocol::CommandMessage command;
     try {
       command = polysmith::protocol::parse_command(line);
-      handle_command_line(command);
+      // An unhandled command used to fall through silently: no reply, no
+      // log, and the UI's awaited promise never settled. Answer it instead,
+      // carrying the real id so the caller can fail fast. The dispatch table
+      // and protocol/schema/commands.schema.json are kept in step by
+      // `pnpm lint:architecture`.
+      if (!handle_command_line(command)) {
+        const std::string message = "Unknown command: " + command.type;
+        polysmith::core::log_error("cad_core", message);
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "UNKNOWN_COMMAND", message));
+        continue;
+      }
       if (should_journal(command.type)) {
         const auto document = document_manager().get_document();
         if (document.has_value()) {
