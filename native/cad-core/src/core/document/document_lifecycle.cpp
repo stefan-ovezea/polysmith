@@ -757,6 +757,33 @@ DocumentState DocumentManager::select_feature(const std::string& feature_id) {
     throw std::runtime_error("Feature not found: " + feature_id);
   }
   document_->selected_feature_id = feature_id;
+  // D-001f: a profile-consuming feature's INPUT is the profile selection - the
+  // edit panel reads that selection directly, so clearing it here emptied the
+  // panel on any timeline click. Selecting such a feature now SELECTS the
+  // profiles it consumes, which is also the honest meaning of "select this
+  // extrude": its inputs light up with it. Every other feature kind keeps the
+  // old behaviour (profile selection cleared).
+  std::vector<std::string> feature_profile_ids;
+  if (feature_it->extrude_parameters.has_value()) {
+    const auto& parameters = feature_it->extrude_parameters.value();
+    if (!parameters.profile_ids.empty()) {
+      feature_profile_ids = parameters.profile_ids;
+    } else if (!parameters.profile_id.empty()) {
+      feature_profile_ids = {parameters.profile_id};
+    }
+  } else if (feature_it->loft_parameters.has_value()) {
+    for (const auto& section : feature_it->loft_parameters->sections) {
+      if (!section.profile_id.empty()) {
+        feature_profile_ids.push_back(section.profile_id);
+      }
+    }
+  } else if (feature_it->revolve_parameters.has_value() &&
+             !feature_it->revolve_parameters->profile_id.empty()) {
+    feature_profile_ids = {feature_it->revolve_parameters->profile_id};
+  } else if (feature_it->sweep_parameters.has_value() &&
+             !feature_it->sweep_parameters->profile_id.empty()) {
+    feature_profile_ids = {feature_it->sweep_parameters->profile_id};
+  }
   document_->selected_reference_id = std::nullopt;
   document_->selected_face_id = std::nullopt;
   document_->selected_edge_ids.clear();
@@ -764,8 +791,11 @@ DocumentState DocumentManager::select_feature(const std::string& feature_id) {
   document_->selected_sketch_vertex_id = std::nullopt;
   document_->selected_sketch_entity_id = std::nullopt;
   document_->selected_sketch_dimension_id = std::nullopt;
-  document_->selected_sketch_profile_id = std::nullopt;
-  document_->selected_sketch_profile_ids.clear();
+  document_->selected_sketch_profile_ids = feature_profile_ids;
+  document_->selected_sketch_profile_id =
+      feature_profile_ids.empty()
+          ? std::nullopt
+          : std::optional<std::string>(feature_profile_ids.front());
   document_->selected_sketch_vertex_ids.clear();
   document_->selected_sketch_entity_ids.clear();
   return document_.value();

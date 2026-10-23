@@ -252,7 +252,11 @@ Their panels have no `previewError` gate, so the inhibited-Confirm fault was ext
 
 Reported alongside D-001e, marked "not extremely important for now": *"clicking with the mouse on any item in the timeline deselects all the surface in the panel."*
 
-Relevant because the extrude edit panel's input *is* the profile selection (D-001e): a timeline click during a panel session silently empties its input. Left as recorded, not investigated — the selection-clearing is presumably deliberate (a timeline click is a selection action elsewhere too), and the profile re-pick is cheap. Worth revisiting when the panel's inputs are made independent of the global selection.
+Relevant because the extrude edit panel's input *is* the profile selection (D-001e): a timeline click during a panel session silently empties its input.
+
+**Fixed in the core (2026-10-24).** `DocumentManager::select_feature` cleared `selected_sketch_profile_ids` for every feature kind. It now carries the profiles a profile-consuming feature *consumes* into the selection — `extrude` (its `profile_ids`, falling back to `profile_id`), `loft` (every section's profile), `revolve` and `sweep`. That is the honest meaning of "select this extrude": its input surfaces light up with it, and the edit panel can never be emptied by a timeline click. Every other feature kind (sketch, box, cylinder, …) keeps the old clearing behaviour, so a timeline click still reads as a plain selection action.
+
+Test: `tests/select_feature_profiles_test.cpp` — selecting the sketch clears, selecting the extrude selects exactly its consumed profiles (primary id included), and selecting the sketch again clears, i.e. the general path is unchanged.
 
 ---
 
@@ -448,7 +452,20 @@ If this had shipped, creating a collinear constraint would have made the documen
 **Tests.** `tests/extrude_profile_degrade_test.cpp`: (a) deleting the hole circle keeps the plate — not broken, warning set, warning text explains the shortfall, the body is the full slab, undo restores the holed plate; (b) a feature whose status is `warning` but whose dependency is intact still produces a body (the general rule, independent of S30b); (c) a broken dependency still suppresses the body (the rule's other half). `tests/extrude_refresh_test.cpp`'s repair-path fixture was updated: deleting a circle no longer breaks the extrude, so that test now asserts the degrade and then marks the feature broken directly, because it is about re-binding profile ids, not about how a feature got broken.
 
 ---
-## Why this matters for the plan
+## D-008 — A constraint on a standalone point is stored but does not move it (S10 blocked on this)
+
+**Investigated:** 2026-10-24. **Status:** open; the S10 first slice was implemented, measured and reverted.
+
+**What was built.** `point_on_circle` — a vertex anchored to a circle or an arc — mapped to `P2PDistance(center, point) == radius`, with a `set_sketch_point_on_circle_constraint { vertex_id, curve_id }` command, a manager entry point and a four-case test (point inside the circle, point outside, point on an arc, a line refused by name).
+
+**What the test showed.** With a circle at the origin (r = 10) and a standalone point at (2, 0), the command stores the constraint — the probe prints `point_on_circle:vertex-2:circle-1`, `solver_ok=1` — but the point stays at (2, 0) and `solver_dofs` reads 2, i.e. the constraint contributed nothing to the system. So the failure is upstream of the mapping branch: either the standalone point is not a free solver parameter (so the constraint has nothing to act on) or the solve result is written back through the `SketchPoint` record in the wrong order — T1.4 recorded that `rebuild_sketch_vertices` treats the previous vertex table as authoritative for kind `point` and writes it back into the record, so a solved vertex position can be overwritten by the record that was never refreshed.
+
+**Why it was reverted.** A constraint kind that silently does nothing is worse than no constraint: it would appear in the panel, count as a DOF, and not move the geometry. The command, the solver mapping, the schema entry and the test were removed together; the tree is back to the committed state with the core suite green (82/82).
+
+**Next step.** Compare the parameter vector a *line endpoint* and a *standalone point* produce (`constraint_solver_entity_mapping.inc` fills `gcs_points_` from `params.vertices`, so both should be there), then check `num_points` / the appended-focus solve path for kind `point`, and only then re-add the constraint kind. The rule to keep: a new constraint kind ships with a test that proves the geometry MOVES, not just that the record exists.
+
+---
+
 
 D-001a is a **trust** defect of exactly the kind P0 exists for: the user did something ordinary, the app warned once, and the model was destroyed with no way back. If D-001b confirms, the pair becomes the strongest argument for making profile identity provenance-based rather than boundary-name-based — which is the same fix shape as `dependency_ambiguous` in S4.
 
