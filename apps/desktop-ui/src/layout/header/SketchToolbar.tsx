@@ -84,8 +84,8 @@ const sketchTools: Array<{
   // which arms the tool with the right-clicked entity / selection and
   // shows the persistent manipulator ring.
   { id: "line", labelKey: "toolbar.line", hotkey: "line", enabled: true },
-  // Standalone point: one click places a movable point entity; it takes part in
-  // dimensions/constraints but bounds no profile.
+  // Standalone point: one click places a movable point entity; it takes part
+  // in dimensions/constraints but bounds no profile.
   { id: "point", labelKey: "toolbar.point", enabled: true },
   { id: "dimension", labelKey: "toolbar.dimension", hotkey: "dimension", enabled: true },
   { id: "rectangle", labelKey: "toolbar.rectangle", hotkey: "rectangle", enabled: true },
@@ -190,7 +190,17 @@ export function SketchToolbar({
     return `${label} (${formatHotkey(binding)})`;
   };
   return (
-    <>
+    // Fixed two-row layout: geometry tools on row 1, constraints + crosshair
+    // on row 2. The row used to be one long line, which silently pushed every
+    // control past the window edge out of reach (Rectangle / Arc / Circle /
+    // Polygon / Dimension / Slot / Chamfer and the constraint strip vanished
+    // on a 1453 px window). Each row wraps internally as well, so nothing can
+    // be off-screen even on a narrow window. `w-full` + the parent's `flex-1`
+    // give the rows a definite width to wrap against — without that a flex
+    // item's `min-width: auto` lets it overflow instead of wrapping.
+    <div className="flex min-w-0 w-full flex-col gap-y-1">
+      {/* Row 1 — create/finish + geometry tools */}
+      <div className="flex min-w-0 w-full flex-wrap items-center gap-x-3 gap-y-1">
       <button
         className={
           activeSketchPlaneId
@@ -508,7 +518,11 @@ export function SketchToolbar({
           </button>
         </>
       ) : null}
-      <div className="h-8 w-px bg-white/10" />
+      </div>
+      {/* Row 2 — constraints + crosshair. Always its own line, so the
+          constraint strip can never be pushed off the right edge by the
+          geometry tools. */}
+      <div className="flex min-w-0 w-full flex-wrap items-center gap-x-3 gap-y-1">
       <SketchConstraintControls
         activeSketchPlaneId={activeSketchPlaneId}
         armedSketchConstraint={armedSketchConstraint}
@@ -539,11 +553,12 @@ export function SketchToolbar({
         }}
       />
       <ArmedConstraintStatus armedSketchConstraint={armedSketchConstraint} />
+      </div>
       <HelpPopover
         entry={helpEntry}
         anchor={helpAnchor}
         onClose={closeHelp}
       />
-    </>
+    </div>
   );
 }

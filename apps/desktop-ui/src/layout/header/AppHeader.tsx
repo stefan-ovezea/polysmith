@@ -962,7 +962,12 @@ export function AppHeader({
           className="flex items-center justify-between gap-3 px-4 py-1"
           style={{ borderTop: "1px solid var(--cad-panel-soft-border)" }}
         >
-          <div className="flex min-w-0 items-center gap-3">
+          {/* `flex-1` gives the active workspace toolbar a definite width to
+              wrap against: the sketch toolbar is a two-row block, and without
+              a stretched parent its rows would overflow the window edge
+              instead of wrapping (a flex item's default `min-width: auto`
+              refuses to shrink below its content). */}
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             {activeCadWorkspace === "create" ? (
               <CreateToolbar
                 openMenu={openMenu}
