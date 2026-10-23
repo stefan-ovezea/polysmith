@@ -1524,6 +1524,7 @@
       "operation": "Operation",
       "outside": "Outside",
       "previewFailed": "Preview failed: {{message}}",
+      "noProfileHint": "No closed profile yet. If the sketch looks closed, open it and check Loose ends — the ends may be untied.",
       "replaceTarget": "Replace target",
       "result": "Result",
       "side1": "Side 1",

@@ -590,6 +590,15 @@ export function ExtrudePreviewPanel({
             </p>
           ) : null}
 
+          {/* S5: the most common reason there is nothing to extrude is a sketch
+              that only LOOKS closed. Point at the sketch panel, which names the
+              exact ends (open / untied) and can tie them in one click. */}
+          {selectedProfileCount === 0 ? (
+            <p className="rounded-md border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-xs normal-case tracking-normal text-on-surface/70">
+              {t("panels.extrude.noProfileHint")}
+            </p>
+          ) : null}
+
         </ScrollArea>
 
         <div className="mt-4 flex shrink-0 gap-3">
