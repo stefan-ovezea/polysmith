@@ -297,7 +297,8 @@
       // compound-fuse path below, which would try to fuse every solid
       // of an imported part into one.
       const auto& params = feature.step_import_parameters.value();
-      TopoDS_Shape shape = params.imported_shape;
+      const TopoDS_Shape* cached_shape = find_imported_shape(feature.id);
+      TopoDS_Shape shape = cached_shape ? *cached_shape : TopoDS_Shape{};
       if (shape.IsNull()) {
         shape = deserialize_shape_snapshot(params.serialized_shape);
       }
@@ -318,7 +319,8 @@
       // snapshot deserialization after a part-file load, and no
       // compound fuse (multi-solid files stay one body).
       const auto& params = feature.iges_import_parameters.value();
-      TopoDS_Shape shape = params.imported_shape;
+      const TopoDS_Shape* cached_shape = find_imported_shape(feature.id);
+      TopoDS_Shape shape = cached_shape ? *cached_shape : TopoDS_Shape{};
       if (shape.IsNull()) {
         shape = deserialize_shape_snapshot(params.serialized_shape);
       }

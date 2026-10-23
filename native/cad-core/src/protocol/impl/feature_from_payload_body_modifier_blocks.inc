@@ -8,6 +8,10 @@
         params.edge_ids.push_back(edge.get<std::string>());
       }
     }
+    if (fp.contains("edge_fingerprints")) {
+      params.edge_fingerprints =
+          edge_fingerprints_from_payload(fp.at("edge_fingerprints"));
+    }
     params.radius = read_number(fp, "radius");
     // Default false when absent so older saved documents (created
     // before is_pending existed) load with the same semantics they
@@ -27,6 +31,10 @@
       for (const auto& edge : cp.at("edge_ids")) {
         params.edge_ids.push_back(edge.get<std::string>());
       }
+    }
+    if (cp.contains("edge_fingerprints")) {
+      params.edge_fingerprints =
+          edge_fingerprints_from_payload(cp.at("edge_fingerprints"));
     }
     params.distance = read_number(cp, "distance");
     if (cp.contains("is_pending") && cp.at("is_pending").is_boolean()) {

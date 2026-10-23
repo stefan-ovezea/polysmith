@@ -15,6 +15,7 @@
 
 #include "core/cam/cam_profile_reference.h"
 #include "core/document/document.h"
+#include "core/sketch/sketch_profile.h"
 #include "protocol/serialization.h"
 #include "sketch_test_utils.h"
 
@@ -111,7 +112,14 @@ bool test_capture_rectangle_with_hole() {
   // sampled polygon after a reload.
   {
     const auto payload = polysmith::protocol::to_payload(document, true);
-    const auto restored = polysmith::protocol::document_from_payload(payload);
+    auto restored = polysmith::protocol::document_from_payload(payload);
+    // Profiles are stripped from the persisted payload and recomputed on
+    // load (mirroring load_document_from_path).
+    for (auto& feature : restored.feature_history) {
+      if (feature.kind == "sketch") {
+        polysmith::core::refresh_sketch_profiles(feature);
+      }
+    }
     const auto& restored_params = sketch_params(restored);
     const auto restored_outer = std::find_if(
         restored_params.profiles.begin(), restored_params.profiles.end(),

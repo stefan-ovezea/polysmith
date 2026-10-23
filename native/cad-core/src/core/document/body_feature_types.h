@@ -3,9 +3,8 @@
 #include <string>
 #include <vector>
 
-#include <TopoDS_Shape.hxx>
-
 #include "core/document/plane_frame.h"
+#include "core/geometry/edge_geometry.h"
 
 namespace polysmith::core {
 
@@ -113,6 +112,14 @@ struct BodyCopyFeatureParameters {
 struct FilletFeatureParameters {
   std::string target_body_id;
   std::vector<std::string> edge_ids;
+  // Geometric fingerprint captured at selection time for each edge in
+  // `edge_ids` (same order). Used by `refresh_history_dependencies` to
+  // re-resolve the edge by geometry first and index last, so a topology
+  // change that shifts indices re-binds to the same physical edge
+  // instead of silently grabbing a different one. An empty `kind` means
+  // no usable fingerprint (capture failed / unsupported curve) and the
+  // resolver falls back to the stored index.
+  std::vector<EdgeGeometry> edge_fingerprints;
   double radius;
   bool is_pending = false;
 };
@@ -120,6 +127,8 @@ struct FilletFeatureParameters {
 struct ChamferFeatureParameters {
   std::string target_body_id;
   std::vector<std::string> edge_ids;
+  // Same provenance contract as FilletFeatureParameters::edge_fingerprints.
+  std::vector<EdgeGeometry> edge_fingerprints;
   double distance;
   bool is_pending = false;
 };
@@ -151,29 +160,27 @@ struct MeshToBodyFeatureParameters {
 };
 
 // Imported STEP body. The file is parsed ONCE at import time; the
-// translated shape (in mm) is kept as a live handle for compile-time
-// use, and a B-rep snapshot is persisted into the part file so the
-// document stays self-contained. The source path is provenance only —
-// moving or deleting the .step file never breaks the part (no
-// dependency_broken machinery, unlike mesh_import).
+// translated shape (in mm) is kept as a live handle in the geometry
+// runtime cache (core/geometry/import_runtime.h) for compile-time use, and a
+// B-rep snapshot is persisted into the part file so the document stays
+// self-contained. The source path is provenance only — moving or deleting the
+// .step file never breaks the part (no dependency_broken machinery, unlike
+// mesh_import).
 struct StepImportFeatureParameters {
   std::string file_path;         // original file — display only
   std::string source_units;      // units the file was written in (e.g. "INCH")
   std::string serialized_shape;  // B-rep snapshot for persistence
-  TopoDS_Shape imported_shape;   // live handle; null after load — the
-                                 // compiler falls back to the snapshot
   int solid_count = 0;           // for the feature summary
   int face_count = 0;            // for the feature summary
 };
 
 // Imported IGES body — identical storage model to step_import (parse
-// once, live handle + persisted B-rep snapshot, self-contained part).
+// once, live handle in the geometry runtime cache + persisted B-rep snapshot,
+// self-contained part).
 struct IgesImportFeatureParameters {
   std::string file_path;         // original file — display only
   std::string source_units;      // units the file was written in (e.g. "INCH")
   std::string serialized_shape;  // B-rep snapshot for persistence
-  TopoDS_Shape imported_shape;   // live handle; null after load — the
-                                 // compiler falls back to the snapshot
   int solid_count = 0;           // for the feature summary
   int face_count = 0;            // for the feature summary
 };

@@ -32,8 +32,27 @@ struct SketchFeatureParameters {
     double normal_z;
   };
 
+  // Immutable geometric provenance for a face-based sketch: the plane's
+  // origin + unit normal, captured when the sketch was first placed on a
+  // body face. `refresh_history_dependencies` re-resolves the face by
+  // this fingerprint before falling back to the stored index, so a
+  // topology change that shifts face indices re-binds to the same plane
+  // instead of silently grabbing a different face. `valid` is false when
+  // the sketch has no face provenance (origin-plane or construction-plane
+  // sketches).
+  struct FaceFingerprint {
+    bool valid = false;
+    double origin_x = 0.0;
+    double origin_y = 0.0;
+    double origin_z = 0.0;
+    double normal_x = 0.0;
+    double normal_y = 0.0;
+    double normal_z = 0.0;
+  };
+
   std::string plane_id;
   std::optional<SketchPlaneFrame> plane_frame;
+  std::optional<FaceFingerprint> face_fingerprint;
   std::string active_tool;
   std::vector<SketchLine> lines;
   std::vector<SketchCircle> circles;

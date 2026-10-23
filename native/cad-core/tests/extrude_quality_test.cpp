@@ -1343,7 +1343,7 @@ bool test_load_recomputes_stale_profiles() {
     std::ifstream in(path.string());
     nlohmann::json payload = nlohmann::json::parse(in);
     in.close();
-    auto& history = payload["feature_history"];
+    auto& history = payload["document"]["feature_history"];
     if (!expect(history.is_array() && !history.empty(),
                 "stale reload: saved file must carry feature history")) {
       return false;

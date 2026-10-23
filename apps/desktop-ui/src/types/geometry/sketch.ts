@@ -579,6 +579,13 @@ export interface FeatureEntry {
   dependency_broken?: boolean;
   // Human-readable explanation, surfaced as the timeline tooltip.
   dependency_warning?: string;
+  // True when an upstream reference re-bound to a different entity whose
+  // match was not certain (the fingerprint returned near-equal
+  // candidates). The feature still compiles; this is a warn-to-check
+  // signal, distinct from `dependency_broken` (reference gone).
+  dependency_ambiguous?: boolean;
+  // Human-readable explanation of the uncertain re-bind.
+  dependency_ambiguous_warning?: string;
   parameters_summary: string;
   box_parameters: BoxFeatureParameters | null;
   cylinder_parameters: CylinderFeatureParameters | null;

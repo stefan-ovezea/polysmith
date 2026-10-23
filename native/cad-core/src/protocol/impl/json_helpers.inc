@@ -152,6 +152,57 @@ sketch_plane_frame_from_payload(const json& payload) {
   return frame;
 }
 
+json edge_fingerprints_to_payload(
+    const std::vector<polysmith::core::EdgeGeometry>& fingerprints) {
+  json arr = json::array();
+  for (const auto& fp : fingerprints) {
+    arr.push_back(json{
+        {"kind", fp.kind},
+        {"start_x", fp.start.x},
+        {"start_y", fp.start.y},
+        {"start_z", fp.start.z},
+        {"end_x", fp.end.x},
+        {"end_y", fp.end.y},
+        {"end_z", fp.end.z},
+        {"center_x", fp.center.x},
+        {"center_y", fp.center.y},
+        {"center_z", fp.center.z},
+        {"axis_x", fp.axis.x},
+        {"axis_y", fp.axis.y},
+        {"axis_z", fp.axis.z},
+        {"radius", fp.radius},
+    });
+  }
+  return arr;
+}
+
+std::vector<polysmith::core::EdgeGeometry> edge_fingerprints_from_payload(
+    const json& payload) {
+  std::vector<polysmith::core::EdgeGeometry> fingerprints;
+  if (!payload.is_array()) {
+    return fingerprints;
+  }
+  for (const auto& entry : payload) {
+    polysmith::core::EdgeGeometry fp{};
+    fp.kind = read_optional_string_value(entry, "kind", "");
+    fp.start.x = read_optional_number(entry, "start_x", 0.0);
+    fp.start.y = read_optional_number(entry, "start_y", 0.0);
+    fp.start.z = read_optional_number(entry, "start_z", 0.0);
+    fp.end.x = read_optional_number(entry, "end_x", 0.0);
+    fp.end.y = read_optional_number(entry, "end_y", 0.0);
+    fp.end.z = read_optional_number(entry, "end_z", 0.0);
+    fp.center.x = read_optional_number(entry, "center_x", 0.0);
+    fp.center.y = read_optional_number(entry, "center_y", 0.0);
+    fp.center.z = read_optional_number(entry, "center_z", 0.0);
+    fp.axis.x = read_optional_number(entry, "axis_x", 0.0);
+    fp.axis.y = read_optional_number(entry, "axis_y", 0.0);
+    fp.axis.z = read_optional_number(entry, "axis_z", 0.0);
+    fp.radius = read_optional_number(entry, "radius", 0.0);
+    fingerprints.push_back(fp);
+  }
+  return fingerprints;
+}
+
 json viewport_sketch_plane_frame_to_payload(
     const polysmith::core::ViewportSketchPlaneFrame& frame) {
   return {

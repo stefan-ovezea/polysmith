@@ -18,7 +18,7 @@ DocumentState DocumentManager::update_sweep_path(
       make_sweep_parameters(document_->feature_history,
                             feature_it->sweep_parameters->profile_id,
                             path_entity_id);
-  const TopoDS_Shape next_shape = build_sweep_shape(next_parameters);
+  const auto next_shape = build_sweep_shape(next_parameters);
   if (next_shape.IsNull()) {
     throw std::runtime_error("Sweep update produced an empty shape");
   }
@@ -77,7 +77,7 @@ DocumentState DocumentManager::update_sweep_profile(
       make_sweep_parameters(document_->feature_history,
                             profile_id,
                             feature_it->sweep_parameters->path_entity_id);
-  const TopoDS_Shape next_shape = build_sweep_shape(next_parameters);
+  const auto next_shape = build_sweep_shape(next_parameters);
   if (next_shape.IsNull()) {
     throw std::runtime_error("Sweep update produced an empty shape");
   }

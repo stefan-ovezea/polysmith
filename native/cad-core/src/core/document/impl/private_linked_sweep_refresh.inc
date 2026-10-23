@@ -24,7 +24,7 @@ void refresh_linked_sweep_features(DocumentState &document,
       const SweepFeatureParameters rebuilt = make_sweep_parameters(
           document.feature_history, feature.sweep_parameters->profile_id,
           feature.sweep_parameters->path_entity_id);
-      const TopoDS_Shape next_shape = build_sweep_shape(rebuilt);
+      const auto next_shape = build_sweep_shape(rebuilt);
       if (next_shape.IsNull()) {
         throw std::runtime_error("Sweep rebuild produced an empty shape");
       }

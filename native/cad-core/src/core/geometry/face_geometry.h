@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include <TopoDS_Face.hxx>
+
 #include "core/document/feature.h"
 
 namespace polysmith::core {
@@ -100,6 +102,12 @@ struct PlanarFaceProfile {
 };
 
 std::optional<PlanarFaceProfile> compute_planar_face_profile(
+    const DocumentState& document,
+    const std::string& face_id);
+
+// Resolve a numeric face id ("{owner}:face:{n}") against the compiled body
+// and return the live OCCT face — the face-appearance matching entry point.
+std::optional<TopoDS_Face> resolve_face_for_appearance(
     const DocumentState& document,
     const std::string& face_id);
 

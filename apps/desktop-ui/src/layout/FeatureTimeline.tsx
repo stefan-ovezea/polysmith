@@ -156,6 +156,7 @@ export function FeatureTimeline({
           const active = feature.feature_id === document.selected_feature_id;
           const suppressed = feature.suppressed === true;
           const dependencyBroken = feature.dependency_broken === true;
+          const dependencyAmbiguous = feature.dependency_ambiguous === true;
           // Tooltip carries both the human-readable name (e.g. "Box 2")
           // and the kind, plus a (suppressed) suffix so the user knows
           // why the feature is missing from the viewport. When a
@@ -173,6 +174,9 @@ export function FeatureTimeline({
           }
           if (dependencyBroken && feature.dependency_warning) {
             tooltip = `${tooltip}\n⚠ ${feature.dependency_warning}`;
+          }
+          if (dependencyAmbiguous && feature.dependency_ambiguous_warning) {
+            tooltip = `${tooltip}\n? ${feature.dependency_ambiguous_warning}`;
           }
           return (
             <Fragment key={feature.feature_id}>
@@ -216,6 +220,9 @@ export function FeatureTimeline({
                   (suppressed ? " opacity-40" : "") +
                   (dependencyBroken && !suppressed
                     ? " cad-timeline-feature-warning"
+                    : "") +
+                  (dependencyAmbiguous && !suppressed && !dependencyBroken
+                    ? " cad-timeline-feature-ambiguous"
                     : "")
                 }
                 data-tooltip={tooltip}

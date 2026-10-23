@@ -25,10 +25,10 @@ struct IgesImportResult {
 // failed, document untouched" (parse-before-mutate).
 IgesImportResult read_iges_file(const std::string& file_path);
 
-// Returns the live translated shape stored at import time. After a
-// part-file load the handle is null — the body compiler falls back to
-// deserializing the persisted snapshot (this helper cannot: the
+// Returns the live translated shape stored in the import runtime cache.
+// After a part-file load the cache is empty — the body compiler falls back
+// to deserializing the persisted snapshot (this helper cannot: the
 // snapshot deserializer lives in the compiler's translation unit).
-TopoDS_Shape build_iges_import_shape(const IgesImportFeatureParameters& params);
+TopoDS_Shape build_iges_import_shape(const std::string& feature_id);
 
 }  // namespace polysmith::core

@@ -305,6 +305,8 @@ interface RowProps {
   isHidden?: boolean;
   hasWarning?: boolean;
   warningText?: string;
+  hasAmbiguous?: boolean;
+  ambiguousText?: string;
   isRenaming?: boolean;
   onSelect?: () => void;
   onActivate?: () => void;
@@ -326,6 +328,8 @@ function Row({
   isHidden,
   hasWarning,
   warningText,
+  hasAmbiguous,
+  ambiguousText,
   isRenaming,
   onSelect,
   onActivate,
@@ -362,7 +366,7 @@ function Row({
         isSelected
           ? "bg-white/10 text-on-surface"
           : "text-on-surface-muted hover:bg-white/[0.04]"
-      } ${hasWarning && !isHidden ? "ring-1 ring-amber-400/60 text-amber-200" : ""} ${isHidden ? "opacity-50" : ""}`}
+      } ${hasWarning && !isHidden ? "ring-1 ring-amber-400/60 text-amber-200" : ""} ${hasAmbiguous && !hasWarning && !isHidden ? "ring-1 ring-sky-400/60 text-sky-200" : ""} ${isHidden ? "opacity-50" : ""}`}
       onClick={isRenaming ? undefined : onSelect}
       onDoubleClick={isRenaming ? undefined : onActivate}
       onContextMenu={onContextMenu}
@@ -415,6 +419,15 @@ function Row({
           className="flex h-5 w-5 shrink-0 items-center justify-center text-amber-300"
           title={warningText || needsAttentionLabel}
           aria-label={warningText || needsAttentionLabel}
+        >
+          <WarningIcon />
+        </span>
+      ) : null}
+      {hasAmbiguous && !hasWarning ? (
+        <span
+          className="flex h-5 w-5 shrink-0 items-center justify-center text-sky-300"
+          title={ambiguousText || needsAttentionLabel}
+          aria-label={ambiguousText || needsAttentionLabel}
         >
           <WarningIcon />
         </span>
@@ -807,6 +820,8 @@ export function DocumentHierarchyPanel({
               isHidden={isHidden}
               hasWarning={feature.dependency_broken === true}
               warningText={feature.dependency_warning}
+              hasAmbiguous={feature.dependency_ambiguous === true}
+              ambiguousText={feature.dependency_ambiguous_warning}
               isRenaming={renamingFeatureId === feature.feature_id}
               onSelect={() => {
                 // Treat construction planes as references when
@@ -859,6 +874,8 @@ export function DocumentHierarchyPanel({
               isHidden={isHidden}
               hasWarning={sketch.dependency_broken === true}
               warningText={sketch.dependency_warning}
+              hasAmbiguous={sketch.dependency_ambiguous === true}
+              ambiguousText={sketch.dependency_ambiguous_warning}
               isRenaming={renamingFeatureId === sketch.feature_id}
               onSelect={() => {
                 void onSelectFeature(sketch.feature_id);
@@ -907,6 +924,8 @@ export function DocumentHierarchyPanel({
               isHidden={isHidden}
               hasWarning={imported.dependency_broken === true}
               warningText={imported.dependency_warning}
+              hasAmbiguous={imported.dependency_ambiguous === true}
+              ambiguousText={imported.dependency_ambiguous_warning}
               isRenaming={renamingFeatureId === imported.feature_id}
               onSelect={() => {
                 void onSelectFeature(imported.feature_id);
@@ -962,6 +981,8 @@ export function DocumentHierarchyPanel({
               isHidden={isHidden}
               hasWarning={body.dependency_broken === true}
               warningText={body.dependency_warning}
+              hasAmbiguous={body.dependency_ambiguous === true}
+              ambiguousText={body.dependency_ambiguous_warning}
               isRenaming={renamingFeatureId === body.feature_id}
               onSelect={() => {
                 void onSelectFeature(body.feature_id);

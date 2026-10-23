@@ -1,12 +1,3 @@
-std::string face_owner_id(const std::string& face_id) {
-  const auto separator = face_id.find(":face:");
-  if (separator == std::string::npos) {
-    return "";
-  }
-
-  return face_id.substr(0, separator);
-}
-
 bool is_supported_sketch_tool(const std::string& tool) {
   // Delegates to the canonical list in core/sketch/sketch_tool_ids.h —
   // keeps this document-layer whitelist in sync with the core-layer

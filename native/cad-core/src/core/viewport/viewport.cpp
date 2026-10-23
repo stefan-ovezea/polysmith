@@ -2,6 +2,7 @@
 #include "core/diagnostics/logger.h"
 #include "core/cam/cam_resolution.h"
 #include "core/drawing/drawing_sheet.h"
+#include "core/geometry/face_signature.h"
 
 #include <algorithm>
 #include <array>

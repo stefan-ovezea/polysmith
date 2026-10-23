@@ -43,6 +43,8 @@ DocumentState DocumentManager::create_fillet(
   FilletFeatureParameters params{};
   params.target_body_id = owner_id;
   params.edge_ids = edge_ids;
+  params.edge_fingerprints =
+      capture_edge_fingerprints(document_.value(), edge_ids, /*exclude=*/"");
   params.radius = radius;
   // Born pending so body_compiler retains the pre-fillet shape for
   // edge picking until the UI calls `confirm_fillet`. See
@@ -130,6 +132,8 @@ DocumentState DocumentManager::update_fillet_edges(
   // only revert the last edit instead of the whole session. The
   // create_* push covers the entire session.
   feature_it->fillet_parameters->edge_ids = edge_ids;
+  feature_it->fillet_parameters->edge_fingerprints =
+      capture_edge_fingerprints(document_.value(), edge_ids, feature_id);
   std::ostringstream summary;
   summary << edge_ids.size() << " edge"
           << (edge_ids.size() == 1 ? "" : "s") << " · "

@@ -4,6 +4,9 @@
                  {"target_body_id",
                   feature.fillet_parameters->target_body_id},
                  {"edge_ids", feature.fillet_parameters->edge_ids},
+                 {"edge_fingerprints",
+                  edge_fingerprints_to_payload(
+                      feature.fillet_parameters->edge_fingerprints)},
                  {"radius", feature.fillet_parameters->radius},
                  {"is_pending", feature.fillet_parameters->is_pending},
              }
@@ -14,6 +17,9 @@
                  {"target_body_id",
                   feature.chamfer_parameters->target_body_id},
                  {"edge_ids", feature.chamfer_parameters->edge_ids},
+                 {"edge_fingerprints",
+                  edge_fingerprints_to_payload(
+                      feature.chamfer_parameters->edge_fingerprints)},
                  {"distance", feature.chamfer_parameters->distance},
                  {"is_pending", feature.chamfer_parameters->is_pending},
              }

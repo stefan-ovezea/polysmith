@@ -36,3 +36,9 @@ part.step
 part.stl
 part.igs
 res/
+
+# Python bytecode cache
+scripts/__pycache__/
+
+# Stray temporary files
+tmp-camschema.cjs

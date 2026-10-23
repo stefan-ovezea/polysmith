@@ -83,7 +83,7 @@ void refresh_linked_revolve_features(DocumentState &document,
     }
 
     try {
-      const TopoDS_Shape next_shape = build_revolve_shape(rebuilt.value());
+      const auto next_shape = build_revolve_shape(rebuilt.value());
       if (next_shape.IsNull()) {
         throw std::runtime_error("Revolve rebuild produced an empty shape");
       }

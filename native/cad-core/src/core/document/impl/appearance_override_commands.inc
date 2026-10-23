@@ -39,7 +39,7 @@ DocumentState DocumentManager::set_face_color(const std::string& face_id,
     throw std::runtime_error("Face not found: " + face_id);
   }
   const std::string signature = face.has_value()
-                                    ? appearance_face_signature(face.value())
+                                    ? face_signature(face.value())
                                     : "semantic:" + face_id;
   if (signature.empty()) {
     throw std::runtime_error("Face appearance signature could not be resolved");

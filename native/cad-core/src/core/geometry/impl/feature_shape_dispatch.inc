@@ -30,11 +30,11 @@ TopoDS_Shape build_feature_shape(const FeatureEntry& feature) {
   }
   if (feature.kind == "step_import" &&
       feature.step_import_parameters.has_value()) {
-    return build_step_import_shape(feature.step_import_parameters.value());
+    return build_step_import_shape(feature.id);
   }
   if (feature.kind == "iges_import" &&
       feature.iges_import_parameters.has_value()) {
-    return build_iges_import_shape(feature.iges_import_parameters.value());
+    return build_iges_import_shape(feature.id);
   }
   return TopoDS_Shape{};
 }

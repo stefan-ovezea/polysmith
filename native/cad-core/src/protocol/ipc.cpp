@@ -292,6 +292,22 @@ json make_cam_tool_list_event(const std::string& id, const json& tools) {
   };
 }
 
+json make_cam_setup_event(const std::string& id, const json& setup) {
+  return {
+      {"id", id},
+      {"type", "cam_setup_result"},
+      {"payload", {{"setup", setup}}},
+  };
+}
+
+json make_cam_stock_event(const std::string& id, const json& stock) {
+  return {
+      {"id", id},
+      {"type", "cam_stock_result"},
+      {"payload", {{"stock", stock}}},
+  };
+}
+
 json make_cam_tool_parse_result_event(const std::string& id,
                                       const json& payload) {
   return {

@@ -5,4 +5,5 @@
 #include "core/geometry/impl/refresh_auxiliary_body_dependencies.inc"
 #include "core/geometry/impl/refresh_sketch_dependencies.inc"
 #include "core/geometry/impl/refresh_profile_feature_dependencies.inc"
+#include "core/geometry/impl/refresh_body_modifier_dependencies.inc"
   }
