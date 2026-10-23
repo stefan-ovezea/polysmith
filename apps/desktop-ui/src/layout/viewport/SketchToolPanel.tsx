@@ -21,6 +21,10 @@ interface SketchToolPanelProps {
   /** Line tool reference-line flavour ("" = solid). */
   lineType: "" | "centerline" | "infinite";
   slotToolMode: SlotToolMode;
+  /** T2.3: straight slot or arc slot (centreline arc). */
+  slotType: "straight" | "arc";
+  /** Arc slot sweep in degrees (panel value). */
+  slotArcSweepDegrees: number;
   /** Spline creation mode (T2.1): control points or fit points. */
   splineToolMode: "control" | "fit";
   /** Requested spline degree (1..5). */
@@ -35,6 +39,8 @@ interface SketchToolPanelProps {
   onRectangleCornerRadiusChange: (radius: number) => void;
   onLineTypeChange: (lineType: "" | "centerline" | "infinite") => void;
   onSetSlotToolMode: (mode: SlotToolMode) => void;
+  onSlotTypeChange: (slotType: "straight" | "arc") => void;
+  onSlotArcSweepChange: (degrees: number) => void;
   onSetSplineToolMode: (mode: "control" | "fit") => void;
   onSplineToolDegreeChange: (degree: number) => void;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
@@ -52,6 +58,8 @@ export function SketchToolPanel({
   rectangleCornerRadius,
   lineType,
   slotToolMode,
+  slotType,
+  slotArcSweepDegrees,
   splineToolMode,
   splineToolDegree,
   polygonToolMode,
@@ -64,6 +72,8 @@ export function SketchToolPanel({
   onRectangleCornerRadiusChange,
   onLineTypeChange,
   onSetSlotToolMode,
+  onSlotTypeChange,
+  onSlotArcSweepChange,
   onSetSplineToolMode,
   onSplineToolDegreeChange,
   onSetPolygonToolMode,
@@ -385,30 +395,77 @@ export function SketchToolPanel({
         ) : null}
         {activeSketchTool === "slot" ? (
           <div>
-            <p className="cad-kicker">{translate("viewport.mode")}</p>
+            <p className="cad-kicker">{translate("viewport.slotType")}</p>
             <div className="mt-3">
               <Dropdown
-                value={slotToolMode}
+                value={slotType}
                 options={[
                   {
-                    value: "center_point",
-                    label: translate("toolbar.slotCenterPoint"),
+                    value: "straight",
+                    label: translate("toolbar.slotStraight"),
                   },
                   {
-                    value: "center_to_center",
-                    label: translate("toolbar.slotCenterToCenter"),
-                  },
-                  {
-                    value: "overall",
-                    label: translate("toolbar.slotOverall"),
+                    value: "arc",
+                    label: translate("toolbar.slotArc"),
                   },
                 ]}
-                label={translate("viewport.mode")}
+                label={translate("viewport.slotType")}
                 onChange={(value) => {
-                  onSetSlotToolMode(value as SlotToolMode);
+                  onSlotTypeChange(value as "straight" | "arc");
                 }}
               />
             </div>
+            {slotType === "arc" ? (
+              <label className="mt-4 block">
+                <span className="cad-kicker">{translate("viewport.slotSweep")}</span>
+                <input
+                  className="cad-input mt-2 w-full"
+                  type="number"
+                  min={1}
+                  max={359}
+                  step={5}
+                  value={slotArcSweepDegrees}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    if (Number.isFinite(next)) {
+                      onSlotArcSweepChange(
+                        Math.min(359, Math.max(1, next)),
+                      );
+                    }
+                  }}
+                />
+                <span className="mt-1 block text-xs text-on-surface/50">
+                  {translate("viewport.slotArcHint")}
+                </span>
+              </label>
+            ) : (
+              <>
+                <p className="cad-kicker mt-4">{translate("viewport.mode")}</p>
+                <div className="mt-3">
+                  <Dropdown
+                    value={slotToolMode}
+                    options={[
+                      {
+                        value: "center_point",
+                        label: translate("toolbar.slotCenterPoint"),
+                      },
+                      {
+                        value: "center_to_center",
+                        label: translate("toolbar.slotCenterToCenter"),
+                      },
+                      {
+                        value: "overall",
+                        label: translate("toolbar.slotOverall"),
+                      },
+                    ]}
+                    label={translate("viewport.mode")}
+                    onChange={(value) => {
+                      onSetSlotToolMode(value as SlotToolMode);
+                    }}
+                  />
+                </div>
+              </>
+            )}
           </div>
         ) : null}
         {isSplineTool ? (

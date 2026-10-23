@@ -30,6 +30,10 @@ export interface DraftPointerPreviewControls {
   rectangleCornerRadius: number;
   /** Slot pick mode — decides what the two clicks mean. */
   slotToolMode: SlotToolMode;
+  /** T2.3: straight or arc slot. */
+  slotType: "straight" | "arc";
+  /** Arc slot sweep in radians (panel value). */
+  slotArcSweep: number;
   /** Spline creation mode (T2.1): "control" samples the placed poles,
    *  "fit" solves the interpolation through them. */
   splineToolMode: "control" | "fit";
@@ -358,6 +362,8 @@ function renderSlotPointerPreview({
   draftPreviewLocal,
   sketchGroup,
   slotToolMode,
+  slotType,
+  slotArcSweep,
   isConstruction,
   previewSlotRef,
 }: DraftPointerPreviewParams) {
@@ -368,6 +374,8 @@ function renderSlotPointerPreview({
     planeId: activeSketchPlaneId,
     planeFrame: activeSketchPlaneFrame,
     isConstruction,
+    slotType,
+    arcSweep: slotArcSweep,
   });
   if (preview) {
     previewSlotRef.current = preview;

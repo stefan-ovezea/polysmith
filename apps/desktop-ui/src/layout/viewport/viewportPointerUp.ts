@@ -208,6 +208,9 @@ interface ViewportPointerUpParams {
   rectangleToolMode: DraftPointerUpCommitOptions["modes"]["rectangle"];
   rectangleCornerRadius: number;
   slotToolMode: DraftPointerUpCommitOptions["modes"]["slot"];
+  /** T2.3: straight or arc slot, plus the arc sweep from the panel. */
+  slotType: DraftPointerUpCommitOptions["slotType"];
+  slotArcSweep: number;
   // T2.1: "control" (clicks are poles) or "fit" (curve passes through the
   // clicks). Read by the spline draft commit.
   splineToolMode: "control" | "fit";
@@ -644,6 +647,8 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
     },
     polygonSides: params.polygonSides,
     rectangleCornerRadius: params.rectangleCornerRadius,
+    slotType: params.slotType,
+    slotArcSweep: params.slotArcSweep,
     lineType: params.lineType,
     isConstruction: params.isConstruction,
     clearPreviews: params.clearPreviews,

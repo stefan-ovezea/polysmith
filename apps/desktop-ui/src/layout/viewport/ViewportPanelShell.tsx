@@ -134,6 +134,10 @@ interface ViewportPanelShellProps {
   /** Line tool reference-line flavour ("" = solid). */
   lineType: "" | "centerline" | "infinite";
   slotToolMode: SlotToolMode;
+  /** T2.3: straight slot or arc slot (centreline arc). */
+  slotType: "straight" | "arc";
+  /** Arc slot sweep in degrees (panel value). */
+  slotArcSweepDegrees: number;
   /** Spline creation mode (T2.1): control points or fit points. */
   splineToolMode: "control" | "fit";
   /** Requested spline degree (1..5); clamped by the core to the point count. */
@@ -181,6 +185,8 @@ interface ViewportPanelShellProps {
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
   onSetRectangleToolMode: (mode: RectangleToolMode) => void;
   onSetSlotToolMode: (mode: SlotToolMode) => void;
+  onSlotTypeChange: (slotType: "straight" | "arc") => void;
+  onSlotArcSweepChange: (degrees: number) => void;
   onSetSplineToolMode: (mode: "control" | "fit") => void;
   onSplineToolDegreeChange: (degree: number) => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
@@ -251,6 +257,8 @@ export function ViewportPanelShell({
   rectangleCornerRadius,
   lineType,
   slotToolMode,
+  slotType,
+  slotArcSweepDegrees,
   splineToolMode,
   splineToolDegree,
   dimensionToolMode,
@@ -288,6 +296,8 @@ export function ViewportPanelShell({
   onSetPolygonToolMode,
   onSetRectangleToolMode,
   onSetSlotToolMode,
+  onSlotTypeChange,
+  onSlotArcSweepChange,
   onSetSplineToolMode,
   onSplineToolDegreeChange,
   onSetDimensionToolMode,
@@ -416,6 +426,8 @@ export function ViewportPanelShell({
             rectangleCornerRadius={rectangleCornerRadius}
             lineType={lineType}
             slotToolMode={slotToolMode}
+            slotType={slotType}
+            slotArcSweepDegrees={slotArcSweepDegrees}
             splineToolMode={splineToolMode}
             splineToolDegree={splineToolDegree}
             polygonToolMode={polygonToolMode}
@@ -426,6 +438,8 @@ export function ViewportPanelShell({
             onSetCircleToolMode={onSetCircleToolMode}
             onSetRectangleToolMode={onSetRectangleToolMode}
             onSetSlotToolMode={onSetSlotToolMode}
+            onSlotTypeChange={onSlotTypeChange}
+            onSlotArcSweepChange={onSlotArcSweepChange}
             onSetSplineToolMode={onSetSplineToolMode}
             onSplineToolDegreeChange={onSplineToolDegreeChange}
             onSetPolygonToolMode={onSetPolygonToolMode}

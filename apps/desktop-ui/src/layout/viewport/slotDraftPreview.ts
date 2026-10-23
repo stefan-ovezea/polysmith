@@ -45,6 +45,52 @@ export interface SlotDraftGeometry {
   rotation: number;
 }
 
+/** Arc slot (T2.3): the centreline is an arc, so the draft needs its own
+ *  geometry instead of `length`/`rotation`. Click 1 is the arc centre, click 2
+ *  a point on the centreline (that fixes the radius and the start angle); the
+ *  sweep comes from the panel. */
+export interface ArcSlotDraftGeometry {
+  center: [number, number];
+  /** Centreline radius (the core's `arc_radius`). */
+  arcRadius: number;
+  /** Half the slot width (the core's `radius`). */
+  radius: number;
+  startAngle: number;
+  sweepAngle: number;
+}
+
+// Largest legal half width for an arc slot: the inner boundary radius
+// (arc_radius - radius) must stay positive, so stay below the centreline radius.
+export function defaultArcSlotRadius(arcRadius: number, sweepAngle: number): number {
+  const arcLength = arcRadius * Math.max(sweepAngle, 1.0e-6);
+  return Math.min(defaultSlotRadius(arcLength), arcRadius * 0.49);
+}
+
+export function slotArcDraftGeometry(
+  start: [number, number],
+  current: [number, number],
+  sweepAngle: number,
+): ArcSlotDraftGeometry | null {
+  const dx = current[0] - start[0];
+  const dy = current[1] - start[1];
+  const arcRadius = Math.hypot(dx, dy);
+  if (arcRadius <= 0.001) {
+    return null;
+  }
+  const sweep = Math.min(Math.max(sweepAngle, 1.0e-5), 2 * Math.PI - 1.0e-5);
+  const radius = defaultArcSlotRadius(arcRadius, sweep);
+  if (!(radius > 0)) {
+    return null;
+  }
+  return {
+    center: [start[0], start[1]],
+    arcRadius,
+    radius,
+    startAngle: Math.atan2(dy, dx),
+    sweepAngle: sweep,
+  };
+}
+
 export function slotDraftGeometry(
   mode: SlotToolMode,
   start: [number, number],
@@ -100,6 +146,10 @@ export interface SlotDraftPreviewOptions {
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
   isConstruction: boolean;
+  /** "straight" (default) or "arc" (T2.3). */
+  slotType?: "straight" | "arc";
+  /** Arc slot sweep in radians (panel value; ignored for straight slots). */
+  arcSweep?: number;
 }
 
 export function buildSlotDraftPreview({
@@ -109,7 +159,19 @@ export function buildSlotDraftPreview({
   planeId,
   planeFrame,
   isConstruction,
+  slotType = "straight",
+  arcSweep = Math.PI / 2,
 }: SlotDraftPreviewOptions): THREE.Group | null {
+  if (slotType === "arc") {
+    return buildArcSlotDraftPreview({
+      start,
+      current,
+      planeId,
+      planeFrame,
+      isConstruction,
+      arcSweep,
+    });
+  }
   const geometry = slotDraftGeometry(mode, start, current);
   if (!geometry) {
     return null;
@@ -185,5 +247,99 @@ export function buildSlotDraftPreview({
   addArc("preview-slot-right", rightCenter, br, tr, true);
   addLine("preview-slot-top", tr, tl);
   addArc("preview-slot-left", leftCenter, tl, bl, false);
+  return group;
+}
+
+/** Arc-slot draft: outer arc + far radial cap + inner arc + start radial cap,
+ *  the exact four pieces the core expands `mode: "arc"` into. */
+function buildArcSlotDraftPreview({
+  start,
+  current,
+  planeId,
+  planeFrame,
+  isConstruction,
+  arcSweep,
+}: {
+  start: [number, number];
+  current: [number, number];
+  planeId: string;
+  planeFrame: SketchPlaneFrame | null;
+  isConstruction: boolean;
+  arcSweep: number;
+}): THREE.Group | null {
+  const geometry = slotArcDraftGeometry(start, current, arcSweep);
+  if (!geometry) {
+    return null;
+  }
+  const { center, arcRadius, radius, startAngle, sweepAngle } = geometry;
+  const a0 = startAngle;
+  const a1 = startAngle + sweepAngle;
+  const onArc = (angle: number, r: number): [number, number] => [
+    center[0] + Math.cos(angle) * r,
+    center[1] + Math.sin(angle) * r,
+  ];
+  const outerStart = onArc(a0, arcRadius + radius);
+  const outerEnd = onArc(a1, arcRadius + radius);
+  const innerEnd = onArc(a1, arcRadius - radius);
+  const innerStart = onArc(a0, arcRadius - radius);
+
+  const group = new THREE.Group();
+  const addLine = (
+    lineId: string,
+    startLocal: [number, number],
+    endLocal: [number, number],
+  ) => {
+    group.add(
+      buildSketchLineObject({
+        lineId,
+        startPointId: "preview-slot",
+        endPointId: "preview-slot",
+        planeId,
+        start: toWorldPoint(planeId, startLocal, planeFrame),
+        end: toWorldPoint(planeId, endLocal, planeFrame),
+        isSelected: false,
+        constraint: null,
+        isConstruction,
+        isPreview: true,
+        isProjected: false,
+        generatedBy: null,
+      }),
+    );
+  };
+  const addArc = (
+    arcId: string,
+    arcRadiusValue: number,
+    startLocal: [number, number],
+    endLocal: [number, number],
+    ccw: boolean,
+  ) => {
+    group.add(
+      buildSketchArcObject(
+        {
+          arcId,
+          startPointId: "preview-slot",
+          endPointId: "preview-slot",
+          planeId,
+          planeFrame,
+          center: toWorldPoint(planeId, center, planeFrame),
+          radius: arcRadiusValue,
+          start: toWorldPoint(planeId, startLocal, planeFrame),
+          end: toWorldPoint(planeId, endLocal, planeFrame),
+          ccw,
+          isSelected: false,
+          isConstruction,
+          isPreview: true,
+          isProjected: false,
+          generatedBy: null,
+        },
+        planeFrame,
+      ),
+    );
+  };
+  // Same winding as the core's expansion: outer forward, cap, inner back, cap.
+  addArc("preview-slot-outer", arcRadius + radius, outerStart, outerEnd, true);
+  addLine("preview-slot-end", outerEnd, innerEnd);
+  addArc("preview-slot-inner", arcRadius - radius, innerEnd, innerStart, false);
+  addLine("preview-slot-start", innerStart, outerStart);
   return group;
 }

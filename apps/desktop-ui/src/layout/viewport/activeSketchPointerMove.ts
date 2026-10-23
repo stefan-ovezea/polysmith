@@ -106,6 +106,8 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
     rectangleToolMode: params.rectangleToolMode,
     rectangleCornerRadius: params.rectangleCornerRadius,
     slotToolMode: params.slotToolMode,
+    slotType: params.slotType,
+    slotArcSweep: params.slotArcSweep,
     splineToolMode: params.splineToolMode,
     splineToolDegree: params.splineToolDegree,
     arcSecondPoint: params.arcSecondPoint,

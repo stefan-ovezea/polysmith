@@ -803,6 +803,11 @@ export const documentStateSchema = z.object({
                 radius: z.number(),
                 rotation: z.number(),
                 mode: z.string(),
+                // T2.3 arc slots. Defaulted so saves that predate them (which
+                // can only contain straight slots) parse cleanly.
+                arc_radius: z.number().default(0),
+                start_angle: z.number().default(0),
+                sweep_angle: z.number().default(0),
                 is_construction: z.boolean().default(false),
               }),
             )

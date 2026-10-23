@@ -995,6 +995,13 @@ export function ViewportPanel({
   const arcToolModeRef = useRef(arcToolMode);
   const rectangleToolModeRef = useRef(rectangleToolMode);
   const slotToolModeRef = useRef(slotToolMode);
+  // T2.3: straight slot (stadium) or arc slot (centreline arc), and the arc
+  // sweep in degrees. Local state, like the rectangle radius and the spline
+  // mode — they only feed the slot draft and its commit.
+  const [slotType, setSlotType] = useState<"straight" | "arc">("straight");
+  const slotTypeRef = useRef<"straight" | "arc">("straight");
+  const [slotArcSweepDegrees, setSlotArcSweepDegrees] = useState(90);
+  const slotArcSweepDegreesRef = useRef(90);
   const circleToolModeRef = useRef(circleToolMode);
   const polygonToolModeRef = useRef(polygonToolMode);
   const dimensionToolModeRef = useRef(dimensionToolMode);
@@ -2366,6 +2373,8 @@ export function ViewportPanel({
       rectangleToolMode: rectangleToolModeRef.current,
       rectangleCornerRadius: rectangleCornerRadiusRef.current,
       slotToolMode: slotToolModeRef.current,
+      slotType: slotTypeRef.current,
+      slotArcSweep: (slotArcSweepDegreesRef.current * Math.PI) / 180,
       splineToolMode: splineToolModeRef.current,
       splineToolDegree: splineToolDegreeRef.current,
       arcSecondPoint: adjustedArcSecondPoint(),
@@ -3709,6 +3718,8 @@ export function ViewportPanel({
         rectangleToolMode: rectangleToolModeRef.current,
         rectangleCornerRadius: rectangleCornerRadiusRef.current,
         slotToolMode: slotToolModeRef.current,
+        slotType: slotTypeRef.current,
+        slotArcSweep: (slotArcSweepDegreesRef.current * Math.PI) / 180,
         splineToolMode: splineToolModeRef.current,
         splineToolDegree: splineToolDegreeRef.current,
         arcSecondPoint: adjustedArcSecondPoint(),
@@ -5262,6 +5273,8 @@ export function ViewportPanel({
 	        rectangleToolMode: rectangleToolModeRef.current,
 	        rectangleCornerRadius: rectangleCornerRadiusRef.current,
 	        slotToolMode: slotToolModeRef.current,
+	        slotType: slotTypeRef.current,
+	        slotArcSweep: (slotArcSweepDegreesRef.current * Math.PI) / 180,
 	        splineToolMode: splineToolModeRef.current,
 	        splineToolDegree: splineToolDegreeRef.current,
 	        circleToolMode: circleToolModeRef.current,
@@ -6205,6 +6218,8 @@ export function ViewportPanel({
       rectangleCornerRadius={rectangleCornerRadius}
       lineType={lineType}
       slotToolMode={slotToolMode}
+      slotType={slotType}
+      slotArcSweepDegrees={slotArcSweepDegrees}
       splineToolMode={splineToolMode}
       splineToolDegree={splineToolDegree}
       dimensionToolMode={dimensionToolMode}
@@ -6282,6 +6297,14 @@ export function ViewportPanel({
       onSetPolygonToolMode={onSetPolygonToolMode}
       onSetRectangleToolMode={onSetRectangleToolMode}
       onSetSlotToolMode={onSetSlotToolMode}
+      onSlotTypeChange={(value) => {
+        setSlotType(value);
+        slotTypeRef.current = value;
+      }}
+      onSlotArcSweepChange={(value) => {
+        setSlotArcSweepDegrees(value);
+        slotArcSweepDegreesRef.current = value;
+      }}
       onSetDimensionToolMode={onSetDimensionToolMode}
       onSketchToolConstructionChange={(checked) => {
         sketchToolConstructionRef.current = checked;

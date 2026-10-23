@@ -47,6 +47,8 @@ function makeOptions(
     },
     polygonSides: 6,
     rectangleCornerRadius: 6,
+    slotType: "straight",
+    slotArcSweep: Math.PI / 2,
     clearPreviews: vi.fn(),
     clearDraftDimensionSession: vi.fn(),
     suppressDimensionEditorAfterSketchCommit: vi.fn(),
@@ -172,5 +174,42 @@ describe("commitDraftPointerUp — slot modes", () => {
     commitDraftPointerUp(options);
 
     expect(options.addSketchSlot).toHaveBeenCalledWith(20, 0, 40, 2, 0, false);
+  });
+
+  // T2.3: an arc slot takes the first click as the ARC centre and the second
+  // as a point on the centreline; the sweep comes from the panel. The commit
+  // must send mode "arc" with the derived radius / start angle / sweep, and no
+  // stadium length or rotation.
+  it("arc slot: sends mode arc with the centreline geometry and the panel sweep", () => {
+    const options = makeOptions({
+      activeSketchTool: "slot",
+      slotType: "arc",
+      slotArcSweep: Math.PI / 2,
+      sketchPoint: { local: [0, 10] },
+    });
+
+    commitDraftPointerUp(options);
+
+    expect(options.addSketchSlot).toHaveBeenCalledTimes(1);
+    const args = (options.addSketchSlot as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0];
+    // centre (0,0) — click 1; radius is the auto half width; no stadium data.
+    expect(args[0]).toBe(0);
+    expect(args[1]).toBe(0);
+    expect(args[2]).toBe(0);
+    expect(args[4]).toBe(0);
+    expect(args[5]).toBe(false);
+    const arc = args[6] as {
+      mode: string;
+      arcRadius: number;
+      startAngle: number;
+      sweepAngle: number;
+    };
+    expect(arc.mode).toBe("arc");
+    expect(arc.arcRadius).toBeCloseTo(10, 9);
+    expect(arc.startAngle).toBeCloseTo(Math.PI / 2, 9);
+    expect(arc.sweepAngle).toBeCloseTo(Math.PI / 2, 9);
+    expect(args[3] as number).toBeLessThan(arc.arcRadius);
   });
 });

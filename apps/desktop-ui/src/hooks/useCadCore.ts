@@ -1320,6 +1320,12 @@ export function useCadCore() {
       radius: number,
       rotation: number,
       isConstruction: boolean,
+      options: {
+        mode?: "straight" | "arc";
+        arcRadius?: number;
+        startAngle?: number;
+        sweepAngle?: number;
+      } = {},
     ) => {
       await sendCoreCommand(
         makeAddSketchSlotCommand(
@@ -1329,6 +1335,7 @@ export function useCadCore() {
           radius,
           rotation,
           isConstruction,
+          options,
         ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());

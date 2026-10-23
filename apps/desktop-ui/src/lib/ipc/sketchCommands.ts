@@ -897,6 +897,12 @@ export function makeAddSketchSlotCommand(
   radius: number,
   rotation: number,
   isConstruction: boolean,
+  options: {
+    mode?: "straight" | "arc";
+    arcRadius?: number;
+    startAngle?: number;
+    sweepAngle?: number;
+  } = {},
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -908,6 +914,16 @@ export function makeAddSketchSlotCommand(
       radius,
       rotation,
       is_construction: isConstruction,
+      ...(options.mode ? { mode: options.mode } : {}),
+      ...(options.arcRadius !== undefined
+        ? { arc_radius: options.arcRadius }
+        : {}),
+      ...(options.startAngle !== undefined
+        ? { start_angle: options.startAngle }
+        : {}),
+      ...(options.sweepAngle !== undefined
+        ? { sweep_angle: options.sweepAngle }
+        : {}),
     },
   };
 }

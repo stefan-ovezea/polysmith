@@ -372,6 +372,13 @@ export interface AddSketchSlotCommand {
     radius: number;
     rotation: number;
     is_construction?: boolean;
+    // T2.3: "arc" makes the centreline an arc (centre_x/centre_y become the
+    // ARC centre; radius is the radial half width). Straight slots ignore the
+    // arc fields, arc slots ignore length/rotation.
+    mode?: "straight" | "arc";
+    arc_radius?: number;
+    start_angle?: number;
+    sweep_angle?: number;
   };
 }
 
@@ -385,6 +392,9 @@ export interface UpdateSketchSlotCommand {
     length: number;
     radius: number;
     rotation: number;
+    arc_radius?: number;
+    start_angle?: number;
+    sweep_angle?: number;
   };
 }
 

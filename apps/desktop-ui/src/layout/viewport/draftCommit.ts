@@ -21,7 +21,11 @@ import {
   type LineCommitSnapPoint,
 } from "./lineCommitRelations";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
-import { slotDraftGeometry, type SlotToolMode } from "./slotDraftPreview";
+import {
+  slotArcDraftGeometry,
+  slotDraftGeometry,
+  type SlotToolMode,
+} from "./slotDraftPreview";
 
 export type Point2d = [number, number];
 export type LineBodyHost = { lineId: string; t: number };
@@ -269,6 +273,10 @@ export interface EllipseDraftCommitOptions {
 
 export interface SlotDraftCommitOptions {
   mode: SlotToolMode;
+  /** "straight" (default) or "arc" (T2.3). */
+  slotType?: "straight" | "arc";
+  /** Arc slot sweep in radians (panel value). */
+  arcSweep?: number;
   start: Point2d;
   committedEnd: Point2d;
   isConstruction: boolean;
@@ -281,6 +289,12 @@ export interface SlotDraftCommitOptions {
     radius: number,
     rotation: number,
     isConstruction: boolean,
+    options?: {
+      mode?: "straight" | "arc";
+      arcRadius?: number;
+      startAngle?: number;
+      sweepAngle?: number;
+    },
   ) => Promise<void> | void;
 }
 
@@ -315,6 +329,9 @@ export interface DraftPointerUpCommitOptions {
   };
   polygonSides: number;
   rectangleCornerRadius: number;
+  /** T2.3: slot variant and, for an arc slot, the sweep from the panel. */
+  slotType: "straight" | "arc";
+  slotArcSweep: number;
   lineType: "" | "centerline" | "infinite";
   clearPreviews: () => void;
   clearDraftDimensionSession: () => void;
@@ -709,6 +726,8 @@ function commitEllipseDraft({
 
 function commitSlotDraft({
   mode,
+  slotType = "straight",
+  arcSweep = Math.PI / 2,
   start,
   committedEnd,
   isConstruction,
@@ -716,6 +735,34 @@ function commitSlotDraft({
   clearDraftDimensionSession,
   addSketchSlot,
 }: SlotDraftCommitOptions): void {
+  clearDraftStart();
+  clearDraftDimensionSession();
+
+  if (slotType === "arc") {
+    // Arc slot (T2.3): click 1 was the ARC centre, click 2 a point on the
+    // centreline (radius + start angle); the sweep is the panel's value. Same
+    // derivation as the preview, so the two cannot disagree.
+    const arc = slotArcDraftGeometry(start, committedEnd, arcSweep);
+    if (!arc) {
+      return;
+    }
+    void addSketchSlot(
+      arc.center[0],
+      arc.center[1],
+      /*length=*/0,
+      arc.radius,
+      /*rotation=*/0,
+      isConstruction,
+      {
+        mode: "arc",
+        arcRadius: arc.arcRadius,
+        startAngle: arc.startAngle,
+        sweepAngle: arc.sweepAngle,
+      },
+    );
+    return;
+  }
+
   // One shared geometry derivation with the preview (slotDraftGeometry), so
   // the mode's "length means centre distance vs overall span" arithmetic can
   // never disagree with what the user saw while dragging.
@@ -723,8 +770,6 @@ function commitSlotDraft({
   if (!geometry) {
     return;
   }
-  clearDraftStart();
-  clearDraftDimensionSession();
   void addSketchSlot(
     geometry.center[0],
     geometry.center[1],
@@ -819,6 +864,8 @@ export function commitDraftPointerUp({
   modes,
   polygonSides,
   rectangleCornerRadius,
+  slotType,
+  slotArcSweep,
   lineType,
   clearPreviews,
   clearDraftDimensionSession,
@@ -1011,6 +1058,8 @@ export function commitDraftPointerUp({
   if (activeSketchTool === "slot") {
     commitSlotDraft({
       mode: modes.slot,
+      slotType,
+      arcSweep: slotArcSweep,
       start,
       committedEnd,
       isConstruction,

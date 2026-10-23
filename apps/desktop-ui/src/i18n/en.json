@@ -1482,6 +1482,8 @@
     "slotCenterPoint": "Center-Point Slot",
     "slotCenterToCenter": "Center-to-Center Slot",
     "slotOverall": "Overall Slot",
+    "slotStraight": "Straight Slot",
+    "slotArc": "Arc Slot",
     "vertical": "Vertical"
   },
   "forms": {
@@ -2136,6 +2138,9 @@
     "splineControlHint": "Each click places a control point (pole) — the curve is pulled toward it.",
     "splineFitHint": "Each click places a fit point — the curve passes through it.",
     "splineDegree": "Degree",
+    "slotType": "Slot type",
+    "slotSweep": "Sweep (deg)",
+    "slotArcHint": "Click the arc centre, then a point on the centreline. The band is swept counter-clockwise from that point.",
     "lineTypeSolid": "Solid",
     "lineTypeConstruction": "Construction",
     "lineTypeCenterline": "Centerline",
