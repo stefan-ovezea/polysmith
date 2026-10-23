@@ -18,6 +18,7 @@ ViewportSketchLinePrimitive make_sketch_line_primitive(const SketchLine& line,
       .is_selected = is_selected,
       .constraint = line.constraint,
       .is_construction = line.is_construction,
+      .line_type = line.line_type,
       .generated_by = line.generated_by,
   };
 }

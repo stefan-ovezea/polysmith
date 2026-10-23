@@ -177,6 +177,9 @@ export interface SketchLineScene {
   // Reference-only construction lines render dashed and don't
   // contribute to profile loop detection in the core.
   isConstruction: boolean;
+  // Reference-line flavour. "centerline" gets a long-dash style;
+  // "infinite" is additionally drawn far past its endpoints.
+  lineType?: "centerline" | "infinite" | null;
   isProjected: boolean;
   // Set for glyph segments expanded from a sketch text entry
   // ("text:<text-id>"). Null for hand-drawn / projected lines.

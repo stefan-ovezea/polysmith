@@ -53,9 +53,17 @@ interface AppTopBarProps {
   onStartArrayTool: () => void;
   arcToolMode: "three_point" | "center_start_end";
   setArcToolMode: (mode: "three_point" | "center_start_end") => void;
-  rectangleToolMode: "corner_corner" | "center_point" | "three_point";
+  rectangleToolMode: "corner_corner" | "center_point" | "three_point" | "rounded";
   setRectangleToolMode: (
-    mode: "corner_corner" | "center_point" | "three_point",
+    mode: "corner_corner" | "center_point" | "three_point" | "rounded",
+  ) => void;
+  slotToolMode: "center_point" | "center_to_center" | "overall";
+  setSlotToolMode: (
+    mode: "center_point" | "center_to_center" | "overall",
+  ) => void;
+  chamferToolMode: "equal" | "two_distance" | "distance_angle";
+  setChamferToolMode: (
+    mode: "equal" | "two_distance" | "distance_angle",
   ) => void;
   circleToolMode:
     | "center_radius"
@@ -237,6 +245,10 @@ export function AppTopBar(props: AppTopBarProps) {
       onSetArcToolMode={props.setArcToolMode}
       rectangleToolMode={props.rectangleToolMode}
       onSetRectangleToolMode={props.setRectangleToolMode}
+      slotToolMode={props.slotToolMode}
+      onSetSlotToolMode={props.setSlotToolMode}
+      chamferToolMode={props.chamferToolMode}
+      onSetChamferToolMode={props.setChamferToolMode}
       circleToolMode={props.circleToolMode}
       onSetCircleToolMode={props.setCircleToolMode}
       polygonToolMode={props.polygonToolMode}

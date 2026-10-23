@@ -15,6 +15,7 @@
                                ? json(line.constraint.value())
                                : json(nullptr)},
                           {"is_construction", line.is_construction},
+                          {"line_type", line.line_type},
                           {"generated_by",
                            line.generated_by.has_value()
                                ? json(line.generated_by.value())

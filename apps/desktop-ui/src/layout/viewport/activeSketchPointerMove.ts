@@ -104,6 +104,8 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
     arcToolMode: params.arcToolMode,
     circleToolMode: params.circleToolMode,
     rectangleToolMode: params.rectangleToolMode,
+    rectangleCornerRadius: params.rectangleCornerRadius,
+    slotToolMode: params.slotToolMode,
     arcSecondPoint: params.arcSecondPoint,
     circleSecondPoint: params.circleSecondPoint,
     rectSecondPoint: params.rectSecondPoint,

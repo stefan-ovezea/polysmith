@@ -22,6 +22,7 @@ json to_payload(const polysmith::core::ViewportSketchLinePrimitive& primitive) {
            ? json(primitive.constraint.value())
            : json(nullptr)},
       {"is_construction", primitive.is_construction},
+      {"line_type", primitive.line_type},
       {"is_preview", primitive.is_preview},
       {"generated_by",
        primitive.generated_by.has_value() ? json(primitive.generated_by.value())

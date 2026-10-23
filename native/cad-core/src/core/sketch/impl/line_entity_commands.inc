@@ -2,7 +2,8 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
                      double start_y, double end_x, double end_y,
                      bool is_construction, bool snap_start,
                      bool auto_dimensions, bool refresh_immediately,
-                     bool infer_constraints, bool share_endpoints) {
+                     bool infer_constraints, bool share_endpoints,
+                     const std::string &line_type) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch lines");
   }
@@ -51,7 +52,8 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
                         ? infer_constraint_hint(snapped_start_x, snapped_start_y,
                                                 snapped_end_x, snapped_end_y)
                         : std::optional<std::string>(),
-      .is_construction = is_construction,
+      .is_construction = is_construction || !line_type.empty(),
+      .line_type = line_type,
   });
   auto &line = feature.sketch_parameters->lines.back();
   if (infer_constraints) {
@@ -86,7 +88,11 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
   // geometry (auto_dimensions = false) skips the automatic dimensions
   // too — its endpoints are fixed, so driving dimensions would only
   // over-constrain the solver and flood the sketch with clutter.
-  if (!is_construction && auto_dimensions) {
+  // Reference-line flavours ("centerline" / "infinite") are construction
+  // geometry too: everything below keys off the effective flag so a
+  // flavoured line never receives automatic dimensions or inference.
+  const bool effective_construction = is_construction || !line_type.empty();
+  if (!effective_construction && auto_dimensions) {
     feature.sketch_parameters->dimensions.push_back(SketchDimension{
         .id = "dim-line-" + line.id,
         .kind = "line_length",
@@ -113,7 +119,7 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
   }
   // Bulk inserters (projection outlines) skip the per-entity inference
   // and refresh — they refresh once at the end with the full id set.
-  if (!is_construction && refresh_immediately) {
+  if (!effective_construction && refresh_immediately) {
     run_inference_on_new_line(*feature.sketch_parameters,
                               feature.sketch_parameters->lines.back());
   }

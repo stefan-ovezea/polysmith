@@ -31,6 +31,12 @@ import {
 import { themeColor } from "./themeColor";
 import { polygonArea2d, SKETCH_PLANE_OFFSET } from "./viewportMath";
 
+// How far past its endpoints an "infinite" reference line is drawn. Pure
+// presentation: the document keeps the clicked endpoints and the camera
+// framing uses the core's scene bounds, so a large value only means the
+// line leaves the viewport instead of stopping mid-air.
+const INFINITE_LINE_REACH = 100000;
+
 function configureSketchOverlayMaterial(material: THREE.Material) {
   material.depthTest = false;
   material.depthWrite = false;
@@ -109,12 +115,12 @@ function spriteFromCanvas({
   return sprite;
 }
 
-export function buildSketchLineObject(line: SketchLineScene) {
-  // Tool-generated preview lines (e.g. Mirror's reflected
+export function buildSketchLineObject(line: SketchLineScene) {  // Tool-generated preview lines (e.g. Mirror's reflected
   // entities) render dashed and translucent so they read as
   // "about to exist" rather than committed geometry. They share
   // the dashed material path with construction lines, just at
   // lower opacity.
+  const lineType = line.lineType ?? null;
   const isDashed = line.isConstruction || line.isPreview;
   const baseColor = line.isProjected
     ? themeColor("--cad-sketch-projected", "#a678d6")
@@ -127,8 +133,10 @@ export function buildSketchLineObject(line: SketchLineScene) {
         transparent: true,
         opacity: line.isPreview ? 0.55 : 0.85,
         linewidth: line.isSelected ? 2 : 1,
-        dashSize: 1,
-        gapSize: 0.6,
+        // Centerlines read as long-dash / short-gap so they are
+        // distinguishable from plain construction dashes.
+        dashSize: lineType === "centerline" ? 4 : 1,
+        gapSize: lineType === "centerline" ? 1.2 : 0.6,
       })
     : new THREE.LineBasicMaterial({
         color: line.isSelected
@@ -139,9 +147,29 @@ export function buildSketchLineObject(line: SketchLineScene) {
         linewidth: line.isSelected ? 2 : 1,
       });
   configureSketchOverlayMaterial(material);
+  let start = line.start;
+  let end = line.end;
+  if (lineType === "infinite") {
+    // Drawn far beyond its endpoints. This is presentation only: the
+    // document keeps the clicked endpoints, and the SCENE BOUNDS come
+    // from the core (viewport.scene_bounds), so camera framing is
+    // unaffected.
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const dz = end[2] - start[2];
+    const length = Math.hypot(dx, dy, dz);
+    if (length > 1e-9) {
+      const reach = INFINITE_LINE_REACH;
+      const ux = (dx / length) * reach;
+      const uy = (dy / length) * reach;
+      const uz = (dz / length) * reach;
+      start = [start[0] - ux, start[1] - uy, start[2] - uz];
+      end = [end[0] + ux, end[1] + uy, end[2] + uz];
+    }
+  }
   const points = [
-    new THREE.Vector3(...line.start),
-    new THREE.Vector3(...line.end),
+    new THREE.Vector3(...start),
+    new THREE.Vector3(...end),
   ];
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const sketchLine = new THREE.Line(geometry, material);

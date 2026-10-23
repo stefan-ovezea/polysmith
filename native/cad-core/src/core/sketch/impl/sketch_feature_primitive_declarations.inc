@@ -34,7 +34,11 @@ void add_sketch_line(FeatureEntry& feature,
                      // export is 0.005 mm spline steps) has segments shorter
                      // than that tolerance, so coalescing would collapse
                      // them onto a single vertex.
-                     bool share_endpoints = true);
+                     bool share_endpoints = true,
+                     // "" for a plain line; "centerline" / "infinite" also
+                     // force is_construction and add only presentation
+                     // behaviour (dash-dot / drawn to the viewport edge).
+                     const std::string& line_type = "");
 void add_sketch_rectangle(FeatureEntry& feature,
                           int& next_line_index,
                           double start_x,

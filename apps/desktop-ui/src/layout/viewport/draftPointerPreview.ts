@@ -13,7 +13,7 @@ import {
   buildInferenceGuideLines,
 } from "./draftLinePreview";
 import { buildEllipseDraftPreview } from "./ellipseDraftPreview";
-import { buildSlotDraftPreview } from "./slotDraftPreview";
+import { buildSlotDraftPreview, type SlotToolMode } from "./slotDraftPreview";
 import { buildSplineDraftPreview } from "./splineDraftPreview";
 import { formatDraftDimension } from "./draftDimensions";
 import {
@@ -26,6 +26,10 @@ export interface DraftPointerPreviewControls {
   arcToolMode: ArcToolMode;
   circleToolMode: CircleToolMode;
   rectangleToolMode: RectangleToolMode;
+  /** Corner radius for the rounded-rectangle mode's live outline. */
+  rectangleCornerRadius: number;
+  /** Slot pick mode — decides what the two clicks mean. */
+  slotToolMode: SlotToolMode;
   arcSecondPoint: [number, number] | null;
   circleSecondPoint: [number, number] | null;
   rectSecondPoint: [number, number] | null;
@@ -288,6 +292,7 @@ function renderRectanglePointerPreview({
   draftPreviewLocal,
   sketchGroup,
   rectangleToolMode,
+  rectangleCornerRadius,
   rectSecondPoint,
   isConstruction,
   previewLineRef,
@@ -300,6 +305,7 @@ function renderRectanglePointerPreview({
     planeId: activeSketchPlaneId,
     planeFrame: activeSketchPlaneFrame,
     isConstruction,
+    cornerRadius: rectangleCornerRadius,
   });
   if (preview) {
     previewLineRef.current = preview;
@@ -339,10 +345,12 @@ function renderSlotPointerPreview({
   draftStart,
   draftPreviewLocal,
   sketchGroup,
+  slotToolMode,
   isConstruction,
   previewSlotRef,
 }: DraftPointerPreviewParams) {
   const preview = buildSlotDraftPreview({
+    mode: slotToolMode,
     start: draftStart,
     current: draftPreviewLocal,
     planeId: activeSketchPlaneId,

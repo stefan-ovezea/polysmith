@@ -27,6 +27,9 @@ export interface AddSketchLineCommand {
     end_x: number;
     end_y: number;
     is_construction: boolean;
+    // Reference-line flavour. "centerline" / "infinite" also force the
+    // construction flag in the core; "" (or absent) is an ordinary line.
+    line_type?: "centerline" | "infinite" | "";
   };
 }
 
@@ -151,6 +154,22 @@ export interface AddSketchRectangleCommand {
   };
 }
 
+// Rounded rectangle: the rectangle plus four corner fillets, composed in
+// the core as ONE undo step. `radius` must stay below half the shorter
+// side — the core refuses anything else rather than silently clamping.
+export interface AddSketchRoundedRectangleCommand {
+  id: string;
+  type: "add_sketch_rounded_rectangle";
+  payload: {
+    start_x: number;
+    start_y: number;
+    end_x: number;
+    end_y: number;
+    radius: number;
+    is_construction: boolean;
+  };
+}
+
 export interface AddSketchCircleCommand {
   id: string;
   type: "add_sketch_circle";
@@ -264,6 +283,14 @@ export interface MergeCoincidentSketchPointsCommand {
 
 // Sketch chamfer (line-line). Same corner/line pair pattern as the
 // fillet with two trim distances instead of a radius.
+//
+// `mode` selects how the second distance is determined:
+//   - "equal":           `distance_a` applies to both lines
+//                        (`distance_b` is ignored/derived).
+//   - "two_distance":    `distance_a` + `distance_b` (default).
+//   - "distance_angle":  `distance_a` plus `angle_degrees` between the
+//                        chamfer line and line A; `distance_b` is
+//                        derived by the core.
 export interface AddSketchChamferCommand {
   id: string;
   type: "add_sketch_chamfer";
@@ -272,7 +299,9 @@ export interface AddSketchChamferCommand {
     line_a_id: string;
     line_b_id: string;
     distance_a: number;
-    distance_b: number;
+    distance_b?: number;
+    mode?: "equal" | "two_distance" | "distance_angle";
+    angle_degrees?: number;
   };
 }
 
@@ -282,7 +311,9 @@ export interface UpdateSketchChamferCommand {
   payload: {
     chamfer_id: string;
     distance_a: number;
-    distance_b: number;
+    distance_b?: number;
+    mode?: "equal" | "two_distance" | "distance_angle";
+    angle_degrees?: number;
   };
 }
 

@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import type {
   ArmedSketchConstraint,
+  ChamferToolMode,
   SketchTextEntry,
   SketchTool,
 } from "../types";
@@ -13,13 +14,22 @@ export type SketchFilletAction =
 
 // Sketch Chamfer tool session (mirrors the fillet session with two
 // distances instead of a radius). Clicks use the session's current
-// distances so the panel edits feed the next chamfer.
+// values so the panel edits feed the next chamfer. `mode` decides which
+// of those values drive the geometry — the core derives the rest.
 export type SketchChamferAction =
-  | { phase: "pending"; distanceA: number; distanceB: number }
   | {
-      phase: "active";
+      phase: "pending";
+      mode: ChamferToolMode;
       distanceA: number;
       distanceB: number;
+      angleDegrees: number;
+    }
+  | {
+      phase: "active";
+      mode: ChamferToolMode;
+      distanceA: number;
+      distanceB: number;
+      angleDegrees: number;
       chamferIds: string[];
     };
 
@@ -68,6 +78,10 @@ interface SketchToolLifecycleEffectsContext {
   sketchFilletIdsRef: MutableRefObject<string[]>;
   sketchChamferAction: SketchChamferAction | null;
   sketchChamferIdsRef: MutableRefObject<string[]>;
+  // Tool-side chamfer mode (split-button choice). The pending session
+  // starts with it, and changing it while the tool is armed retargets
+  // the session so the next corner click uses the new mode.
+  chamferToolMode: ChamferToolMode;
   sketchOffsetAction: SketchOffsetAction | null;
   sketchTextAction: SketchTextAction | null;
   setTimelineEditVisibleFeatureIds: Dispatch<SetStateAction<Set<string>>>;
@@ -92,6 +106,7 @@ export function useSketchToolLifecycleEffects({
   sketchFilletIdsRef,
   sketchChamferAction,
   sketchChamferIdsRef,
+  chamferToolMode,
   sketchOffsetAction,
   sketchTextAction,
   setTimelineEditVisibleFeatureIds,
@@ -140,7 +155,13 @@ export function useSketchToolLifecycleEffects({
       activeSketchPlaneId &&
       !sketchChamferAction
     ) {
-      setSketchChamferAction({ phase: "pending", distanceA: 5, distanceB: 5 });
+      setSketchChamferAction({
+        phase: "pending",
+        mode: chamferToolMode,
+        distanceA: 5,
+        distanceB: 5,
+        angleDegrees: 45,
+      });
       sketchChamferIdsRef.current = [];
       return;
     }
@@ -148,7 +169,17 @@ export function useSketchToolLifecycleEffects({
       setSketchChamferAction(null);
       sketchChamferIdsRef.current = [];
     }
-  }, [activeSketchTool, activeSketchPlaneId, sketchChamferAction]);
+  }, [activeSketchTool, activeSketchPlaneId, sketchChamferAction, chamferToolMode]);
+
+  // Retarget an open session when the toolbar mode changes, so the panel
+  // shows the fields the new mode needs and the next click uses it.
+  useEffect(() => {
+    setSketchChamferAction((prev) =>
+      prev && prev.mode !== chamferToolMode
+        ? { ...prev, mode: chamferToolMode }
+        : prev,
+    );
+  }, [chamferToolMode, setSketchChamferAction]);
 
   useEffect(() => {
     if (

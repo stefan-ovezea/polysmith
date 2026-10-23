@@ -21,6 +21,7 @@ import type { CircleToolMode } from "./circleDraftPreview";
 import type { DimensionToolMode } from "@/types";
 import type { MoveGizmoDescriptor } from "./moveGizmo";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
+import type { SlotToolMode } from "./slotDraftPreview";
 
 export const ORTHO_FRUSTUM_HEIGHT = 220;
 export const ORTHO_MIN_ZOOM = 0.02;
@@ -220,6 +221,7 @@ export interface ViewportPanelProps {
     endX: number,
     endY: number,
     isConstruction: boolean,
+    lineType?: "centerline" | "infinite" | "",
   ) => Promise<void>;
   onSetSketchMidpointAnchor: (
     pointId: string,
@@ -269,6 +271,16 @@ export interface ViewportPanelProps {
     startY: number,
     endX: number,
     endY: number,
+    isConstruction: boolean,
+  ) => Promise<void>;
+  // Rounded rectangle: one core command creates the four sides and the
+  // four parametric corner fillets as a single undo step.
+  onAddSketchRoundedRectangle: (
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    radius: number,
     isConstruction: boolean,
   ) => Promise<void>;
   onAddSketchCircle: (
@@ -330,6 +342,8 @@ export interface ViewportPanelProps {
   onSetArcToolMode: (mode: ArcToolMode) => void;
   rectangleToolMode: RectangleToolMode;
   onSetRectangleToolMode: (mode: RectangleToolMode) => void;
+  slotToolMode: SlotToolMode;
+  onSetSlotToolMode: (mode: SlotToolMode) => void;
   circleToolMode: CircleToolMode;
   onSetCircleToolMode: (mode: CircleToolMode) => void;
   polygonToolMode: PolygonToolMode;

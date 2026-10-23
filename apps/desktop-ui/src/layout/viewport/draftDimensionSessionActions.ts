@@ -102,6 +102,15 @@ export function createDraftDimensionSessionActions({
   function scheduleDimensionDeletion(
     tool: DraftDimensionTool,
     preCapturedSession?: DraftDimensionSession | null,
+    options?: {
+      // Force the rectangle's four auto side dimensions to be deleted even
+      // when the user typed draft values. The rounded-rectangle mode needs
+      // this: its sides are trimmed by the corner fillets, so a side
+      // dimension measures the trimmed line, not the overall width/length
+      // the draft badge showed. Typed values still size the shape (the
+      // session's current point was reshaped before this commit).
+      deleteRectangleDimensions?: boolean;
+    },
   ) {
     const session = preCapturedSession ?? draftDimensionSessionRef.current;
     pendingDimensionDeletionRef.current = {
@@ -122,8 +131,9 @@ export function createDraftDimensionSessionActions({
         tool === "polygon" && !session?.touchedFields.radius,
       shouldDeleteRectangle:
         tool === "rectangle" &&
-        !session?.touchedFields.width &&
-        !session?.touchedFields.length,
+        (options?.deleteRectangleDimensions === true ||
+          (!session?.touchedFields.width &&
+            !session?.touchedFields.length)),
       shouldDeleteLineAngle: tool === "line" && !session?.touchedFields.angle,
       // Same convention as circles: the auto radius dim is deleted
       // unless the user typed a value during the draft, in which case

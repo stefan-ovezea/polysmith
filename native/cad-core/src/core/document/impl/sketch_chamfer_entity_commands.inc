@@ -3,7 +3,9 @@ DocumentState DocumentManager::add_sketch_chamfer(
     const std::string& line_a_id,
     const std::string& line_b_id,
     double distance_a,
-    double distance_b) {
+    double distance_b,
+    const std::string& mode,
+    double angle_degrees) {
   require_document();
 
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -38,7 +40,9 @@ DocumentState DocumentManager::add_sketch_chamfer(
                                       line_a_id,
                                       line_b_id,
                                       distance_a,
-                                      distance_b);
+                                      distance_b,
+                                      mode,
+                                      angle_degrees);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
@@ -52,7 +56,9 @@ DocumentState DocumentManager::add_sketch_chamfer(
 DocumentState DocumentManager::update_sketch_chamfer(
     const std::string& chamfer_id,
     double distance_a,
-    double distance_b) {
+    double distance_b,
+    const std::string& mode,
+    double angle_degrees) {
   require_document();
 
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -72,7 +78,8 @@ DocumentState DocumentManager::update_sketch_chamfer(
   push_undo_state();
   clear_redo_stack();
   polysmith::core::update_sketch_chamfer(*feature_it, chamfer_id,
-                                         distance_a, distance_b);
+                                         distance_a, distance_b, mode,
+                                         angle_degrees);
   refresh_linked_extrudes(*document_, *feature_it);
   bump_geometry_revision();
   return document_.value();

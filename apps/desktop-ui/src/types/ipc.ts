@@ -33,6 +33,7 @@ import type {
   AddSketchPolygonRadiusDimensionCommand,
   SetSketchVertexLineAnchorCommand,
   AddSketchRectangleCommand,
+  AddSketchRoundedRectangleCommand,
   AddSketchCircleCommand,
   AddSketchPolygonCommand,
   AddSketchArcCommand,
@@ -1391,6 +1392,7 @@ export type CoreCommand =
   | AddSketchCircleRadiusDimensionCommand
   | AddSketchPolygonRadiusDimensionCommand
   | AddSketchRectangleCommand
+  | AddSketchRoundedRectangleCommand
   | AddSketchCircleCommand
   | AddSketchPolygonCommand
   | AddSketchArcCommand

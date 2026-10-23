@@ -1205,6 +1205,7 @@ export function createViewportScene(
       isSelected: line.is_selected,
       constraint: line.constraint,
       isConstruction: line.is_construction,
+      lineType: line.line_type ?? null,
       isPreview: line.is_preview,
       isProjected: projectedLineIds.has(line.line_id),
       generatedBy: line.generated_by ?? null,

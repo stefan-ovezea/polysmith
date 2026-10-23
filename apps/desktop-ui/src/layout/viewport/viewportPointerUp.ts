@@ -203,10 +203,13 @@ interface ViewportPointerUpParams {
   draftDimensionInputRefsForCommit: DraftPointerUpCommitOptions["refs"]["draftDimensionInputs"];
   arcToolMode: DraftPointerUpCommitOptions["modes"]["arc"];
   rectangleToolMode: DraftPointerUpCommitOptions["modes"]["rectangle"];
+  rectangleCornerRadius: number;
+  slotToolMode: DraftPointerUpCommitOptions["modes"]["slot"];
   circleToolMode: DraftPointerUpCommitOptions["modes"]["circle"];
   polygonToolMode: PolygonToolMode;
   dimensionToolMode: import("@/types").DimensionToolMode;
   polygonSides: number;
+  lineType: "" | "centerline" | "infinite";
   isConstruction: boolean;
   clearPreviews: () => void;
   clearDraftDimensionSession: DraftPointerUpCommitOptions["clearDraftDimensionSession"];
@@ -221,6 +224,7 @@ interface ViewportPointerUpParams {
   focusDraftField: DraftPointerUpCommitOptions["focusDraftField"];
   addSketchArc: ArcDraftCommitOptions["addSketchArc"];
   addSketchRectangle: RectangleDraftCommitOptions["addSketchRectangle"];
+  addSketchRoundedRectangle: RectangleDraftCommitOptions["addSketchRoundedRectangle"];
   addSketchCircle: CircleDraftCommitOptions["addSketchCircle"];
   addSketchPolygon: PolygonDraftCommitOptions["addSketchPolygon"];
   addSketchLine: LineDraftCommitOptions["addSketchLine"];
@@ -615,8 +619,11 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
       rectangle: params.rectangleToolMode,
       circle: params.circleToolMode,
       polygon: params.polygonToolMode,
+      slot: params.slotToolMode,
     },
     polygonSides: params.polygonSides,
+    rectangleCornerRadius: params.rectangleCornerRadius,
+    lineType: params.lineType,
     isConstruction: params.isConstruction,
     clearPreviews: params.clearPreviews,
     clearDraftDimensionSession: params.clearDraftDimensionSession,
@@ -633,6 +640,7 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
     focusDraftField: params.focusDraftField,
     addSketchArc: params.addSketchArc,
     addSketchRectangle: params.addSketchRectangle,
+    addSketchRoundedRectangle: params.addSketchRoundedRectangle,
     addSketchCircle: params.addSketchCircle,
     addSketchCircleMode: params.addSketchCircleMode,
     addSketchPolygon: params.addSketchPolygon,

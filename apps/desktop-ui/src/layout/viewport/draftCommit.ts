@@ -21,7 +21,7 @@ import {
   type LineCommitSnapPoint,
 } from "./lineCommitRelations";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
-import { defaultSlotRadius } from "./slotDraftPreview";
+import { slotDraftGeometry, type SlotToolMode } from "./slotDraftPreview";
 
 export type Point2d = [number, number];
 export type LineBodyHost = { lineId: string; t: number };
@@ -74,6 +74,8 @@ function prepareThreePointDraft(options: ThreePointDraftActions) {
 
 export interface RectangleDraftCommitOptions {
   mode: RectangleToolMode;
+  /** Corner radius for mode "rounded" (below half the shorter side). */
+  cornerRadius: number;
   start: Point2d;
   committedEnd: Point2d;
   secondPoint: Point2d | null;
@@ -90,6 +92,16 @@ export interface RectangleDraftCommitOptions {
     startY: number,
     endX: number,
     endY: number,
+    isConstruction: boolean,
+  ) => Promise<void> | void;
+  // One call creates the four sides AND the four parametric corner
+  // fillets (one core-side undo step) — the UI never composes them.
+  addSketchRoundedRectangle: (
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    radius: number,
     isConstruction: boolean,
   ) => Promise<void> | void;
 }
@@ -187,6 +199,8 @@ export interface LineDraftCommitOptions {
   start: Point2d;
   committedEnd: Point2d;
   isConstruction: boolean;
+  /** Reference-line flavour: "" | "centerline" | "infinite". */
+  lineType?: "centerline" | "infinite" | "";
   endHostLineId: string | null;
   endLineBodyHost: LineBodyHost | null;
   snapEndpointHostLineId: string | null | undefined;
@@ -226,6 +240,7 @@ export interface LineDraftCommitOptions {
     endX: number,
     endY: number,
     isConstruction: boolean,
+    lineType?: "centerline" | "infinite" | "",
   ) => Promise<void> | void;
 }
 
@@ -253,6 +268,7 @@ export interface EllipseDraftCommitOptions {
 }
 
 export interface SlotDraftCommitOptions {
+  mode: SlotToolMode;
   start: Point2d;
   committedEnd: Point2d;
   isConstruction: boolean;
@@ -295,14 +311,18 @@ export interface DraftPointerUpCommitOptions {
     rectangle: RectangleToolMode;
     circle: CircleToolMode;
     polygon: PolygonToolMode;
+    slot: SlotToolMode;
   };
   polygonSides: number;
+  rectangleCornerRadius: number;
+  lineType: "" | "centerline" | "infinite";
   clearPreviews: () => void;
   clearDraftDimensionSession: () => void;
   suppressDimensionEditorAfterSketchCommit: () => void;
   scheduleDimensionDeletion: (
     tool: "line" | "rectangle" | "circle" | "polygon" | "arc",
     preCapturedSession?: DraftDimensionSession | null,
+    options?: { deleteRectangleDimensions?: boolean },
   ) => void;
   scheduleDraftDimensionExpressionUpdate: (
     tool: "line" | "rectangle" | "circle" | "polygon" | "arc",
@@ -325,6 +345,7 @@ export interface DraftPointerUpCommitOptions {
   focusDraftField: (field: DraftDimensionSession["activeField"]) => void;
   addSketchArc: ArcDraftCommitOptions["addSketchArc"];
   addSketchRectangle: RectangleDraftCommitOptions["addSketchRectangle"];
+  addSketchRoundedRectangle: RectangleDraftCommitOptions["addSketchRoundedRectangle"];
   addSketchCircle: CircleDraftCommitOptions["addSketchCircle"];
   addSketchCircleMode: CircleDraftCommitOptions["addSketchCircleMode"];
   addSketchPolygon: PolygonDraftCommitOptions["addSketchPolygon"];
@@ -335,6 +356,32 @@ export interface DraftPointerUpCommitOptions {
 
 function commitRectangleDraft(options: RectangleDraftCommitOptions): void {
   const [startX, startY] = options.start;
+
+  if (options.mode === "rounded") {
+    // Corner-to-corner pick sequence; the core rounds all four corners in
+    // one command. The radius is the panel's current value — the core
+    // refuses it when it does not fit (and shows that message), which is
+    // better than silently shrinking the user's number here.
+    //
+    // No expression replay: a typed width/length already shaped the
+    // committed end point (so the OVERALL size is what the user typed), and
+    // replaying it onto the auto side dimension would drive the TRIMMED
+    // side instead — a different number once the fillets exist. The caller
+    // schedules those side dimensions for deletion regardless of typing.
+    options.clearDraftStart();
+    options.scheduleDimensionDeletion();
+    options.clearDraftDimensionSession();
+    options.suppressDimensionEditorAfterSketchCommit();
+    void options.addSketchRoundedRectangle(
+      startX,
+      startY,
+      options.committedEnd[0],
+      options.committedEnd[1],
+      options.cornerRadius,
+      options.isConstruction,
+    );
+    return;
+  }
 
   if (options.mode === "three_point") {
     const secondPoint = prepareThreePointDraft(options);
@@ -661,6 +708,7 @@ function commitEllipseDraft({
 }
 
 function commitSlotDraft({
+  mode,
   start,
   committedEnd,
   isConstruction,
@@ -668,22 +716,21 @@ function commitSlotDraft({
   clearDraftDimensionSession,
   addSketchSlot,
 }: SlotDraftCommitOptions): void {
-  const dx = committedEnd[0] - start[0];
-  const dy = committedEnd[1] - start[1];
-  const half = Math.hypot(dx, dy);
-  if (half <= 0.001) {
+  // One shared geometry derivation with the preview (slotDraftGeometry), so
+  // the mode's "length means centre distance vs overall span" arithmetic can
+  // never disagree with what the user saw while dragging.
+  const geometry = slotDraftGeometry(mode, start, committedEnd);
+  if (!geometry) {
     return;
   }
-  const length = 2 * half;
-  const rotation = Math.atan2(dy, dx);
   clearDraftStart();
   clearDraftDimensionSession();
   void addSketchSlot(
-    start[0],
-    start[1],
-    length,
-    defaultSlotRadius(length),
-    rotation,
+    geometry.center[0],
+    geometry.center[1],
+    geometry.length,
+    geometry.radius,
+    geometry.rotation,
     isConstruction,
   );
 }
@@ -692,6 +739,7 @@ function commitLineDraft({
   start,
   committedEnd,
   isConstruction,
+  lineType,
   endHostLineId,
   endLineBodyHost,
   snapEndpointHostLineId,
@@ -757,6 +805,7 @@ function commitLineDraft({
     committedEnd[0],
     committedEnd[1],
     isConstruction,
+    lineType,
   );
 }
 
@@ -769,6 +818,8 @@ export function commitDraftPointerUp({
   refs,
   modes,
   polygonSides,
+  rectangleCornerRadius,
+  lineType,
   clearPreviews,
   clearDraftDimensionSession,
   suppressDimensionEditorAfterSketchCommit,
@@ -782,6 +833,7 @@ export function commitDraftPointerUp({
   focusDraftField,
   addSketchArc,
   addSketchRectangle,
+  addSketchRoundedRectangle,
   addSketchCircle,
   addSketchCircleMode,
   addSketchPolygon,
@@ -847,6 +899,7 @@ export function commitDraftPointerUp({
   if (activeSketchTool === "rectangle") {
     commitRectangleDraft({
       mode: modes.rectangle,
+      cornerRadius: rectangleCornerRadius,
       start,
       committedEnd,
       secondPoint: refs.rectSecondPoint.current,
@@ -861,7 +914,9 @@ export function commitDraftPointerUp({
         refs.draftStart.current = null;
       },
       scheduleDimensionDeletion: () => {
-        scheduleDimensionDeletion("rectangle");
+        scheduleDimensionDeletion("rectangle", undefined, {
+          deleteRectangleDimensions: modes.rectangle === "rounded",
+        });
       },
       scheduleDraftDimensionExpressionUpdate: () => {
         scheduleDraftDimensionExpressionUpdate("rectangle");
@@ -869,6 +924,7 @@ export function commitDraftPointerUp({
       clearDraftDimensionSession,
       suppressDimensionEditorAfterSketchCommit,
       addSketchRectangle,
+      addSketchRoundedRectangle,
     });
     return;
   }
@@ -954,6 +1010,7 @@ export function commitDraftPointerUp({
 
   if (activeSketchTool === "slot") {
     commitSlotDraft({
+      mode: modes.slot,
       start,
       committedEnd,
       isConstruction,
@@ -972,6 +1029,7 @@ export function commitDraftPointerUp({
     start,
     committedEnd,
     isConstruction,
+    lineType,
     endHostLineId,
     endLineBodyHost,
     snapEndpointHostLineId: sketchPoint.snapEndpointHostLineId,

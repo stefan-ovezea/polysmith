@@ -1,3 +1,63 @@
+constexpr double kChamferPi = 3.14159265358979323846;
+
+// Distance along line B for a distance+angle chamfer.
+//
+// `ux_a`/`uy_a` and `ux_b`/`uy_b` are the unit directions leading from the
+// corner toward each line's far end. The chamfer line starts `distance_a`
+// out along A and leaves at `angle_degrees` to A, tilted toward B; its
+// intersection with B is the second trim point.
+//
+// Returns false when the inputs cannot produce a chamfer there (degenerate
+// lines, angle outside (0, interior angle)), in which case the caller keeps
+// the previous geometry — the same defer-the-edit policy as the fillet
+// radius.
+bool chamfer_distance_b_from_angle(double ux_a, double uy_a, double ux_b,
+                                   double uy_b, double distance_a,
+                                   double angle_degrees, double& distance_b) {
+  if (distance_a <= kMinimumSketchDimensionValue) {
+    return false;
+  }
+  if (!(angle_degrees > 0.0) || angle_degrees >= 180.0) {
+    return false;
+  }
+
+  const double dot = std::max(-1.0, std::min(1.0, ux_a * ux_b + uy_a * uy_b));
+  const double interior = std::acos(dot);  // (0, pi)
+  const double angle = angle_degrees * kChamferPi / 180.0;
+  if (angle >= interior - kMinimumSketchDimensionValue) {
+    return false;
+  }
+
+  // Perpendicular to A, pointing toward B.
+  double vx = ux_b - dot * ux_a;
+  double vy = uy_b - dot * uy_a;
+  const double v_len = std::hypot(vx, vy);
+  if (v_len <= kMinimumSketchDimensionValue) {
+    return false;
+  }
+  vx /= v_len;
+  vy /= v_len;
+
+  // Chamfer direction, from the trim point back toward the corner and
+  // tilted into the corner's interior: -u_a rotated toward B.
+  const double wx = std::cos(angle) * -ux_a + std::sin(angle) * vx;
+  const double wy = std::cos(angle) * -uy_a + std::sin(angle) * vy;
+
+  // Solve C + s*u_b = P + t*w with P = C + distance_a*u_a by crossing
+  // with w:  s * (u_b x w) = distance_a * (u_a x w).
+  const double denom = ux_b * wy - uy_b * wx;
+  if (std::abs(denom) <= kMinimumSketchDimensionValue) {
+    return false;
+  }
+  const double numer = ux_a * wy - uy_a * wx;
+  const double s = distance_a * numer / denom;
+  if (!(s > kMinimumSketchDimensionValue)) {
+    return false;
+  }
+  distance_b = s;
+  return true;
+}
+
 void enforce_sketch_chamfers(SketchFeatureParameters& parameters) {
   for (auto& chamfer : parameters.chamfers) {
     const auto line_a_it = std::find_if(
@@ -84,20 +144,35 @@ void enforce_sketch_chamfers(SketchFeatureParameters& parameters) {
     const double ux_b = out_bx / out_b_len;
     const double uy_b = out_by / out_b_len;
 
+    // Resolve the second distance according to the creation mode. The
+    // angle carries the intent for "distance_angle", so it is re-derived
+    // here on every recompute instead of trusting the stored value.
+    double distance_b = chamfer.distance_b;
+    if (chamfer.mode == "equal") {
+      distance_b = chamfer.distance_a;
+    } else if (chamfer.mode == "distance_angle") {
+      if (!chamfer_distance_b_from_angle(ux_a, uy_a, ux_b, uy_b,
+                                         chamfer.distance_a,
+                                         chamfer.angle_degrees, distance_b)) {
+        continue;
+      }
+    }
+
     // The trim distance is the stored distance along each outgoing
-    // direction — no angle math (unlike the fillet).
+    // direction.
     if (chamfer.distance_a + kMinimumSketchDimensionValue >= out_a_len ||
-        chamfer.distance_b + kMinimumSketchDimensionValue >= out_b_len) {
+        distance_b + kMinimumSketchDimensionValue >= out_b_len) {
       // Trim no longer fits on at least one of the lines. Leave the
       // cached geometry alone for now; the user may resize the lines
       // back into a valid range.
       continue;
     }
+    chamfer.distance_b = distance_b;
 
     const double new_trim_a_x = corner_x + chamfer.distance_a * ux_a;
     const double new_trim_a_y = corner_y + chamfer.distance_a * uy_a;
-    const double new_trim_b_x = corner_x + chamfer.distance_b * ux_b;
-    const double new_trim_b_y = corner_y + chamfer.distance_b * uy_b;
+    const double new_trim_b_x = corner_x + distance_b * ux_b;
+    const double new_trim_b_y = corner_y + distance_b * uy_b;
 
     // Push back to the line cache.
     if (is_start_a) {

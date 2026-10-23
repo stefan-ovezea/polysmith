@@ -29,10 +29,14 @@ void add_sketch_chamfer(FeatureEntry& feature,
                         const std::string& line_a_id,
                         const std::string& line_b_id,
                         double distance_a,
-                        double distance_b);
+                        double distance_b,
+                        const std::string& mode,
+                        double angle_degrees);
 void update_sketch_chamfer(FeatureEntry& feature,
                            const std::string& chamfer_id,
                            double distance_a,
-                           double distance_b);
+                           double distance_b,
+                           const std::string& mode,
+                           double angle_degrees);
 void delete_sketch_chamfer(FeatureEntry& feature,
                            const std::string& chamfer_id);

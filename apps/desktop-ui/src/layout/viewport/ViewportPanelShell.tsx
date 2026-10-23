@@ -45,6 +45,7 @@ import {
   DraftDimensionFieldEditors,
 } from "./ViewportDimensionEditors";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
+import type { SlotToolMode } from "./slotDraftPreview";
 import type { PolygonToolMode } from "./viewportPanelTypes";
 
 type ViewportTranslate = (
@@ -128,6 +129,11 @@ interface ViewportPanelShellProps {
   polygonSides: number;
   polygonToolMode: PolygonToolMode;
   rectangleToolMode: RectangleToolMode;
+  /** Corner radius used by the rounded-rectangle tool mode (mm). */
+  rectangleCornerRadius: number;
+  /** Line tool reference-line flavour ("" = solid). */
+  lineType: "" | "centerline" | "infinite";
+  slotToolMode: SlotToolMode;
   dimensionToolMode: DimensionToolMode;
   selectedConstraint: SelectedConstraintState | null;
   selectedEntityDof: ViewportState["dof_statuses"][number] | null;
@@ -164,10 +170,13 @@ interface ViewportPanelShellProps {
     name: string,
   ) => void;
   onPolygonSidesChange: (sides: number) => void;
+  onRectangleCornerRadiusChange: (radius: number) => void;
+  onLineTypeChange: (lineType: "" | "centerline" | "infinite") => void;
   onSetArcToolMode: (mode: ArcToolMode) => void;
   onSetCircleToolMode: (mode: CircleToolMode) => void;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
   onSetRectangleToolMode: (mode: RectangleToolMode) => void;
+  onSetSlotToolMode: (mode: SlotToolMode) => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onSketchToolConstructionChange: (checked: boolean) => void;
   onSubmitDimensionEdit: () => void | Promise<void>;
@@ -233,6 +242,9 @@ export function ViewportPanelShell({
   polygonSides,
   polygonToolMode,
   rectangleToolMode,
+  rectangleCornerRadius,
+  lineType,
+  slotToolMode,
   dimensionToolMode,
   selectedConstraint,
   selectedEntityDof,
@@ -261,10 +273,13 @@ export function ViewportPanelShell({
   onInsertDimensionParameterSuggestion,
   onInsertDraftParameterSuggestion,
   onPolygonSidesChange,
+  onRectangleCornerRadiusChange,
+  onLineTypeChange,
   onSetArcToolMode,
   onSetCircleToolMode,
   onSetPolygonToolMode,
   onSetRectangleToolMode,
+  onSetSlotToolMode,
   onSetDimensionToolMode,
   onSketchToolConstructionChange,
   onSubmitDimensionEdit,
@@ -388,6 +403,9 @@ export function ViewportPanelShell({
             arcToolMode={arcToolMode}
             circleToolMode={circleToolMode}
             rectangleToolMode={rectangleToolMode}
+            rectangleCornerRadius={rectangleCornerRadius}
+            lineType={lineType}
+            slotToolMode={slotToolMode}
             polygonToolMode={polygonToolMode}
             polygonSides={polygonSides}
             dimensionToolMode={dimensionToolMode}
@@ -395,9 +413,12 @@ export function ViewportPanelShell({
             onSetArcToolMode={onSetArcToolMode}
             onSetCircleToolMode={onSetCircleToolMode}
             onSetRectangleToolMode={onSetRectangleToolMode}
+            onSetSlotToolMode={onSetSlotToolMode}
             onSetPolygonToolMode={onSetPolygonToolMode}
             onSetDimensionToolMode={onSetDimensionToolMode}
             onPolygonSidesChange={onPolygonSidesChange}
+            onRectangleCornerRadiusChange={onRectangleCornerRadiusChange}
+            onLineTypeChange={onLineTypeChange}
           />
         ) : null}
         <DimensionToolHint

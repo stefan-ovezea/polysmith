@@ -2,12 +2,13 @@ import { Checkbox, Dropdown } from "@/lib";
 import type { SketchTool, DimensionToolMode } from "@/types";
 import type { CircleToolMode } from "./circleDraftPreview";
 import { isDrawableSketchTool, sketchToolLabelKey } from "./draftDimensions";
+import type { RectangleToolMode } from "./rectangleDraftPreview";
+import type { SlotToolMode } from "./slotDraftPreview";
 import type { PolygonToolMode } from "./viewportPanelTypes";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 type ArcToolMode = "three_point" | "center_start_end";
-type RectangleToolMode = "corner_corner" | "center_point" | "three_point";
 
 interface SketchToolPanelProps {
   translate: Translate;
@@ -16,6 +17,10 @@ interface SketchToolPanelProps {
   arcToolMode: ArcToolMode;
   circleToolMode: CircleToolMode;
   rectangleToolMode: RectangleToolMode;
+  rectangleCornerRadius: number;
+  /** Line tool reference-line flavour ("" = solid). */
+  lineType: "" | "centerline" | "infinite";
+  slotToolMode: SlotToolMode;
   polygonToolMode: PolygonToolMode;
   polygonSides: number;
   dimensionToolMode: DimensionToolMode;
@@ -23,6 +28,9 @@ interface SketchToolPanelProps {
   onSetArcToolMode: (mode: ArcToolMode) => void;
   onSetCircleToolMode: (mode: CircleToolMode) => void;
   onSetRectangleToolMode: (mode: RectangleToolMode) => void;
+  onRectangleCornerRadiusChange: (radius: number) => void;
+  onLineTypeChange: (lineType: "" | "centerline" | "infinite") => void;
+  onSetSlotToolMode: (mode: SlotToolMode) => void;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onPolygonSidesChange: (sides: number) => void;
@@ -35,6 +43,9 @@ export function SketchToolPanel({
   arcToolMode,
   circleToolMode,
   rectangleToolMode,
+  rectangleCornerRadius,
+  lineType,
+  slotToolMode,
   polygonToolMode,
   polygonSides,
   dimensionToolMode,
@@ -42,6 +53,9 @@ export function SketchToolPanel({
   onSetArcToolMode,
   onSetCircleToolMode,
   onSetRectangleToolMode,
+  onRectangleCornerRadiusChange,
+  onLineTypeChange,
+  onSetSlotToolMode,
   onSetPolygonToolMode,
   onSetDimensionToolMode,
   onPolygonSidesChange,
@@ -83,7 +97,22 @@ export function SketchToolPanel({
                 ? "CornerCorner"
                 : rectangleToolMode === "center_point"
                   ? "CenterPoint"
-                  : "ThreePoint"
+                  : rectangleToolMode === "three_point"
+                    ? "ThreePoint"
+                    : "Rounded"
+            }`,
+          )}
+        </p>
+      )}
+      {activeSketchTool === "slot" && (
+        <p className="text-xs text-on-surface/50 mt-1">
+          {translate(
+            `toolbar.slot${
+              slotToolMode === "center_point"
+                ? "CenterPoint"
+                : slotToolMode === "center_to_center"
+                  ? "CenterToCenter"
+                  : "Overall"
             }`,
           )}
         </p>
@@ -152,7 +181,7 @@ export function SketchToolPanel({
         </p>
       )}
       <div className="mt-5 flex flex-col gap-4">
-        {activeSketchTool !== "dimension" && (
+        {activeSketchTool !== "dimension" && activeSketchTool !== "line" && (
         <label className="flex items-center justify-between gap-4 text-sm text-on-surface">
           <span>{translate("common.construction")}</span>
           <Checkbox
@@ -162,6 +191,50 @@ export function SketchToolPanel({
           />
         </label>
         )}
+        {activeSketchTool === "line" ? (
+          <div>
+            <p className="cad-kicker">{translate("viewport.lineType")}</p>
+            <div className="mt-3">
+              <Dropdown
+                value={
+                  lineType !== ""
+                    ? lineType
+                    : sketchToolConstruction
+                      ? "construction"
+                      : "solid"
+                }
+                options={[
+                  { value: "solid", label: translate("viewport.lineTypeSolid") },
+                  {
+                    value: "construction",
+                    label: translate("viewport.lineTypeConstruction"),
+                  },
+                  {
+                    value: "centerline",
+                    label: translate("viewport.lineTypeCenterline"),
+                  },
+                  {
+                    value: "infinite",
+                    label: translate("viewport.lineTypeInfinite"),
+                  },
+                ]}
+                label={translate("viewport.lineType")}
+                onChange={(value) => {
+                  // "solid" / "construction" are the ordinary line with the
+                  // construction flag toggled; the two reference flavours
+                  // force construction in the core.
+                  if (value === "centerline" || value === "infinite") {
+                    onConstructionChange(false);
+                    onLineTypeChange(value);
+                    return;
+                  }
+                  onLineTypeChange("");
+                  onConstructionChange(value === "construction");
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
         {activeSketchTool === "arc" ? (
           <div>
             <p className="cad-kicker">{translate("viewport.mode")}</p>
@@ -249,10 +322,66 @@ export function SketchToolPanel({
                     value: "three_point",
                     label: translate("toolbar.rectangleThreePoint"),
                   },
+                  {
+                    value: "rounded",
+                    label: translate("toolbar.rectangleRounded"),
+                  },
                 ]}
                 label={translate("viewport.mode")}
                 onChange={(value) => {
                   onSetRectangleToolMode(value as RectangleToolMode);
+                }}
+              />
+              {rectangleToolMode === "rounded" ? (
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-xs text-on-surface/60">
+                    {translate("forms.radiusMm")}
+                  </span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.5"
+                    className="h-7 w-16 rounded-md border px-2 text-xs text-center tabular-nums bg-transparent"
+                    style={{
+                      border: "1px solid var(--cad-panel-border)",
+                      color: "inherit",
+                    }}
+                    aria-label={translate("forms.radiusMm")}
+                    value={rectangleCornerRadius}
+                    onChange={(event) => {
+                      onRectangleCornerRadiusChange(
+                        Math.max(0.01, Number(event.target.value) || 0.01),
+                      );
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        {activeSketchTool === "slot" ? (
+          <div>
+            <p className="cad-kicker">{translate("viewport.mode")}</p>
+            <div className="mt-3">
+              <Dropdown
+                value={slotToolMode}
+                options={[
+                  {
+                    value: "center_point",
+                    label: translate("toolbar.slotCenterPoint"),
+                  },
+                  {
+                    value: "center_to_center",
+                    label: translate("toolbar.slotCenterToCenter"),
+                  },
+                  {
+                    value: "overall",
+                    label: translate("toolbar.slotOverall"),
+                  },
+                ]}
+                label={translate("viewport.mode")}
+                onChange={(value) => {
+                  onSetSlotToolMode(value as SlotToolMode);
                 }}
               />
             </div>

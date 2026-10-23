@@ -315,6 +315,7 @@ export function ViewportPanel({
   onSetSketchTangentConstraint,
   onSetSketchParallelConstraint,
   onAddSketchRectangle,
+  onAddSketchRoundedRectangle,
   onAddSketchCircle,
   onAddSketchCircleMode,
   onAddSketchArc,
@@ -325,6 +326,8 @@ export function ViewportPanel({
   onSetArcToolMode,
   rectangleToolMode,
   onSetRectangleToolMode,
+  slotToolMode,
+  onSetSlotToolMode,
   circleToolMode,
   onSetCircleToolMode,
   polygonToolMode,
@@ -502,6 +505,17 @@ export function ViewportPanel({
   const sketchToolConstructionRef = useRef(false);
   const [polygonSides, setPolygonSides] = useState(6);
   const polygonSidesRef = useRef(6);
+  // Corner radius for the rounded-rectangle tool mode. Only a tool option
+  // — it rides along with add_sketch_rounded_rectangle; the resulting
+  // fillets (and their radii) are core-owned state.
+  const [rectangleCornerRadius, setRectangleCornerRadius] = useState(5);
+  const rectangleCornerRadiusRef = useRef(5);
+  // Line tool reference-line flavour: "" (solid), "centerline", "infinite".
+  // Both reference flavours are construction geometry in the core; the
+  // value only picks the line_type sent with add_sketch_line and the
+  // preview style.
+  const [lineType, setLineType] = useState<"" | "centerline" | "infinite">("");
+  const lineTypeRef = useRef<"" | "centerline" | "infinite">("");
   // Held while the user holds the wireframe-toggle key (Tab) during a
   // pending fillet/chamfer panel session. Reveals every ghost edge
   // so the user can see and click the original sharp edges that
@@ -887,6 +901,7 @@ export function ViewportPanel({
   const startSketchOnFaceRef = useRef(onStartSketchOnFace);
   const addSketchLineRef = useRef(onAddSketchLine);
   const addSketchRectangleRef = useRef(onAddSketchRectangle);
+  const addSketchRoundedRectangleRef = useRef(onAddSketchRoundedRectangle);
   const addSketchCircleRef = useRef(onAddSketchCircle);
   const addSketchCircleModeRef = useRef(onAddSketchCircleMode);
   // Circle tool tangent modes: defining lines picked so far.
@@ -969,6 +984,7 @@ export function ViewportPanel({
 
   const arcToolModeRef = useRef(arcToolMode);
   const rectangleToolModeRef = useRef(rectangleToolMode);
+  const slotToolModeRef = useRef(slotToolMode);
   const circleToolModeRef = useRef(circleToolMode);
   const polygonToolModeRef = useRef(polygonToolMode);
   const dimensionToolModeRef = useRef(dimensionToolMode);
@@ -2337,6 +2353,8 @@ export function ViewportPanel({
       arcToolMode: arcToolModeRef.current,
       circleToolMode: circleToolModeRef.current,
       rectangleToolMode: rectangleToolModeRef.current,
+      rectangleCornerRadius: rectangleCornerRadiusRef.current,
+      slotToolMode: slotToolModeRef.current,
       arcSecondPoint: adjustedArcSecondPoint(),
       circleSecondPoint: circleSecondPointRef.current,
       rectSecondPoint: rectSecondPointRef.current,
@@ -2545,8 +2563,19 @@ export function ViewportPanel({
     // also runs on the begin_group's own document reply (nothing
     // pending yet) and must not close the group there.
     await beginUndoGroupRef.current("Dimension");
-    scheduleDimensionDeletion(session.tool, session);
-    scheduleDraftDimensionExpressionUpdate(session.tool);
+    // Rounded rectangle: the auto side dimensions measure the fillet-trimmed
+    // sides, not the overall size the draft badge showed, so they are always
+    // dropped and a typed width/length is not replayed onto them (it already
+    // shaped the entered end point). Same rule as the click commit path.
+    const isRoundedRectangle =
+      session.tool === "rectangle" &&
+      rectangleToolModeRef.current === "rounded";
+    scheduleDimensionDeletion(session.tool, session, {
+      deleteRectangleDimensions: isRoundedRectangle,
+    });
+    if (!isRoundedRectangle) {
+      scheduleDraftDimensionExpressionUpdate(session.tool);
+    }
     draftUndoGroupOpenRef.current = true;
     clearDraftDimensionSession();
     suppressDimensionEditorAfterSketchCommit();
@@ -2555,6 +2584,20 @@ export function ViewportPanel({
     if (session.tool === "rectangle") {
       if (rectangleToolModeRef.current === "three_point") {
         // 3-point mode can't commit from drag; handled in snap handler.
+        return;
+      }
+      if (rectangleToolModeRef.current === "rounded") {
+        // Rounded rectangle: the two entered corners are opposite corners
+        // (corner-corner semantics) and the panel's radius applies. The
+        // core composes the sides + four fillets into one undo step.
+        await addSketchRoundedRectangleRef.current(
+          startX,
+          startY,
+          endX,
+          endY,
+          rectangleCornerRadiusRef.current,
+          sketchToolConstructionRef.current,
+        );
         return;
       }
       const rectStartX =
@@ -2620,6 +2663,7 @@ export function ViewportPanel({
       endX,
       endY,
       sketchToolConstructionRef.current,
+      lineTypeRef.current,
     );
   }
 
@@ -2746,6 +2790,7 @@ export function ViewportPanel({
       setSketchPointLineAnchorRef,
       addSketchLineRef,
       addSketchRectangleRef,
+      addSketchRoundedRectangleRef,
       addSketchCircleRef,
       addSketchCircleModeRef,
       addSketchArcRef,
@@ -2820,6 +2865,7 @@ export function ViewportPanel({
       onSetSketchPointLineAnchor,
       onAddSketchLine,
       onAddSketchRectangle,
+      onAddSketchRoundedRectangle,
       onAddSketchCircle,
       onAddSketchCircleMode,
       onAddSketchArc,
@@ -3640,11 +3686,14 @@ export function ViewportPanel({
         arcToolMode: arcToolModeRef.current,
         circleToolMode: circleToolModeRef.current,
         rectangleToolMode: rectangleToolModeRef.current,
+        rectangleCornerRadius: rectangleCornerRadiusRef.current,
+        slotToolMode: slotToolModeRef.current,
         arcSecondPoint: adjustedArcSecondPoint(),
         circleSecondPoint: circleSecondPointRef.current,
         rectSecondPoint: rectSecondPointRef.current,
         ellipseSecondPoint: adjustedEllipseAxisPoint(),
-        isConstruction: sketchToolConstructionRef.current,
+        isConstruction:
+          sketchToolConstructionRef.current || lineTypeRef.current !== "",
         previewLineRef,
         previewCircleRef,
         previewArcRef,
@@ -5187,10 +5236,13 @@ export function ViewportPanel({
 	        draftDimensionInputRefsForCommit: draftDimensionInputRefs,
 	        arcToolMode: arcToolModeRef.current,
 	        rectangleToolMode: rectangleToolModeRef.current,
+	        rectangleCornerRadius: rectangleCornerRadiusRef.current,
+	        slotToolMode: slotToolModeRef.current,
 	        circleToolMode: circleToolModeRef.current,
 	        polygonToolMode: polygonToolModeRef.current,
 	        dimensionToolMode: dimensionToolModeRef.current,
 	        polygonSides: polygonSidesRef.current,
+	        lineType: lineTypeRef.current,
 	        isConstruction: sketchToolConstructionRef.current,
         clearPreviews: () => {
           clearPreviewLine();
@@ -5222,6 +5274,7 @@ export function ViewportPanel({
 	        focusDraftField,
 	        addSketchArc: addSketchArcRef.current,
 	        addSketchRectangle: addSketchRectangleRef.current,
+	        addSketchRoundedRectangle: addSketchRoundedRectangleRef.current,
 	        addSketchCircle: addSketchCircleRef.current,
         addSketchCircleMode: addSketchCircleModeRef.current,
 	        addSketchPolygon: addSketchPolygonRef.current,
@@ -6123,6 +6176,9 @@ export function ViewportPanel({
       polygonSides={polygonSides}
       polygonToolMode={polygonToolMode}
       rectangleToolMode={rectangleToolMode}
+      rectangleCornerRadius={rectangleCornerRadius}
+      lineType={lineType}
+      slotToolMode={slotToolMode}
       dimensionToolMode={dimensionToolMode}
       selectedConstraint={selectedConstraint}
       selectedEntityDof={selectedEntityDof}
@@ -6177,10 +6233,19 @@ export function ViewportPanel({
         setPolygonSides(value);
         polygonSidesRef.current = value;
       }}
+      onRectangleCornerRadiusChange={(value) => {
+        setRectangleCornerRadius(value);
+        rectangleCornerRadiusRef.current = value;
+      }}
+      onLineTypeChange={(value) => {
+        setLineType(value);
+        lineTypeRef.current = value;
+      }}
       onSetArcToolMode={onSetArcToolMode}
       onSetCircleToolMode={onSetCircleToolMode}
       onSetPolygonToolMode={onSetPolygonToolMode}
       onSetRectangleToolMode={onSetRectangleToolMode}
+      onSetSlotToolMode={onSetSlotToolMode}
       onSetDimensionToolMode={onSetDimensionToolMode}
       onSketchToolConstructionChange={(checked) => {
         sketchToolConstructionRef.current = checked;

@@ -299,8 +299,14 @@ interface AppHeaderProps
   arcToolMode: "three_point" | "center_start_end";
   onSetArcToolMode: (mode: "three_point" | "center_start_end") => void;
   // Rectangle tool's creation mode — split button variant.
-  rectangleToolMode: "corner_corner" | "center_point" | "three_point";
-  onSetRectangleToolMode: (mode: "corner_corner" | "center_point" | "three_point") => void;
+  rectangleToolMode: "corner_corner" | "center_point" | "three_point" | "rounded";
+  onSetRectangleToolMode: (mode: "corner_corner" | "center_point" | "three_point" | "rounded") => void;
+  // Slot tool's pick mode — split button variant.
+  slotToolMode: "center_point" | "center_to_center" | "overall";
+  onSetSlotToolMode: (mode: "center_point" | "center_to_center" | "overall") => void;
+  // Chamfer tool's creation mode — split button variant.
+  chamferToolMode: "equal" | "two_distance" | "distance_angle";
+  onSetChamferToolMode: (mode: "equal" | "two_distance" | "distance_angle") => void;
   // Circle tool's creation mode — split button variant.
   circleToolMode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines";
   onSetCircleToolMode: (mode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines") => void;
@@ -416,6 +422,10 @@ export function AppHeader({
   onSetArcToolMode,
   rectangleToolMode,
   onSetRectangleToolMode,
+  slotToolMode,
+  onSetSlotToolMode,
+  chamferToolMode,
+  onSetChamferToolMode,
   circleToolMode,
   onSetCircleToolMode,
   polygonToolMode,
@@ -1023,6 +1033,10 @@ export function AppHeader({
                 onSetArcToolMode={onSetArcToolMode}
                 rectangleToolMode={rectangleToolMode}
                 onSetRectangleToolMode={onSetRectangleToolMode}
+                slotToolMode={slotToolMode}
+                onSetSlotToolMode={onSetSlotToolMode}
+                chamferToolMode={chamferToolMode}
+                onSetChamferToolMode={onSetChamferToolMode}
                 circleToolMode={circleToolMode}
                 onSetCircleToolMode={onSetCircleToolMode}
                 polygonToolMode={polygonToolMode}

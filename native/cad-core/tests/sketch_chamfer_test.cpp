@@ -338,6 +338,150 @@ bool test_chamfer_survives_dimension_drive() {
                 ("chamfer drive profile: " + reason).c_str());
 }
 
+// Distance+angle chamfer (parity: `chamfer.distance_angle`) — the chamfer
+// line leaves line A `distance_a` from the corner at `angle_degrees` to line
+// A, and the distance along line B is DERIVED from that angle on every
+// recompute (so dragging a line keeps the angle, not a frozen length).
+bool test_distance_angle_derives_the_second_distance() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const auto before = sketch_params(document);
+  const CornerPick corner = pick_corner(before);
+
+  // 90 degree corner; 5 mm along the bottom at 45 degrees reaches 5 mm up
+  // the right side.
+  document = manager.add_sketch_chamfer(corner.corner_vertex_id,
+                                        corner.line_a_id, corner.line_b_id,
+                                        5.0, 0.0, "distance_angle", 45.0);
+  const auto after = sketch_params(document);
+  if (!expect(after.chamfers.size() == 1,
+              "angle chamfer: record created")) {
+    return false;
+  }
+  const auto& chamfer = after.chamfers[0];
+  if (!expect(chamfer.mode == "distance_angle" &&
+                  near(chamfer.angle_degrees, 45.0),
+              "angle chamfer: mode + angle stored on the record")) {
+    return false;
+  }
+  if (!expect(near(chamfer.distance_a, 5.0) && near(chamfer.distance_b, 5.0),
+              "angle chamfer: derived distance_b written back")) {
+    return false;
+  }
+
+  const auto find_line = [&](const std::string& id) {
+    const auto it = std::find_if(after.lines.begin(), after.lines.end(),
+                                 [&](const auto& l) { return l.id == id; });
+    return it == after.lines.end() ? nullptr : &*it;
+  };
+  const auto* line_a = find_line(corner.line_a_id);
+  const auto* line_b = find_line(corner.line_b_id);
+  const auto* chamfer_line = find_line(chamfer.chamfer_line_id);
+  if (!expect(line_a != nullptr && line_b != nullptr && chamfer_line != nullptr,
+              "angle chamfer: entities present")) {
+    return false;
+  }
+  return expect(near(line_a->end_x, 35.0) && near(line_a->end_y, 0.0) &&
+                    near(line_b->start_x, 40.0) && near(line_b->start_y, 5.0) &&
+                    near(chamfer_line->start_x, 35.0) &&
+                    near(chamfer_line->end_x, 40.0) &&
+                    near(chamfer_line->end_y, 5.0),
+                "angle chamfer: trim points follow distance + angle");
+}
+
+bool test_distance_angle_survives_a_line_drive() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const auto before = sketch_params(document);
+  const CornerPick corner = pick_corner(before);
+  // 5 mm along the bottom at 30 degrees: the right-side trim is 5*tan(30).
+  document = manager.add_sketch_chamfer(corner.corner_vertex_id,
+                                        corner.line_a_id, corner.line_b_id,
+                                        5.0, 0.0, "distance_angle", 30.0);
+  const std::string chamfer_id = sketch_params(document).chamfers[0].id;
+
+  // Move the far end of the right side: the corner stays at y=0, so the
+  // angle-derived trim must stay put while the line gets longer.
+  document = manager.update_sketch_dimension("dim-line-line-2", 30.0);
+  auto after = sketch_params(document);
+  const auto& chamfer = after.chamfers[0];
+  const double expected_b = 5.0 * std::tan(30.0 * 3.14159265358979323846 / 180.0);
+  if (!expect(near(chamfer.distance_b, expected_b, 1.0e-6),
+              "angle chamfer drive: distance_b re-derived from the angle")) {
+    return false;
+  }
+
+  // Editing distance_a keeps the stored angle (empty mode = keep mode).
+  document = manager.update_sketch_chamfer(chamfer_id, 4.0, 0.0);
+  after = sketch_params(document);
+  const auto& edited = after.chamfers[0];
+  const double expected_b2 = 4.0 * std::tan(30.0 * 3.14159265358979323846 / 180.0);
+  return expect(edited.mode == "distance_angle" &&
+                    near(edited.angle_degrees, 30.0) &&
+                    near(edited.distance_b, expected_b2, 1.0e-6),
+                "angle chamfer edit: mode/angle survive a distance-only update");
+}
+
+bool test_equal_mode_keeps_both_distances_equal() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const auto before = sketch_params(document);
+  const CornerPick corner = pick_corner(before);
+  document = manager.add_sketch_chamfer(corner.corner_vertex_id,
+                                        corner.line_a_id, corner.line_b_id,
+                                        6.0, 99.0, "equal", 0.0);
+  auto after = sketch_params(document);
+  const auto& chamfer = after.chamfers[0];
+  if (!expect(chamfer.mode == "equal" && near(chamfer.distance_a, 6.0) &&
+                  near(chamfer.distance_b, 6.0),
+              "equal chamfer: both distances follow distance_a")) {
+    return false;
+  }
+
+  const std::string chamfer_id = chamfer.id;
+  document = manager.update_sketch_chamfer(chamfer_id, 4.0, 0.0);
+  after = sketch_params(document);
+  return expect(near(after.chamfers[0].distance_a, 4.0) &&
+                    near(after.chamfers[0].distance_b, 4.0),
+                "equal chamfer edit: both distances move together");
+}
+
+bool test_distance_angle_out_of_range_refused() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const auto before = sketch_params(document);
+  const CornerPick corner = pick_corner(before);
+
+  const auto refuses = [&](double angle_degrees) {
+    try {
+      (void)manager.add_sketch_chamfer(corner.corner_vertex_id,
+                                       corner.line_a_id, corner.line_b_id,
+                                       5.0, 0.0, "distance_angle",
+                                       angle_degrees);
+    } catch (const std::exception&) {
+      return true;
+    }
+    return false;
+  };
+  // 90 degrees is the corner's own angle (the chamfer would be parallel to
+  // line B); 0 and 200 are outside the valid range.
+  return expect(refuses(90.0) && refuses(0.0) && refuses(200.0),
+                "angle chamfer: angles that cannot meet the second line are "
+                "refused");
+}
+
 }  // namespace
 
 int main() {
@@ -348,6 +492,10 @@ int main() {
   if (!test_chamfer_delete_restores_corner()) return 1;
   if (!test_fillet_chamfer_conflict_rejected()) return 1;
   if (!test_chamfer_survives_dimension_drive()) return 1;
+  if (!test_distance_angle_derives_the_second_distance()) return 1;
+  if (!test_distance_angle_survives_a_line_drive()) return 1;
+  if (!test_equal_mode_keeps_both_distances_equal()) return 1;
+  if (!test_distance_angle_out_of_range_refused()) return 1;
 
   std::cout << "sketch_chamfer_test passed\n";
   return 0;

@@ -2,11 +2,15 @@
                                      double center_x,
                                      double center_y,
                                      double radius);
+  // `line_type` is "" for an ordinary line; "centerline" / "infinite" mark
+  // a reference line (they also force the construction flag, so profiles
+  // and auto dimensions ignore them).
   DocumentState add_sketch_line(double start_x,
                                 double start_y,
                                 double end_x,
                                 double end_y,
-                                bool is_construction = false);
+                                bool is_construction = false,
+                                const std::string& line_type = "");
   // Toggle the construction-line flag on an existing sketch line.
   // Construction lines render dashed and are skipped during profile
   // detection so they don't seal pickable faces.
@@ -101,15 +105,20 @@
   // straight chamfer line, trimming each line by its own distance.
   // Parametric like the fillet (see `SketchChamfer`), with its own
   // update / delete commands. A corner already holding a fillet is
-  // rejected.
-  DocumentState add_sketch_chamfer(const std::string& corner_vertex_id,
-                                   const std::string& line_a_id,
-                                   const std::string& line_b_id,
-                                   double distance_a,
-                                   double distance_b);
+  // rejected. `mode` is "equal" | "two_distance" | "distance_angle"; an
+  // empty mode means two-distance. For "distance_angle", `distance_b` is
+  // derived from `angle_degrees` (the angle between the chamfer line and
+  // line A) and re-derived on every recompute.
+  DocumentState add_sketch_chamfer(
+      const std::string& corner_vertex_id, const std::string& line_a_id,
+      const std::string& line_b_id, double distance_a, double distance_b,
+      const std::string& mode = "", double angle_degrees = 0.0);
+  // `mode` empty keeps the chamfer's existing mode; `angle_degrees <= 0`
+  // keeps its existing angle.
   DocumentState update_sketch_chamfer(const std::string& chamfer_id,
-                                      double distance_a,
-                                      double distance_b);
+                                      double distance_a, double distance_b,
+                                      const std::string& mode = "",
+                                      double angle_degrees = 0.0);
   DocumentState delete_sketch_chamfer(const std::string& chamfer_id);
   DocumentState delete_sketch_selection(
       const std::vector<std::string>& entity_ids,

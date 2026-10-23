@@ -56,6 +56,16 @@ interface ViewportCallbackRefTargets {
       isConstruction: boolean,
     ) => Promise<void>
   >;
+  addSketchRoundedRectangleRef: MutableRefObject<
+    (
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+      radius: number,
+      isConstruction: boolean,
+    ) => Promise<void>
+  >;
   addSketchCircleRef: MutableRefObject<
     (
       centerX: number,
@@ -323,6 +333,7 @@ interface ViewportCallbackRefValues
   onSetSketchPointLineAnchor: ViewportCallbackRefTargets["setSketchPointLineAnchorRef"]["current"];
   onAddSketchLine: ViewportCallbackRefTargets["addSketchLineRef"]["current"];
   onAddSketchRectangle: ViewportCallbackRefTargets["addSketchRectangleRef"]["current"];
+  onAddSketchRoundedRectangle: ViewportCallbackRefTargets["addSketchRoundedRectangleRef"]["current"];
   onAddSketchCircle: ViewportCallbackRefTargets["addSketchCircleRef"]["current"];
   onAddSketchArc: ViewportCallbackRefTargets["addSketchArcRef"]["current"];
   onAddSketchAngleDimension: ViewportCallbackRefTargets["addSketchAngleDimensionRef"]["current"];
@@ -427,6 +438,8 @@ export function useViewportCallbackRefs(
       values.onSetSketchPointLineAnchor;
     refs.addSketchLineRef.current = values.onAddSketchLine;
     refs.addSketchRectangleRef.current = values.onAddSketchRectangle;
+    refs.addSketchRoundedRectangleRef.current =
+      values.onAddSketchRoundedRectangle;
     refs.addSketchCircleRef.current = values.onAddSketchCircle;
     refs.addSketchCircleModeRef.current = values.onAddSketchCircleMode;
     refs.addSketchArcRef.current = values.onAddSketchArc;

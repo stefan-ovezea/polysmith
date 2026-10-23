@@ -225,6 +225,9 @@ export const viewportStateSchema = z.object({
       start_vertex_id: z.string(),
       end_vertex_id: z.string(),
       is_construction: z.boolean().default(false),
+      // Reference-line flavour ("centerline" | "infinite"; "" for a plain
+      // line). Absent from older cores.
+      line_type: z.enum(["centerline", "infinite", ""]).nullable().optional(),
       plane_id: z.string(),
       start: z.object({
         x: z.number(),

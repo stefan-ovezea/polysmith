@@ -14,6 +14,9 @@
           line_payload.at("is_construction").is_boolean()) {
         line.is_construction = line_payload.at("is_construction").get<bool>();
       }
+      // Reference-line flavour (centerline / infinite). Absent in saves
+      // that predate it.
+      line.line_type = read_optional_string_value(line_payload, "line_type", "");
       // Generated-by ownership (sketch text expansion). Persisted lines
       // are re-derived from the text record on load, but the flag keeps
       // them non-editable in the window between parse and first refresh.

@@ -35,6 +35,10 @@ export interface SketchLineEntry {
   // Reference-only construction lines render dashed and don't seal
   // profile loops. Defaults to false on older saves via the schema.
   is_construction: boolean;
+  // Reference-line flavour: "centerline" | "infinite" | null. Both are
+  // construction lines; the flavour only changes presentation (dash-dot,
+  // drawn past the endpoints). Defaults to null on older saves.
+  line_type?: "centerline" | "infinite" | null;
   // Set for glyph segments expanded from a sketch text entry
   // ("text:<text-id>"). The UI routes clicks on these to the owning
   // text instead of treating them as plain sketch lines. Null for
@@ -304,6 +308,8 @@ export interface SketchSlotEntry {
 // recompute; this record is the source of truth. `corner_x` /
 // `corner_y` are denormalized (like the fillet) so the corner can be
 // re-emitted even when no other entity references it.
+export type ChamferToolMode = "equal" | "two_distance" | "distance_angle";
+
 export interface SketchChamferEntry {
   chamfer_id: string;
   corner_vertex_id: string;
@@ -315,7 +321,14 @@ export interface SketchChamferEntry {
   trim_b_vertex_id: string;
   chamfer_line_id: string;
   distance_a: number;
+  // Derived for "equal" (== distance_a) and "distance_angle" (from the
+  // angle); the core writes the current value back on every recompute.
   distance_b: number;
+  // Creation mode. Absent in saves that predate the modes → two-distance.
+  mode?: ChamferToolMode;
+  // Only meaningful for "distance_angle": the angle between the chamfer
+  // line and line A, in degrees.
+  angle_degrees?: number;
 }
 
 // Parametric sketch text entity (Fusion-style). The glyph geometry is
@@ -631,7 +644,8 @@ export type SketchTool =
 type RectangleToolMode =
   | "corner_corner"
   | "center_point"
-  | "three_point";
+  | "three_point"
+  | "rounded";
 
 /** Arc creation modes for the split tool button. */
 type ArcToolMode = "three_point" | "center_start_end";

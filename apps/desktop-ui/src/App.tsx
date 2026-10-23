@@ -252,9 +252,10 @@ function App() {
   >("section");
   // Rectangle creation mode. Defaults to corner-to-corner (2-point).
   // The SketchToolbar shows a split button with a variant dropdown
-  // to switch between corner-corner, center-point, and 3-point.
+  // to switch between corner-corner, center-point, 3-point, and the
+  // rounded (filleted-corner) rectangle.
   const [rectangleToolMode, setRectangleToolMode] = useState<
-    "corner_corner" | "center_point" | "three_point"
+    "corner_corner" | "center_point" | "three_point" | "rounded"
   >("corner_corner");
   // Circle creation mode. Defaults to center+radius.
   // The SketchToolbar shows a split button with variants for
@@ -266,6 +267,16 @@ function App() {
   const [polygonToolMode, setPolygonToolMode] = useState<
     "circumscribed" | "inscribed" | "edge"
   >("inscribed");
+  // Slot creation mode: which two points the clicks pick. Defaults to
+  // center-point, the behaviour the slot tool had before the mode existed.
+  const [slotToolMode, setSlotToolMode] = useState<
+    import("@/layout/viewport/slotDraftPreview").SlotToolMode
+  >("center_point");
+  // Chamfer creation mode — split-button variant: one distance, two
+  // distances, or a distance plus an angle. Defaults to the original
+  // two-distance behaviour.
+  const [chamferToolMode, setChamferToolMode] =
+    useState<import("@/types").ChamferToolMode>("two_distance");
   // Dimension tool mode for the split tool button dropdown.
   // Defaults to "auto" which preserves existing sketch dimension behaviour.
   const [dimensionToolMode, setDimensionToolMode] = useState<
@@ -2441,6 +2452,7 @@ function App() {
     addSketchArcLengthDimension,
     addSketchPolygonRadiusDimension,
     addSketchRectangle,
+    addSketchRoundedRectangle,
     addSketchCircle,
     addSketchCircleMode,
     addSketchPolygon,
@@ -2578,6 +2590,7 @@ function App() {
     sketchFilletIdsRef,
     sketchChamferAction,
     sketchChamferIdsRef,
+    chamferToolMode,
     sketchOffsetAction,
     sketchTextAction,
     setTimelineEditVisibleFeatureIds,
@@ -4453,6 +4466,10 @@ function App() {
           setArcToolMode={setArcToolMode}
           rectangleToolMode={rectangleToolMode}
           setRectangleToolMode={setRectangleToolMode}
+          slotToolMode={slotToolMode}
+          setSlotToolMode={setSlotToolMode}
+          chamferToolMode={chamferToolMode}
+          setChamferToolMode={setChamferToolMode}
           circleToolMode={circleToolMode}
           setCircleToolMode={setCircleToolMode}
           polygonToolMode={polygonToolMode}
@@ -5164,6 +5181,7 @@ function App() {
                 endX,
                 endY,
                 isConstruction,
+                lineType,
               ) => {
                 await runAction(async () => {
                   await addSketchLine(
@@ -5172,6 +5190,7 @@ function App() {
                     endX,
                     endY,
                     isConstruction,
+                    lineType,
                   );
                 });
               }}
@@ -5265,6 +5284,25 @@ function App() {
                   );
                 });
               }}
+              onAddSketchRoundedRectangle={async (
+                startX,
+                startY,
+                endX,
+                endY,
+                radius,
+                isConstruction,
+              ) => {
+                await runAction(async () => {
+                  await addSketchRoundedRectangle(
+                    startX,
+                    startY,
+                    endX,
+                    endY,
+                    radius,
+                    isConstruction,
+                  );
+                });
+              }}
               onAddSketchCircle={async (
                 centerX,
                 centerY,
@@ -5312,6 +5350,8 @@ function App() {
               onSetArcToolMode={setArcToolMode}
               rectangleToolMode={rectangleToolMode}
               onSetRectangleToolMode={setRectangleToolMode}
+              slotToolMode={slotToolMode}
+              onSetSlotToolMode={setSlotToolMode}
               circleToolMode={circleToolMode}
               onSetCircleToolMode={setCircleToolMode}
               polygonToolMode={polygonToolMode}
@@ -5473,6 +5513,8 @@ function App() {
                 }
                 const sessionA = sketchChamferAction.distanceA;
                 const sessionB = sketchChamferAction.distanceB;
+                const sessionMode = sketchChamferAction.mode;
+                const sessionAngle = sketchChamferAction.angleDegrees;
                 // Subscribe to the next document update that adds a
                 // chamfer on the active sketch to pick up its id.
                 const documentPromise = awaitDocumentChange(
@@ -5503,6 +5545,8 @@ function App() {
                     lineBId,
                     sessionA,
                     sessionB,
+                    sessionMode,
+                    sessionAngle,
                   );
                 });
 
@@ -5526,8 +5570,10 @@ function App() {
                   sketchChamferIdsRef.current = updatedIds;
                   setSketchChamferAction({
                     phase: "active",
+                    mode: sessionMode,
                     distanceA: sessionA,
                     distanceB: sessionB,
+                    angleDegrees: sessionAngle,
                     chamferIds: updatedIds,
                   });
                 } catch {
@@ -5726,10 +5772,18 @@ function App() {
                     // Tool change timed out — open the panel anyway.
                   }
                   sketchChamferIdsRef.current = [entry.chamfer_id];
+                  // Adopt the picked chamfer's mode so the panel shows the
+                  // fields that actually drive it, and move the toolbar's
+                  // split button with it (the mode-sync effect would
+                  // otherwise flip the session back).
+                  const entryMode = entry.mode ?? "two_distance";
+                  setChamferToolMode(entryMode);
                   setSketchChamferAction({
                     phase: "active",
+                    mode: entryMode,
                     distanceA: entry.distance_a,
                     distanceB: entry.distance_b,
+                    angleDegrees: entry.angle_degrees || 45,
                     chamferIds: [entry.chamfer_id],
                   });
                 })();

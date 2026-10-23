@@ -19,7 +19,8 @@ bool handle_sketch_create_command(
         read_dimension(command.payload, "start_x"),
         read_dimension(command.payload, "start_y"),
         read_dimension(command.payload, "end_x"),
-        read_dimension(command.payload, "end_y"), is_construction);
+        read_dimension(command.payload, "end_y"), is_construction,
+        read_optional_string(command.payload, "line_type").value_or(""));
     if (emit_sketch_entities_changed(command.id, before_document, document)) {
       return true;
     }
@@ -338,12 +339,24 @@ bool handle_sketch_create_command(
   }
 
   if (command.type == "add_sketch_chamfer") {
+    // Optional creation mode (parity: equal / two_distance / distance_angle).
+    // Absent means two_distance, the legacy behaviour.
+    const std::string chamfer_mode =
+        read_optional_string(command.payload, "mode").value_or("");
+    const double angle_degrees =
+        read_optional_dimension(command.payload, "angle_degrees", 0.0);
+    double distance_b =
+        read_optional_dimension(command.payload, "distance_b", -1.0);
+    if (chamfer_mode == "equal" || chamfer_mode == "distance_angle") {
+      // One driving value: the core derives the second distance.
+      distance_b = 0.0;
+    }
     const auto document = manager.add_sketch_chamfer(
         read_string(command.payload, "corner_vertex_id"),
         read_string(command.payload, "line_a_id"),
         read_string(command.payload, "line_b_id"),
-        read_dimension(command.payload, "distance_a"),
-        read_dimension(command.payload, "distance_b"));
+        read_dimension(command.payload, "distance_a"), distance_b,
+        chamfer_mode, angle_degrees);
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));
@@ -351,10 +364,15 @@ bool handle_sketch_create_command(
   }
 
   if (command.type == "update_sketch_chamfer") {
+    const std::string chamfer_mode =
+        read_optional_string(command.payload, "mode").value_or("");
+    const double angle_degrees =
+        read_optional_dimension(command.payload, "angle_degrees", 0.0);
     const auto document = manager.update_sketch_chamfer(
         read_string(command.payload, "chamfer_id"),
         read_dimension(command.payload, "distance_a"),
-        read_dimension(command.payload, "distance_b"));
+        read_optional_dimension(command.payload, "distance_b", 0.0),
+        chamfer_mode, angle_degrees);
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

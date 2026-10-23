@@ -14,6 +14,8 @@
                           {"chamfer_line_id", chamfer.chamfer_line_id},
                           {"distance_a", chamfer.distance_a},
                           {"distance_b", chamfer.distance_b},
+                          {"mode", chamfer.mode},
+                          {"angle_degrees", chamfer.angle_degrees},
                       });
                     }
                     return chamfers;

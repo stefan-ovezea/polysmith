@@ -2,7 +2,8 @@ DocumentState DocumentManager::add_sketch_line(double start_x,
                                                double start_y,
                                                double end_x,
                                                double end_y,
-                                               bool is_construction) {
+                                               bool is_construction,
+                                               const std::string& line_type) {
   require_document();
 
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -34,7 +35,12 @@ DocumentState DocumentManager::add_sketch_line(double start_x,
                                    end_x,
                                    end_y,
                                    is_construction,
-                                   /*snap_start=*/false);
+                                   /*snap_start=*/false,
+                                   /*auto_dimensions=*/true,
+                                   /*refresh_immediately=*/true,
+                                   /*infer_constraints=*/true,
+                                   /*share_endpoints=*/true,
+                                   line_type);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;

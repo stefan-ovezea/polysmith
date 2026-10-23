@@ -3,12 +3,15 @@ void add_sketch_chamfer(FeatureEntry &feature, int chamfer_index,
                         int line_index, const std::string &corner_vertex_id,
                         const std::string &line_a_id,
                         const std::string &line_b_id, double distance_a,
-                        double distance_b) {
+                        double distance_b, const std::string &mode,
+                        double angle_degrees) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch chamfers");
   }
-  if (distance_a <= kMinimumSketchDimensionValue ||
-      distance_b <= kMinimumSketchDimensionValue) {
+  // Only distance_a must be supplied always: "equal" derives distance_b
+  // from it, and "distance_angle" derives it from the angle. The
+  // per-mode checks live with the derivation below.
+  if (distance_a <= kMinimumSketchDimensionValue) {
     throw std::runtime_error("Sketch chamfer distances must be positive");
   }
   if (line_a_id == line_b_id) {
@@ -95,6 +98,25 @@ void add_sketch_chamfer(FeatureEntry &feature, int chamfer_index,
         "Sketch chamfer: the two lines are parallel or colinear");
   }
 
+  // Resolve the second distance according to the creation mode.
+  const std::string resolved_mode =
+      mode == "equal" || mode == "distance_angle" ? mode : "two_distance";
+  if (resolved_mode == "equal") {
+    distance_b = distance_a;
+  } else if (resolved_mode == "distance_angle") {
+    double derived = 0.0;
+    if (!chamfer_distance_b_from_angle(ux_a, uy_a, ux_b, uy_b, distance_a,
+                                       angle_degrees, derived)) {
+      throw std::runtime_error(
+          "Sketch chamfer: the angle must be between 0 and the angle "
+          "between the two lines");
+    }
+    distance_b = derived;
+  }
+  if (distance_b <= kMinimumSketchDimensionValue) {
+    throw std::runtime_error("Sketch chamfer distances must be positive");
+  }
+
   // The trim distance is simply the requested distance along each
   // outgoing direction — no angle math (unlike the fillet).
   if (distance_a + kMinimumSketchDimensionValue >= len_a ||
@@ -164,6 +186,8 @@ void add_sketch_chamfer(FeatureEntry &feature, int chamfer_index,
       .chamfer_line_id = chamfer_line_id,
       .distance_a = distance_a,
       .distance_b = distance_b,
+      .mode = resolved_mode,
+      .angle_degrees = resolved_mode == "distance_angle" ? angle_degrees : 0.0,
   });
 
   refresh_sketch_derived_state(feature);

@@ -15,6 +15,12 @@
       chamfer.chamfer_line_id = read_string(chamfer_payload, "chamfer_line_id");
       chamfer.distance_a = read_number(chamfer_payload, "distance_a");
       chamfer.distance_b = read_number(chamfer_payload, "distance_b");
+      // Modes postdate the first chamfer saves; absence means the original
+      // two-distance behaviour.
+      chamfer.mode =
+          read_optional_string_value(chamfer_payload, "mode", "two_distance");
+      chamfer.angle_degrees =
+          read_optional_number(chamfer_payload, "angle_degrees", 0.0);
       params.chamfers.push_back(std::move(chamfer));
     }
   }

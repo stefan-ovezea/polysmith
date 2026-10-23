@@ -31,6 +31,18 @@ namespace polysmith::core {
 //
 // v1 limitation: only line-line chamfers (no line-arc, arc-arc).
 // A corner holding both a fillet and a chamfer is rejected.
+//
+// Creation modes (parity: `chamfer.equal_distance`, `.two_distance`,
+// `.distance_angle`):
+//   - "equal":           one distance, applied to both lines.
+//   - "two_distance":    independent distances along each line (the
+//                        original behaviour; the default, so saves
+//                        that predate modes keep working).
+//   - "distance_angle":  `distance_a` along line A plus `angle_degrees`
+//                        between the chamfer line and line A, tilted
+//                        toward line B. `distance_b` is DERIVED from
+//                        that angle on every recompute, so the angle
+//                        stays authoritative when the lines move.
 struct SketchChamfer {
   std::string id;
   // The pre-chamfer shared corner, kept alive in `parameters.vertices`
@@ -51,6 +63,12 @@ struct SketchChamfer {
   // positive and fit within their line.
   double distance_a;
   double distance_b;
+  // "equal" | "two_distance" | "distance_angle". Empty in saves that
+  // predate the modes; treated as "two_distance".
+  std::string mode = "two_distance";
+  // Only meaningful for "distance_angle": the angle between the
+  // chamfer line and line A, in degrees.
+  double angle_degrees = 0.0;
 };
 
 }  // namespace polysmith::core

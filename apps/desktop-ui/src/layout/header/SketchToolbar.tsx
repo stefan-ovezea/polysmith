@@ -3,7 +3,7 @@ import { ConstraintType, SketchTool, ArmedSketchConstraint, type DimensionToolMo
 import { formatHotkey, useAppConfig } from "@/config";
 import type { AppHotkeys, CrosshairMode } from "@/config";
 import { Dropdown, SplitToolButton } from "@/lib";
-import { SketchToolIcon, RectangleIcon, ArcIcon, CircleIcon, PolygonIcon, DimensionIcon } from "./ToolBarIcons";
+import { SketchToolIcon, RectangleIcon, ArcIcon, CircleIcon, PolygonIcon, DimensionIcon, SlotIcon, SketchChamferIcon } from "./ToolBarIcons";
 import { useTranslation } from "react-i18next";
 import { HelpPopover } from "@/layout/HelpPopover";
 import { helpRegistry } from "@/lib/help-index";
@@ -32,7 +32,11 @@ interface SketchToolbarProps {
   // the user's choice back through `onSetArcToolMode`.
   arcToolMode: "three_point" | "center_start_end";
   // Rectangle tool's creation mode — split button variant.
-  rectangleToolMode: "corner_corner" | "center_point" | "three_point";
+  rectangleToolMode: "corner_corner" | "center_point" | "three_point" | "rounded";
+  // Slot tool's pick mode — split button variant.
+  slotToolMode: "center_point" | "center_to_center" | "overall";
+  // Chamfer tool's creation mode — split button variant.
+  chamferToolMode: "equal" | "two_distance" | "distance_angle";
   // Circle tool's creation mode — split button variant.
   circleToolMode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines";
   // Polygon tool's creation mode — split button variant.
@@ -51,7 +55,9 @@ interface SketchToolbarProps {
   onStartMirrorTool: () => Promise<void>;
   onStartArrayTool: () => void;
   onSetArcToolMode: (mode: "three_point" | "center_start_end") => void;
-  onSetRectangleToolMode: (mode: "corner_corner" | "center_point" | "three_point") => void;
+  onSetRectangleToolMode: (mode: "corner_corner" | "center_point" | "three_point" | "rounded") => void;
+  onSetSlotToolMode: (mode: "center_point" | "center_to_center" | "overall") => void;
+  onSetChamferToolMode: (mode: "equal" | "two_distance" | "distance_angle") => void;
   onSetCircleToolMode: (mode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines") => void;
   onSetPolygonToolMode: (mode: "circumscribed" | "inscribed" | "edge") => void;
   // Dimension tool split button mode
@@ -120,6 +126,8 @@ export function SketchToolbar({
   isArrayPanelOpen,
   arcToolMode,
   rectangleToolMode,
+  slotToolMode,
+  chamferToolMode,
   circleToolMode,
   polygonToolMode,
   onStartSketch,
@@ -132,6 +140,8 @@ export function SketchToolbar({
   onStartArrayTool,
   onSetArcToolMode,
   onSetRectangleToolMode,
+  onSetSlotToolMode,
+  onSetChamferToolMode,
   onSetCircleToolMode,
   onSetPolygonToolMode,
   dimensionToolMode,
@@ -214,7 +224,7 @@ export function SketchToolbar({
         </button>
       ) : null}
       {sketchTools
-         .filter((t) => t.id !== "rectangle" && t.id !== "arc" && t.id !== "circle" && t.id !== "polygon" && t.id !== "dimension")
+         .filter((t) => t.id !== "rectangle" && t.id !== "arc" && t.id !== "circle" && t.id !== "polygon" && t.id !== "dimension" && t.id !== "slot" && t.id !== "chamfer")
         .map((tool) => (
         <span
           key={tool.id}
@@ -270,6 +280,7 @@ export function SketchToolbar({
           { value: "corner_corner" as const, label: t("toolbar.rectangleCornerCorner") },
           { value: "center_point" as const, label: t("toolbar.rectangleCenterPoint") },
           { value: "three_point" as const, label: t("toolbar.rectangleThreePoint") },
+          { value: "rounded" as const, label: t("toolbar.rectangleRounded") },
         ]}
         value={rectangleToolMode}
         onChange={onSetRectangleToolMode}
@@ -406,6 +417,64 @@ export function SketchToolbar({
         ariaLabel={t("toolbar.dimension")}
       >
         <DimensionIcon />
+      </SplitToolButton>
+      </span>
+      <span
+        onMouseEnter={(e) => openHelp("slot", e.currentTarget)}
+        onMouseLeave={closeHelp}
+        onFocus={(e) => openHelp("slot", e.currentTarget)}
+        onBlur={closeHelp}
+        onClick={closeHelp}
+      >
+      <SplitToolButton
+        options={[
+          { value: "center_point" as const, label: t("toolbar.slotCenterPoint") },
+          { value: "center_to_center" as const, label: t("toolbar.slotCenterToCenter") },
+          { value: "overall" as const, label: t("toolbar.slotOverall") },
+        ]}
+        value={slotToolMode}
+        onChange={onSetSlotToolMode}
+        onPrimaryAction={() => {
+          onCancelSketchConstraint();
+          void onSetSketchTool("slot");
+        }}
+        isActive={activeSketchPlaneId ? activeSketchTool === "slot" : false}
+        disabled={!activeSketchPlaneId}
+        tooltip={toolLabel(
+          sketchTools.find((t) => t.id === "slot")!,
+        )}
+        ariaLabel={t("toolbar.slot")}
+      >
+        <SlotIcon />
+      </SplitToolButton>
+      </span>
+      <span
+        onMouseEnter={(e) => openHelp("chamfer", e.currentTarget)}
+        onMouseLeave={closeHelp}
+        onFocus={(e) => openHelp("chamfer", e.currentTarget)}
+        onBlur={closeHelp}
+        onClick={closeHelp}
+      >
+      <SplitToolButton
+        options={[
+          { value: "equal" as const, label: t("toolbar.chamferEqualDistance") },
+          { value: "two_distance" as const, label: t("toolbar.chamferTwoDistance") },
+          { value: "distance_angle" as const, label: t("toolbar.chamferDistanceAngle") },
+        ]}
+        value={chamferToolMode}
+        onChange={onSetChamferToolMode}
+        onPrimaryAction={() => {
+          onCancelSketchConstraint();
+          void onSetSketchTool("chamfer");
+        }}
+        isActive={activeSketchPlaneId ? activeSketchTool === "chamfer" : false}
+        disabled={!activeSketchPlaneId}
+        tooltip={toolLabel(
+          sketchTools.find((t) => t.id === "chamfer")!,
+        )}
+        ariaLabel={t("toolbar.chamfer")}
+      >
+        <SketchChamferIcon />
       </SplitToolButton>
       </span>
       {activeSketchTool === "project" ? (

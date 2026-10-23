@@ -382,6 +382,7 @@ export function makeAddSketchLineCommand(
   endX: number,
   endY: number,
   isConstruction = false,
+  lineType?: "centerline" | "infinite" | "",
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -392,6 +393,7 @@ export function makeAddSketchLineCommand(
       end_x: endX,
       end_y: endY,
       is_construction: isConstruction,
+      ...(lineType ? { line_type: lineType } : {}),
     },
   };
 }
@@ -590,6 +592,29 @@ export function makeAddSketchRectangleCommand(
 }
 
 
+export function makeAddSketchRoundedRectangleCommand(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  radius: number,
+  isConstruction = false,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_rounded_rectangle",
+    payload: {
+      start_x: startX,
+      start_y: startY,
+      end_x: endX,
+      end_y: endY,
+      radius,
+      is_construction: isConstruction,
+    },
+  };
+}
+
+
 export function makeAddSketchCircleCommand(
   centerX: number,
   centerY: number,
@@ -770,6 +795,8 @@ export function makeAddSketchChamferCommand(
   lineBId: string,
   distanceA: number,
   distanceB: number,
+  mode?: "equal" | "two_distance" | "distance_angle",
+  angleDegrees?: number,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -780,6 +807,8 @@ export function makeAddSketchChamferCommand(
       line_b_id: lineBId,
       distance_a: distanceA,
       distance_b: distanceB,
+      ...(mode ? { mode } : {}),
+      ...(angleDegrees !== undefined ? { angle_degrees: angleDegrees } : {}),
     },
   };
 }
@@ -788,6 +817,8 @@ export function makeUpdateSketchChamferCommand(
   chamferId: string,
   distanceA: number,
   distanceB: number,
+  mode?: "equal" | "two_distance" | "distance_angle",
+  angleDegrees?: number,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -796,6 +827,8 @@ export function makeUpdateSketchChamferCommand(
       chamfer_id: chamferId,
       distance_a: distanceA,
       distance_b: distanceB,
+      ...(mode ? { mode } : {}),
+      ...(angleDegrees !== undefined ? { angle_degrees: angleDegrees } : {}),
     },
   };
 }

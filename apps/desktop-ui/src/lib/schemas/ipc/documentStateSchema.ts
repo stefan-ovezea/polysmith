@@ -541,6 +541,12 @@ export const documentStateSchema = z.object({
               // are excluded from profile detection. Optional /
               // defaulted for back-compat with older saves.
               is_construction: z.boolean().default(false),
+              // Reference-line flavour ("centerline" | "infinite"; "" for a
+              // plain line). Absent on older saves / cores.
+              line_type: z
+                .enum(["centerline", "infinite", ""])
+                .nullable()
+                .optional(),
               // Set for glyph segments expanded from a sketch text
               // entry ("text:<text-id>"). Defaulted to null so older
               // saves / pre-text cores keep parsing cleanly.
@@ -695,6 +701,11 @@ export const documentStateSchema = z.object({
                 chamfer_line_id: z.string(),
                 distance_a: z.number(),
                 distance_b: z.number(),
+                // Creation mode; older saves omit it (two-distance).
+                mode: z
+                  .enum(["equal", "two_distance", "distance_angle"])
+                  .optional(),
+                angle_degrees: z.number().optional(),
               }),
             )
             .default([]),

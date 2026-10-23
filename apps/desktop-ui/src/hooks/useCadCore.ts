@@ -110,6 +110,7 @@ import {
   makeAddSketchVertexDistanceDimensionCommand,
   makeAddSketchPolygonRadiusDimensionCommand,
   makeAddSketchRectangleCommand,
+  makeAddSketchRoundedRectangleCommand,
   makeClearSelectionCommand,
   makeDeleteFeatureCommand,
   makeExportBodyStlCommand,
@@ -983,9 +984,17 @@ export function useCadCore() {
       endX: number,
       endY: number,
       isConstruction = false,
+      lineType?: "centerline" | "infinite" | "",
     ) => {
       await sendCoreCommand(
-        makeAddSketchLineCommand(startX, startY, endX, endY, isConstruction),
+        makeAddSketchLineCommand(
+          startX,
+          startY,
+          endX,
+          endY,
+          isConstruction,
+          lineType,
+        ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -1098,6 +1107,26 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    addSketchRoundedRectangle: async (
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+      radius: number,
+      isConstruction = false,
+    ) => {
+      await sendCoreCommand(
+        makeAddSketchRoundedRectangleCommand(
+          startX,
+          startY,
+          endX,
+          endY,
+          radius,
+          isConstruction,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
     addSketchCircle: async (
       centerX: number,
       centerY: number,
@@ -1205,6 +1234,8 @@ export function useCadCore() {
       lineBId: string,
       distanceA: number,
       distanceB: number,
+      mode?: import("@/types").ChamferToolMode,
+      angleDegrees?: number,
     ) => {
       await sendCoreCommand(
         makeAddSketchChamferCommand(
@@ -1213,6 +1244,8 @@ export function useCadCore() {
           lineBId,
           distanceA,
           distanceB,
+          mode,
+          angleDegrees,
         ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
@@ -1221,9 +1254,17 @@ export function useCadCore() {
       chamferId: string,
       distanceA: number,
       distanceB: number,
+      mode?: import("@/types").ChamferToolMode,
+      angleDegrees?: number,
     ) => {
       await sendCoreCommand(
-        makeUpdateSketchChamferCommand(chamferId, distanceA, distanceB),
+        makeUpdateSketchChamferCommand(
+          chamferId,
+          distanceA,
+          distanceB,
+          mode,
+          angleDegrees,
+        ),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },

@@ -1394,6 +1394,9 @@
     "axis": "Axis",
     "box": "Box",
     "chamfer": "Chamfer",
+    "chamferEqualDistance": "Equal Distance Chamfer",
+    "chamferTwoDistance": "Two-Distance Chamfer",
+    "chamferDistanceAngle": "Distance-Angle Chamfer",
     "circle": "Circle",
     "corner": "Corner Trim",
     "circleCenterRadius": "Center + Radius",
@@ -1469,9 +1472,13 @@
     "rectangleCornerCorner": "2-Point Rectangle",
     "rectangleCenterPoint": "Center-Point Rectangle",
     "rectangleThreePoint": "3-Point Rectangle",
+    "rectangleRounded": "Rounded Rectangle",
     "select": "Select",
     "shell": "Shell",
     "sketchCrosshair": "Sketch crosshair",
+    "slotCenterPoint": "Center-Point Slot",
+    "slotCenterToCenter": "Center-to-Center Slot",
+    "slotOverall": "Overall Slot",
     "vertical": "Vertical"
   },
   "forms": {
@@ -1736,8 +1743,10 @@
       "addAnother": "{{count}} corner{{plural}} · click a corner to add another",
       "clickCorner": "Click a corner to chamfer",
       "title": "Sketch Chamfer",
+      "distance": "Distance (mm)",
       "distanceA": "Distance A (mm)",
-      "distanceB": "Distance B (mm)"
+      "distanceB": "Distance B (mm)",
+      "angle": "Angle (deg)"
     },
     "sketchTransform": {
       "title": "Transform / Array",
@@ -2120,6 +2129,11 @@
     "showGrid": "Show grid",
     "showConstraints": "Show constraints",
     "showSketchGrid": "Show sketch grid",
+    "lineType": "Line type",
+    "lineTypeSolid": "Solid",
+    "lineTypeConstruction": "Construction",
+    "lineTypeCenterline": "Centerline",
+    "lineTypeInfinite": "Infinite line",
     "showViewportGrid": "Show viewport grid",
     "sketchStatus": "Sketching · {{tool}} · {{lineCount}}L · {{circleCount}}C · {{arcCount}}A · {{pointCount}}P",
     "snap": "Snap: {{label}}",
