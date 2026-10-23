@@ -417,6 +417,20 @@ De Boor must walk **down** from the span (`i = span → span - degree + r`) so `
 
 ---
 
+## D-006 — A new constraint kind silently wiped the whole document state from the UI
+
+**Found:** 2026-10-24, while wiring the collinear constraint button (S1). The new IPC test timed out after 15 s instead of failing with an assertion.
+
+**Cause (confirmed).** `line_relations[].kind` in `apps/desktop-ui/src/lib/schemas/ipc/documentStateSchema.ts` was a closed zod enum (`equal_length`, `perpendicular`, `parallel`, `tangent_*`). The core's `set_sketch_collinear_constraint` stores a relation with `kind: "collinear"`, so the very first `document_state` reply containing that relation **failed validation**. The core was fine (the direct NDJSON probe showed the relation stored and the command replying in milliseconds); the UI's message parser rejected the line, and the harness's `onLine` swallowed the parse error — hence the timeout rather than an error.
+
+If this had shipped, creating a collinear constraint would have made the document state stop updating in the app: every subsequent reply carrying that relation would be dropped, with no visible error. Same class of trap as the `chamfer mode` and `line_type` wounds already recorded — a closed enum is a *silent* filter, not a check.
+
+**Fix.** Added `collinear` to the document schema's relation enum (and to `SketchLineRelationEntry` and the viewport constraint enum, which was missing it too). Two related gaps found in the same pass, both fixed: collinear relations and `SketchConstraint{kind:"midpoint"}` were never emitted as viewport **badges** at all, so a constraint that constrained the sketch was invisible — the badge emitters now handle `collinear` (label "L") and `midpoint` (label "M", on the host line's midpoint). Tests: `sketchConstraintPick.test.ts` (5 pure pick-order cases) and `sketchCollinearMidpoint.core.test.ts` (2 end-to-end cases: the relation exists in viewport state, and the midpoint constraint pulls the bound endpoint onto the host midpoint).
+
+**Status:** Fixed. `pnpm test:core` 79/79, UI suites green.
+
+---
+
 ## Why this matters for the plan
 
 D-001a is a **trust** defect of exactly the kind P0 exists for: the user did something ordinary, the app warned once, and the model was destroyed with no way back. If D-001b confirms, the pair becomes the strongest argument for making profile identity provenance-based rather than boundary-name-based — which is the same fix shape as `dependency_ambiguous` in S4.

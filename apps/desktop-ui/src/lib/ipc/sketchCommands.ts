@@ -1411,3 +1411,60 @@ export function makeReenterSketchCommand(featureId: string): CoreCommand {
     },
   };
 }
+
+export function makeSetSketchCollinearConstraintCommand(
+  lineId: string,
+  otherLineId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "set_sketch_collinear_constraint",
+    payload: {
+      line_id: lineId,
+      other_line_id: otherLineId,
+    },
+  };
+}
+
+export function makeSetSketchMidpointConstraintCommand(
+  vertexId: string,
+  lineId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "set_sketch_midpoint_constraint",
+    payload: {
+      vertex_id: vertexId,
+      line_id: lineId,
+    },
+  };
+}
+export function makeSetSketchSymmetricConstraintCommand(
+  pointId: string,
+  otherPointId: string,
+  axisLineId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "set_sketch_symmetric_constraint",
+    payload: {
+      point_id: pointId,
+      other_point_id: otherPointId,
+      axis_line_id: axisLineId,
+    },
+  };
+}
+
+export function makeSetSketchTangentPairConstraintCommand(
+  firstId: string,
+  secondId: string,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "set_sketch_tangent_pair_constraint",
+    payload: {
+      first_id: firstId,
+      second_id: secondId,
+    },
+  };
+}

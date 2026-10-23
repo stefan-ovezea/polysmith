@@ -11,6 +11,10 @@ export interface SketchConstraintLinePickContext
   lineId: string;
   additive: boolean;
   armedSketchConstraint: ArmedSketchConstraint;
+  /** True when the picked entity is a LINE (as opposed to a circle or arc).
+   *  The viewport funnels every sketch-entity click through the same handler,
+   *  and the tangent / tangent-pair flows need to tell the kinds apart. */
+  isLineEntity?: (entityId: string) => boolean;
   selectSketchEntity: (entityId: string, additive?: boolean) => Promise<void>;
   setArmedSketchConstraint: (constraint: ArmedSketchConstraint) => void;
 }
@@ -40,8 +44,101 @@ async function handleSingleLineConstraint(
   context: SketchConstraintLinePickContext,
   constraint: NonNullable<ArmedSketchConstraint>,
 ) {
+  const isLine = context.isLineEntity
+    ? context.isLineEntity(context.lineId)
+    : true;
+
   if (constraint.kind === "coincident") {
     await context.selectSketchEntity(context.lineId);
+    return true;
+  }
+  // Midpoint: the POINT was picked first. This line completes the pair.
+  if (constraint.kind === "midpoint") {
+    if (!constraint.firstPointId) {
+      // No point armed yet — a line cannot start a midpoint constraint.
+      await context.selectSketchEntity(context.lineId);
+      return true;
+    }
+    await context.setSketchMidpointConstraint(
+      constraint.firstPointId,
+      context.lineId,
+    );
+    context.setArmedSketchConstraint({ kind: "midpoint", firstPointId: null });
+    return true;
+  }
+  // Tangent (S1): line first, then a circle/arc.
+  if (constraint.kind === "tangent") {
+    if (!constraint.firstLineId) {
+      if (isLine) {
+        await context.selectSketchEntity(context.lineId);
+        context.setArmedSketchConstraint({
+          kind: "tangent",
+          firstLineId: context.lineId,
+        });
+      } else {
+        // A circle cannot start the line+circle tangent flow.
+        await context.selectSketchEntity(context.lineId);
+      }
+      return true;
+    }
+    if (constraint.firstLineId === context.lineId) {
+      return true;
+    }
+    if (isLine) {
+      // Still a line: the flow needs a circle/arc for the second pick.
+      await context.selectSketchEntity(context.lineId);
+      return true;
+    }
+    await context.setSketchTangentConstraint(
+      constraint.firstLineId,
+      context.lineId,
+    );
+    context.setArmedSketchConstraint({ kind: "tangent", firstLineId: null });
+    return true;
+  }
+  // Tangent pair (S1): any two tangent-capable entities, in either order.
+  if (constraint.kind === "tangent_pair") {
+    if (!constraint.firstEntityId) {
+      await context.selectSketchEntity(context.lineId);
+      context.setArmedSketchConstraint({
+        kind: "tangent_pair",
+        firstEntityId: context.lineId,
+      });
+      return true;
+    }
+    if (constraint.firstEntityId === context.lineId) {
+      return true;
+    }
+    await context.setSketchTangentPairConstraint(
+      constraint.firstEntityId,
+      context.lineId,
+    );
+    context.setArmedSketchConstraint({
+      kind: "tangent_pair",
+      firstEntityId: null,
+    });
+    return true;
+  }
+  // Symmetric (S1): the two POINTS were picked first; this line is the axis.
+  if (constraint.kind === "symmetric") {
+    if (!constraint.firstPointId || !constraint.secondPointId) {
+      await context.selectSketchEntity(context.lineId);
+      return true;
+    }
+    if (!isLine) {
+      await context.selectSketchEntity(context.lineId);
+      return true;
+    }
+    await context.setSketchSymmetricConstraint(
+      constraint.firstPointId,
+      constraint.secondPointId,
+      context.lineId,
+    );
+    context.setArmedSketchConstraint({
+      kind: "symmetric",
+      firstPointId: null,
+      secondPointId: null,
+    });
     return true;
   }
   if (constraint.kind === "horizontal" || constraint.kind === "vertical") {
@@ -103,6 +200,13 @@ async function applyPairLineConstraint(
     );
     return;
   }
+  if (constraint.kind === "collinear") {
+    await context.setSketchCollinearConstraint(
+      context.lineId,
+      constraint.firstLineId!,
+    );
+    return;
+  }
   await context.setSketchPerpendicularConstraint(
     context.lineId,
     constraint.firstLineId!,
@@ -115,6 +219,7 @@ function isPairLineConstraint(
   return (
     constraint.kind === "equal_length" ||
     constraint.kind === "parallel" ||
-    constraint.kind === "perpendicular"
+    constraint.kind === "perpendicular" ||
+    constraint.kind === "collinear"
   );
 }

@@ -947,3 +947,39 @@ export interface ClearSelectionCommand {
   type: "clear_selection";
   payload: Record<string, never>;
 }
+
+export interface SetSketchCollinearConstraintCommand {
+  id: string;
+  type: "set_sketch_collinear_constraint";
+  payload: {
+    line_id: string;
+    other_line_id: string;
+  };
+}
+
+export interface SetSketchMidpointConstraintCommand {
+  id: string;
+  type: "set_sketch_midpoint_constraint";
+  payload: {
+    vertex_id: string;
+    line_id: string;
+  };
+}
+export interface SetSketchSymmetricConstraintCommand {
+  id: string;
+  type: "set_sketch_symmetric_constraint";
+  payload: {
+    point_id: string;
+    other_point_id: string;
+    axis_line_id: string;
+  };
+}
+
+export interface SetSketchTangentPairConstraintCommand {
+  id: string;
+  type: "set_sketch_tangent_pair_constraint";
+  payload: {
+    first_id: string;
+    second_id: string;
+  };
+}

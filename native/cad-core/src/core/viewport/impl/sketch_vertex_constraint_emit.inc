@@ -138,5 +138,137 @@
               }
             }
           }
+          if (c.kind == "symmetric") {
+            // S1: two points mirrored about an axis line. Badge at the middle
+            // of the point pair, on the axis line's side of the sketch.
+            if (c.target_ids.size() == 3) {
+              const auto position_of = [&](const std::string& id)
+                  -> std::optional<std::pair<double, double>> {
+                const auto it = std::find_if(
+                    feature.sketch_parameters->vertices.begin(),
+                    feature.sketch_parameters->vertices.end(),
+                    [&](const SketchVertex& vertex) { return vertex.id == id; });
+                if (it == feature.sketch_parameters->vertices.end()) {
+                  return std::nullopt;
+                }
+                return std::make_pair(it->x, it->y);
+              };
+              const auto first = position_of(c.target_ids[0]);
+              const auto second = position_of(c.target_ids[1]);
+              if (first.has_value() && second.has_value()) {
+                const WorldPoint pos = to_world_point(
+                    *feature.sketch_parameters,
+                    (first->first + second->first) / 2.0,
+                    (first->second + second->second) / 2.0,
+                    kSketchPlaneOffset + kConstraintBadgeOffset);
+                const bool is_sel =
+                    is_sketch_vertex_selected(c.target_ids[0]) ||
+                    is_sketch_vertex_selected(c.target_ids[1]) ||
+                    is_sketch_entity_selected(c.target_ids[2]);
+                sketch_constraints.push_back(
+                    ViewportSketchConstraintPrimitive{
+                        .constraint_id = c.constraint_id,
+                        .plane_id = feature.sketch_parameters->plane_id,
+                        .kind = "symmetric",
+                        .entity_id = c.target_ids[2],
+                        .related_entity_id = c.target_ids[0],
+                        .label = "S",
+                        .is_selected = is_sel,
+                        .position_x = pos.x,
+                        .position_y = pos.y,
+                        .position_z = pos.z,
+                    });
+              }
+            }
+          }
+          if (c.kind == "tangent_circle_circle" || c.kind == "tangent_arc_arc") {
+            // S1: curve-pair tangency. Badge at the touch point, on the line
+            // joining the two centres at the first curve's radius.
+            if (c.target_ids.size() == 2) {
+              const auto centre_radius = [&](const std::string& id)
+                  -> std::optional<std::pair<std::pair<double, double>, double>> {
+                for (const auto& circle : feature.sketch_parameters->circles) {
+                  if (circle.id == id) {
+                    return std::make_pair(
+                        std::make_pair(circle.center_x, circle.center_y),
+                        circle.radius);
+                  }
+                }
+                for (const auto& arc : feature.sketch_parameters->arcs) {
+                  if (arc.id == id) {
+                    return std::make_pair(
+                        std::make_pair(arc.center_x, arc.center_y), arc.radius);
+                  }
+                }
+                return std::nullopt;
+              };
+              const auto first = centre_radius(c.target_ids[0]);
+              const auto second = centre_radius(c.target_ids[1]);
+              if (first.has_value() && second.has_value()) {
+                const double dx = second->first.first - first->first.first;
+                const double dy = second->first.second - first->first.second;
+                const double dist = std::hypot(dx, dy);
+                const double ux = dist > 1e-12 ? dx / dist : 1.0;
+                const double uy = dist > 1e-12 ? dy / dist : 0.0;
+                const WorldPoint pos = to_world_point(
+                    *feature.sketch_parameters,
+                    first->first.first + ux * first->second,
+                    first->first.second + uy * first->second,
+                    kSketchPlaneOffset + kConstraintBadgeOffset);
+                const bool is_sel =
+                    is_sketch_entity_selected(c.target_ids[0]) ||
+                    is_sketch_entity_selected(c.target_ids[1]);
+                sketch_constraints.push_back(
+                    ViewportSketchConstraintPrimitive{
+                        .constraint_id = c.constraint_id,
+                        .plane_id = feature.sketch_parameters->plane_id,
+                        .kind = c.kind,
+                        .entity_id = c.target_ids[0],
+                        .related_entity_id = c.target_ids[1],
+                        .label = "T",
+                        .is_selected = is_sel,
+                        .position_x = pos.x,
+                        .position_y = pos.y,
+                        .position_z = pos.z,
+                    });
+              }
+            }
+          }
+          if (c.kind == "midpoint") {
+            // S1: midpoint constraints used to constrain the sketch without
+            // any badge, so an inferred anchor was invisible. target_ids is
+            // {vertex_id, line_id}; badge the HOST LINE at its midpoint.
+            if (c.target_ids.size() == 2) {
+              const auto& line_it = std::find_if(
+                  feature.sketch_parameters->lines.begin(),
+                  feature.sketch_parameters->lines.end(),
+                  [&](const SketchLine& line) {
+                    return line.id == c.target_ids[1];
+                  });
+              if (line_it != feature.sketch_parameters->lines.end()) {
+                const WorldPoint pos = to_world_point(
+                    *feature.sketch_parameters,
+                    (line_it->start_x + line_it->end_x) / 2.0,
+                    (line_it->start_y + line_it->end_y) / 2.0,
+                    kSketchPlaneOffset + kConstraintBadgeOffset);
+                const bool is_sel =
+                    is_sketch_entity_selected(line_it->id) ||
+                    is_sketch_vertex_selected(c.target_ids[0]);
+                sketch_constraints.push_back(
+                    ViewportSketchConstraintPrimitive{
+                        .constraint_id = c.constraint_id,
+                        .plane_id = feature.sketch_parameters->plane_id,
+                        .kind = "midpoint",
+                        .entity_id = line_it->id,
+                        .related_entity_id = c.target_ids[0],
+                        .label = "M",
+                        .is_selected = is_sel,
+                        .position_x = pos.x,
+                        .position_y = pos.y,
+                        .position_z = pos.z,
+                    });
+              }
+            }
+          }
         }
       }

@@ -304,6 +304,9 @@ interface AppHeaderProps
   // Slot tool's pick mode — split button variant.
   slotToolMode: "center_point" | "center_to_center" | "overall";
   onSetSlotToolMode: (mode: "center_point" | "center_to_center" | "overall") => void;
+  // Spline creation mode — split button variant (T2.1).
+  splineToolMode: "control" | "fit";
+  onSetSplineToolMode: (mode: "control" | "fit") => void;
   // Chamfer tool's creation mode — split button variant.
   chamferToolMode: "equal" | "two_distance" | "distance_angle";
   onSetChamferToolMode: (mode: "equal" | "two_distance" | "distance_angle") => void;
@@ -424,6 +427,8 @@ export function AppHeader({
   onSetRectangleToolMode,
   slotToolMode,
   onSetSlotToolMode,
+  splineToolMode,
+  onSetSplineToolMode,
   chamferToolMode,
   onSetChamferToolMode,
   circleToolMode,
@@ -1040,6 +1045,8 @@ export function AppHeader({
                 onSetRectangleToolMode={onSetRectangleToolMode}
                 slotToolMode={slotToolMode}
                 onSetSlotToolMode={onSetSlotToolMode}
+                splineToolMode={splineToolMode}
+                onSetSplineToolMode={onSetSplineToolMode}
                 chamferToolMode={chamferToolMode}
                 onSetChamferToolMode={onSetChamferToolMode}
                 circleToolMode={circleToolMode}

@@ -209,7 +209,11 @@ import {
   makeUpdateAnglePlaneCommand,
   makeSetSketchCoincidentConstraintCommand,
   makeDeleteSketchCoincidentConstraintCommand,
+  makeSetSketchCollinearConstraintCommand,
+  makeSetSketchSymmetricConstraintCommand,
+  makeSetSketchTangentPairConstraintCommand,
   makeSetSketchEqualLengthConstraintCommand,
+  makeSetSketchMidpointConstraintCommand,
   makeSetSketchParallelConstraintCommand,
   makeSetSketchPerpendicularConstraintCommand,
   makeSetSketchTangentConstraintCommand,
@@ -899,7 +903,43 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    setSketchTangentConstraint: async (lineId: string, circleId: string) => {
+    setSketchCollinearConstraint: async (
+      lineId: string,
+      otherLineId: string,
+    ) => {
+      await sendCoreCommand(
+        makeSetSketchCollinearConstraintCommand(lineId, otherLineId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setSketchMidpointConstraint: async (
+      vertexId: string,
+      lineId: string,
+    ) => {
+      await sendCoreCommand(
+        makeSetSketchMidpointConstraintCommand(vertexId, lineId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },    setSketchSymmetricConstraint: async (
+      pointId: string,
+      otherPointId: string,
+      axisLineId: string,
+    ) => {
+      await sendCoreCommand(
+        makeSetSketchSymmetricConstraintCommand(
+          pointId,
+          otherPointId,
+          axisLineId,
+        ),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    setSketchTangentPairConstraint: async (firstId: string, secondId: string) => {
+      await sendCoreCommand(
+        makeSetSketchTangentPairConstraintCommand(firstId, secondId),
+      );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },    setSketchTangentConstraint: async (lineId: string, circleId: string) => {
       await sendCoreCommand(
         makeSetSketchTangentConstraintCommand(lineId, circleId),
       );

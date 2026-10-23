@@ -346,6 +346,10 @@ export interface ViewportPanelProps {
   onSetRectangleToolMode: (mode: RectangleToolMode) => void;
   slotToolMode: SlotToolMode;
   onSetSlotToolMode: (mode: SlotToolMode) => void;
+  /** Spline creation mode (T2.1) — owned by App so the toolbar split button
+   *  and the sketch tool panel show the same value. */
+  splineToolMode: "control" | "fit";
+  onSetSplineToolMode: (mode: "control" | "fit") => void;
   circleToolMode: CircleToolMode;
   onSetCircleToolMode: (mode: CircleToolMode) => void;
   polygonToolMode: PolygonToolMode;

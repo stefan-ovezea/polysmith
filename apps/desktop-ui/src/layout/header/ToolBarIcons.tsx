@@ -404,8 +404,7 @@ const CoincidentConstraintIcon = () => (
   </svg>
 );
 
-const ParallelConstraintIcon = () => (
-  <svg
+const ParallelConstraintIcon = () => (  <svg
     viewBox="0 0 24 24"
     className="h-7 w-7"
     fill="none"
@@ -419,6 +418,96 @@ const ParallelConstraintIcon = () => (
     <path d="M7 16h10" />
     <path d="m9 6-2 2 2 2" />
     <path d="m15 14 2 2-2 2" />
+  </svg>
+);
+
+// Collinear (S1): two segments on one common infinite line, drawn with a
+// dashed extension so it reads differently from Parallel's two full lines.
+const CollinearConstraintIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 12h6" />
+    <path d="M14 12h6" />
+    <path d="M10 12h4" strokeDasharray="1.5 2" />
+  </svg>
+);
+
+// Midpoint (S1): a line with the bound point at its centre.
+const MidpointConstraintIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 16h16" />
+    <circle cx="12" cy="16" r="2" fill="currentColor" stroke="none" />
+    <path d="M10 6h4" />
+    <path d="M12 6v4" />
+  </svg>
+);
+
+// Tangent (S1): a line touching a circle.
+const TangentConstraintIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 18h18" />
+    <circle cx="12" cy="11" r="5" />
+  </svg>
+);
+
+// Tangent pair (S1): two circles touching at one point.
+const TangentPairConstraintIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="8" cy="12" r="5" />
+    <circle cx="16" cy="12" r="5" />
+  </svg>
+);
+
+// Symmetric (S1): two points mirrored about a dashed axis.
+const SymmetricConstraintIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M12 4v16" strokeDasharray="2 2" />
+    <circle cx="6" cy="12" r="2" fill="currentColor" stroke="none" />
+    <circle cx="18" cy="12" r="2" fill="currentColor" stroke="none" />
   </svg>
 );
 
@@ -1119,6 +1208,16 @@ export function ConstraintIcon({ kind }: { kind: ConstraintType }) {
       return <CoincidentConstraintIcon />;
     case "parallel":
       return <ParallelConstraintIcon />;
+    case "collinear":
+      return <CollinearConstraintIcon />;
+    case "midpoint":
+      return <MidpointConstraintIcon />;
+    case "tangent":
+      return <TangentConstraintIcon />;
+    case "tangent_pair":
+      return <TangentPairConstraintIcon />;
+    case "symmetric":
+      return <SymmetricConstraintIcon />;
     case "equal_length":
       return <EqualLengthConstraintIcon />;
     case "fixed":

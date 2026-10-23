@@ -61,6 +61,9 @@ interface AppTopBarProps {
   setSlotToolMode: (
     mode: "center_point" | "center_to_center" | "overall",
   ) => void;
+  /** Spline creation mode (T2.1): control points or fit points. */
+  splineToolMode: "control" | "fit";
+  setSplineToolMode: (mode: "control" | "fit") => void;
   chamferToolMode: "equal" | "two_distance" | "distance_angle";
   setChamferToolMode: (
     mode: "equal" | "two_distance" | "distance_angle",
@@ -247,6 +250,8 @@ export function AppTopBar(props: AppTopBarProps) {
       onSetRectangleToolMode={props.setRectangleToolMode}
       slotToolMode={props.slotToolMode}
       onSetSlotToolMode={props.setSlotToolMode}
+      splineToolMode={props.splineToolMode}
+      onSetSplineToolMode={props.setSplineToolMode}
       chamferToolMode={props.chamferToolMode}
       onSetChamferToolMode={props.setChamferToolMode}
       circleToolMode={props.circleToolMode}

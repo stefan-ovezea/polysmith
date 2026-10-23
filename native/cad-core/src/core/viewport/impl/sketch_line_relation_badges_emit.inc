@@ -63,7 +63,9 @@
           }
           if (relation.kind != "equal_length" &&
               relation.kind != "perpendicular" &&
-              relation.kind != "parallel") {
+              relation.kind != "parallel" &&
+              relation.kind != "collinear" &&
+              relation.kind != "tangent_line_line") {
             continue;
           }
 
@@ -93,6 +95,8 @@
               relation.kind == "equal_length"   ? "="
               : relation.kind == "perpendicular" ? "P"
               : relation.kind == "parallel"     ? "//"
+              : relation.kind == "collinear"    ? "L"
+              : relation.kind == "tangent_line_line" ? "T"
               : "?";
 
           // Determine the badge position based on constraint kind.

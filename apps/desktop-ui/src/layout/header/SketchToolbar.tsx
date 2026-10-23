@@ -35,6 +35,9 @@ interface SketchToolbarProps {
   rectangleToolMode: "corner_corner" | "center_point" | "three_point" | "rounded";
   // Slot tool's pick mode — split button variant.
   slotToolMode: "center_point" | "center_to_center" | "overall";
+  // Spline creation mode — split button variant (T2.1): control points or fit
+  // points. The same value drives the sketch tool panel.
+  splineToolMode: "control" | "fit";
   // Chamfer tool's creation mode — split button variant.
   chamferToolMode: "equal" | "two_distance" | "distance_angle";
   // Circle tool's creation mode — split button variant.
@@ -57,6 +60,7 @@ interface SketchToolbarProps {
   onSetArcToolMode: (mode: "three_point" | "center_start_end") => void;
   onSetRectangleToolMode: (mode: "corner_corner" | "center_point" | "three_point" | "rounded") => void;
   onSetSlotToolMode: (mode: "center_point" | "center_to_center" | "overall") => void;
+  onSetSplineToolMode: (mode: "control" | "fit") => void;
   onSetChamferToolMode: (mode: "equal" | "two_distance" | "distance_angle") => void;
   onSetCircleToolMode: (mode: "center_radius" | "two_point" | "three_point" | "tangent_two_lines" | "tangent_three_lines") => void;
   onSetPolygonToolMode: (mode: "circumscribed" | "inscribed" | "edge") => void;
@@ -130,6 +134,7 @@ export function SketchToolbar({
   arcToolMode,
   rectangleToolMode,
   slotToolMode,
+  splineToolMode,
   chamferToolMode,
   circleToolMode,
   polygonToolMode,
@@ -144,6 +149,7 @@ export function SketchToolbar({
   onSetArcToolMode,
   onSetRectangleToolMode,
   onSetSlotToolMode,
+  onSetSplineToolMode,
   onSetChamferToolMode,
   onSetCircleToolMode,
   onSetPolygonToolMode,
@@ -237,7 +243,7 @@ export function SketchToolbar({
         </button>
       ) : null}
       {sketchTools
-         .filter((t) => t.id !== "rectangle" && t.id !== "arc" && t.id !== "circle" && t.id !== "polygon" && t.id !== "dimension" && t.id !== "slot" && t.id !== "chamfer")
+         .filter((t) => t.id !== "rectangle" && t.id !== "arc" && t.id !== "circle" && t.id !== "polygon" && t.id !== "dimension" && t.id !== "slot" && t.id !== "spline" && t.id !== "chamfer")
         .map((tool) => (
         <span
           key={tool.id}
@@ -459,6 +465,34 @@ export function SketchToolbar({
         ariaLabel={t("toolbar.slot")}
       >
         <SlotIcon />
+      </SplitToolButton>
+      </span>
+      <span
+        onMouseEnter={(e) => openHelp("spline", e.currentTarget)}
+        onMouseLeave={closeHelp}
+        onFocus={(e) => openHelp("spline", e.currentTarget)}
+        onBlur={closeHelp}
+        onClick={closeHelp}
+      >
+      <SplitToolButton
+        options={[
+          { value: "control" as const, label: t("toolbar.splineControlPoints") },
+          { value: "fit" as const, label: t("toolbar.splineFitPoints") },
+        ]}
+        value={splineToolMode}
+        onChange={onSetSplineToolMode}
+        onPrimaryAction={() => {
+          onCancelSketchConstraint();
+          void onSetSketchTool("spline");
+        }}
+        isActive={activeSketchPlaneId ? activeSketchTool === "spline" : false}
+        disabled={!activeSketchPlaneId}
+        tooltip={toolLabel(
+          sketchTools.find((t) => t.id === "spline")!,
+        )}
+        ariaLabel={t("toolbar.spline")}
+      >
+        <SketchToolIcon tool="spline" />
       </SplitToolButton>
       </span>
       <span

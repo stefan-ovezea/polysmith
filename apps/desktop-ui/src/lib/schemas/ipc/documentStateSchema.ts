@@ -874,6 +874,12 @@ export const documentStateSchema = z.object({
                 "equal_length",
                 "perpendicular",
                 "parallel",
+                // S1: collinear and line-line tangency are real line relations
+                // (set_sketch_collinear_constraint / set_sketch_tangent_pair_constraint).
+                // A kind missing here makes the parser reject the WHOLE
+                // document_state reply, which silently freezes the UI (D-006).
+                "collinear",
+                "tangent_line_line",
                 "tangent_line_circle",
                 "tangent_circle_line",
               ]),

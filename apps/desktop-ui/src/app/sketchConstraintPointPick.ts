@@ -37,6 +37,45 @@ export async function handleSketchConstraintVertexPickFromContext(
     return;
   }
 
+  // Midpoint (S1): pick the POINT first, then the line it should sit on. The
+  // line pick completes the constraint (see sketchConstraintLinePick.ts).
+  if (armedSketchConstraint?.kind === "midpoint") {
+    await context.selectSketchPoint(context.vertexId);
+    context.setArmedSketchConstraint({
+      kind: "midpoint",
+      firstPointId: context.vertexId,
+    });
+    return;
+  }
+
+  // Symmetric (S1): point, point, axis line. The line pick applies it.
+  if (armedSketchConstraint?.kind === "symmetric") {
+    if (!armedSketchConstraint.firstPointId) {
+      await context.selectSketchPoint(context.vertexId);
+      context.setArmedSketchConstraint({
+        kind: "symmetric",
+        firstPointId: context.vertexId,
+        secondPointId: null,
+      });
+      return;
+    }
+    if (armedSketchConstraint.firstPointId === context.vertexId) {
+      return;
+    }
+    if (!armedSketchConstraint.secondPointId) {
+      await context.selectSketchPoint(context.vertexId, true);
+      context.setArmedSketchConstraint({
+        kind: "symmetric",
+        firstPointId: armedSketchConstraint.firstPointId,
+        secondPointId: context.vertexId,
+      });
+      return;
+    }
+    // Both points are already armed — the next click must be the axis line.
+    await context.selectSketchPoint(context.vertexId, true);
+    return;
+  }
+
   if (!armedSketchConstraint || armedSketchConstraint.kind !== "coincident") {
     await context.selectSketchPoint(context.vertexId, context.additive);
     return;

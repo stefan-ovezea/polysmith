@@ -74,6 +74,10 @@ import type {
   ClearSketchLineConstraintsCommand,
   SetSketchEqualLengthConstraintCommand,
   SetSketchPerpendicularConstraintCommand,
+  SetSketchCollinearConstraintCommand,
+  SetSketchMidpointConstraintCommand,
+  SetSketchTangentPairConstraintCommand,
+  SetSketchSymmetricConstraintCommand,
   StartMirrorPreviewCommand,
   UpdateMirrorPreviewAxisCommand,
   UpdateMirrorPreviewObjectsCommand,
@@ -1362,6 +1366,10 @@ export type CoreCommand =
   | ClearSketchLineConstraintsCommand
   | SetSketchEqualLengthConstraintCommand
   | SetSketchPerpendicularConstraintCommand
+  | SetSketchCollinearConstraintCommand
+  | SetSketchMidpointConstraintCommand
+  | SetSketchTangentPairConstraintCommand
+  | SetSketchSymmetricConstraintCommand
   | SetSketchTangentConstraintCommand
   | StartMirrorPreviewCommand
   | UpdateMirrorPreviewAxisCommand

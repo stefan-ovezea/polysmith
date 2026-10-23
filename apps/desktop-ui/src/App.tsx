@@ -2416,7 +2416,11 @@ function App() {
     deleteSketchCoincidentConstraint,
     setSketchParallelConstraint,
     setSketchPerpendicularConstraint,
+    setSketchCollinearConstraint,
+    setSketchMidpointConstraint,
     setSketchTangentConstraint,
+    setSketchTangentPairConstraint,
+    setSketchSymmetricConstraint,
     startMirrorPreview,
     updateMirrorPreviewAxis,
     updateMirrorPreviewObjects,
@@ -2998,6 +3002,9 @@ function App() {
     restoreTimelineCursorAfterEdit,
     setSketchTool,
     selectSketchEntity,
+    // Tangent / tangent-pair need to tell a line id from a circle/arc id; the
+    // label map is built from the document's lines, so membership is the test.
+    isLineEntity: (entityId: string) => sketchLineLabelById.has(entityId),
     selectSketchPoint,
     setSketchPointFixed,
     setSketchLineConstraint,
@@ -3005,6 +3012,11 @@ function App() {
     setSketchEqualLengthConstraint,
     setSketchParallelConstraint,
     setSketchPerpendicularConstraint,
+    setSketchCollinearConstraint,
+    setSketchMidpointConstraint,
+    setSketchTangentConstraint,
+    setSketchTangentPairConstraint,
+    setSketchSymmetricConstraint,
     setSketchCoincidentConstraint,
     addMessage,
   });
@@ -4475,6 +4487,8 @@ function App() {
           setRectangleToolMode={setRectangleToolMode}
           slotToolMode={slotToolMode}
           setSlotToolMode={setSlotToolMode}
+          splineToolMode={splineToolMode}
+          setSplineToolMode={setSplineToolMode}
           chamferToolMode={chamferToolMode}
           setChamferToolMode={setChamferToolMode}
           circleToolMode={circleToolMode}
@@ -5359,6 +5373,8 @@ function App() {
               onSetRectangleToolMode={setRectangleToolMode}
               slotToolMode={slotToolMode}
               onSetSlotToolMode={setSlotToolMode}
+              splineToolMode={splineToolMode}
+              onSetSplineToolMode={setSplineToolMode}
               circleToolMode={circleToolMode}
               onSetCircleToolMode={setCircleToolMode}
               polygonToolMode={polygonToolMode}

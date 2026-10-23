@@ -328,6 +328,8 @@ export function ViewportPanel({
   onSetRectangleToolMode,
   slotToolMode,
   onSetSlotToolMode,
+  splineToolMode,
+  onSetSplineToolMode,
   circleToolMode,
   onSetCircleToolMode,
   polygonToolMode,
@@ -511,12 +513,11 @@ export function ViewportPanel({
   // fillets (and their radii) are core-owned state.
   const [rectangleCornerRadius, setRectangleCornerRadius] = useState(5);
   const rectangleCornerRadiusRef = useRef(5);
-  // Spline creation mode (T2.1): "control" (clicks are poles) or "fit" (the
-  // curve passes through the clicks).
-  const [splineToolMode, setSplineToolMode] = useState<"control" | "fit">(
-    "control",
-  );
-  const splineToolModeRef = useRef<"control" | "fit">("control");
+  // Spline creation mode (T2.1) is a PROP: the toolbar split button and the
+  // sketch tool panel must show the same value, so it lives in App. The ref
+  // mirrors it for the draft commit paths, which run outside React's render.
+  const splineToolModeRef = useRef<"control" | "fit">(splineToolMode);
+  splineToolModeRef.current = splineToolMode;
   // Requested spline degree (T2.1); the core clamps it to the placed count.
   const [splineToolDegree, setSplineToolDegree] = useState(3);
   const splineToolDegreeRef = useRef(3);
@@ -6284,10 +6285,7 @@ export function ViewportPanel({
         setLineType(value);
         lineTypeRef.current = value;
       }}
-      onSetSplineToolMode={(value) => {
-        setSplineToolMode(value);
-        splineToolModeRef.current = value;
-      }}
+      onSetSplineToolMode={onSetSplineToolMode}
       onSplineToolDegreeChange={(value) => {
         setSplineToolDegree(value);
         splineToolDegreeRef.current = value;

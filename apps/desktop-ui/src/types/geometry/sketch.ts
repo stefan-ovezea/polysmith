@@ -112,6 +112,8 @@ export interface SketchLineRelationEntry {
     | "equal_length"
     | "perpendicular"
     | "parallel"
+    | "collinear"
+    | "tangent_line_line"
     | "tangent_line_circle"
     | "tangent_circle_line";
   first_line_id: string;

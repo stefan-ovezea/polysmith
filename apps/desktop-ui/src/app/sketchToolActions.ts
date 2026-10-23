@@ -18,6 +18,9 @@ interface SketchToolActionContext extends SketchLineConstraintActions {
   restoreTimelineCursorAfterEdit: () => Promise<void>;
   setSketchTool: (tool: SketchTool) => Promise<void>;
   selectSketchEntity: (entityId: string, additive?: boolean) => Promise<void>;
+  /** True for a line entity id (false for circles/arcs) — the tangent and
+   *  tangent-pair flows need the distinction. */
+  isLineEntity: (entityId: string) => boolean;
   selectSketchPoint: (
     pointId: string,
     additive?: boolean,
@@ -40,6 +43,7 @@ export function createSketchToolActions({
   restoreTimelineCursorAfterEdit,
   setSketchTool,
   selectSketchEntity,
+  isLineEntity,
   selectSketchPoint,
   setSketchPointFixed,
   setSketchLineConstraint,
@@ -47,6 +51,11 @@ export function createSketchToolActions({
   setSketchEqualLengthConstraint,
   setSketchParallelConstraint,
   setSketchPerpendicularConstraint,
+  setSketchCollinearConstraint,
+  setSketchMidpointConstraint,
+  setSketchTangentConstraint,
+  setSketchTangentPairConstraint,
+  setSketchSymmetricConstraint,
   setSketchCoincidentConstraint,
   addMessage,
 }: SketchToolActionContext) {
@@ -76,6 +85,7 @@ export function createSketchToolActions({
     await handleSketchConstraintLinePickFromContext({
       lineId,
       additive,
+      isLineEntity,
       armedSketchConstraint,
       selectSketchEntity,
       setSketchLineConstraint,
@@ -83,6 +93,11 @@ export function createSketchToolActions({
       setSketchEqualLengthConstraint,
       setSketchParallelConstraint,
       setSketchPerpendicularConstraint,
+      setSketchCollinearConstraint,
+      setSketchMidpointConstraint,
+      setSketchTangentConstraint,
+      setSketchTangentPairConstraint,
+      setSketchSymmetricConstraint,
       setArmedSketchConstraint,
     });
   }
