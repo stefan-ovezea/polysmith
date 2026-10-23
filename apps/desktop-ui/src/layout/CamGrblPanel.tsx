@@ -872,7 +872,7 @@ export function CamGrblPanel({
         <legend className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-muted">
           {t("cam.grbl.command", "Command")}
         </legend>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <input
             type="text"
             className="cad-input min-w-0 flex-1"

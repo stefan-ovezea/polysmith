@@ -960,7 +960,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                       <span className="cad-kicker">
                         {t("settings.orcaSlicerBinaryPath")}
                       </span>
-                      <div className="mt-2 flex gap-2">
+                      <div className="mt-2 flex flex-wrap gap-2">
                         <input
                           className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-on-surface outline-none transition-colors focus:border-primary-edge"
                           value={config.orcaSlicer.binaryPath}
@@ -1066,7 +1066,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     <span className="cad-kicker">
                       {t("settings.laserGrblBinaryPath")}
                     </span>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
                       <input
                         className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-on-surface outline-none transition-colors focus:border-primary-edge"
                         value={config.laserGrbl.binaryPath}

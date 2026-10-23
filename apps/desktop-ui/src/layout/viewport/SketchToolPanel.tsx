@@ -2,6 +2,7 @@ import { Checkbox, Dropdown } from "@/lib";
 import type { SketchTool, DimensionToolMode } from "@/types";
 import type { CircleToolMode } from "./circleDraftPreview";
 import { isDrawableSketchTool, sketchToolLabelKey } from "./draftDimensions";
+import { lineTypeFlagsToSelection } from "./lineTypeSelection";
 import type { RectangleToolMode } from "./rectangleDraftPreview";
 import type { SlotToolMode } from "./slotDraftPreview";
 import type { PolygonToolMode } from "./viewportPanelTypes";
@@ -229,14 +230,15 @@ export function SketchToolPanel({
           <div>
             <p className="cad-kicker">{translate("viewport.lineType")}</p>
             <div className="mt-3">
+              {/* A dropdown, not a segmented row: the panel is 288 px wide and
+                  four labels ("Construction", "Centerline", "Infinite") do not
+                  fit in one line. The four-way mapping lives in
+                  lineTypeSelection.ts and is unit-tested. */}
               <Dropdown
-                value={
-                  lineType !== ""
-                    ? lineType
-                    : sketchToolConstruction
-                      ? "construction"
-                      : "solid"
-                }
+                value={lineTypeFlagsToSelection({
+                  lineType,
+                  isConstruction: sketchToolConstruction,
+                })}
                 options={[
                   { value: "solid", label: translate("viewport.lineTypeSolid") },
                   {
@@ -256,7 +258,8 @@ export function SketchToolPanel({
                 onChange={(value) => {
                   // "solid" / "construction" are the ordinary line with the
                   // construction flag toggled; the two reference flavours
-                  // force construction in the core.
+                  // force construction in the core, so the flag stays clear
+                  // here (see lineTypeSelection.ts, which is unit-tested).
                   if (value === "centerline" || value === "infinite") {
                     onConstructionChange(false);
                     onLineTypeChange(value);
@@ -272,7 +275,10 @@ export function SketchToolPanel({
         {activeSketchTool === "arc" ? (
           <div>
             <p className="cad-kicker">{translate("viewport.mode")}</p>
-            <div className="mt-3 flex gap-2">
+            {/* Two options are short in English, but this row must not clip a
+                longer translation: wrap the row and let each button shrink and
+                wrap its own label instead of overflowing the 288 px panel. */}
+            <div className="mt-3 flex flex-wrap gap-2">
               {[
                 {
                   value: "three_point" as const,
@@ -288,8 +294,8 @@ export function SketchToolPanel({
                   type="button"
                   className={
                     arcToolMode === option.value
-                      ? "cad-action-primary flex-1"
-                      : "cad-action-ghost flex-1"
+                      ? "cad-action-primary min-w-0 flex-1 basis-24 px-2 whitespace-normal break-words text-center leading-tight"
+                      : "cad-action-ghost min-w-0 flex-1 basis-24 px-2 whitespace-normal break-words text-center leading-tight"
                   }
                   onClick={() => {
                     onSetArcToolMode(option.value);

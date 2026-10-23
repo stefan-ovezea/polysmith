@@ -355,15 +355,15 @@ export function SketchTextPanel({
           </div>
           <div>
             <p className="cad-kicker">{t("panels.text.alignH")}</p>
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
               {alignButtons.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   className={
                     hAlign === option.value
-                      ? "cad-action-primary flex-1"
-                      : "cad-action-ghost flex-1"
+                      ? "cad-action-primary min-w-0 flex-1 basis-20 px-2 whitespace-normal break-words text-center leading-tight"
+                      : "cad-action-ghost min-w-0 flex-1 basis-20 px-2 whitespace-normal break-words text-center leading-tight"
                   }
                   disabled={disabled}
                   onClick={() => {
@@ -384,15 +384,15 @@ export function SketchTextPanel({
           </div>
           <div>
             <p className="cad-kicker">{t("panels.text.alignV")}</p>
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
               {vAlignButtons.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   className={
                     vAlign === option.value
-                      ? "cad-action-primary flex-1"
-                      : "cad-action-ghost flex-1"
+                      ? "cad-action-primary min-w-0 flex-1 basis-20 px-2 whitespace-normal break-words text-center leading-tight"
+                      : "cad-action-ghost min-w-0 flex-1 basis-20 px-2 whitespace-normal break-words text-center leading-tight"
                   }
                   disabled={disabled || pathBound}
                   title={pathBound ? t("panels.text.vAlignOnPathIgnored") : undefined}

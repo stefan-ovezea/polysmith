@@ -726,10 +726,10 @@ export function CamSetupPanel({
                   disabled={disabled}
                   onChange={(value) => onPostProcessorChange(value)}
                 />
-                <span className="mt-2 flex gap-2">
+                <span className="mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="cad-action-ghost flex-1 px-2 py-1 text-[10px] uppercase tracking-wider"
+                    className="cad-action-ghost min-w-0 flex-1 basis-20 px-2 py-1 text-[10px] uppercase tracking-wider whitespace-normal break-words text-center"
                     disabled={disabled}
                     onClick={onImportPost}
                   >
@@ -737,7 +737,7 @@ export function CamSetupPanel({
                   </button>
                   <button
                     type="button"
-                    className="cad-action-ghost flex-1 px-2 py-1 text-[10px] uppercase tracking-wider"
+                    className="cad-action-ghost min-w-0 flex-1 basis-20 px-2 py-1 text-[10px] uppercase tracking-wider whitespace-normal break-words text-center"
                     disabled={
                       disabled ||
                       !posts.some(
