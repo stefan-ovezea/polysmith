@@ -875,6 +875,8 @@ export function makeAddSketchEllipseCommand(
 export function makeAddSketchSplineCommand(
   points: Array<{ x: number; y: number }>,
   isConstruction: boolean,
+  mode?: "control" | "fit",
+  degree?: number,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -882,6 +884,8 @@ export function makeAddSketchSplineCommand(
     payload: {
       points,
       is_construction: isConstruction,
+      ...(mode ? { mode } : {}),
+      ...(degree && degree > 0 ? { degree } : {}),
     },
   };
 }

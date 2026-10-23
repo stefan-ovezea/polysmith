@@ -244,6 +244,12 @@ function App() {
   const [arcToolMode, setArcToolMode] = useState<
     "three_point" | "center_start_end"
   >("three_point");
+  // Spline creation mode (T2.1): "control" — the clicks are the poles (the
+  // original behaviour); "fit" — the curve is solved to pass through every
+  // clicked point.
+  const [splineToolMode, setSplineToolMode] = useState<
+    "control" | "fit"
+  >("control");
   // Body-projection mode for the Project tool — applies when the
   // armed tool clicks a mesh body (face clicks route through
   // handleViewportFaceSelection).
@@ -5401,9 +5407,9 @@ function App() {
                   );
                 });
               }}
-              onAddSketchSpline={async (points, isConstruction) => {
+              onAddSketchSpline={async (points, isConstruction, mode) => {
                 await runAction(async () => {
-                  await addSketchSpline(points, isConstruction);
+                  await addSketchSpline(points, isConstruction, mode);
                 });
               }}
               onAddSketchSlot={async (

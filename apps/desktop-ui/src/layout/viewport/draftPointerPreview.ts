@@ -30,6 +30,9 @@ export interface DraftPointerPreviewControls {
   rectangleCornerRadius: number;
   /** Slot pick mode — decides what the two clicks mean. */
   slotToolMode: SlotToolMode;
+  /** Spline creation mode (T2.1): "control" samples the placed poles,
+   *  "fit" solves the interpolation through them. */
+  splineToolMode: "control" | "fit";
   arcSecondPoint: [number, number] | null;
   circleSecondPoint: [number, number] | null;
   rectSecondPoint: [number, number] | null;
@@ -117,6 +120,7 @@ function renderSplinePointerPreview({
   splineDraftPolesRef,
   previewSplineRef,
   clearPreviewSpline,
+  splineToolMode,
   isConstruction,
 }: DraftPointerPreviewParams) {
   clearPreviewSpline();
@@ -126,6 +130,10 @@ function renderSplinePointerPreview({
     planeFrame: activeSketchPlaneFrame,
     isConstruction,
     cursor: draftPreviewLocal,
+    // In fit mode the placed points are fit points: the preview solves the
+    // same interpolation the core will, so the curve you see is the curve you
+    // get. The dashed polygon still follows the clicks.
+    mode: splineToolMode,
   });
   if (preview) {
     previewSplineRef.current = preview;

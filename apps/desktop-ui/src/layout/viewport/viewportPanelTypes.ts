@@ -324,6 +324,7 @@ export interface ViewportPanelProps {
   onAddSketchSpline: (
     points: Array<{ x: number; y: number }>,
     isConstruction: boolean,
+    mode?: "control" | "fit",
   ) => Promise<void>;
   onAddSketchSlot: (
     centerX: number,

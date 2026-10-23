@@ -134,6 +134,8 @@ interface ViewportPanelShellProps {
   /** Line tool reference-line flavour ("" = solid). */
   lineType: "" | "centerline" | "infinite";
   slotToolMode: SlotToolMode;
+  /** Spline creation mode (T2.1): control points or fit points. */
+  splineToolMode: "control" | "fit";
   dimensionToolMode: DimensionToolMode;
   selectedConstraint: SelectedConstraintState | null;
   selectedEntityDof: ViewportState["dof_statuses"][number] | null;
@@ -177,6 +179,7 @@ interface ViewportPanelShellProps {
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
   onSetRectangleToolMode: (mode: RectangleToolMode) => void;
   onSetSlotToolMode: (mode: SlotToolMode) => void;
+  onSetSplineToolMode: (mode: "control" | "fit") => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onSketchToolConstructionChange: (checked: boolean) => void;
   onSubmitDimensionEdit: () => void | Promise<void>;
@@ -245,6 +248,7 @@ export function ViewportPanelShell({
   rectangleCornerRadius,
   lineType,
   slotToolMode,
+  splineToolMode,
   dimensionToolMode,
   selectedConstraint,
   selectedEntityDof,
@@ -280,6 +284,7 @@ export function ViewportPanelShell({
   onSetPolygonToolMode,
   onSetRectangleToolMode,
   onSetSlotToolMode,
+  onSetSplineToolMode,
   onSetDimensionToolMode,
   onSketchToolConstructionChange,
   onSubmitDimensionEdit,
@@ -406,6 +411,7 @@ export function ViewportPanelShell({
             rectangleCornerRadius={rectangleCornerRadius}
             lineType={lineType}
             slotToolMode={slotToolMode}
+            splineToolMode={splineToolMode}
             polygonToolMode={polygonToolMode}
             polygonSides={polygonSides}
             dimensionToolMode={dimensionToolMode}
@@ -414,6 +420,7 @@ export function ViewportPanelShell({
             onSetCircleToolMode={onSetCircleToolMode}
             onSetRectangleToolMode={onSetRectangleToolMode}
             onSetSlotToolMode={onSetSlotToolMode}
+            onSetSplineToolMode={onSetSplineToolMode}
             onSetPolygonToolMode={onSetPolygonToolMode}
             onSetDimensionToolMode={onSetDimensionToolMode}
             onPolygonSidesChange={onPolygonSidesChange}

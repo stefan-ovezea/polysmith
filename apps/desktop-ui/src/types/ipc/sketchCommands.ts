@@ -350,6 +350,12 @@ export interface AddSketchSplineCommand {
   payload: {
     points: Array<{ x: number; y: number }>;
     is_construction?: boolean;
+    // "control" (default) treats the points as poles; "fit" solves the curve so
+    // it passes through every point (T2.1).
+    mode?: "control" | "fit";
+    // Explicit degree, clamped by the core to [1, 5] and to points-1.
+    // Omitted / 0 = default 3.
+    degree?: number;
   };
 }
 

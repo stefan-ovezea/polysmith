@@ -498,6 +498,177 @@ bool test_spline_construction_and_save_roundtrip() {
                 "spline: poles/degree/flag round-trip through save/load");
 }
 
+// ── T2.1: degree 5 and fit-point creation ────────────────────────
+
+// Greville abscissae of a clamped knot vector: the parameters at which an
+// interpolating B-spline is solved (spline_fit_poles uses the same ones).
+std::vector<double> greville_params(const std::vector<double>& knots,
+                                   int degree,
+                                   int pole_count) {
+  std::vector<double> params(static_cast<size_t>(pole_count), 0.0);
+  for (int i = 0; i < pole_count; ++i) {
+    double sum = 0.0;
+    for (int j = 1; j <= degree; ++j) {
+      sum += knots[static_cast<size_t>(i + j)];
+    }
+    params[static_cast<size_t>(i)] = sum / static_cast<double>(degree);
+  }
+  return params;
+}
+
+bool test_spline_degree_five() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  const std::vector<std::pair<double, double>> poles = {
+      {0.0, 0.0}, {2.0, 5.0}, {5.0, 7.0}, {8.0, 7.0}, {11.0, 5.0}, {13.0, 0.0}};
+
+  const DocumentState document = manager.add_sketch_spline(
+      poles, /*is_construction=*/false, /*mode=*/"control", /*degree=*/5);
+  const auto params = sketch_params(document);
+  if (!expect(params.splines.size() == 1, "degree5: one spline created")) {
+    return false;
+  }
+  const SketchSpline& spline = params.splines[0];
+  if (!expect(spline.degree == 5, "degree5: the record keeps degree 5")) {
+    return false;
+  }
+  if (!expect(spline.pole_xs.size() == poles.size(),
+              "degree5: pole count is unchanged")) {
+    return false;
+  }
+  // Clamped ends: the curve starts and ends ON the first/last pole.
+  const auto start = spline_point_at(document, 0.0);
+  const auto end = spline_point_at(document, 1.0);
+  return expect(near(start.first, 0.0) && near(start.second, 0.0),
+                "degree5: curve starts at the first pole") &&
+         expect(near(end.first, 13.0) && near(end.second, 0.0),
+                "degree5: curve ends at the last pole");
+}
+
+bool test_spline_degree_is_clamped() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  // 4 points cannot carry degree 9; the cap is pole_count - 1.
+  DocumentState document = manager.add_sketch_spline(
+      kBulgePoles, /*is_construction=*/false, /*mode=*/"control",
+      /*degree=*/9);
+  if (!expect(sketch_params(document).splines[0].degree == 3,
+              "degree clamp: 4 points cap the degree at 3")) {
+    return false;
+  }
+  // Two points can only make a line.
+  document = manager.add_sketch_spline(
+      {{0.0, 0.0}, {5.0, 5.0}}, /*is_construction=*/false,
+      /*mode=*/"control", /*degree=*/5);
+  return expect(sketch_params(document).splines[1].degree == 1,
+                "degree clamp: 2 points give degree 1");
+}
+
+bool test_spline_fit_mode_interpolates_points() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  const std::vector<std::pair<double, double>> fit_points = {
+      {0.0, 0.0}, {3.0, 4.0}, {7.0, 5.0}, {10.0, 0.0}};
+
+  const DocumentState document = manager.add_sketch_spline(
+      fit_points, /*is_construction=*/false, /*mode=*/"fit");
+  const auto params = sketch_params(document);
+  if (!expect(params.splines.size() == 1, "fit: one spline created")) {
+    return false;
+  }
+  const SketchSpline& spline = params.splines[0];
+  if (!expect(spline.degree == 3, "fit: default degree is 3")) {
+    return false;
+  }
+  if (!expect(spline.pole_xs.size() == fit_points.size(),
+              "fit: one pole per fit point")) {
+    return false;
+  }
+  // The poles are NOT the clicked points (a degree-3 interpolant needs its
+  // poles elsewhere)...
+  bool poles_differ = false;
+  for (size_t i = 0; i < fit_points.size(); ++i) {
+    if (!near(spline.pole_xs[i], fit_points[i].first) ||
+        !near(spline.pole_ys[i], fit_points[i].second)) {
+      poles_differ = true;
+    }
+  }
+  if (!expect(poles_differ, "fit: poles are solved, not the fit points")) {
+    return false;
+  }
+  // ...but the CURVE passes through every fit point, at the Greville
+  // parameters the solver used.
+  const auto knots = polysmith::core::spline_open_uniform_knots(
+      static_cast<int>(spline.pole_xs.size()), spline.degree);
+  const auto us = greville_params(knots, spline.degree,
+                                  static_cast<int>(spline.pole_xs.size()));
+  for (size_t i = 0; i < fit_points.size(); ++i) {
+    const auto sample = polysmith::core::spline_eval(
+        spline.degree, knots, spline.pole_xs, spline.pole_ys, us[i]);
+    if (!(near(sample.x, fit_points[i].first, 1.0e-8) &&
+          near(sample.y, fit_points[i].second, 1.0e-8))) {
+      std::cerr << "MISMATCH fit i=" << i << " u=" << us[i] << " got "
+                << sample.x << "," << sample.y << " want "
+                << fit_points[i].first << "," << fit_points[i].second
+                << "\n";
+      for (size_t k = 0; k < spline.pole_xs.size(); ++k) {
+        std::cerr << "  pole[" << k << "]=" << spline.pole_xs[k] << ","
+                  << spline.pole_ys[k] << "\n";
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+bool test_spline_fit_mode_degree_five() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  const std::vector<std::pair<double, double>> fit_points = {
+      {0.0, 0.0},   {2.0, 4.0},  {4.0, 6.0},  {7.0, 6.5},
+      {10.0, 5.0},  {12.0, 2.0}, {14.0, 0.0}};
+
+  const DocumentState document = manager.add_sketch_spline(
+      fit_points, /*is_construction=*/false, /*mode=*/"fit", /*degree=*/5);
+  const auto params = sketch_params(document);
+  const SketchSpline& spline = params.splines[0];
+  if (!expect(spline.degree == 5, "fit degree5: the record keeps degree 5")) {
+    return false;
+  }
+  const auto knots = polysmith::core::spline_open_uniform_knots(
+      static_cast<int>(spline.pole_xs.size()), spline.degree);
+  const auto us = greville_params(knots, spline.degree,
+                                  static_cast<int>(spline.pole_xs.size()));
+  for (size_t i = 0; i < fit_points.size(); ++i) {
+    const auto sample = polysmith::core::spline_eval(
+        spline.degree, knots, spline.pole_xs, spline.pole_ys, us[i]);
+    if (!expect(near(sample.x, fit_points[i].first, 1.0e-8) &&
+                    near(sample.y, fit_points[i].second, 1.0e-8),
+                "fit degree5: the curve interpolates every fit point")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool test_spline_fit_mode_rejects_one_point() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  bool threw = false;
+  try {
+    (void)manager.add_sketch_spline({{1.0, 1.0}}, /*is_construction=*/false,
+                                    /*mode=*/"fit");
+  } catch (const std::exception&) {
+    threw = true;
+  }
+  return expect(threw, "fit: a single point is refused");
+}
+
 }  // namespace
 
 int main() {
@@ -526,6 +697,16 @@ int main() {
   if (!test_spline_trim_splits_at_crossings()) return 1;
   std::cout << "--- test_spline_construction_and_save_roundtrip" << std::endl;
   if (!test_spline_construction_and_save_roundtrip()) return 1;
+  std::cout << "--- test_spline_degree_five" << std::endl;
+  if (!test_spline_degree_five()) return 1;
+  std::cout << "--- test_spline_degree_is_clamped" << std::endl;
+  if (!test_spline_degree_is_clamped()) return 1;
+  std::cout << "--- test_spline_fit_mode_interpolates_points" << std::endl;
+  if (!test_spline_fit_mode_interpolates_points()) return 1;
+  std::cout << "--- test_spline_fit_mode_degree_five" << std::endl;
+  if (!test_spline_fit_mode_degree_five()) return 1;
+  std::cout << "--- test_spline_fit_mode_rejects_one_point" << std::endl;
+  if (!test_spline_fit_mode_rejects_one_point()) return 1;
 
   std::cout << "spline_test passed\n";
   return 0;

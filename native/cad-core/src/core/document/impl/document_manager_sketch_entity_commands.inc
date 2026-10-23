@@ -194,9 +194,14 @@
 
   // Control-point B-spline: the points ARE the poles (regular movable
   // vertices).  Degree = min(3, count-1), clamped open-uniform knots.
+  // `mode` "control" (default) treats the points as poles; "fit" solves the
+  // curve to pass through them. `degree` <= 0 means the default 3; an explicit
+  // value is clamped to [1, 5] and to points.size() - 1.
   DocumentState add_sketch_spline(
       const std::vector<std::pair<double, double>>& pole_points,
-      bool is_construction = false);
+      bool is_construction = false,
+      const std::string& mode = "control",
+      int degree = 0);
 
   // Straight slot (stadium): center + length + radius + rotation (rad).
   DocumentState add_sketch_slot(double center_x,

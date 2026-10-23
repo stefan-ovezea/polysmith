@@ -262,7 +262,17 @@ bool handle_sketch_create_command(
       }
     }
     const auto before_document = manager.get_document();
-    const auto document = manager.add_sketch_spline(points, is_construction);
+    // Optional T2.1 fields: `mode` "control" (default) / "fit", and `degree`
+    // (<= 0 = default 3, clamped to [1, 5] and to the point count).
+    // read_optional_dimension keeps the field visible to the command-reference
+    // generator (an inline is_number() check is invisible to it) and rejects a
+    // non-numeric value instead of silently ignoring it.
+    const int degree = static_cast<int>(
+        read_optional_dimension(command.payload, "degree", 0.0));
+    const auto document = manager.add_sketch_spline(
+        points, is_construction,
+        read_optional_string_value(command.payload, "mode", "control"),
+        degree);
     if (emit_sketch_entities_changed(command.id, before_document, document)) {
       return true;
     }

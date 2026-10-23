@@ -1,72 +1,31 @@
 import * as THREE from "three";
 
 import type { SketchPlaneFrame } from "@/types";
+import { fitSplinePoles, splineEval, splineOpenUniformKnots } from "@/lib/splineCurve";
 import { themeColor, toWorldPoint } from "@/utils";
 
-// Draft preview for the control-point spline tool (click to place
-// poles, click the first pole again to commit, Escape to cancel).
+// Draft preview for the spline tool (click to place points, click the first
+// point again to commit, Escape to cancel).
 //
-// The preview draws the ACTUAL clamped open-uniform B-spline of the
-// placed poles — the same de Boor math the core uses (spline_math.h),
-// so the committed curve looks exactly like the preview. The control
-// polygon is drawn as a dashed strip through the poles.
+// The preview draws the ACTUAL clamped open-uniform B-spline the core will
+// build, using the shared math in lib/splineCurve.ts (the same De Boor the
+// core runs, so the committed curve looks exactly like the preview).
+//
+// `mode` decides what the placed points mean (T2.1):
+//   "control" — the points are the poles; the curve is pulled toward them.
+//   "fit"     — the points are fit points; the curve is solved to pass
+//               through every one of them, exactly as the core solves it.
+// The dashed polygon always follows the placed points.
 
-function splineOpenUniformKnots(nPoles: number, degree: number): number[] {
-  const interior = nPoles - degree - 1;
-  const total = nPoles + degree + 1;
-  const knots = new Array<number>(total).fill(0);
-  for (let i = degree + 1; i < nPoles; i++) {
-    knots[i] = (i - degree) / (interior + 1);
-  }
-  for (let i = nPoles; i < total; i++) {
-    knots[i] = 1;
-  }
-  return knots;
-}
-
-// De Boor evaluation of a clamped B-spline, u in [0, 1].
-function splineEval(
-  degree: number,
-  knots: number[],
-  poleXs: number[],
-  poleYs: number[],
-  u: number,
-): [number, number] {
-  const n = poleXs.length;
-  if (n < 2) {
-    return [poleXs[0] ?? 0, poleYs[0] ?? 0];
-  }
-  if (u <= 0) {
-    return [poleXs[0], poleYs[0]];
-  }
-  if (u >= 1) {
-    return [poleXs[n - 1], poleYs[n - 1]];
-  }
-  let span = n - 1;
-  for (let i = 0; i + 1 < knots.length; i++) {
-    if (u >= knots[i] && u < knots[i + 1]) {
-      span = i;
-      break;
-    }
-  }
-  const dx = poleXs.slice();
-  const dy = poleYs.slice();
-  for (let r = 1; r <= degree; r++) {
-    for (let i = span - degree + r; i <= span; i++) {
-      const denom = knots[i + degree - r + 1] - knots[i];
-      const alpha = denom > 1e-15 ? (u - knots[i]) / denom : 0;
-      dx[i] = (1 - alpha) * dx[i - 1] + alpha * dx[i];
-      dy[i] = (1 - alpha) * dy[i - 1] + alpha * dy[i];
-    }
-  }
-  return [dx[span], dy[span]];
-}
 
 export interface SplineDraftPreviewOptions {
   poles: [number, number][];
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
   isConstruction: boolean;
+  // "control" (default): the points are poles. "fit": the points are fit
+  // points and the preview solves the interpolation through them.
+  mode?: "control" | "fit";
   // Live cursor position: a dashed rubber segment connects the last
   // placed pole to the mouse until the next click lands.
   cursor: [number, number] | null;
@@ -79,15 +38,28 @@ export function buildSplineDraftPreview({
   planeId,
   planeFrame,
   isConstruction,
+  mode = "control",
   cursor,
 }: SplineDraftPreviewOptions): THREE.Group | null {
   if (poles.length < 1) {
     return null;
   }
   const degree = Math.min(3, poles.length - 1);
-  const knots = splineOpenUniformKnots(poles.length, degree);
-  const poleXs = poles.map((p) => p[0]);
-  const poleYs = poles.map((p) => p[1]);
+  // In fit mode the CURVE follows the solved poles (the same solve the core
+  // runs); the dashed polygon below always follows the clicked points.
+  let curvePoles = poles;
+  if (mode === "fit" && poles.length >= 2) {
+    try {
+      curvePoles = fitSplinePoles(poles, degree);
+    } catch {
+      // Degenerate point set: keep drawing the polygon; the core reports the
+      // refusal on commit.
+      curvePoles = poles;
+    }
+  }
+  const knots = splineOpenUniformKnots(curvePoles.length, degree);
+  const poleXs = curvePoles.map((p) => p[0]);
+  const poleYs = curvePoles.map((p) => p[1]);
 
   const baseColor = themeColor("--color-tertiary-plane-fill", "#fff7c0");
   const group = new THREE.Group();

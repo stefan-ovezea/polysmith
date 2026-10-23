@@ -21,6 +21,8 @@ interface SketchToolPanelProps {
   /** Line tool reference-line flavour ("" = solid). */
   lineType: "" | "centerline" | "infinite";
   slotToolMode: SlotToolMode;
+  /** Spline creation mode (T2.1): control points or fit points. */
+  splineToolMode: "control" | "fit";
   polygonToolMode: PolygonToolMode;
   polygonSides: number;
   dimensionToolMode: DimensionToolMode;
@@ -31,6 +33,7 @@ interface SketchToolPanelProps {
   onRectangleCornerRadiusChange: (radius: number) => void;
   onLineTypeChange: (lineType: "" | "centerline" | "infinite") => void;
   onSetSlotToolMode: (mode: SlotToolMode) => void;
+  onSetSplineToolMode: (mode: "control" | "fit") => void;
   onSetPolygonToolMode: (mode: PolygonToolMode) => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onPolygonSidesChange: (sides: number) => void;
@@ -46,6 +49,7 @@ export function SketchToolPanel({
   rectangleCornerRadius,
   lineType,
   slotToolMode,
+  splineToolMode,
   polygonToolMode,
   polygonSides,
   dimensionToolMode,
@@ -56,11 +60,20 @@ export function SketchToolPanel({
   onRectangleCornerRadiusChange,
   onLineTypeChange,
   onSetSlotToolMode,
+  onSetSplineToolMode,
   onSetPolygonToolMode,
   onSetDimensionToolMode,
   onPolygonSidesChange,
 }: SketchToolPanelProps) {
-  if (!isDrawableSketchTool(activeSketchTool) && activeSketchTool !== "dimension") {
+  // The spline tool draws a draft preview but is deliberately not part of
+  // isDrawableSketchTool (that union drives the dimension-entry fields, which a
+  // spline has none of), so it needs its own pass-through here.
+  const isSplineTool = (activeSketchTool as SketchTool) === "spline";
+  if (
+    !isDrawableSketchTool(activeSketchTool) &&
+    activeSketchTool !== "dimension" &&
+    !isSplineTool
+  ) {
     return null;
   }
 
@@ -70,7 +83,13 @@ export function SketchToolPanel({
       <h2 className="cad-title mt-2">
         {activeSketchTool === "dimension"
           ? translate("toolbar.dimension")
-          : translate(sketchToolLabelKey(activeSketchTool))}
+          : isSplineTool
+            ? translate("toolbar.spline")
+            : translate(
+                sketchToolLabelKey(
+                  activeSketchTool as Parameters<typeof sketchToolLabelKey>[0],
+                ),
+              )}
       </h2>
       {activeSketchTool === "circle" && (
         <p className="text-xs text-on-surface/50 mt-1">
@@ -385,6 +404,37 @@ export function SketchToolPanel({
                 }}
               />
             </div>
+          </div>
+        ) : null}
+        {isSplineTool ? (
+          <div>
+            <p className="cad-kicker">{translate("viewport.mode")}</p>
+            <div className="mt-3">
+              <Dropdown
+                value={splineToolMode}
+                options={[
+                  {
+                    value: "control",
+                    label: translate("toolbar.splineControlPoints"),
+                  },
+                  {
+                    value: "fit",
+                    label: translate("toolbar.splineFitPoints"),
+                  },
+                ]}
+                label={translate("viewport.mode")}
+                onChange={(value) => {
+                  onSetSplineToolMode(value as "control" | "fit");
+                }}
+              />
+            </div>
+            <p className="text-xs text-on-surface/50 mt-2">
+              {translate(
+                splineToolMode === "fit"
+                  ? "viewport.splineFitHint"
+                  : "viewport.splineControlHint",
+              )}
+            </p>
           </div>
         ) : null}
         {activeSketchTool === "polygon" ? (

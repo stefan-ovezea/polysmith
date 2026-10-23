@@ -195,6 +195,7 @@ interface ViewportPointerUpParams {
   addSketchSpline: (
     points: Array<{ x: number; y: number }>,
     isConstruction: boolean,
+    mode?: "control" | "fit",
   ) => Promise<void> | void;
   chainBreakRequestedRef: MutableRef<boolean>;
   previousLineAngleRef: MutableRef<number | null>;
@@ -206,6 +207,9 @@ interface ViewportPointerUpParams {
   rectangleToolMode: DraftPointerUpCommitOptions["modes"]["rectangle"];
   rectangleCornerRadius: number;
   slotToolMode: DraftPointerUpCommitOptions["modes"]["slot"];
+  // T2.1: "control" (clicks are poles) or "fit" (curve passes through the
+  // clicks). Read by the spline draft commit.
+  splineToolMode: "control" | "fit";
   circleToolMode: DraftPointerUpCommitOptions["modes"]["circle"];
   polygonToolMode: PolygonToolMode;
   dimensionToolMode: import("@/types").DimensionToolMode;
@@ -571,6 +575,8 @@ function handleSplineDraftPointerUp(params: ViewportPointerUpParams) {
       void params.addSketchSpline(
         [...poles, [fx, fy]].map((p) => ({ x: p[0], y: p[1] })),
         params.isConstruction,
+        // T2.1: "fit" solves the curve through the clicked points.
+        params.splineToolMode,
       );
       params.splineDraftPolesRef.current = [];
       params.clearPreviewSpline();

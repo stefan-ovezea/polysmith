@@ -1305,9 +1305,11 @@ export function useCadCore() {
     addSketchSpline: async (
       points: Array<{ x: number; y: number }>,
       isConstruction: boolean,
+      mode?: "control" | "fit",
+      degree?: number,
     ) => {
       await sendCoreCommand(
-        makeAddSketchSplineCommand(points, isConstruction),
+        makeAddSketchSplineCommand(points, isConstruction, mode, degree),
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },

@@ -124,11 +124,17 @@ void add_sketch_ellipse(FeatureEntry& feature,
 // vertices).  Degree = min(3, count - 1), clamped open-uniform knots.
 // No solver registration — pole drags re-fit the curve through the
 // ordinary vertex sync.
+// `mode` is "control" (clicks ARE the poles, the original behaviour) or "fit"
+// (clicks are fit points; the curve is solved to pass through all of them).
+// `degree` <= 0 keeps the default (3, clamped to point_count - 1); an explicit
+// degree is clamped to [1, 5] and to point_count - 1.
 void add_sketch_spline(FeatureEntry& feature,
                        int spline_index,
                        const std::vector<std::pair<double, double>>& points,
                        bool is_construction = false,
-                       bool refresh_immediately = true);
+                       bool refresh_immediately = true,
+                       const std::string& mode = "control",
+                       int degree = 0);
 
 // Straight slot (stadium): parametric record expanded by
 // refresh_sketch_slots into 2 lines + 2 arcs (generated_by).

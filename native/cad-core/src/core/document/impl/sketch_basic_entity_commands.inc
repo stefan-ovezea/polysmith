@@ -447,7 +447,9 @@ DocumentState DocumentManager::add_sketch_ellipse(double center_x,
 
 DocumentState DocumentManager::add_sketch_spline(
     const std::vector<std::pair<double, double>>& pole_points,
-    bool is_construction) {
+    bool is_construction,
+    const std::string& mode,
+    int degree) {
   require_document();
   if (!document_->active_sketch_feature_id.has_value()) {
     throw std::runtime_error("No active sketch");
@@ -463,7 +465,9 @@ DocumentState DocumentManager::add_sketch_spline(
   push_undo_state();
   clear_redo_stack();
   polysmith::core::add_sketch_spline(*feature_it, next_sketch_spline_id_++,
-                                      pole_points, is_construction);
+                                      pole_points, is_construction,
+                                      /*refresh_immediately=*/true, mode,
+                                      degree);
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;

@@ -511,6 +511,12 @@ export function ViewportPanel({
   // fillets (and their radii) are core-owned state.
   const [rectangleCornerRadius, setRectangleCornerRadius] = useState(5);
   const rectangleCornerRadiusRef = useRef(5);
+  // Spline creation mode (T2.1): "control" (clicks are poles) or "fit" (the
+  // curve passes through the clicks).
+  const [splineToolMode, setSplineToolMode] = useState<"control" | "fit">(
+    "control",
+  );
+  const splineToolModeRef = useRef<"control" | "fit">("control");
   // Line tool reference-line flavour: "" (solid), "centerline", "infinite".
   // Both reference flavours are construction geometry in the core; the
   // value only picks the line_type sent with add_sketch_line and the
@@ -2357,6 +2363,7 @@ export function ViewportPanel({
       rectangleToolMode: rectangleToolModeRef.current,
       rectangleCornerRadius: rectangleCornerRadiusRef.current,
       slotToolMode: slotToolModeRef.current,
+      splineToolMode: splineToolModeRef.current,
       arcSecondPoint: adjustedArcSecondPoint(),
       circleSecondPoint: circleSecondPointRef.current,
       rectSecondPoint: rectSecondPointRef.current,
@@ -2393,6 +2400,7 @@ export function ViewportPanel({
       planeId: activeSketchPlaneId,
       planeFrame: activeSketchPlaneFrame,
       isConstruction: sketchToolConstructionRef.current,
+      mode: splineToolModeRef.current,
       cursor: null,
     });
     if (preview) {
@@ -2415,6 +2423,7 @@ export function ViewportPanel({
     void addSketchSplineRef.current(
       poles.map((p) => ({ x: p[0], y: p[1] })),
       sketchToolConstructionRef.current,
+      splineToolModeRef.current,
     );
     splineDraftPolesRef.current = [];
     clearPreviewSpline();
@@ -2430,6 +2439,7 @@ export function ViewportPanel({
         void addSketchSplineRef.current(
           splineDraftPolesRef.current.map((p) => ({ x: p[0], y: p[1] })),
           sketchToolConstructionRef.current,
+          splineToolModeRef.current,
         );
       }
       splineDraftPolesRef.current = [];
@@ -3692,6 +3702,7 @@ export function ViewportPanel({
         rectangleToolMode: rectangleToolModeRef.current,
         rectangleCornerRadius: rectangleCornerRadiusRef.current,
         slotToolMode: slotToolModeRef.current,
+        splineToolMode: splineToolModeRef.current,
         arcSecondPoint: adjustedArcSecondPoint(),
         circleSecondPoint: circleSecondPointRef.current,
         rectSecondPoint: rectSecondPointRef.current,
@@ -5243,6 +5254,7 @@ export function ViewportPanel({
 	        rectangleToolMode: rectangleToolModeRef.current,
 	        rectangleCornerRadius: rectangleCornerRadiusRef.current,
 	        slotToolMode: slotToolModeRef.current,
+	        splineToolMode: splineToolModeRef.current,
 	        circleToolMode: circleToolModeRef.current,
 	        polygonToolMode: polygonToolModeRef.current,
 	        dimensionToolMode: dimensionToolModeRef.current,
@@ -6184,6 +6196,7 @@ export function ViewportPanel({
       rectangleCornerRadius={rectangleCornerRadius}
       lineType={lineType}
       slotToolMode={slotToolMode}
+      splineToolMode={splineToolMode}
       dimensionToolMode={dimensionToolMode}
       selectedConstraint={selectedConstraint}
       selectedEntityDof={selectedEntityDof}
@@ -6245,6 +6258,10 @@ export function ViewportPanel({
       onLineTypeChange={(value) => {
         setLineType(value);
         lineTypeRef.current = value;
+      }}
+      onSetSplineToolMode={(value) => {
+        setSplineToolMode(value);
+        splineToolModeRef.current = value;
       }}
       onSetArcToolMode={onSetArcToolMode}
       onSetCircleToolMode={onSetCircleToolMode}
