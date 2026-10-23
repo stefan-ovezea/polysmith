@@ -1756,11 +1756,22 @@ Payload:
   end_x: number;
   end_y: number;
   is_construction: boolean;
+  // Reference-line flavour (T1.5): "" / absent = ordinary line,
+  // "centerline" or "infinite".
+  line_type?: "centerline" | "infinite" | "";
 }
 ```
 
 Construction lines render dashed, can be referenced by constraints/snaps, and
 do not form profiles.
+
+`line_type` marks a reference line. Both flavours also force the construction
+flag in the core, so they inherit every construction rule (no profile, no
+automatic dimensions); the flavour only adds presentation:
+
+- `centerline` — dash-dot style.
+- `infinite` — additionally drawn far past its endpoints. The document keeps
+  the clicked endpoints, so scene bounds and camera framing are unaffected.
 
 #### `add_sketch_rectangle`
 
@@ -1781,6 +1792,34 @@ Payload:
 Non-construction rectangles normally produce a closed `sketch_profile`.
 Construction rectangles are reference geometry only and do not produce
 extrudable profiles.
+
+#### `add_sketch_rounded_rectangle`
+
+Adds a rectangle whose four corners are rounded by parametric fillets, as
+ONE undo step. The core creates the four sides with the ordinary rectangle
+path and then applies the ordinary sketch fillet to each shared corner, so
+the result keeps four `fillets` records: the radius stays editable
+(`update_sketch_fillet_radius`) and deleting a fillet restores its corner.
+
+Payload:
+
+```ts
+{
+  start_x: number;
+  start_y: number;
+  end_x: number;
+  end_y: number;
+  radius: number;
+  is_construction: boolean;
+}
+```
+
+`start_*` / `end_*` are diagonal corners. `radius` must be greater than
+zero and **strictly less than half the shorter side**; anything else is
+refused with an error naming the limit (the core never silently clamps).
+The outline is one closed profile bounded by four lines and four arcs, so
+it extrudes exactly like a plain rectangle. A failed fillet aborts the
+whole group — no partial rectangle is left behind.
 
 #### `add_sketch_circle`
 
@@ -1967,14 +2006,29 @@ analogue of the fillet. The chamfer line and trim points are generated
 geometry re-derived from the corner + the two distances on every recompute.
 A corner already holding a fillet is rejected (both ways).
 
+`mode` selects how the second trim distance is determined:
+
+- `two_distance` (default / absent): `distance_a` + `distance_b`.
+- `equal`: one distance applied to both lines (`distance_b` is derived).
+- `distance_angle`: `distance_a` plus `angle_degrees`, the angle between the
+  chamfer line and line A, tilted toward line B. The distance along line B is
+  **derived** from the angle on every recompute, so dragging a line keeps the
+  angle rather than a frozen length. The angle must be greater than 0 and less
+  than the corner's own angle; anything else is refused at creation.
+
 Payloads:
 
 ```ts
 // add
 { corner_vertex_id: string; line_a_id: string; line_b_id: string;
-  distance_a: number; distance_b: number; }
-// update
-{ chamfer_id: string; distance_a: number; distance_b: number; }
+  distance_a: number; distance_b?: number;
+  mode?: "equal" | "two_distance" | "distance_angle";
+  angle_degrees?: number; }
+// update (mode absent = keep the chamfer's current mode; angle <= 0 = keep
+// the current angle)
+{ chamfer_id: string; distance_a: number; distance_b?: number;
+  mode?: "equal" | "two_distance" | "distance_angle";
+  angle_degrees?: number; }
 // delete
 { chamfer_id: string; }
 ```

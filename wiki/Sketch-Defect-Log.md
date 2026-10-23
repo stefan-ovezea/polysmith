@@ -338,6 +338,63 @@ Three.js ignores the alpha channel of a CSS `rgba()` passed to `Color.set`/`new 
 
 ---
 
+## D-003 — "sketch object vertex-32 not found": the partial sketch reply left the UI's arcs stale
+
+**Reported:** 2026-10-23, in-app, during normal sketching:
+
+```
+07:05:10 error desktop_ui  uncaught error: sketch object vertex-32 not found
+07:05:11 error react_warning [cad_core] Sketch lines must have non-zero length (moving connected points)
+07:05:11 error cad_core      Sketch lines must have non-zero length (moving connected points)
+07:05:11 error desktop_ui  uncaught error: sketch object vertex-32 not found
+```
+
+**Root cause (confirmed by reading the reply path and reproducing the reply shape headless).** `emit_sketch_entities_changed` (`native/cad-core/src/app/command_context.h`) answers a sketch edit with the **partial** `sketch_entities_changed` event whenever the sketch's dimension list is unchanged. That event only transports **line endpoints and vertex coordinates** — yet it was being emitted for every command that happened not to touch a dimension, including:
+
+- `add_sketch_fillet` / `delete_sketch_fillet` (arcs + fillet records change),
+- `add_sketch_chamfer` / `delete_sketch_chamfer` (chamfer record),
+- `add_sketch_circle` / `add_sketch_polygon` / `add_sketch_ellipse` / `add_sketch_spline` / `add_sketch_slot` (non-construction ones add dimensions and were safe by luck; construction ones were not),
+- `update_sketch_vertex` / `transform_sketch_entities` moving a circle, arc, ellipse, spline or slot,
+- `delete_sketch_text`.
+
+After such an edit the UI's document held **stale arcs / circles / fillet records**. The planegcs WASM bridge builds its solver sketch from that document, so a later endpoint drag pushed a stale arc whose endpoint vertex the patch had removed → `sketch object vertex-N not found`, thrown inside a pointer-move handler and reported as an **uncaught UI error**. The rounded rectangle (four fillets in one command) made this easy to hit, but every fillet/chamfer in the app shared the cause.
+
+The second log line, `Sketch lines must have non-zero length (moving connected points)`, is the core **correctly refusing** a different thing: an endpoint drop that lands on a directly connected neighbour, collapsing a segment. The UI was committing such drops, so the user saw the refusal as an error.
+
+### Fixes applied
+
+1. **Reply guard** — `sketch_partial_event_safe` compares the serialized non-line sketch state (everything the event cannot carry: arcs, circles, polygons, ellipses, splines, slots, texts, fillets, chamfers, constraints, relations, anchors, dimension values, next vertex index). The partial event is only used when all of it is byte-identical; otherwise the command answers with the full `document_state`. Comparing serialized state also removes the old O(n²) id scans on a dense sketch, and covers entity kinds added later.
+2. **Solver hardening** — `PlanegcsBridge.solve` catches a primitive-lookup failure and returns `status: 2 (Failed)`; every caller already falls back to the unconstrained preview. A stale snapshot can no longer throw through a pointer handler.
+3. **Degenerate-drop guard** — `endpointDropWouldCollapse` refuses a commit that would land on a connected line/arc endpoint (within 0.01 mm) and restores the preview, so the core no longer has to reject it.
+
+**Tests.** `tests/sketch_partial_event_test.cpp` (guard: vertex-only construction edits stay partial; fillet, circle-centre moves and dimension-value changes force a full state), `lib/ipc/sketchPartialEvent.core.test.ts` (reply shape end-to-end: fillet → `document_state`, construction vertex move → `sketch_entities_changed`), `layout/viewport/endpointDragPointerUp.test.ts` (degenerate-drop guard).
+
+**Status:** Fixed in the working tree on `feature/sketch-refactor` — awaiting a re-test in the app (the running binary must be restarted: the app holds `native/cad-core/build/cad_core.exe`, so the new core only lands after the app is closed and rebuilt).
+
+**Note for future commands.** A new sketch command must not assume the partial event is available: either keep its change set to line endpoints + vertex coordinates, or let the guard fall back to the full state. The guard is conservative by design.
+
+---
+
+## D-004 — "Unsupported sketch tool: split": two toolbar tools were missing from the core whitelist
+
+**Reported:** 2026-10-23, in-app, clicking the Split tool (repeatedly):
+
+```
+07:31:16 error react_warning [cad_core] Unsupported sketch tool: split
+07:31:16 error cad_core      Unsupported sketch tool: split
+... again at 07:31:27, 07:31:40, 07:31:55
+```
+
+**Cause (confirmed).** `kSupportedSketchTools()` in `core/sketch/sketch_tool_ids.h` — the single canonical list both `set_sketch_tool` gates delegate to — listed 18 ids but the toolbar can arm 20: **`corner` and `split` were missing**. Arming either tool sends `set_sketch_tool`, the core rejects it, and the user gets an error toast per click. The tool commands themselves (`split_sketch_entity`, `corner_trim_preview`, `corner_trim_sketch_entities`) were fully implemented; only the session's active-tool record was refused, so the tool still functioned while the core's `active_sketch_tool` stayed on the previous tool — a latent inconsistency for anything that keys off it.
+
+**Fix.** Added `corner` and `split` to the canonical list, and pinned the whole vocabulary:
+- `tests/tool_whitelist_test.cpp` gained `test_ui_tool_vocabulary_is_covered`, asserting the canonical list contains every id the UI's `SketchTool` union can arm (Shape2D + select/project/dimension/move/text).
+- `lib/ipc/sketchToolVocabulary.core.test.ts` drives `set_sketch_tool` over the real IPC path for all 20 ids and checks an unknown id is still refused.
+
+**Status:** Fixed in the working tree; core rebuilt. Any future tool added to the UI must be added to the canonical list or the C++ suite fails by name.
+
+---
+
 ## Why this matters for the plan
 
 D-001a is a **trust** defect of exactly the kind P0 exists for: the user did something ordinary, the app warned once, and the model was destroyed with no way back. If D-001b confirms, the pair becomes the strongest argument for making profile identity provenance-based rather than boundary-name-based — which is the same fix shape as `dependency_ambiguous` in S4.

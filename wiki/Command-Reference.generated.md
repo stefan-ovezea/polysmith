@@ -14,13 +14,13 @@
 | `add_sketch_arc_angle_dimension` | arc_id (string) |
 | `add_sketch_arc_length_dimension` | arc_id (string) |
 | `add_sketch_arc_radius_dimension` | arc_id (string) |
-| `add_sketch_chamfer` | corner_vertex_id (string), line_a_id (string), line_b_id (string), distance_a (dimension), distance_b (dimension) |
+| `add_sketch_chamfer` | mode (optional_string), angle_degrees (optional_dimension), distance_b (optional_dimension), corner_vertex_id (string), line_a_id (string), line_b_id (string), distance_a (dimension) |
 | `add_sketch_circle` | center_x (dimension), center_y (dimension), radius (dimension) |
 | `add_sketch_circle_radius_dimension` | circle_id (string) |
 | `add_sketch_distance_dimension` | first_entity_id (string), second_entity_id (string) |
 | `add_sketch_ellipse` | center_x (dimension), center_y (dimension), axis_a_x (dimension), axis_a_y (dimension), axis_b_x (dimension), axis_b_y (dimension) |
 | `add_sketch_fillet` | corner_vertex_id (string), line_a_id (string), line_b_id (string), radius (dimension), arc_a_id (optional_string), arc_b_id (optional_string) |
-| `add_sketch_line` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
+| `add_sketch_line` | start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension), line_type (optional_string) |
 | `add_sketch_line_angle_dimension` | line_id (string) |
 | `add_sketch_line_length_dimension` | line_id (string) |
 | `add_sketch_polygon` | sides (dimension), mode (string), start_x (dimension), start_y (dimension), end_x (dimension), end_y (dimension) |
@@ -253,7 +253,7 @@
 | `update_revolve_profile` | feature_id (string), profile_id (string) |
 | `update_selection_filter` |  |
 | `update_shell_thickness` | feature_id (string), thickness (dimension) |
-| `update_sketch_chamfer` | chamfer_id (string), distance_a (dimension), distance_b (dimension) |
+| `update_sketch_chamfer` | mode (optional_string), angle_degrees (optional_dimension), chamfer_id (string), distance_a (dimension), distance_b (optional_dimension) |
 | `update_sketch_circle` | circle_id (string), center_x (dimension), center_y (dimension), radius (dimension) |
 | `update_sketch_dimension` | dimension_id (string) |
 | `update_sketch_dimension_display` | dimension_id (string), display_as (string) |
