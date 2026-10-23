@@ -142,6 +142,11 @@ function makeViewport(lines: Line[]): ViewportState {
     sketch_circles: EMPTY,
     sketch_polygons: EMPTY,
     sketch_arcs: EMPTY,
+    // The scene builder consumes every sketch array; this fixture predates
+    // ellipses and splines, and its absence made the whole file fail with
+    // "Cannot read properties of undefined (reading 'filter')".
+    sketch_ellipses: EMPTY,
+    sketch_splines: EMPTY,
     sketch_vertices: EMPTY,
     sketch_dimensions: dims,
     sketch_constraints: EMPTY,

@@ -372,6 +372,45 @@ read_optional_extrude_parameters(
   return params;
 }
 
+// True when the ONLY differences between two sketch states are the ones a
+// `sketch_entities_changed` event can carry: line endpoints and vertex
+// coordinates.
+//
+// The partial event was designed for the high-frequency edit path (vertex /
+// line drags) and its payload has no room for arcs, circles, fillets,
+// chamfers, texts, constraints... yet earlier it was emitted for every
+// command whose DIMENSION list happened to be unchanged. That left the
+// client's copy of those entities stale — the classic symptom being the
+// planegcs bridge refusing a drag with "sketch object vertex-N not found"
+// because a stale arc still referenced a vertex the patch had removed.
+//
+// Comparing the serialized non-line state is exact (every field is covered,
+// including fields added later) and cheaper than the O(n²) id scans it
+// replaces on a dense sketch.
+inline bool sketch_partial_event_safe(
+    const polysmith::core::FeatureEntry& before_feature,
+    const polysmith::core::FeatureEntry& after_feature) {
+  const auto normalized = [](const polysmith::core::FeatureEntry& feature) {
+    const auto payload = polysmith::protocol::to_payload(feature);
+    if (!payload.contains("sketch_parameters") ||
+        !payload.at("sketch_parameters").is_object()) {
+      return polysmith::protocol::json{};
+    }
+    auto params = payload.at("sketch_parameters");
+    // The partial event transports these (and only these); everything else
+    // must be identical.
+    params.erase("lines");
+    params.erase("vertices");
+    params.erase("profiles");
+    params.erase("profile_count");
+    params.erase("vertex_count");
+    // Derived/excluded from the event and meaningless for the comparison.
+    params.erase("next_vertex_index");
+    return params;
+  };
+  return normalized(before_feature) == normalized(after_feature);
+}
+
 // Emits the phase-D1/D2 reply for a command that changed sketch entities.
 // Returns true when the event was written (the caller stops); false means
 // "send the full state". Moved out of `app/impl/sketch_entities_changed.inc`
@@ -411,6 +450,13 @@ inline bool emit_sketch_entities_changed(
     if (before_params.dimensions[i].id != after_params.dimensions[i].id) {
       return false;
     }
+  }
+
+  // Anything the event cannot carry (arcs, circles, fillets, chamfers,
+  // texts, constraints, ...) must be byte-identical; otherwise the client
+  // would keep a stale copy of it. See `sketch_partial_event_safe`.
+  if (!sketch_partial_event_safe(*before_feature, *after_feature)) {
+    return false;
   }
 
   polysmith::protocol::json changed_vertices = polysmith::protocol::json::array();

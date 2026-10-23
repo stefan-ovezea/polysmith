@@ -47,6 +47,18 @@ describe.skipIf(!available)("cad core harness smoke (scripted, no Ollama)", () =
       const sketch = document!.feature_history.find(
         (feature) => feature.kind === "sketch",
       );
+      // Profiles are DERIVED and never shipped in document_state (they are
+      // most of an edit's payload on a dense sketch). Fetch the exact regions
+      // on demand and drop them onto the parsed copy so the shared assertion
+      // helper can check the complete region set.
+      const profilesReply = await core.send("get_sketch_profiles", {
+        feature_id: sketch!.feature_id,
+      });
+      const profilesPayload = profilesReply.payload as {
+        profiles: unknown[];
+      };
+      sketch!.sketch_parameters!.profiles =
+        profilesPayload.profiles as typeof sketch.sketch_parameters.profiles;
       expect(sketch?.sketch_parameters?.profiles).toHaveLength(1);
 
       // Complete-region-set assertion, per the profile-test discipline.

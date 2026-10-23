@@ -158,8 +158,31 @@ export class PlanegcsBridge {
     opts?: { activePointIds?: string[] },
   ): SolveOutput {
     if (!this.wrapper) throw new Error("PlanegcsBridge not initialised");
+    try {
+      return this.solveUnchecked(params, constraints, opts);
+    } catch {
+      // A sketch snapshot can momentarily reference an entity that no longer
+      // exists (a stale arc pointing at a dropped vertex was the real case,
+      // reported as "sketch object vertex-N not found"). The speculative
+      // solve runs inside pointer-move handlers, so throwing here surfaced as
+      // an uncaught UI error mid-drag. Report "failed" instead: every caller
+      // already falls back to the unconstrained preview on `!ok`.
+      return {
+        status: 2 /* Failed */,
+        ok: false,
+        points: [],
+        conflicting: [],
+        redundant: [],
+      };
+    }
+  }
 
-    const w = this.wrapper;
+  private solveUnchecked(
+    params: SketchFeatureParameters,
+    constraints: SketchConstraintData[] = [],
+    opts?: { activePointIds?: string[] },
+  ): SolveOutput {
+    const w = this.wrapper!;
     w.clear_data();
     this._pointIds = [];
 

@@ -73,6 +73,31 @@ bool test_canonical_tools_accepted_end_to_end() {
   return true;
 }
 
+// Every id the desktop UI can arm must be in the canonical list. Kept as an
+// explicit list (rather than parsing the TS union) so the failure names the
+// missing tool. `corner` and `split` were missing for a while: the toolbar had
+// both tools, and clicking Split simply logged "Unsupported sketch tool:
+// split" every time.
+bool test_ui_tool_vocabulary_is_covered() {
+  const std::vector<std::string> ui_tools = {
+      // Shape2D
+      "rectangle", "circle", "polygon", "line", "arc", "fillet",
+      "chamfer", "corner", "extend", "offset", "ellipse", "slot",
+      "spline", "split", "trim",
+      // Modal tools outside Shape2D
+      "select", "project", "dimension", "move", "text",
+  };
+  const auto& tools = kSupportedSketchTools();
+  for (const auto& tool : ui_tools) {
+    if (!expect(std::find(tools.begin(), tools.end(), tool) != tools.end(),
+                ("tool: canonical list covers UI tool \"" + tool + "\"")
+                    .c_str())) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool test_unknown_tools_rejected() {
   const std::vector<std::string> invalid = {"bogus", "rectangle2", ""};
 
@@ -185,6 +210,7 @@ bool test_schema_enum_matches_vocabulary() {
 
 int main() {
   if (!test_canonical_tools_accepted_end_to_end()) return 1;
+  if (!test_ui_tool_vocabulary_is_covered()) return 1;
   if (!test_unknown_tools_rejected()) return 1;
   if (!test_schema_enum_matches_vocabulary()) return 1;
 
