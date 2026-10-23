@@ -76,6 +76,7 @@ import {
   makeCreateLinearArrayCommand,
   makeCreateCircularArrayCommand,
   makeAddSketchTextCommand,
+  makeAddSketchPointCommand,
   makeUpdateSketchFilletRadiusCommand,
   makeUpdateSketchTextCommand,
   makeDeleteSketchFilletCommand,
@@ -841,8 +842,15 @@ export function useCadCore() {
       );
       await sendCoreCommand(makeGetViewportStateCommand());
     },
-    updateSketchPoint: async (vertexId: string, x: number, y: number) => {
-      await sendCoreCommand(makeUpdateSketchVertexCommand(vertexId, x, y));
+    updateSketchPoint: async (
+      vertexId: string,
+      x: number,
+      y: number,
+      bindToVertexId?: string,
+    ) => {
+      await sendCoreCommand(
+        makeUpdateSketchVertexCommand(vertexId, x, y, bindToVertexId),
+      );
       await sendCoreCommand(makeGetSessionStateCommand());
       await sendCoreCommand(makeGetViewportStateCommand());
     },
@@ -1410,6 +1418,10 @@ export function useCadCore() {
           totalAngleDeg,
         ),
       );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    addSketchPoint: async (x: number, y: number) => {
+      await sendCoreCommand(makeAddSketchPointCommand(x, y));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     addSketchText: async (params: {

@@ -8,6 +8,23 @@ namespace polysmith {
 bool handle_sketch_create_command(
     const polysmith::protocol::CommandMessage& command,
     polysmith::core::DocumentManager& manager) {
+  if (command.type == "add_sketch_point") {
+    const auto before_document = manager.get_document();
+    const auto document = manager.add_sketch_point(
+        read_dimension(command.payload, "x"),
+        read_dimension(command.payload, "y"));
+    // A point only changes the vertex table (and the `points` record), both
+    // of which the partial event cannot carry — the reply guard in
+    // emit_sketch_entities_changed falls back to the full state for it.
+    if (emit_sketch_entities_changed(command.id, before_document, document)) {
+      return true;
+    }
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return true;
+  }
+
   if (command.type == "add_sketch_line") {
     bool is_construction = false;
     if (command.payload.contains("is_construction") &&

@@ -202,6 +202,9 @@ interface ViewportCallbackRefTargets {
   addSketchTextRef: MutableRefObject<
     (anchorX: number, anchorY: number) => Promise<void>
   >;
+  addSketchPointRef: MutableRefObject<
+    (localX: number, localY: number) => Promise<void>
+  >;
   pickSketchTextRef: MutableRefObject<(textId: string) => void>;
   pickSketchSlotRef: MutableRefObject<(slotId: string) => void>;
   pickSketchChamferRef: MutableRefObject<(chamferId: string) => void>;
@@ -360,6 +363,7 @@ interface ViewportCallbackRefValues
   onAddSketchSpline: ViewportCallbackRefTargets["addSketchSplineRef"]["current"];
   onAddSketchSlot: ViewportCallbackRefTargets["addSketchSlotRef"]["current"];
   onAddSketchText: ViewportCallbackRefTargets["addSketchTextRef"]["current"];
+  onAddSketchPoint: ViewportCallbackRefTargets["addSketchPointRef"]["current"];
   onPickSketchText: ViewportCallbackRefTargets["pickSketchTextRef"]["current"];
   onPickSketchSlot: ViewportCallbackRefTargets["pickSketchSlotRef"]["current"];
   onPickSketchChamfer: ViewportCallbackRefTargets["pickSketchChamferRef"]["current"];
@@ -478,6 +482,7 @@ export function useViewportCallbackRefs(
     refs.addSketchSplineRef.current = values.onAddSketchSpline;
     refs.addSketchSlotRef.current = values.onAddSketchSlot;
     refs.addSketchTextRef.current = values.onAddSketchText;
+    refs.addSketchPointRef.current = values.onAddSketchPoint;
     refs.pickSketchTextRef.current = values.onPickSketchText;
     refs.pickSketchSlotRef.current = values.onPickSketchSlot;
     refs.pickSketchChamferRef.current = values.onPickSketchChamfer;

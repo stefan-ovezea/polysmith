@@ -594,6 +594,18 @@ export const documentStateSchema = z.object({
               }),
             )
             .default([]),
+          // Standalone Point-tool points (T1.4). Like projected points they
+          // are records the core re-emits into the vertex table; `point_id`
+          // IS the vertex id. Defaulted to [] so older cores/saves parse.
+          points: z
+            .array(
+              z.object({
+                point_id: z.string(),
+                x: z.number(),
+                y: z.number(),
+              }),
+            )
+            .default([]),
           // Body face / edge ids that have been projected onto this
           // sketch. Used for idempotency. Defaulted to [].
           projected_sources: z.array(z.string()).default([]),
@@ -801,7 +813,16 @@ export const documentStateSchema = z.object({
           vertices: z.array(
             z.object({
               vertex_id: z.string(),
-              kind: z.enum(["endpoint", "center", "projected", "quadrant", "fillet_corner"]),
+              // "point" is a standalone Point-tool point (T1.4): a movable
+              // vertex with no owning curve.
+              kind: z.enum([
+                "endpoint",
+                "center",
+                "projected",
+                "quadrant",
+                "fillet_corner",
+                "point",
+              ]),
               x: z.number(),
               y: z.number(),
               is_fixed: z.boolean(),

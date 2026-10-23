@@ -142,6 +142,7 @@ interface ViewportPointerUpParams {
   addSketchFillet: ActiveSketchPointerUpContext["addSketchFillet"];
   addSketchChamfer: ActiveSketchPointerUpContext["addSketchChamfer"];
   addSketchTextAt: ActiveSketchPointerUpContext["addSketchTextAt"];
+  addSketchPointAt: ActiveSketchPointerUpContext["addSketchPointAt"];
   onPickSketchText: ActiveSketchPointerUpContext["onPickSketchText"];
   onPickSketchSlot: ActiveSketchPointerUpContext["onPickSketchSlot"];
   onPickSketchChamfer: ActiveSketchPointerUpContext["onPickSketchChamfer"];
@@ -403,8 +404,12 @@ function handleActiveSketchToolPointerUp(
   hit: ActiveSketchSelectHit,
   additiveSelection: boolean,
 ) {
-  // Resolve cursor to sketch-local coords for dimension axis detection.
+  // Resolve cursor to sketch-local coords for dimension axis detection and
+  // for click tools that commit a position (the Point tool). The SNAPPED
+  // position is resolved too: the pointer move previews the snap marker, so a
+  // commit against the raw ray point would land somewhere else.
   let cursorLocal: [number, number] | undefined;
+  let cursorSnappedLocal: [number, number] | undefined;
   if (params.activeSketchPlaneId) {
     const resolved = resolveSketchPlanePoint(
       params.event,
@@ -414,6 +419,10 @@ function handleActiveSketchToolPointerUp(
       params.activeSketchPlaneFrameRef.current,
     );
     cursorLocal = resolved?.local;
+    if (resolved) {
+      const snapped = params.resolveSnappedSketchPoint(resolved);
+      cursorSnappedLocal = snapped?.local ?? cursorLocal;
+    }
   }
 
   return handleActiveSketchPointerUpTool({
@@ -447,6 +456,7 @@ function handleActiveSketchToolPointerUp(
     addMessage: params.addMessage,
     addSketchFillet: params.addSketchFillet,
     addSketchTextAt: params.addSketchTextAt,
+    addSketchPointAt: params.addSketchPointAt,
     onPickSketchText: params.onPickSketchText,
     onPickSketchSlot: params.onPickSketchSlot,
     onPickSketchChamfer: params.onPickSketchChamfer,
@@ -492,6 +502,7 @@ function handleActiveSketchToolPointerUp(
     selectDimensionLine: params.selectDimensionLine,
     dimensionToolMode: params.dimensionToolMode,
     cursorLocal,
+    cursorSnappedLocal,
   });
 }
 

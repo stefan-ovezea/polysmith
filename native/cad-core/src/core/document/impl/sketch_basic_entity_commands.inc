@@ -79,6 +79,69 @@ DocumentState DocumentManager::add_sketch_line(double start_x,
   return document_.value();
 }
 
+DocumentState DocumentManager::add_sketch_point(double x, double y) {
+  require_document();
+
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(),
+      document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end() ||
+      !feature_it->sketch_parameters.has_value()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  auto& parameters = *feature_it->sketch_parameters;
+
+  // Clicking on top of an existing point selects it instead of stacking a
+  // second one (two coincident dots would make selection ambiguous and the
+  // solver would see a zero-length dimension partner). Same tolerance as the
+  // sketch's coincidence rule.
+  constexpr double kDuplicateTolerance = 0.001;
+  for (const auto& existing : parameters.points) {
+    if (std::hypot(existing.x - x, existing.y - y) <= kDuplicateTolerance) {
+      document_->selected_feature_id = feature_it->id;
+      document_->selected_sketch_vertex_id = existing.id;
+      document_->selected_sketch_vertex_ids = {existing.id};
+      document_->active_sketch_tool = "point";
+      return document_.value();
+    }
+  }
+
+  push_undo_state();
+  clear_redo_stack();
+
+  SketchPoint point{};
+  point.id = "vertex-" + std::to_string(parameters.next_vertex_index++);
+  point.x = x;
+  point.y = y;
+  const std::string point_id = point.id;
+  parameters.points.push_back(point);
+
+  // A point contributes no geometry of its own: this refresh only re-emits the
+  // vertex table (kind "point") and keeps every derived feature in step.
+  polysmith::core::refresh_sketch_derived_state(*feature_it);
+  refresh_linked_extrudes(*document_, *feature_it);
+
+  document_->selected_feature_id = feature_it->id;
+  document_->selected_sketch_vertex_id = point_id;
+  document_->selected_sketch_vertex_ids = {point_id};
+  document_->selected_sketch_entity_id = std::nullopt;
+  document_->selected_sketch_entity_ids.clear();
+  document_->selected_sketch_dimension_id = std::nullopt;
+  document_->selected_sketch_profile_id = std::nullopt;
+  document_->selected_sketch_profile_ids.clear();
+  document_->active_sketch_tool = "point";
+  bump_geometry_revision();
+  return document_.value();
+}
+
 DocumentState DocumentManager::add_sketch_rectangle(double start_x,
                                                     double start_y,
                                                     double end_x,

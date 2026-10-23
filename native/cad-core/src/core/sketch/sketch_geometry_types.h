@@ -212,4 +212,20 @@ struct SketchProjectedPoint {
   double y;
 };
 
+// A standalone sketch point placed by the Point tool (SolidCraft parity
+// T1.4). Like a projected point it is not derived from any other entity,
+// so `rebuild_sketch_vertices` re-emits it from this list; unlike one it is
+// fully movable, participates in constraints/dimensions/patterns, and is not
+// locked to body geometry.
+//
+// `id` IS the vertex id ("vertex-N"), not a second entity namespace: the
+// vertex table is what selection, snapping, dimensions, constraints and the
+// solver all address, so a separate point id would only be a second thing to
+// keep in sync. Projected points use the same convention.
+struct SketchPoint {
+  std::string id;
+  double x;
+  double y;
+};
+
 }  // namespace polysmith::core

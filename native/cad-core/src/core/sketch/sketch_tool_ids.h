@@ -25,6 +25,7 @@ inline const std::vector<std::string>& kSupportedSketchTools() {
       "fillet", "trim",    "project",   "dimension",
       "move",   "text",    "ellipse",   "slot",    "chamfer",
       "extend", "offset",  "spline",    "corner",  "split",
+      "point",
   };
   return tools;
 }

@@ -170,7 +170,22 @@
                      }
                      return polygons;
                    }()},
-                  {"vertex_count", feature.sketch_parameters->vertices.size()},
+                  {"points",
+                  [&feature]() {
+                    json points = json::array();
+                    // Standalone Point-tool points. Their id is the vertex id,
+                    // so a loaded document re-emits them into the vertex table
+                    // through rebuild_sketch_vertices without any extra index.
+                    for (const auto& point : feature.sketch_parameters->points) {
+                      points.push_back({
+                          {"point_id", point.id},
+                          {"x", point.x},
+                          {"y", point.y},
+                      });
+                    }
+                    return points;
+                  }()},
+                 {"vertex_count", feature.sketch_parameters->vertices.size()},
                   {"vertices",
                   [&feature, include_vertices]() {
                     json vertices = json::array();

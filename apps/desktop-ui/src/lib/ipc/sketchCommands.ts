@@ -65,6 +65,7 @@ export function makeUpdateSketchVertexCommand(
   vertexId: string,
   x: number,
   y: number,
+  bindToVertexId?: string,
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -73,6 +74,7 @@ export function makeUpdateSketchVertexCommand(
       vertex_id: vertexId,
       x,
       y,
+      ...(bindToVertexId ? { bind_to_vertex_id: bindToVertexId } : {}),
     },
   };
 }
@@ -931,6 +933,18 @@ export function makeUpdateSketchSlotCommand(
 
 // Sketch text command factories. The core expands every text entry
 // into plain glyph lines on recompute, so these commands only carry
+// Standalone sketch point (Point tool): one click at a sketch-local position.
+export function makeAddSketchPointCommand(
+  x: number,
+  y: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "add_sketch_point",
+    payload: { x, y },
+  };
+}
+
 // the text parameters. `anchor_x` / `anchor_y` are required; every
 // other field falls back to the core default when omitted.
 export function makeAddSketchTextCommand(params: {

@@ -5,7 +5,12 @@
                                    double end_y);
   DocumentState update_sketch_vertex(const std::string& point_id,
                                     double x,
-                                    double y);
+                                    double y,
+                                    // Optional: when the drag ended on a
+                                    // standalone Point-tool point, that point
+                                    // is bound and absorbed into the dropped
+                                    // vertex within the same undo step.
+                                    const std::string& bind_to_vertex_id = "");
   // Rigidly move sketch entities (translate + optional rotation around
   // a center).  Pushes exactly ONE undo step; selection is preserved so
   // the user can repeat the move on the same entities.

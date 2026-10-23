@@ -190,7 +190,12 @@ std::optional<std::tuple<std::string, double, double>> resolve_shared_point(
 }
 
 void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
-  parameters.vertices.clear();
+  // Standalone user points take their position from the PREVIOUS vertex table
+  // (a drag or solver move updates the vertex, not the SketchPoint record), so
+  // keep that table before clearing. Swap rather than copy: the old table is
+  // only read here, and a copy would double the refresh's traffic.
+  std::vector<SketchVertex> previous_vertices;
+  previous_vertices.swap(parameters.vertices);
   // Membership test for "have I already appended this vertex id?" — a linear
   // scan with string comparison here is O(n) per point, i.e. O(n²) per refresh,
   // which is what made a 10.7k-line imported sketch take 14 s to redraw and 15 s
@@ -198,6 +203,7 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   // therefore the first-seen-wins rule) is unchanged.
   std::unordered_set<std::string> appended_ids;
   parameters.vertices.reserve(parameters.projected_points.size() +
+                              parameters.points.size() +
                               parameters.lines.size() * 2 +
                               parameters.arcs.size() * 2 +
                               parameters.ellipses.size() * 3 +
@@ -227,6 +233,22 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
   // geometry drives the sketch entity.
   for (const auto& projected : parameters.projected_points) {
     append_point(projected.id, "projected", projected.x, projected.y);
+  }
+
+  // Free-standing Point-tool points. Their coordinates live in the vertex
+  // table once they exist (dragging one calls update_sketch_vertex, which edits
+  // the vertex, not the record), so the previous frame wins and is written back
+  // into the record to keep it in step for serialization. Without this a drag
+  // would be undone by the very next refresh.
+  for (auto& point : parameters.points) {
+    const auto previous_it = std::find_if(
+        previous_vertices.begin(), previous_vertices.end(),
+        [&](const SketchVertex& previous) { return previous.id == point.id; });
+    if (previous_it != previous_vertices.end()) {
+      point.x = previous_it->x;
+      point.y = previous_it->y;
+    }
+    append_point(point.id, "point", point.x, point.y);
   }
 
   for (const auto& line : parameters.lines) {

@@ -371,6 +371,9 @@ export interface ViewportPanelProps {
   // rebinds the floating Text panel when the document round-trip
   // lands with the new text id.
   onAddSketchText: (anchorX: number, anchorY: number) => Promise<void>;
+  // Point tool: place a standalone sketch point at a sketch-local position
+  // (core `add_sketch_point`).
+  onAddSketchPoint: (localX: number, localY: number) => Promise<void>;
   // Select-mode glyph pick: the clicked sketch entity is a text glyph
   // segment (`generated_by: "text:<id>"`). App opens the Text panel
   // bound to the owning text instead of selecting the raw line.
@@ -514,6 +517,9 @@ export interface ViewportPanelProps {
     pointId: string,
     x: number,
     y: number,
+    // Optional: the drag snapped onto a standalone Point — the core binds and
+    // absorbs it in the same undo step.
+    bindToVertexId?: string,
   ) => Promise<void>;
   onMoveSketchEntities: (params: {
     entityIds: string[];

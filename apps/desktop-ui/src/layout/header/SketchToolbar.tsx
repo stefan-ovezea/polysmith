@@ -84,6 +84,9 @@ const sketchTools: Array<{
   // which arms the tool with the right-clicked entity / selection and
   // shows the persistent manipulator ring.
   { id: "line", labelKey: "toolbar.line", hotkey: "line", enabled: true },
+  // Standalone point: one click places a movable point entity; it takes part in
+  // dimensions/constraints but bounds no profile.
+  { id: "point", labelKey: "toolbar.point", enabled: true },
   { id: "dimension", labelKey: "toolbar.dimension", hotkey: "dimension", enabled: true },
   { id: "rectangle", labelKey: "toolbar.rectangle", hotkey: "rectangle", enabled: true },
   { id: "circle", labelKey: "toolbar.circle", hotkey: "circle", enabled: true },

@@ -168,6 +168,27 @@ void update_sketch_vertex(FeatureEntry& feature,
     throw std::runtime_error("Unsupported sketch center point: " + point_id);
   }
 
+  // Standalone Point-tool point (kind "point"). No curve owns it, so the
+  // generic propagation below would find nothing to move. Update the record
+  // AND the vertex-table entry: the table is authoritative for user points
+  // across a rebuild (rebuild_sketch_vertices reads it back into the record),
+  // so touching only the record would be reverted by the next refresh.
+  if (point->kind == "point") {
+    for (auto& user_point : parameters.points) {
+      if (user_point.id != point_id) continue;
+      user_point.x = x;
+      user_point.y = y;
+      for (auto& vertex : parameters.vertices) {
+        if (vertex.id == point_id) {
+          vertex.x = x;
+          vertex.y = y;
+        }
+      }
+      refresh_sketch_derived_state(feature);
+      return;
+    }
+  }
+
   propagate_connected_point_move(parameters, point_id, x, y);
   sync_all_line_dimensions(parameters);
 

@@ -32,6 +32,12 @@
                                              double end_y,
                                              double radius,
                                              bool is_construction = false);
+  // Standalone sketch point (Point tool). The point is stored as a
+  // `SketchPoint` record and re-emitted into the vertex table by every
+  // refresh as kind "point"; its id IS the vertex id. A click within the
+  // coincidence tolerance of an existing point selects that point instead
+  // of stacking a second one on top of it.
+  DocumentState add_sketch_point(double x, double y);
   DocumentState add_sketch_circle(
       double center_x,
       double center_y,

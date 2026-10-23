@@ -49,6 +49,23 @@ const LineIcon = () => (
   </svg>
 );
 
+// Standalone point: a filled dot with crosshair ticks (single-click placement).
+const PointIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="h-7 w-7"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none" />
+    <path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4" />
+  </svg>
+);
+
 export const DimensionIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -521,6 +538,8 @@ export function SketchToolIcon({ tool }: { tool: SketchTool }) {
       return <SlotIcon />;
     case "text":
       return <TextIcon />;
+    case "point":
+      return <PointIcon />;
     case "project":
       return <ProjectFaceIcon />;
     default:

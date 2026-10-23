@@ -49,6 +49,7 @@ import type {
   AddSketchSplineCommand,
   UpdateSketchSlotCommand,
   AddSketchTextCommand,
+  AddSketchPointCommand,
   UpdateSketchTextCommand,
   DeleteSketchTextCommand,
   DeleteSketchDimensionCommand,
@@ -1408,6 +1409,7 @@ export type CoreCommand =
   | AddSketchSplineCommand
   | UpdateSketchSlotCommand
   | AddSketchTextCommand
+  | AddSketchPointCommand
   | UpdateSketchTextCommand
   | DeleteSketchTextCommand
   | DeleteSketchDimensionCommand

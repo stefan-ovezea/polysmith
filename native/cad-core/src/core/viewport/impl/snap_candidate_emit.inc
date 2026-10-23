@@ -18,6 +18,18 @@
             snap_candidates.push_back({.kind="endpoint",.entity_id=arc.id,.vertex_id=arc.start_vertex_id,.local_x=arc.start_x,.local_y=arc.start_y,.distance=0,.label="Endpoint"});
             snap_candidates.push_back({.kind="endpoint",.entity_id=arc.id,.vertex_id=arc.end_vertex_id,.local_x=arc.end_x,.local_y=arc.end_y,.distance=0,.label="Endpoint"});
           }
+          // Standalone Point-tool points are snap targets in their own right:
+          // the reason to place one is to drag line/arc endpoints onto it. They
+          // own no entity, so `entity_id` stays empty and the vertex id is what
+          // identifies the target.
+          for (const auto& point : sketch.points) {
+            snap_candidates.push_back({.kind="endpoint",.entity_id="",.vertex_id=point.id,.local_x=point.x,.local_y=point.y,.distance=0,.label="Point"});
+          }
+          // Projected vertices are points on the plane too; without an entry
+          // here they render as dots that nothing can snap to.
+          for (const auto& projected : sketch.projected_points) {
+            snap_candidates.push_back({.kind="endpoint",.entity_id="",.vertex_id=projected.id,.local_x=projected.x,.local_y=projected.y,.distance=0,.label="Projected point"});
+          }
         }
         // Midpoints
         if (filter.snap_midpoint) {

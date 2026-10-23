@@ -338,6 +338,7 @@ export function ViewportPanel({
   onAddSketchFillet,
   onAddSketchChamfer,
   onAddSketchText,
+  onAddSketchPoint,
   onPickSketchText,
   onPickSketchSlot,
   onPickSketchChamfer,
@@ -992,6 +993,7 @@ export function ViewportPanel({
   const addSketchFilletRef = useRef(onAddSketchFillet);
   const addSketchChamferRef = useRef(onAddSketchChamfer);
   const addSketchTextRef = useRef(onAddSketchText);
+  const addSketchPointRef = useRef(onAddSketchPoint);
   const pickSketchTextRef = useRef(onPickSketchText);
   const pickSketchSlotRef = useRef(onPickSketchSlot);
   const pickSketchChamferRef = useRef(onPickSketchChamfer);
@@ -2818,6 +2820,7 @@ export function ViewportPanel({
       addSketchFilletRef,
       addSketchChamferRef,
       addSketchTextRef,
+      addSketchPointRef,
       pickSketchTextRef,
       pickSketchSlotRef,
       pickSketchChamferRef,
@@ -2893,6 +2896,7 @@ export function ViewportPanel({
       onAddSketchPolygon,
       onAddSketchFillet,
       onAddSketchText,
+      onAddSketchPoint,
       onPickSketchText,
       onPickSketchSlot,
       onPickSketchChamfer,
@@ -5158,6 +5162,7 @@ export function ViewportPanel({
         addSketchChamfer: addSketchChamferRef.current,
         circleTangentLineIdsRef,
         addSketchTextAt: addSketchTextRef.current,
+        addSketchPointAt: addSketchPointRef.current,
         onPickSketchText: pickSketchTextRef.current,
         onPickSketchSlot: pickSketchSlotRef.current,
         onPickSketchChamfer: pickSketchChamferRef.current,

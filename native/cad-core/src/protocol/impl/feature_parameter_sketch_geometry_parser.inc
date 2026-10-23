@@ -71,6 +71,16 @@
       params.arcs.push_back(arc);
     }
   }
+  // Standalone Point-tool points. Absent in saves that predate the tool.
+  if (payload.contains("points") && payload.at("points").is_array()) {
+    for (const auto& point_payload : payload.at("points")) {
+      polysmith::core::SketchPoint point{};
+      point.id = read_string(point_payload, "point_id");
+      point.x = read_number(point_payload, "x");
+      point.y = read_number(point_payload, "y");
+      params.points.push_back(point);
+    }
+  }
   // Older saves predate ellipses; absence of the key just means no
   // ellipses.
   if (payload.contains("ellipses") && payload.at("ellipses").is_array()) {

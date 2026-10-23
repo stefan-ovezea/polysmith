@@ -385,6 +385,18 @@ export interface UpdateSketchSlotCommand {
 // Sketch text (Fusion-style). The core expands the entry into plain
 // glyph lines tagged `generated_by: "text:<id>"` on every recompute;
 // the commands only carry the text parameters. Missing optional fields
+// Standalone sketch point (Point tool). The core stores it as a `SketchPoint`
+// and re-emits it into the vertex table as kind "point"; a click within the
+// coincidence tolerance of an existing point selects that point instead.
+export interface AddSketchPointCommand {
+  id: string;
+  type: "add_sketch_point";
+  payload: {
+    x: number;
+    y: number;
+  };
+}
+
 // fall back to the core defaults ("Text", height 10, angle 0, center /
 // middle alignment, no char spacing, default font).
 export interface AddSketchTextCommand {
@@ -628,6 +640,11 @@ export interface UpdateSketchVertexCommand {
     vertex_id: string;
     x: number;
     y: number;
+    // Optional: the drag ended on a standalone Point-tool point. The core
+    // binds that point to the dropped vertex (coincident constraint) and
+    // absorbs its record, in the same undo step — the "simplify the geometry"
+    // behaviour a snap onto a point should have.
+    bind_to_vertex_id?: string;
   };
 }
 

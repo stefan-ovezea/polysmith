@@ -5,6 +5,32 @@ import { useCadCoreStore } from "@/state";
 import { resolveSketchPlanePoint } from "@/utils";
 import { endpointDragDelta, type EndpointDrag } from "./endpointDrag";
 
+/** Id of a standalone Point-tool point sitting exactly at `(x, y)`, excluding
+ *  the vertex being dragged. A drop that landed on a point passes this to the
+ *  core, which binds and absorbs the point instead of leaving a duplicate
+ *  vertex hidden under the endpoint. Coordinates are compared with a 1e-6
+ *  tolerance because both sides come from the same snap. */
+export function pointIdAtPosition(
+  sketch: SketchFeatureParameters | null | undefined,
+  x: number,
+  y: number,
+  excludeVertexId?: string,
+  tolerance = 1e-6,
+): string | undefined {
+  if (!sketch?.points) {
+    return undefined;
+  }
+  for (const point of sketch.points) {
+    if (point.point_id === excludeVertexId) {
+      continue;
+    }
+    if (Math.abs(point.x - x) <= tolerance && Math.abs(point.y - y) <= tolerance) {
+      return point.point_id;
+    }
+  }
+  return undefined;
+}
+
 interface MutableRef<T> {
   current: T;
 }
@@ -24,6 +50,7 @@ interface EndpointDragPointerUpParams {
     pointId: string,
     x: number,
     y: number,
+    bindToVertexId?: string,
   ) => Promise<void> | void;
   setConstraintPreview: (preview: null) => void;
   setSketchSnapLabel: (label: string | null) => void;
@@ -207,7 +234,18 @@ function commitEndpointDrag({
     ) {
       return false;
     }
-    void updateSketchPoint(drag.vertexId, snapResult.snapX, snapResult.snapY);
+    void updateSketchPoint(
+      drag.vertexId,
+      snapResult.snapX,
+      snapResult.snapY,
+      // Dropped on a standalone Point: bind it into the endpoint.
+      pointIdAtPosition(
+        sketch,
+        snapResult.snapX,
+        snapResult.snapY,
+        drag.vertexId,
+      ),
+    );
     return true;
   }
 
@@ -235,6 +273,16 @@ function commitEndpointDrag({
   ) {
     return false;
   }
-  void updateSketchPoint(drag.vertexId, rawPoint.local[0], rawPoint.local[1]);
+  void updateSketchPoint(
+    drag.vertexId,
+    rawPoint.local[0],
+    rawPoint.local[1],
+    pointIdAtPosition(
+      sketch,
+      rawPoint.local[0],
+      rawPoint.local[1],
+      drag.vertexId,
+    ),
+  );
   return true;
 }

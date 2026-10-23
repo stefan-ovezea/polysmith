@@ -56,6 +56,10 @@ export interface ActiveSketchPointerUpContext {
   // sketch-local point (core defaults; the panel rebinds to the new
   // text id when the document round-trip lands).
   addSketchTextAt: (localX: number, localY: number) => Promise<void>;
+  // Point tool: place a standalone sketch point at the given sketch-local
+  // position (core `add_sketch_point`; a click on an existing point selects it
+  // instead of stacking a duplicate).
+  addSketchPointAt: (localX: number, localY: number) => Promise<void>;
   // Select-mode glyph pick: the hit sketch entity is a text glyph
   // segment (`generated_by: "text:<id>"`); App opens the Text panel
   // bound to the owning text instead of selecting the raw line.
@@ -194,10 +198,42 @@ export interface ActiveSketchPointerUpContext {
   dimensionToolMode: import("@/types").DimensionToolMode;
   /** Sketch-local cursor position at click time (for axis detection). */
   cursorLocal?: [number, number];
+  /** Same click, after the snap resolver ran. Click tools that commit a
+   *  position (Point) must use this: the pointer move previews the snap, so
+   *  committing the raw ray point would disagree with the marker on screen. */
+  cursorSnappedLocal?: [number, number];
 }
 
-function dimensionToolHit(hit: ActiveSketchSelectHit) {
-  return hit?.kind === "sketch_dimension" ||
+/**
+ * Where a Point-tool click places its point.
+ *
+ * Order: an exact vertex hit first (endpoint / centre / quadrant markers are
+ * vertex hits, and a hit carries the stored coordinates even when the snap did
+ * not latch), then the snapped cursor position — grid, on-line, intersection,
+ * tangent, perpendicular/parallel and H/V alignment, i.e. everything the
+ * pointer move already previewed — and the raw ray position only as a last
+ * resort.
+ */
+export function pointPlacementPosition(context: {
+  hit: ActiveSketchSelectHit;
+  sketch: SketchFeatureParameters | null;
+  cursorLocal?: [number, number];
+  cursorSnappedLocal?: [number, number];
+}): [number, number] | null {
+  const hitVertexId =
+    context.hit?.kind === "sketch_point" ? context.hit.id : null;
+  if (hitVertexId !== null && context.sketch) {
+    const vertex = context.sketch.vertices.find(
+      (candidate) => candidate.vertex_id === hitVertexId,
+    );
+    if (vertex) {
+      return [vertex.x, vertex.y];
+    }
+  }
+  return context.cursorSnappedLocal ?? context.cursorLocal ?? null;
+}
+
+function dimensionToolHit(hit: ActiveSketchSelectHit) {  return hit?.kind === "sketch_dimension" ||
     hit?.kind === "sketch_entity" ||
     hit?.kind === "sketch_point"
     ? hit
@@ -653,6 +689,20 @@ export function handleActiveSketchPointerUpTool(
     return true;
   }
 
+  // Sketch Point tool: one click places a standalone point at the SNAPPED
+  // position (the pointer move already shows the snap marker and label, so
+  // committing the raw ray position would land somewhere other than the
+  // marker). An exact vertex hit wins — it carries coordinates even when the
+  // snap did not latch — and the core selects an existing point instead of
+  // stacking a coincident duplicate.
+  if (context.activeSketchTool === "point") {
+    const position = pointPlacementPosition(context);
+    if (position) {
+      void context.addSketchPointAt(position[0], position[1]);
+    }
+    return true;
+  }
+
   // Sketch Text tool: any click in the sketch places a new text at
   // the click's sketch-local point with the core's default
   // parameters. `cursorLocal` is resolved by the caller from the raw
@@ -682,11 +732,11 @@ export function handleActiveSketchPointerUpTool(
       }
       return true;
     }
-    if (context.cursorLocal) {
-      void context.addSketchTextAt(
-        context.cursorLocal[0],
-        context.cursorLocal[1],
-      );
+    // Same rule as the Point tool: place the anchor at the SNAPPED position
+    // so it agrees with the marker the pointer move previewed.
+    const textAnchor = context.cursorSnappedLocal ?? context.cursorLocal;
+    if (textAnchor) {
+      void context.addSketchTextAt(textAnchor[0], textAnchor[1]);
     }
     return true;
   }

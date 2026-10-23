@@ -8,7 +8,10 @@ import { describe, expect, it } from "vitest";
 
 import type { SketchFeatureParameters } from "@/types";
 
-import { endpointDropWouldCollapse } from "./endpointDragPointerUp";
+import {
+  endpointDropWouldCollapse,
+  pointIdAtPosition,
+} from "./endpointDragPointerUp";
 
 function sketch(): SketchFeatureParameters {
   return {
@@ -61,5 +64,30 @@ describe("endpointDropWouldCollapse", () => {
 
   it("treats a missing sketch as movable", () => {
     expect(endpointDropWouldCollapse(null, "v-1", 40, 0)).toBe(false);
+  });
+});
+
+describe("pointIdAtPosition", () => {
+  const withPoints = (points: Array<{ point_id: string; x: number; y: number }>) =>
+    ({ ...sketch(), points } as unknown as SketchFeatureParameters);
+
+  it("finds the standalone point the drop landed on", () => {
+    const s = withPoints([{ point_id: "vertex-9", x: 12, y: 8 }]);
+    expect(pointIdAtPosition(s, 12, 8, "v-1")).toBe("vertex-9");
+  });
+
+  it("never binds a vertex to itself", () => {
+    const s = withPoints([{ point_id: "vertex-9", x: 12, y: 8 }]);
+    expect(pointIdAtPosition(s, 12, 8, "vertex-9")).toBeUndefined();
+  });
+
+  it("ignores a drop that is not exactly on a point", () => {
+    const s = withPoints([{ point_id: "vertex-9", x: 12, y: 8 }]);
+    expect(pointIdAtPosition(s, 12.5, 8, "v-1")).toBeUndefined();
+  });
+
+  it("is safe on a sketch without a points array (older documents)", () => {
+    expect(pointIdAtPosition(sketch(), 12, 8, "v-1")).toBeUndefined();
+    expect(pointIdAtPosition(null, 12, 8, "v-1")).toBeUndefined();
   });
 });

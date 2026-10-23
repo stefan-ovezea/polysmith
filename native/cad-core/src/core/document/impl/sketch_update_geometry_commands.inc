@@ -37,9 +37,11 @@ DocumentState DocumentManager::update_sketch_line(const std::string& line_id,
   return document_.value();
 }
 
-DocumentState DocumentManager::update_sketch_vertex(const std::string& point_id,
-                                                   double x,
-                                                   double y) {
+DocumentState DocumentManager::update_sketch_vertex(
+    const std::string& point_id,
+    double x,
+    double y,
+    const std::string& bind_to_vertex_id) {
   require_document();
 
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -60,6 +62,36 @@ DocumentState DocumentManager::update_sketch_vertex(const std::string& point_id,
   push_undo_state();
   clear_redo_stack();
   polysmith::core::update_sketch_vertex(*feature_it, point_id, x, y);
+
+  // A drag that lands on a standalone Point-tool point must SIMPLIFY the
+  // sketch, not leave a duplicate vertex hiding under the endpoint: bind the
+  // point to the dropped vertex (which merges every line that shared the
+  // point onto the dropped id, and records the coincident constraint the
+  // viewport badges) and then drop the now-orphaned `SketchPoint` record.
+  // Same undo step as the move. A non-Point target id is ignored, so dragging
+  // onto an ordinary endpoint keeps today's behaviour.
+  if (!bind_to_vertex_id.empty() && bind_to_vertex_id != point_id &&
+      feature_it->sketch_parameters.has_value()) {
+    auto& parameters = *feature_it->sketch_parameters;
+    const auto point_it = std::find_if(
+        parameters.points.begin(), parameters.points.end(),
+        [&](const SketchPoint& point) { return point.id == bind_to_vertex_id; });
+    if (point_it != parameters.points.end()) {
+      // Point id -> dropped vertex id: the merged lines now reference the
+      // vertex the user dropped, and the constraint entry lands on those
+      // lines. The point record's id is no longer referenced anywhere.
+      polysmith::core::set_sketch_coincident_constraint(
+          *feature_it, bind_to_vertex_id, point_id);
+      parameters.points.erase(
+          std::remove_if(parameters.points.begin(), parameters.points.end(),
+                         [&](const SketchPoint& point) {
+                           return point.id == bind_to_vertex_id;
+                         }),
+          parameters.points.end());
+      polysmith::core::refresh_sketch_derived_state(*feature_it);
+    }
+  }
+
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = point_id;

@@ -2473,6 +2473,7 @@ function App() {
     createLinearArray,
     createCircularArray,
     addSketchText,
+    addSketchPoint,
     updateSketchText,
     deleteSketchText,
     deleteSketchDimension,
@@ -5581,6 +5582,12 @@ function App() {
                   // state alone. The next click can recover.
                 }
               }}
+              onAddSketchPoint={async (localX, localY) => {
+                // Fire-and-forget: the core selects the new point (or the
+                // existing one when the click lands on top of it), so there
+                // is no panel to bind.
+                await addSketchPoint(localX, localY);
+              }}
               onAddSketchText={async (anchorX, anchorY) => {
                 // Same fire-and-forget IPC trick as the fillet flow:
                 // subscribe to the next document update that adds a
@@ -6193,9 +6200,9 @@ function App() {
                 setArrayCenterPicking(false);
               }}
               onOpenTransformArray={openTransformArrayPanel}
-              onUpdateSketchPoint={async (vertexId, x, y) => {
+              onUpdateSketchPoint={async (vertexId, x, y, bindToVertexId) => {
                 await runAction(async () => {
-                  await updateSketchPoint(vertexId, x, y);
+                  await updateSketchPoint(vertexId, x, y, bindToVertexId);
                 });
               }}
               onMoveSketchEntities={async (params) => {

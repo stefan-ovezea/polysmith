@@ -404,7 +404,15 @@ export const viewportStateSchema = z.object({
     z.object({
       vertex_id: z.string(),
       plane_id: z.string(),
-      kind: z.enum(["endpoint", "center", "projected", "quadrant", "fillet_corner"]),
+      // "point" = standalone Point-tool point (T1.4).
+      kind: z.enum([
+        "endpoint",
+        "center",
+        "projected",
+        "quadrant",
+        "fillet_corner",
+        "point",
+      ]),
       position: z.object({
         x: z.number(),
         y: z.number(),

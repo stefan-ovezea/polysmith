@@ -25,6 +25,7 @@
         "add_sketch_line",
         "add_sketch_line_angle_dimension",
         "add_sketch_line_length_dimension",
+        "add_sketch_point",
         "add_sketch_polygon",
         "add_sketch_polygon_radius_dimension",
         "add_sketch_rectangle",

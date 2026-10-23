@@ -394,6 +394,10 @@ export interface SketchFeatureParameters {
   // collection so `rebuild_sketch_points` can re-emit them on every
   // recompute. Empty on older saves; the schema defaults to [].
   projected_points: SketchProjectedPointEntry[];
+  // Standalone Point-tool points. `point_id` IS the vertex id; the core
+  // re-emits each one into the vertex table with kind "point". Empty on
+  // older saves; the schema defaults to [].
+  points: SketchPointEntry[];
   // Body face / edge ids that have already been projected onto this
   // sketch. Used by the Project tool to short-circuit duplicate
   // clicks. Empty on older saves; the schema defaults to [].
@@ -445,6 +449,14 @@ export interface SketchPointLineAnchorEntry {
 export interface SketchProjectedPointEntry {
   vertex_id: string;
   source_id: string;
+  x: number;
+  y: number;
+}
+
+// A standalone Point-tool point (core `add_sketch_point`). `point_id` is the
+// vertex id the core re-emits with kind "point".
+export interface SketchPointEntry {
+  point_id: string;
   x: number;
   y: number;
 }
@@ -638,7 +650,9 @@ export type SketchTool =
   | "project"
   | "dimension"
   | "move"
-  | "text";
+  | "text"
+  // Standalone point placement (one click, core-side `add_sketch_point`).
+  | "point";
 
 /** Rectangle creation modes for the split tool button. */
 type RectangleToolMode =

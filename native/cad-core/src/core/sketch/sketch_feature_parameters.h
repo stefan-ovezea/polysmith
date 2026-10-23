@@ -88,6 +88,10 @@ struct SketchFeatureParameters {
   // `is_fixed = true` so the user can't drag them; deduplicated by
   // `source_id` so a second click on the same vertex is a no-op.
   std::vector<SketchProjectedPoint> projected_points;
+  // Free-standing points placed by the Point tool. Re-emitted into the
+  // vertex table by every `rebuild_sketch_vertices` pass with
+  // `kind = "point"`; movable, and addressed by their vertex id.
+  std::vector<SketchPoint> points;
   // Live links between body sources (face / edge / vertex) and the
   // sketch entities the Project tool generated from them. Walked
   // by `refresh_sketch_projections` on every recompute so that

@@ -85,7 +85,7 @@ bool test_ui_tool_vocabulary_is_covered() {
       "chamfer", "corner", "extend", "offset", "ellipse", "slot",
       "spline", "split", "trim",
       // Modal tools outside Shape2D
-      "select", "project", "dimension", "move", "text",
+      "select", "project", "dimension", "move", "text", "point",
   };
   const auto& tools = kSupportedSketchTools();
   for (const auto& tool : ui_tools) {

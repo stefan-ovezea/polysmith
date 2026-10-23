@@ -72,10 +72,14 @@ bool handle_sketch_edit_command(
 
   if (command.type == "update_sketch_vertex") {
     const auto before_document = manager.get_document();
+    // `bind_to_vertex_id` (optional): the drag ended on a standalone
+    // Point-tool point, so the move must also bind — and absorb — that point
+    // in the same undo step. See DocumentManager::update_sketch_vertex.
     const auto document = manager.update_sketch_vertex(
         read_string(command.payload, "vertex_id"),
         read_dimension(command.payload, "x"),
-        read_dimension(command.payload, "y"));
+        read_dimension(command.payload, "y"),
+        read_optional_string_value(command.payload, "bind_to_vertex_id", ""));
     if (emit_sketch_entities_changed(command.id, before_document, document)) {
       return true;
     }

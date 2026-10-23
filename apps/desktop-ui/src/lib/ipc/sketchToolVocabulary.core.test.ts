@@ -38,6 +38,7 @@ const UI_TOOLS = [
   "dimension",
   "move",
   "text",
+  "point",
 ] as const;
 
 describe.skipIf(!available)("set_sketch_tool vocabulary", () => {

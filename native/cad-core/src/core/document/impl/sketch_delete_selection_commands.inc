@@ -74,6 +74,7 @@ DocumentState DocumentManager::delete_sketch_selection(
   std::unordered_set<std::string> circle_ids;
   std::unordered_set<std::string> arc_ids;
   std::unordered_set<std::string> projected_point_ids;
+  std::unordered_set<std::string> user_point_ids;
   std::unordered_set<std::string> selected_point_ids;
   std::unordered_set<std::string> fillet_ids;
   std::unordered_set<std::string> chamfer_ids;
@@ -154,6 +155,13 @@ DocumentState DocumentManager::delete_sketch_selection(
     for (const auto& projected : parameters.projected_points) {
       if (projected.id == point_id) {
         add_id(projected_point_ids, projected.id);
+      }
+    }
+    // Point-tool points are addressed by their vertex id; selecting one
+    // deletes it (and nothing else — it owns no other geometry).
+    for (const auto& point : parameters.points) {
+      if (point.id == point_id) {
+        add_id(user_point_ids, point.id);
       }
     }
   }
@@ -273,6 +281,13 @@ DocumentState DocumentManager::delete_sketch_selection(
                   parameters.splines.end(),
                   [&](const SketchSpline& spline) {
                     return id_in_set(spline_ids, spline.id);
+                  }) ||
+      // A selected Point-tool point is a deletable entity in its own right:
+      // it bounds no curve, so without this clause a lone point would hit the
+      // "nothing to delete" early return.
+      std::any_of(parameters.points.begin(), parameters.points.end(),
+                  [&](const SketchPoint& point) {
+                    return id_in_set(user_point_ids, point.id);
                   });
   if (!will_delete && !selected_text_ids.empty()) {
     // Pure-glyph selection: delete the owning text entities (Fusion
@@ -342,6 +357,11 @@ DocumentState DocumentManager::delete_sketch_selection(
         add_id(deleted_point_ids, vid);
       }
     }
+  }
+  // A deleted Point-tool point is an orphan by definition; dimensions that
+  // measured it must go too.
+  for (const auto& point_id : user_point_ids) {
+    add_id(deleted_point_ids, point_id);
   }
   // Remove points that are still referenced by surviving entities.
   for (const auto& line : parameters.lines) {
@@ -421,6 +441,12 @@ DocumentState DocumentManager::delete_sketch_selection(
                      parameters.projected_points.end(),
                      has_selected_projected_point),
       parameters.projected_points.end());
+  parameters.points.erase(
+      std::remove_if(parameters.points.begin(), parameters.points.end(),
+                     [&](const SketchPoint& point) {
+                       return id_in_set(user_point_ids, point.id);
+                     }),
+      parameters.points.end());
 
   const auto deleted_entity = [&](const std::string& id) {
     return id_in_set(line_ids, id) || id_in_set(circle_ids, id) ||
