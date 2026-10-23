@@ -1146,6 +1146,15 @@ DocumentState DocumentManager::load_document_from_path(
       polysmith::core::refresh_sketch_profiles(feature);
     }
   }
+  // Extrudes (and the other sketch-derived features) cache their source
+  // profile geometry. The real save persists that cache, but it is DERIVED
+  // data — re-derive it from the freshly refreshed sketches here, exactly
+  // like the refresh every sketch edit performs. A document saved without the
+  // opaque snapshot (the wire payload, an older save, or a profile whose id
+  // churned) then still compiles its bodies instead of failing with an
+  // empty-profile extrude. Regression: cad_core_spline_test's save/load leg
+  // (S0) failed here for a spline-bounded profile.
+  polysmith::core::refresh_linked_features_after_load(loaded);
   if (loaded.selected_sketch_profile_id.has_value() ||
       !loaded.selected_sketch_profile_ids.empty()) {
     std::set<std::string> live_ids;

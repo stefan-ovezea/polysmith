@@ -95,4 +95,28 @@ namespace {
 #include "core/document/impl/mesh_commands.inc"
 #include "core/document/impl/dxf_commands.inc"
 #include "core/document/impl/pcb_commands.inc"
+
+// Re-derive the source-profile caches of every sketch-derived feature after a
+// document load. `refresh_linked_extrudes` lives in this TU's anonymous
+// namespace; this wrapper is the one place other TUs (the load path) can call
+// it through. Each sketch's profiles are already refreshed by the caller, so
+// the builder rebuilds extrude / loft / revolve / sweep profile geometry from
+// the current sketch state.
+void refresh_linked_features_after_load(DocumentState& document) {
+  const std::vector<FeatureEntry> sketches = [&document]() {
+    std::vector<FeatureEntry> result;
+    for (const auto& feature : document.feature_history) {
+      if (feature.kind == "sketch" && feature.sketch_parameters.has_value()) {
+        result.push_back(feature);
+      }
+    }
+    return result;
+  }();
+  for (const auto& sketch : sketches) {
+    // The sketch copy keeps a dangling-feature scenario harmless: the refresh
+    // matches by feature id against the LIVE history, so a sketch removed by
+    // a later migration simply matches nothing.
+    refresh_linked_extrudes(document, sketch);
+  }
+}
 }  // namespace polysmith::core

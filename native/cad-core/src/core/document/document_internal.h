@@ -18,6 +18,12 @@
 
 namespace polysmith::core {
 
+// Re-derive every sketch-derived feature (extrude / loft / revolve / sweep)
+// whose source profiles live in the document's sketches. Defined in
+// document.cpp (it needs the source-profile builder) and used by the
+// document lifecycle right after a load, exactly like a sketch edit does.
+void refresh_linked_features_after_load(DocumentState& document);
+
 inline int action_count(const DocumentState& document) {
   int count = 0;
   for (const auto& feature : document.feature_history) {
