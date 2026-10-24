@@ -184,6 +184,16 @@ export function SketchToolPanel({
           )}
         </p>
       )}
+      {/* S11: infer constraints and dimension what is left. The core keeps a
+          candidate only if the solver's DOF count actually drops, and the whole
+          pass is one undo step. */}
+      <button
+        type="button"
+        className="cad-action-ghost mt-4 w-full px-2 py-1 text-xs"
+        onClick={onFullyConstrain}
+      >
+        {translate("viewport.fullyConstrain")}
+      </button>
       {/* S5: the sketch looks closed but the profile walk disagrees. Say where,
           and offer the one-click fix. */}
       {sketchDiagnostics &&
@@ -208,15 +218,6 @@ export function SketchToolPanel({
           ) : null}
         </div>
       ) : null}
-      {/* S11: one click to infer constraints and dimension what is left. The
-          core keeps a candidate only if the solver's DOF actually drops. */}
-      <button
-        type="button"
-        className="cad-action-ghost mt-4 w-full px-2 py-1 text-xs"
-        onClick={onFullyConstrain}
-      >
-        {translate("viewport.fullyConstrain")}
-      </button>
       {activeSketchTool === "dimension" && (
         <p className="text-xs text-on-surface/50 mt-1">
           {translate(`toolbar.dimension${DIMENSION_MODE_LABEL_SUFFIX[dimensionToolMode]}`)}
