@@ -91,10 +91,15 @@
               is_sketch_entity_selected(first_line.id) ||
               is_sketch_entity_selected(second_line.id);
 
+          // Fusion-style glyphs: "∥" for a parallel pair, "⊥" for a right
+          // angle, "=" for equal length. The badge is drawn as text into a
+          // canvas sprite, so any glyph the system font has works; letters
+          // ("P" for perpendicular) read as an identifier rather than a
+          // constraint and are ambiguous with a point/plane label.
           const std::string label =
               relation.kind == "equal_length"   ? "="
-              : relation.kind == "perpendicular" ? "P"
-              : relation.kind == "parallel"     ? "//"
+              : relation.kind == "perpendicular" ? "\u22A5"
+              : relation.kind == "parallel"     ? "\u2225"
               : relation.kind == "collinear"    ? "L"
               : relation.kind == "tangent_line_line" ? "T"
               : "?";

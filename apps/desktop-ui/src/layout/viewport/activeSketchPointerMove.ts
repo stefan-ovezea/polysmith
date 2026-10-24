@@ -57,6 +57,12 @@ interface ActiveSketchPointerMoveParams
   hoverActions: PointerMoveHoverActions;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   sketchGroupRef: MutableRef<THREE.Group | null>;
+  // The alignment hints the last move resolved. Kept so the render loop can
+  // rebuild the guides if something else clears the preview objects — otherwise
+  // the hint only appears while the mouse is moving.
+  draftInferenceLinesRef: MutableRef<
+    Array<{ from: [number, number]; draft: [number, number] }> | null
+  >;
   clearTrimSegmentHighlight: () => void;
   clearTrimArcHighlight: () => void;
   updateTrimSegmentHighlight: (
@@ -135,6 +141,8 @@ function handleDraftToolPointerMove(params: ActiveSketchPointerMoveParams) {
     from: gl.from,
     draft: gl.draft,
   }));
+  params.draftInferenceLinesRef.current =
+    inferenceLines && inferenceLines.length > 0 ? inferenceLines : null;
 
   // The spline draft has no line-draft start — its poles live in
   // splineDraftPolesRef. Render its preview (curve + control polygon

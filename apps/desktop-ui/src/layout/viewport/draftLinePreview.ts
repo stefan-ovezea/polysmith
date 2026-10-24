@@ -86,12 +86,24 @@ export function buildInferenceGuideLines({
   planeId: string;
   planeFrame: SketchPlaneFrame | null;
 }): THREE.Line[] {
+  // One material for the whole batch: the guides are one visual element, and a
+  // material per line meant the cleanup disposed the same material once per
+  // guide.
+  //
+  // The guide lies exactly ON the sketch plane, like the geometry it tracks, so
+  // depth testing it against the plane/grid is a z-fight: the dashes win on some
+  // frames and lose on others, which reads as "it flickers and is almost
+  // invisible". It is a hint overlay, so it draws over the plane instead
+  // (depthTest false, renderOrder above the sketch lines at 7).
   const material = new THREE.LineDashedMaterial({
     color: themeColor("--color-tertiary-plane-edge", "#ffe784"),
     transparent: true,
-    opacity: 0.42,
-    dashSize: 0.7,
-    gapSize: 0.5,
+    // 0.42 was too faint to read against the plane on a dark theme.
+    opacity: 0.9,
+    dashSize: 1.1,
+    gapSize: 0.7,
+    depthTest: false,
+    depthWrite: false,
   });
   return guides.map((guide) => {
     const line = new THREE.Line(
@@ -101,6 +113,7 @@ export function buildInferenceGuideLines({
       ]),
       material,
     );
+    line.renderOrder = 8;
     line.computeLineDistances();
     return line;
   });

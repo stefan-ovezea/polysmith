@@ -967,9 +967,10 @@ export function dynamicSnapCandidate({
       });
 
       // Inference alignment — H/V alignment with existing sketch vertices.
-      // Only active during pointer move (preview), NOT during pointer-up
-      // commit. Inference is a visual guide; it must not pull committed
-      // coordinates away from the user's intended click position.
+      // It is a SNAP, not a hint: the guide lines are drawn from this result and
+      // the committed point must land on them (see the guide-priority block at
+      // the end of this function). It is only disabled when a caller explicitly
+      // wants raw coordinates.
       if (inferenceSnapsEnabled) {
         const inferenceSnap = speculativeAlignmentInferenceSnap({
           draftStart,
@@ -1102,6 +1103,88 @@ export function dynamicSnapCandidate({
   // snap overrides the inference snap position.
   if (best && inferenceGuides.length > 0 && best.inferenceGuideLines.length === 0) {
     best.inferenceGuideLines = inferenceGuides;
+  }
+
+  // An alignment guide is a SNAP, not a hint (Fusion behaviour).
+  //
+  // The dotted line promises "your point is on this level", so the committed
+  // point has to land there — that promise is what lets a rectangle be drawn
+  // from four loose lines. It loses only to a snap that names an actual feature
+  // (intersection, tangency, a perpendicular/parallel host, the axis lock);
+  // a generic on-line / on-circle body snap must not steal the point, which is
+  // exactly what used to happen: the guide showed an alignment while the commit
+  // took the nearest point on a line body a pixel away.
+  //
+  // With a horizontal AND a vertical guide both showing, the point snaps to
+  // their INTERSECTION (Fusion does the same), which is how a corner gets
+  // closed against two different reference vertices.
+  if (inferenceGuides.length > 0) {
+    const featureSnap =
+      best !== null &&
+      (best.snapIntersectionLineIds !== null ||
+        best.snapTangentCircleId !== null ||
+        best.snapPerpendicularHostLineId !== null ||
+        best.snapParallelHostLineId !== null ||
+        best.snapAxisLock !== null);
+    if (!featureSnap) {
+      const fallback = best?.local ?? cursor;
+      const base =
+        best ??
+        ({
+          local: fallback,
+          snapLabel: "",
+          snapPerpendicularHostLineId: null,
+          snapAxisLock: null,
+          snapTangentCircleId: null,
+          snapParallelHostLineId: null,
+          snapLineBodyHostLineId: null,
+          snapLineBodyT: null,
+          snapIntersectionLineIds: null,
+          distance: Infinity,
+          snapInferenceKind: null,
+          snapInferenceFrom: null,
+          inferenceGuideLines: inferenceGuides,
+        } satisfies DynamicSnapResult);
+
+      let vertical: (typeof inferenceGuides)[number] | null = null;
+      let horizontal: (typeof inferenceGuides)[number] | null = null;
+      for (const guide of inferenceGuides) {
+        if (guide.axis === "vertical") {
+          if (!vertical || Math.abs(fallback[0] - guide.from[0]) <
+              Math.abs(fallback[0] - vertical.from[0])) {
+            vertical = guide;
+          }
+        } else if (!horizontal || Math.abs(fallback[1] - guide.from[1]) <
+                   Math.abs(fallback[1] - horizontal.from[1])) {
+          horizontal = guide;
+        }
+      }
+
+      const local: [number, number] = [
+        vertical ? vertical.from[0] : fallback[0],
+        horizontal ? horizontal.from[1] : fallback[1],
+      ];
+      const verticalOffset = vertical ? Math.abs(fallback[0] - local[0]) : 0;
+      const horizontalOffset = horizontal ? Math.abs(fallback[1] - local[1]) : 0;
+      const dominant = verticalOffset >= horizontalOffset ? vertical : horizontal;
+
+      best = {
+        ...base,
+        local,
+        // An alignment is a placement, not an axis constraint: the H/V
+        // constraint, if any, comes from the core's inference on the committed
+        // geometry (the two points really are level).
+        snapAxisLock: null,
+        snapLineBodyHostLineId: null,
+        snapLineBodyT: null,
+        snapCircleBodyHostCircleId: null,
+        snapCircleBodyAngle: null,
+        snapInferenceKind: dominant?.axis ?? null,
+        snapInferenceFrom: dominant?.from ?? null,
+        distance: Math.max(verticalOffset, horizontalOffset),
+        inferenceGuideLines: inferenceGuides,
+      };
+    }
   }
 
   return best;

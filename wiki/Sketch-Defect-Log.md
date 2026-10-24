@@ -519,3 +519,186 @@ and stored the constraint `driven`, so it never drove geometry: a user who appli
 **Why it mattered beyond the bug.** S11's acceptance rule is "add a candidate, keep it only if the solver's DOF drops". With this defect, `try_add` would have rejected every good candidate and auto-constrain would have looked broken for an unrelated reason.
 
 ---
+
+## D-010 — A rectangle was not constrained as a rectangle (fixed)
+
+**Reported:** 2026-10-24, in-app: *"there are no constraints shown on the rectangle and the rectangle constraints were not correct in the first place. PolySmith does not follow the same philosophy as Fusion. It constrains the parallel of the sides instead of angle."*
+
+### What the tool actually did
+
+`add_sketch_rectangle` drew four axis-aligned lines and let `add_sketch_line` infer **H on both horizontal sides and V on both vertical sides**. Consequences:
+
+- **Nothing said "90 degrees".** The shape was axis-*locked*, not angle-constrained. Move a side and the constraint keeps it horizontal rather than keeping the corner square.
+- **Nothing said "these two are parallel".** Opposite sides were parallel only because both were axis-locked — an accident of the inference, not a stated relation.
+- **No relations existed at all**, so `line_relations` was empty and the solver never ran for a rectangle-only sketch (`constraints_exist` gates on it). `solver_dofs` stayed `-1` and the DOF badge had nothing to show.
+- **The viewport showed H and V badges only.** The relation-glyph path (`sketch_line_relation_badges_emit.inc`) was never reached, so a rectangle read as four disconnected axis statements.
+
+### What Fusion 360 does (user screenshot + SolidCraft source)
+
+Fusion shows an **H** on one side, **∥** on both opposite pairs and **⊥** at the corners — no **V** — and the set fully determines x, y, width, height. `solidcraft/crates/engine/src/cmd/sketch.rs` confirms the same family: its 2-point rectangle emits H×2 + V×2 (a different, axis-locked choice), its 3-point rectangle emits `Perpendicular(l0,l1) + Parallel(l0,l2) + Parallel(l1,l3)`. **Neither uses equal-length**, which is the wrong statement for a non-square rectangle.
+
+### Fix
+
+The rectangle now stores exactly the Fusion set, and nothing else:
+
+```
+horizontal(bottom)            ← one axis statement, so the shape keeps its orientation
+parallel(top, bottom)
+parallel(left, right)
+perpendicular(bottom, right)  ← the 90° that makes it a rect-angle
+```
+
+Four independent constraints over eight coordinates ⇒ **dofs = 4** (x, y, width, height), no conflicts, no redundants. The inferred H/V on the other three sides is cleared. Relation ids follow the existing command scheme (`rel-<kind>-<a>-<b>`, ids sorted) so the delete path finds them. Glyph labels became `∥` and `⊥` (previously `//` and the letter `P`).
+
+### Three defects it uncovered
+
+**(a) Enforcing a relation rewrote geometry that already satisfied it.** `drive_line_parallel_to_reference` / `drive_line_perpendicular_to_reference` recomputed an endpoint from a normalised direction every time, even when the relation already held — an ulp of drift on a *shared* corner, on every recompute. They now return early when the relation holds within `1e-12` relative. This is what makes "refresh an exact rectangle" bit-identical (`rectangle_constraints_test`, `test_refresh_leaves_an_exact_rectangle_untouched`).
+
+**(b) Driving one side of a closed profile rotated its neighbours instead of translating them.** `propagate_connected_point_move` carried the far endpoint only for H/V-constrained lines (a rigid translation along the axis). A relation-constrained line has the same property — its direction is pinned — but fell through to "move the shared corner only", leaving the neighbour diagonal. The relation pass then rotated it back *keeping the stretched length*: widening a 40×20 rectangle to 60 left the right side 28.28 mm long, and the solver reconciled that corrupted input by shrinking the height to **19.77 mm**. The fix generalises the existing rule: a line whose direction is pinned (H/V **or** a parallel/perpendicular relation) is translated by the perpendicular component of the corner's movement, so its length and angle both survive. Measured after: the drive produces an exact 60×20 rectangle.
+
+**(c) Anchored points were only enforced *after* the solve.** A midpoint-anchored point is one of the solver's unknowns, so the solver expects it to already be on its host. An ad-hoc drive moves the host and leaves the anchored point behind; the solver then absorbs that residual by moving things nobody asked to move — measured: halving a rectangle's height moved the **whole rectangle up 5.76 mm**. `refresh_sketch_derived_state` now runs the anchor passes *before* `solver.build` as a consistency pass (the post-solve pass remains the authority). Same scenario after: exact 40×10 rectangle at y = 0, anchored line from `(20,0)` to `(20,10)`.
+
+### Two false alarms removed
+
+- **"sketch over-constrained" was logged for healthy sketches.** The condition was `conflicting > 0 || redundant > 0 || dofs < 0`, and a negative DOF count is not evidence of over-constraint: planegcs returns `-1` when it cannot diagnose the system at all (no unknowns / empty diagnosis matrix) and `params − nonredundant` otherwise. A red error line appeared for a plain rectangle with an anchored line, with `conflicting=0 redundant=0`. Only a reported conflicting/redundant constraint is an error now; a negative count with neither is a `debug` line ("could not count the remaining degrees of freedom").
+- **Dimension edits were silently demoted to `driven` on such sketches.** `fallback_to_driven` in `dimension_update.inc` tested `solver_dofs < 0` (plus the D-009 `solver_ran` guard); it now tests the solver's own diagnosis (`conflicting_count > 0 || redundant_count > 0 || !solver_ok`), which is the signal that actually means "this new constraint cannot be satisfied".
+
+### Pre-existing solver-diagnosis noise (NOT fixed here)
+
+`diagnose()` on a sketch containing midpoint anchors returns implausible counts even with the *old* H/V rectangle: `0` where 7 is correct, `-4`, `-5`, and a different number again after one dimension change. Confirmed pre-existing by rebuilding the old constraint set in the same harness. It is a planegcs quality issue (redundancy analysis over ad-hoc anchor constraints), tracked with S3 — the badge never shows these because it only renders `>= 0`.
+
+### Evidence
+
+`native/cad-core/tests/rectangle_constraints_test.cpp` (new suite, registered in CMake) pins the contract: the constraint set and the shape it implies, `dofs == 4` with no conflict/redundancy, the bit-exact refresh, a width drive that keeps the rectangle rectangular, and an anchored line following a height drive. `pnpm test:core` — **87/87 suites pass**, including the three that encoded the old contract (`sketch_profile_test`'s two midpoint-anchor scenarios, `add_sketch_point_test`, and `auto_constrain_apply_test`, whose "axis-only sketch does not solve" guard now uses a single line instead of a rectangle — a rectangle legitimately runs the solver now).
+
+### New diagnostic
+
+`PS_TRACE_SKETCH_SOLVE=1` logs the sketch geometry before the solve, immediately after it, and at the end of the refresh (tag `sketch_trace`). This is what found (b) and (c): the ad-hoc enforcement and the solver both move geometry, and without the three snapshots it is impossible to tell which one made the rectangle jump.
+
+### Follow-up report (same day): "before constraint is dof 4 and after is 2"
+
+Applying a constraint to a rectangle side collapsed the DOF badge. Two more causes, both in the constraint commands, both fixed:
+
+**(d) The append-focus solve published a FROZEN degree count.** `set_sketch_line_constraint` and the relation commands solve through `refresh_sketch_with_append_focus`, which pins every point outside the focus entity so a new constraint cannot drag unrelated geometry. The count that solve reports is the DOF of the *frozen* system, and it was published as the sketch's: a rectangle read **1** after any constraint command, where the sketch really has 4. `refresh_sketch_derived_state` now measures the unfrozen count with a throwaway solver after restoring the flags — it only reads a diagnosis and its solution is never applied, so the freeze still protects the geometry. Measured: applying an axis constraint now leaves the rectangle at 4, and a width dimension at 3.
+
+**(e) Applying an axis constraint stored a duplicate the relations already implied.** Horizontal on the top side of a rectangle is implied by `horizontal(bottom) + parallel(top,bottom)`; planegcs flags the duplicate redundant and its redundancy repair is what produces the absurd counts (and it may move geometry). `set_sketch_line_constraint` now walks the relation graph — the axis propagates unchanged across `parallel` and swaps across `perpendicular`, stopping at the first line that declares an axis — and skips a constraint that is already implied, logging why. Same for the mirrored case below.
+
+**(f) The parallel/perpendicular commands deleted the driven line's axis constraint unconditionally.** `line.constraint = std::nullopt` was justified as "an axis constraint is incompatible with a relation", which is only true when the relation has to *move* the line. Re-applying `perpendicular(bottom, right)` to a rectangle wiped the bottom side's H — a real constraint gone, and the count went *up* from 4 to 5. Both commands now clear the axis only when the relation does not already hold (`lines_are_parallel` / `lines_are_perpendicular`).
+
+Tests: `rectangle_constraints_test` grew `test_applying_a_constraint_keeps_the_degree_count` (four cases: H on the top side, V on the right side, perpendicular on the square corner, parallel on the opposite sides — each must leave exactly one axis constraint, all three relations, DOF 4, no conflict/redundancy). `sketch_move_test` was updated to the new contract: a translate keeps the one stored H and the three relations rather than four axis constraints, because three of those four are now recognised as duplicates.
+
+### Still open: the glyphs are not visible in the app
+
+The data path is proven correct end to end — the core emits all four badges for a rectangle (`H` on the bottom, `∥` twice, `⊥` at a corner) with world positions, the zod schema accepts them, `createViewportScene` keeps all four with the right labels, and `buildSketchConstraintObject` returns a visible, textured, opaque sprite at the right position. What has not been observed is the last hop: the sprite inside the live Three scene. `ViewportPanel` now logs `sketch constraint badges: N [kind:label, …]` (level `info`, only when the set changes) so the next report can say whether the core sent them.
+
+---
+
+## D-011 — Constraint glyphs shipped HIDDEN by default, so no sketch ever showed its constraints (fixed)
+
+**Reported** during the D-010 work, and it is the reason "there are no constraints shown on the rectangle" survived every attempt to fix the constraint *set*: *"I cannot see any constraints"*, *"during preview for the line I have all but after nothing. for the rectangle I have horizontal some time but also disappears after commit."*
+
+**Root cause — a config default, not a renderer bug.** `apps/desktop-ui/src/config/config.json` shipped `viewport.showConstraints: false` ("they sit on top of dense sketch geometry and read as noise"), and the render loop enforces it per frame:
+
+```ts
+// ViewportPanel.tsx, every frame
+for (const obj of sketchConstraintObjectsRef.current) {
+  obj.visible = showConstraintsRef.current;
+}
+```
+
+So the core emitted the badges, the schema accepted them, the scene built the sprites — and the renderer then set `visible = false` on all of them. Every install that had ever been saved carried `false` in `%APPDATA%\polysmith\config.json`, which is why it looked like a permanent regression: the data was always right, the display was switched off by preference. The one thing that *did* work was the HTML snap badge during a draft — hence "during preview I have all, after nothing". Anything that moved a glyph (a rebuild, a hover) looked like an intermittent bug.
+
+The evidence chain that finally located it, all of it necessary:
+
+| stage | how it was checked | result |
+|---|---|---|
+| core emits | headless rectangle → `sketch_constraints` | 4 badges, correct labels + world positions |
+| IPC schema | `viewportStateSchema.safeParse(payload)` | accepted, 4 entries |
+| scene data | `createViewportScene(payload)` | 4 constraints kept |
+| object build | `buildSketchConstraintObject(...)` | visible sprite, `opacity 1`, textured, `depthTest false` |
+| live render | per-frame `visible = showConstraints` | **`false` — the answer** |
+
+**Fix.** `showConstraints` now defaults to **true** (a sketch that reports a degree-of-freedom badge while hiding the constraints it counts is unreadable; Fusion draws them too), and the config schema gained a version so the change reaches installs that already saved the old default:
+
+- `config.json`: `configVersion: 2`, `showConstraints: true`.
+- `appConfig.ts`: `migrateConfig()` runs before the merge — anything below v2 is treated as carrying the OLD default and gets `showConstraints: true`; a deliberate "off" saved afterwards keeps its value because the file then says `configVersion: 2`.
+- The `ViewportPanel` render-loop comment now states the policy instead of the opposite.
+- The viewport toolbar still has the "Show constraints" toggle for dense geometry.
+
+**Tests.** New `apps/desktop-ui/src/config/appConfig.test.ts`: a pre-v2 config with `showConstraints: false` loads with glyphs ON; a v2 config with `false` keeps it OFF; a fresh install is ON; and the migration does not disturb the rest of the stored config (theme, units, crosshair).
+
+**Lesson.** "The thing is not drawn" and "the thing is drawn but hidden by a preference" look identical from a bug report, and the second one survives every fix to the first. Before instrumenting a render path, grep the render loop for an override that can set `visible`/`opacity` from user config.
+
+The diagnostics added while chasing this (`sketch constraint badges: N`, `constraint glyph sprites: …` in `ViewportPanel`) were removed once the cause was known; the env-gated core trace `PS_TRACE_SKETCH_SOLVE` stays.
+
+---
+
+## D-012 — The line draft's inference guide flickers and is almost invisible (fixed)
+
+**Reported** right after D-011 was fixed: *"for the line preview: after first point of the line there is a dotted line with hints of verticality of projected other points. It is still there but fires rapidly and is almost invisible."*
+
+**Two independent causes.**
+
+1. **Rebuilt on every pointer event.** `renderDraftPointerPreview` opened with `clearPreviewInference()`, so every pointermove disposed the dashed guides and built new ones. A pointer stream arrives far more often than a frame (100+ Hz on a high-polling mouse), so the dash phase restarted continuously — the hint strobed instead of reading as a dotted line. The guides are now **kept across moves and updated in place** (positions written into the existing `BufferAttribute`, then `computeLineDistances()`); they are only disposed when the *number* of aligned vertices changes, or when the tool is not a line draft.
+
+2. **Too faint, and z-fighting with the plane.** The material was `opacity: 0.42` with `depthTest` left at its default — and a guide lies exactly ON the sketch plane, so depth testing it against the plane/grid is a z-fight that wins or loses per frame. It is a hint overlay: now `opacity 0.9`, `dashSize 1.1 / gapSize 0.7` (coarser dashes read at typical sketch zoom), `depthTest: false`, `depthWrite: false`, `renderOrder 8` (sketch lines draw at 7). One material per batch instead of one per line, so the cleanup no longer disposes the same material once per guide.
+
+**Tests.** `apps/desktop-ui/src/layout/viewport/inferenceGuideLines.test.ts`: one line per guide sharing one material; dashed with the `lineDistance` attribute present (without it dashes render solid) and opacity ≥ 0.8; `depthTest === false` with `renderOrder > 7`.
+
+**Third cause, reported after the first two were fixed:** *"It fires only on mouse move and not visible if not move."* The guides were owned entirely by the pointer-move path — built there, and re-built only there. Anything that clears the preview objects (a pointer-up, a commit, a scene rebuild, a tool-state effect) removed them, and with the mouse still no new move arrived to put them back, so the hint existed only while the mouse was moving. They are now re-created from the render loop: `activeSketchPointerMove` records the last resolved alignment in `draftInferenceLinesRef`, and `render()` calls `restoreDraftInferenceGuides()`, which returns immediately when the lines are still in the sketch group and otherwise rebuilds them — only while the line tool has a live draft start, so a commit or a tool switch still clears them for good.
+
+The lesson generalises to every preview overlay in the viewport: a scene object that only a pointer handler can recreate is one clear away from disappearing, and the symptom ("it only shows while I move") points at the lifecycle, not at the drawing.
+
+---
+
+## D-013 — "One dimension and the solver distorted the whole sketch" (guard added, exact repro still open)
+
+**Reported:** *"The most worrying thing is that I made a dimension and the solver distorted completely the sketch. I fight with this a lot before and it is back now. Honestly it was solved by not allowing the solver to recalculate lots of things."*
+
+**What was verified.** Two synthetic sketches were driven through the real core and compared **by vertex id** (comparing the vertex table by index is misleading — `rebuild_sketch_vertices` may emit the same vertices in a different order, which produced a false "the sketch was smashed" reading first time round):
+
+| sketch | action | vertices moved | max displacement |
+|---|---|---|---|
+| rectangle + 2 loose lines | width dimension 40 → 60 | 1 (the rectangle's own corner) | 20 mm = the requested change |
+| rectangle + 10 loose lines | width dimension 40 → 60 | 2 (both corners of the driven edge) | 20 mm = the requested change |
+
+So on a fresh sketch the dimension drive is clean: the planegcs solve leaves loose geometry alone, and the ad-hoc drive translates the perpendicular sides (D-010 (b)). The user's distortion therefore needs their document or the exact command sequence (the report mentions the AI drafting a dimension) to reproduce; it is **not** reproduced by the two shapes above.
+
+**Guard added meanwhile** (`solver_touch_guard.inc`, runs on every solve). A vertex may only move when it is **connected, through shared vertices, to an entity that carries a solver-registered constraint** (axis constraint, relation, driving dimension, constraint record, anchor or fixed point). Everything outside that closure has no say in the solve, so its post-solve value is noise: `restore_unreachable_solver_geometry()` puts the pre-solve values back and logs the largest restored displacement when it exceeds 1 µm. This is the mechanical version of the user's own diagnosis — "do not let the solver recalculate lots of things" — and it is inert on a healthy solve: all 87 C++ suites pass with it in.
+
+**Mechanism found for the "random" part.** planegcs is not a black box, and the way we used it was unsound: `System::initSolution()` calls `diagnose(alg)` on every solve (that is the first thing it does after storing the reference), and `diagnose()` not only *analyses* redundancy — it **removes the redundant constraints from the system that is then solved** (`GCS.cpp` builds `clistR` without them, then solves that subset). Whatever we apply therefore satisfies a subset of what the sketch asks for; the dropped constraints are free to drift, and which ones get dropped depends on the redundancy analysis of the current state. On a rectangle with dimensions, relations and auto dimensions there is plenty to drop — hence "the deformations are random".
+
+**Fix: the solution is now verified before it is trusted.** `solver_constraint_violation()` checks the solved geometry against every constraint we can evaluate — H/V, parallel / perpendicular / equal length, driving line length, line angle, circle radius and point distance — with real tolerances (1 µm, 1e-4 rad). If any is violated the solution is **discarded**: `restore_all_solver_geometry()` puts the pre-solve geometry back and the Logs panel gets `solver solution rejected (<constraint detail>); kept the geometry from before the solve`. The sketch then does not move rather than moving wrongly, and the next occurrence leaves the evidence needed to reproduce it. Verified inert on all 87 suites.
+
+**Known limit.** A verifier can only check the kinds it knows; arcs, ellipses, slots, splines, tangency and anchors are not yet checked, so a violation confined to those still passes. Extending the verifier is the follow-on, and it is the cheaper half of the real fix (the expensive half is integrating planegcs properly: diagnose once, solve the reduced system, verify, and only then apply).
+
+**Still to do:** reproduce the real case from the user's file and add the failing-then-passing test the regression rules require. Until then this entry stays open; the guards are a net, not the fix.
+
+---
+
+## D-014 — The inference guide showed an alignment the commit did not honour (fixed)
+
+**Reported:** *"The snap did not make the line horizontal. I got the helper dotted line and made the end of the line assuming that the next segment will be on the same level, hence horizontal."* … and the requirement behind it: *"It should be a snap at the guide point. I need to be able to create a rectangle just by lines and the guide."*
+
+**Cause — two halves, both needed.**
+
+1. `snapResolution.ts` treated the alignment as a *visual* hint: it set `best = inferenceSnap` only when no axis-lock existed, and the later generic stages (`line-body`, `circle-body`, `arc-body`) could then replace it through `closerDynamicSnap`, which ranks purely by distance. A point 0.1 mm off a line body beat an alignment 0.9 mm away — so the guide was drawn and the point went elsewhere.
+2. Even when the preview did take the alignment, `commitActiveSketchDraft` re-resolved the point with `inferenceSnapsEnabled: false` ("inference must not pull committed coordinates away from the user's intended click position"), so the commit silently used the raw click position.
+
+**Fix — Fusion semantics.** An alignment guide is now a snap:
+
+- At the end of the dynamic snap chain the guide wins over any *generic body* snap; it loses only to a snap that names a real feature (intersection, tangency, perpendicular/parallel host, axis lock). This is the priority Fusion uses, and it is what makes "draw a rectangle from four loose lines" possible.
+- With a **horizontal and a vertical** guide both showing, the point snaps to their **intersection** (again Fusion's rule) — that is how a rectangle corner gets closed against two different reference vertices.
+- The commit path resolves with inference enabled, so preview and commit agree: the dotted line is a promise the click keeps.
+
+Alignment is still a *placement*, not an axis constraint: `snapAxisLock` stays `null`, and the H/V constraint comes from the core's ordinary inference on the committed geometry (the two points really are level, so the line is exactly horizontal).
+
+**Tests.** `snapResolution.test.ts` gained an "alignment guides snap the point" block: a cursor 0.1 mm from a line body and 0.9 mm from a level lands on the level; and a cursor within reach of both a vertical and a horizontal reference lands on their intersection. Both fail on the previous ordering.
+
+---
+
+
+
+
+
+

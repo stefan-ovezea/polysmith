@@ -6,3 +6,5 @@
 #include "core/sketch/impl/private_sketch_require_helpers.inc"
 #include "core/sketch/impl/private_dimension_sync_helpers.inc"
 #include "core/sketch/impl/private_line_drive_helpers.inc"
+#include "core/sketch/impl/private_sketch_solve_trace.inc"
+#include "core/sketch/impl/solver_touch_guard.inc"

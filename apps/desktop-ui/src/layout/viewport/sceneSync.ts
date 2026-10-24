@@ -483,6 +483,16 @@ function viewportSceneBuildKey({
     wcsOrientation,
     moveGizmoKey(moveGizmo),
     displayedSketchDimensions.map(sketchDimensionBuildKey).join("|"),
+    // Constraint glyphs are sprites built with the scene, and applying a
+    // constraint changes the relation set without moving any geometry. Without
+    // this entry the rebuild key stays the same and the new glyph is never
+    // created.
+    sceneData.sketchConstraints
+      .map(
+        (constraint) =>
+          `${constraint.constraintId}@${constraint.position.join(",")}`,
+      )
+      .join("|"),
   ].join("::");
 }
 

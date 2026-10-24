@@ -325,3 +325,108 @@ describe("resolveSnappedSketchPoint performance guards", () => {
     expect(speculativeSolveMock).toHaveBeenCalled();
   });
 });
+
+// Alignment guides are SNAPS, not hints (Fusion behaviour). The dotted line
+// promises "this point is on that level", so the committed point has to land
+// there — otherwise a rectangle cannot be drawn from four loose lines, which is
+// the workflow this exists for. It loses only to a snap that names an actual
+// feature (intersection, tangency, perpendicular/parallel host, axis lock).
+describe("alignment guides snap the point", () => {
+  // Inference references are LINE/CIRCLE/ARC endpoints (that is what
+  // collectInferenceVertices walks), so the reference vertices here are line
+  // endpoints. The draft start is far away so the axis lock does not fire.
+  function alignmentParameters() {
+    return {
+      plane_id: "ref-plane-xy",
+      plane_frame: null,
+      points: [],
+      lines: [
+        {
+          line_id: "body",
+          start_vertex_id: "b1",
+          end_vertex_id: "b2",
+          start_x: 2,
+          start_y: -20,
+          end_x: 2,
+          end_y: 20,
+          constraint: null,
+          is_construction: false,
+          generated_by: null,
+        },
+        {
+          // A horizontal reference at y = 4.
+          line_id: "href",
+          start_vertex_id: "h1",
+          end_vertex_id: "h2",
+          start_x: 30,
+          start_y: 4,
+          end_x: 40,
+          end_y: 4,
+          constraint: null,
+          is_construction: false,
+          generated_by: null,
+        },
+        {
+          // A vertical reference at x = 5.
+          line_id: "vref",
+          start_vertex_id: "v1",
+          end_vertex_id: "v2",
+          start_x: 5,
+          start_y: 30,
+          end_x: 5,
+          end_y: 40,
+          constraint: null,
+          is_construction: false,
+          generated_by: null,
+        },
+      ],
+      circles: [],
+      arcs: [],
+      polygons: [],
+      dimensions: [],
+      line_relations: [],
+      midpoint_anchors: [],
+      point_line_anchors: [],
+      projections: [],
+      texts: [],
+      profiles: [],
+    };
+  }
+
+  function resolveAgainst(local: [number, number]) {
+    return resolveSnappedSketchPoint({
+      rawPoint: { local, world: [local[0], local[1], 0] } as RawSketchPoint,
+      // Far from the cursor on both axes: no axis lock from the draft start.
+      draftStartLocal: [-40, -40],
+      sketchSnapCandidates: [],
+      sketchParameters: alignmentParameters(),
+      sketchConstraints: [],
+      dynamicSnapsEnabled: true,
+      filter: defaultSelectionFilter,
+      activeSketchPlaneId: "ref-plane-xy",
+      activeSketchPlaneFrame: null,
+      currentGridSpacing: 10,
+      worldUnitsPerPixel: 1,
+      gridSnapScreenDistancePx: 0,
+      sketchSnapDistance: 5,
+      labels,
+    });
+  }
+
+  it("lands on the alignment even when a line body is nearer", () => {
+    // Cursor 0.1 mm off the vertical line body but 0.9 mm off the y = 4 level:
+    // the body snap is closer, and it used to win — the guide was drawn and the
+    // point did not follow it.
+    const result = resolveAgainst([2.1, 4.9]);
+    expect(result.local[1]).toBeCloseTo(4, 6);
+  });
+
+  it("snaps to the intersection of a horizontal and a vertical guide", () => {
+    // Both alignments are within reach: x = 5 and y = 4. Closing a rectangle
+    // corner needs the intersection, not one axis.
+    const result = resolveAgainst([4.8, 4.4]);
+    expect(result.local[0]).toBeCloseTo(5, 6);
+    expect(result.local[1]).toBeCloseTo(4, 6);
+  });
+});
+

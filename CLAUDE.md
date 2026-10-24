@@ -269,6 +269,15 @@ rules exist to keep regressions from reaching the user:
   env-gated diagnostic: `PS_TRACE_FACES=1` dumps every walk step to the
   structured log under tag `exact_profiles`. Use it to diagnose face
   detection issues before adding one-off debug scaffolding.
+- **Use the built-in sketch-solve trace.** The sketch recompute has the
+  same contract: `PS_TRACE_SKETCH_SOLVE=1` logs the sketch geometry
+  before the solve, immediately after it, and at the end of the refresh
+  (tag `sketch_trace`). Sketch geometry is moved by TWO mechanisms — the
+  planegcs solve and the ad-hoc enforcement passes that follow it — so
+  "the sketch jumped" cannot be diagnosed without seeing which one did
+  it. Reach for this instead of adding temporary prints (precedent:
+  D-010, where the rectangle's height was shrinking because the *input*
+  to the solver had been corrupted by the ad-hoc dimension drive).
 - **Name the suites in the commit message.** State which suites ran and
   what was verified, per the never-commit-untested-code rule above.
 

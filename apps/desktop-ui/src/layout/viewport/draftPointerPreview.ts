@@ -88,7 +88,21 @@ export function renderDraftPointerPreview(params: DraftPointerPreviewParams) {
   params.clearPreviewArc();
   params.clearPreviewSlot();
   params.clearPreviewDimension();
-  params.clearPreviewInference();
+  // The inference guides are deliberately NOT cleared here when the line tool is
+  // active: they are the one preview element that survives across pointer moves
+  // (see renderLinePointerPreview). A pointer stream can arrive far more often
+  // than a frame, so disposing and rebuilding the dashed geometry on every event
+  // made the hint flicker — the dashes restarted their phase at over 100 Hz.
+  const lineDraft =
+    params.activeSketchTool !== "arc" &&
+    params.activeSketchTool !== "circle" &&
+    params.activeSketchTool !== "rectangle" &&
+    params.activeSketchTool !== "ellipse" &&
+    params.activeSketchTool !== "slot" &&
+    params.activeSketchTool !== "spline";
+  if (!lineDraft) {
+    params.clearPreviewInference();
+  }
 
   if (params.activeSketchTool === "arc") {
     renderArcPointerPreview(params);
@@ -392,6 +406,7 @@ function renderLinePointerPreview({
   isConstruction,
   previewLineRef,
   previewInferenceRef,
+  clearPreviewInference,
   inferenceLines,
 }: DraftPointerPreviewParams) {
   const preview = buildDraftLinePreview({
@@ -404,7 +419,38 @@ function renderLinePointerPreview({
   sketchGroup.add(preview);
 
   // Render inference / tracking guide lines as dotted alignment hints.
+  //
+  // These survive across pointer moves: when the guide COUNT is unchanged the
+  // existing lines are moved in place instead of being disposed and rebuilt. A
+  // pointer stream can arrive far more often than a frame, and recreating the
+  // dashed geometry on every event restarts the dash phase — the hint then reads
+  // as a rapid flicker rather than a steady dotted line.
   if (inferenceLines && inferenceLines.length > 0) {
+    const existing = previewInferenceRef.current;
+    if (existing.length === inferenceLines.length) {
+      for (let index = 0; index < existing.length; index += 1) {
+        const from = toWorldPoint(
+          activeSketchPlaneId,
+          inferenceLines[index].from,
+          activeSketchPlaneFrame,
+        );
+        const draft = toWorldPoint(
+          activeSketchPlaneId,
+          inferenceLines[index].draft,
+          activeSketchPlaneFrame,
+        );
+        const positions = existing[index].geometry.getAttribute(
+          "position",
+        ) as THREE.BufferAttribute;
+        positions.setXYZ(0, from[0], from[1], from[2]);
+        positions.setXYZ(1, draft[0], draft[1], draft[2]);
+        positions.needsUpdate = true;
+        existing[index].computeLineDistances();
+      }
+      return;
+    }
+
+    clearPreviewInference();
     const guides = buildInferenceGuideLines({
       guides: inferenceLines,
       planeId: activeSketchPlaneId,
@@ -412,5 +458,7 @@ function renderLinePointerPreview({
     });
     guides.forEach((g) => sketchGroup.add(g));
     previewInferenceRef.current = guides;
+  } else if (previewInferenceRef.current.length > 0) {
+    clearPreviewInference();
   }
 }

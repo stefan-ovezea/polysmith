@@ -98,11 +98,37 @@ bool test_translate_rectangle_rigid() {
     }
   }
 
+
+  // The constraint set must survive the translation intact. The rectangle's
+  // parallel/perpendicular relations already imply H/V on three of its four
+  // sides, so re-applying them above stores nothing (a duplicate would be a
+  // redundant constraint); what has to survive is the one stored H plus all
+  // three relations.
+  int axis_constraints = 0;
   for (const auto& line : after.lines) {
-    if (!expect(line.constraint.has_value(),
-                "translate: H/V constraints survive a pure translation")) {
+    if (!line.constraint.has_value()) {
+      continue;
+    }
+    ++axis_constraints;
+    const std::string axis_message =
+        "translate: the stored axis constraint is still the horizontal one - got " +
+        line.constraint.value() + " on " + line.id;
+    if (!expect(line.constraint.value() == "horizontal",
+                axis_message.c_str())) {
       return false;
     }
+  }
+  const std::string count_message =
+      "translate: exactly the one horizontal constraint survives - got " +
+      std::to_string(axis_constraints);
+  if (!expect(axis_constraints == 1, count_message.c_str())) {
+    return false;
+  }
+  const std::string relation_message =
+      "translate: the three parallel/perpendicular relations survive - got " +
+      std::to_string(after.line_relations.size());
+  if (!expect(after.line_relations.size() == 3, relation_message.c_str())) {
+    return false;
   }
 
   std::string reason;

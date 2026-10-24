@@ -1,11 +1,12 @@
 {
+  "configVersion": 2,
   "theme": "system",
   "displayUnits": "mm",
   "viewport": {
     "crosshair": "default",
     "showGrid": true,
     "showSketchGrid": true,
-    "showConstraints": false
+    "showConstraints": true
   },
   "ai": {
     "enabled": false,

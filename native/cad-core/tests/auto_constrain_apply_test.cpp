@@ -150,17 +150,21 @@ bool test_dimensions_close_the_size_gap() {
                  std::to_string(report.dofs_after))
                     .c_str());
 }
-// A rectangle's sketch has no solver_dofs, and that is DELIBERATE: solving it
-// would run diagnose() (planegcs' redundancy analysis) on every edit, which made
-// drawing take about a second per segment. The DOF badge falls back to the
-// per-entity counter for such sketches, which over-counts a closed profile (it
-// counts endpoints per entity, not unique vertices) - giving it a real number
-// cheaply is S3's job, not a diagnose per edit.
+// An axis-constrained sketch with nothing else in it must NOT run the solver on
+// every edit: solving runs planegcs' diagnose() (redundancy analysis), which made
+// drawing take about a second per segment when it was wired in. A single
+// horizontal line is the smallest such sketch - axis inference alone, no
+// relations, no driving dimensions - and it must report "no solver dof" (-1)
+// rather than a number.
+//
+// A RECTANGLE is deliberately NOT covered here: it carries parallel/perpendicular
+// relations that the solver models, so it does run the solver and reports its
+// real four DOF. See rectangle_constraints_test.
 bool test_axis_only_sketch_does_not_solve_per_edit() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
-  const DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 30.0);
+  const DocumentState document = manager.add_sketch_line(0.0, 0.0, 40.0, 0.0);
   const auto viewport = polysmith::core::build_viewport_state(document);
   return expect(viewport.solver_dofs == -1,
                 ("viewport: an axis-only sketch reports no solver dof (-1) - got " +

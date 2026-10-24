@@ -91,6 +91,8 @@ export type ThemeSelection =
 export type DisplayUnits = "mm" | "in";
 
 export interface AppConfig {
+  /** Config schema version, bumped when a DEFAULT changes (see appConfig.ts). */
+  configVersion?: number;
   theme: ThemeSelection;
   hotkeys: AppHotkeys;
   viewport: ViewportConfig;

@@ -180,6 +180,33 @@ function cloneConfig(config: AppConfig): AppConfig {
   return JSON.parse(JSON.stringify(config)) as AppConfig;
 }
 
+// Config schema version. Bump it whenever a *default* changes in a way an
+// already-saved file would otherwise never see.
+//
+// v2 — constraint glyphs (H/V/⊥/∥) are visible by default. They used to ship
+// hidden ("they read as noise on dense geometry"), which meant a sketch showed a
+// degree-of-freedom badge counting constraints the user could not see. A stored
+// `false` from before this version is therefore the OLD DEFAULT, not a choice,
+// so it is migrated to `true` once; a deliberate "off" saved afterwards keeps
+// its value because the file then carries `configVersion: 2`.
+const CONFIG_SCHEMA_VERSION = 2;
+
+function migrateConfig(input: Partial<AppConfig>): Partial<AppConfig> {
+  const storedVersion =
+    typeof input.configVersion === "number" ? input.configVersion : 1;
+  if (storedVersion >= CONFIG_SCHEMA_VERSION) {
+    return input;
+  }
+  return {
+    ...input,
+    configVersion: CONFIG_SCHEMA_VERSION,
+    viewport: {
+      ...(input.viewport ?? {}),
+      showConstraints: true,
+    } as Partial<AppConfig>["viewport"],
+  };
+}
+
 function mergeAppConfig(input: Partial<AppConfig>): AppConfig {
   const config = {
     ...defaultAppConfig,
@@ -263,7 +290,7 @@ function normalizeConfig(
   input: Partial<AppConfig>,
   themes: Record<string, ThemeConfig> = bundledThemes,
 ): AppConfig {
-  const config = mergeAppConfig(input);
+  const config = mergeAppConfig(migrateConfig(input));
   if (!isThemeAvailable(config.theme, themes)) {
     return {
       ...config,

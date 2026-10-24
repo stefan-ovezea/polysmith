@@ -44,3 +44,25 @@ bool vertex_is_anchored_to_line(const SketchFeatureParameters& parameters,
   }
   return false;
 }
+
+// True iff a stored relation pins this line's DIRECTION — a parallel or
+// perpendicular pair fixes the angle it must keep, exactly the way a
+// horizontal/vertical constraint does. `propagate_connected_point_move` uses
+// this to carry the far endpoint along when a shared corner moves: translating
+// a direction-constrained line keeps its length AND its angle, while moving only
+// the shared corner would rotate it (and then the relation pass would "repair"
+// the rotation by preserving the stretched length — which is how widening a
+// rectangle used to shrink its height).
+bool line_direction_is_related(const SketchFeatureParameters& parameters,
+                               const std::string& line_id) {
+  for (const auto& relation : parameters.line_relations) {
+    if (relation.kind != "parallel" && relation.kind != "perpendicular") {
+      continue;
+    }
+    if (relation.first_line_id == line_id ||
+        relation.second_line_id == line_id) {
+      return true;
+    }
+  }
+  return false;
+}

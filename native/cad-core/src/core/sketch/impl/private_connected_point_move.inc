@@ -74,6 +74,9 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
           moved_start ? line.end_x : line.start_x;
       const double previous_other_y =
           moved_start ? line.end_y : line.start_y;
+      // The corner's own displacement, needed by the relation branch below.
+      const double previous_moved_x = endpoint_x(line, endpoint_ref.is_start);
+      const double previous_moved_y = endpoint_y(line, endpoint_ref.is_start);
 
       set_endpoint(line, endpoint_ref.is_start, move.to_x, move.to_y);
 
@@ -122,6 +125,37 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
           line.start_x = line.end_x;
         } else if (!other_endpoint_anchored && moved_end) {
           line.end_x = line.start_x;
+        }
+      } else if (line_direction_is_related(parameters, line.id) &&
+                 (moved_endpoint_anchored || moved_point_shared) &&
+                 !other_endpoint_fixed && !other_endpoint_anchored) {
+        // The line's angle is pinned by a parallel/perpendicular relation
+        // instead of by an axis constraint, so carry the far endpoint the same
+        // way: translate the whole line by the part of the corner's movement
+        // that is perpendicular to its own direction. That keeps both its length
+        // and its angle, which is exactly what the relation asks for. Moving
+        // only the shared corner would rotate the line; the relation pass would
+        // then rotate it back while preserving the stretched length, and a
+        // rectangle widened by 20 mm would lose height instead.
+        const double direction_x = previous_other_x - previous_moved_x;
+        const double direction_y = previous_other_y - previous_moved_y;
+        const double direction_length =
+            std::sqrt(direction_x * direction_x + direction_y * direction_y);
+        if (direction_length > kMinimumSketchDimensionValue) {
+          const double normal_x = -direction_y / direction_length;
+          const double normal_y = direction_x / direction_length;
+          const double carry =
+              (move.to_x - previous_moved_x) * normal_x +
+              (move.to_y - previous_moved_y) * normal_y;
+          if (carry != 0.0) {
+            if (moved_start) {
+              line.end_x = previous_other_x + carry * normal_x;
+              line.end_y = previous_other_y + carry * normal_y;
+            } else {
+              line.start_x = previous_other_x + carry * normal_x;
+              line.start_y = previous_other_y + carry * normal_y;
+            }
+          }
         }
       }
 

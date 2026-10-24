@@ -216,7 +216,22 @@ Remaining for T1.3 (UI, next): the `rounded` rectangle mode in the toolbar split
 - **Tests**: `rectangleDraftPreview.test.ts` (outline maths), `draftCommit.test.ts` (the click commit forwards the radius, skips the plain rectangle command, forces the dimension drop), and `sketchRoundedRectangle.core.test.ts`, which drives the **real core** through the **real command builder**: four sides, four fillets at the requested radius, exactly one profile bounded by the four lines + four arcs, one undo removing all of it, and the oversized-radius refusal leaving nothing behind.
 - Docs: `IPC-Protocol.md` and `AI-CAD-Command-Language.md` now document the command; `pnpm lint:architecture` and the desktop `tsc --noEmit` are green.
 
+**2026-10-24 — the rectangle is constrained as a rectangle (D-010).** Reported from the app: *"there are no constraints shown on the rectangle and the rectangle constraints were not correct in the first place … it constrains the parallel of the sides instead of angle."*
+
+The tool used to let `add_sketch_line` infer H on both horizontal sides and V on both vertical ones — an axis-*locked* shape with no angle statement, no relations at all, no solver run (`solver_dofs` stayed `-1`), and therefore no relation glyphs in the viewport. It now stores the Fusion 360 set and nothing else: `horizontal(bottom)`, `parallel(top,bottom)`, `parallel(left,right)`, `perpendicular(bottom,right)` — four independent constraints over eight coordinates, `dofs = 4` (x, y, width, height), no conflicts and no redundants. Glyphs read `∥` and `⊥` (they were `//` and the letter `P`); the H stays on one side only.
+
+Three real defects surfaced on the way, all fixed in the same change:
+
+1. **Relation enforcement rewrote geometry that already satisfied it** — one ulp of drift on a shared corner, every recompute. It is a no-op now when the relation holds within `1e-12` relative, which makes a refresh of an exact rectangle bit-identical.
+2. **Driving one side of a closed profile rotated its neighbours instead of translating them.** `propagate_connected_point_move` only carried the far endpoint for H/V-constrained lines; relation-constrained lines fell through, leaving the neighbour diagonal (right side 28.28 mm instead of 20), and the solver then "repaired" that input by shrinking the height to 19.77 mm. The rule is now general: a line whose *direction* is pinned — H/V **or** a parallel/perpendicular relation — translates by the perpendicular component of the corner's movement.
+3. **Anchored points were enforced only after the solve**, although the solver models them. Halving a rectangle's height moved the whole rectangle up 5.76 mm because the anchored centre line was left behind. The anchor passes now also run before `solver.build` as a consistency pass.
+
+Two false alarms went with it: a healthy sketch no longer logs `sketch over-constrained` just because planegcs returned a negative DOF count (that count means "could not diagnose", not "conflicting"), and a dimension edit is no longer silently demoted to `driven` on such a sketch — demotion keys off the solver's reported conflicts/redundants instead of the sign of the count.
+
+New suite: `tests/rectangle_constraints_test.cpp` (constraint set, `dofs == 4`, bit-exact refresh, width drive, anchored-line height drive). `pnpm test:core` — **87/87 suites pass**. New diagnostic: `PS_TRACE_SKETCH_SOLVE=1` traces the sketch geometry before the solve, after it, and at the end of the refresh (`sketch_trace`) — that trace is what separated the ad-hoc enforcement's moves from the solver's.
+
 ---
+
 
 ## 5. Order and why
 

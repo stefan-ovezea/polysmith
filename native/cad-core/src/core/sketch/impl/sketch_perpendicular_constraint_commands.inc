@@ -30,10 +30,16 @@ void set_sketch_perpendicular_constraint(
   const double saved_line_end_x = line.end_x;
   const double saved_line_end_y = line.end_y;
 
-  // Clear the driven line's H/V constraint — it's incompatible with
-  // perpendicular. The reference line keeps its own constraints;
-  // enforcement will skip it silently (see drive_line_perpendicular_to_reference).
-  line.constraint = std::nullopt;
+  // Clear the driven line's H/V constraint only when the new relation still has
+  // to MOVE this line — an axis statement and a perpendicular relation can
+  // disagree, and then the axis wins unless it goes. When the corner is already
+  // square there is nothing to move, and wiping the axis would delete a real
+  // constraint: a rectangle's bottom side is horizontal AND already
+  // perpendicular to its right side, so applying Perpendicular there dropped the
+  // H and the reported DOF went UP from 4 to 5.
+  if (!lines_are_perpendicular(line, other_line)) {
+    line.constraint = std::nullopt;
+  }
 
   {
     const std::string pa = std::min(line_id, other_line_id.value());

@@ -1,3 +1,42 @@
+// Relative tolerance for "the relation already holds". A direction mismatch
+// smaller than this is invisible on screen and in every measurement taken from
+// the sketch, so driving the line to close it moves a coordinate that is
+// already correct - and a line endpoint is shared with its neighbours, so an
+// ulp of movement there shows up as a corner that drifts on every recompute.
+constexpr double kRelationDirectionTolerance = 1e-12;
+
+// sin of the angle between the two directions, scaled by both lengths.
+bool lines_are_parallel(const SketchLine& a, const SketchLine& b) {
+  const double a_dx = a.end_x - a.start_x;
+  const double a_dy = a.end_y - a.start_y;
+  const double b_dx = b.end_x - b.start_x;
+  const double b_dy = b.end_y - b.start_y;
+  const double a_length = std::hypot(a_dx, a_dy);
+  const double b_length = std::hypot(b_dx, b_dy);
+  if (a_length <= kMinimumSketchDimensionValue ||
+      b_length <= kMinimumSketchDimensionValue) {
+    return false;
+  }
+  return std::abs(a_dx * b_dy - a_dy * b_dx) <=
+         kRelationDirectionTolerance * a_length * b_length;
+}
+
+// cos of the angle between the two directions, scaled by both lengths.
+bool lines_are_perpendicular(const SketchLine& a, const SketchLine& b) {
+  const double a_dx = a.end_x - a.start_x;
+  const double a_dy = a.end_y - a.start_y;
+  const double b_dx = b.end_x - b.start_x;
+  const double b_dy = b.end_y - b.start_y;
+  const double a_length = std::hypot(a_dx, a_dy);
+  const double b_length = std::hypot(b_dx, b_dy);
+  if (a_length <= kMinimumSketchDimensionValue ||
+      b_length <= kMinimumSketchDimensionValue) {
+    return false;
+  }
+  return std::abs(a_dx * b_dx + a_dy * b_dy) <=
+         kRelationDirectionTolerance * a_length * b_length;
+}
+
 void drive_line_perpendicular_to_reference(SketchLine& driven_line,
                                            const SketchLine& reference_line,
                                            const SketchFeatureParameters& parameters) {
@@ -17,6 +56,12 @@ void drive_line_perpendicular_to_reference(SketchLine& driven_line,
   if (reference_length <= kMinimumSketchDimensionValue ||
       driven_length <= kMinimumSketchDimensionValue) {
     throw std::runtime_error("Perpendicular relations require non-zero length lines");
+  }
+
+  // Already square: rewriting the endpoint from a normalised direction would
+  // move it by an ulp even though the relation holds. Leave the geometry alone.
+  if (lines_are_perpendicular(driven_line, reference_line)) {
+    return;
   }
 
   const double current_dx = driven_line.end_x - driven_line.start_x;
@@ -67,6 +112,12 @@ void drive_line_parallel_to_reference(SketchLine& driven_line,
   if (reference_length <= kMinimumSketchDimensionValue ||
       driven_length <= kMinimumSketchDimensionValue) {
     throw std::runtime_error("Parallel relations require non-zero length lines");
+  }
+
+  // Already parallel: see the note in the perpendicular helper. Driving it
+  // anyway would nudge a shared corner by an ulp on every recompute.
+  if (lines_are_parallel(driven_line, reference_line)) {
+    return;
   }
 
   const double current_dx = driven_line.end_x - driven_line.start_x;

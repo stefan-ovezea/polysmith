@@ -1,4 +1,30 @@
 void refresh_sketch_derived_state(FeatureEntry& feature) {
+  // ── Flight recorder ────────────────────────────────────────────────
+  // A refresh can move geometry in a dozen places (solver, anchors, H/V, the
+  // relation passes, fillets, chamfers, point reconciliation, vertex rebuild).
+  // Every one of them is silent on success, so when a sketch "explodes" the user
+  // has nothing to report — that is literally what "exploded but nothing is in
+  // the log" means. This watches the whole refresh and, when the geometry
+  // changes drastically in ONE pass, names the vertices that moved and the
+  // constraint inventory, so a single occurrence is diagnosable.
+  struct RecorderVertex {
+    std::string id;
+    double x;
+    double y;
+  };
+  std::vector<RecorderVertex> recorder_before;
+  double recorder_length_before = 0.0;
+  if (feature.sketch_parameters.has_value()) {
+    const auto& params = *feature.sketch_parameters;
+    recorder_before.reserve(params.vertices.size());
+    for (const auto& vertex : params.vertices) {
+      recorder_before.push_back({vertex.id, vertex.x, vertex.y});
+    }
+    for (const auto& line : params.lines) {
+      recorder_length_before +=
+          std::hypot(line.end_x - line.start_x, line.end_y - line.start_y);
+    }
+  }
   if (!feature.sketch_parameters.has_value()) {
     return;
   }
@@ -218,9 +244,30 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         }
       }
 
+      // Anchored points are solver unknowns: a point anchored to a host line's
+      // midpoint carries that midpoint as a constraint, so the solver expects it
+      // to already BE there. Any ad-hoc drive (a dimension edit, a relation
+      // command) moves the host and leaves the anchored point behind, and the
+      // solver then has to absorb that residual — which it does by moving things
+      // that did not need to move. Measured: shrinking a rectangle from 20 to 10
+      // tall left the anchored centre line at its old height, and the solver
+      // "resolved" the 10 mm mismatch by translating the whole rectangle up by
+      // 5.76 mm. Pulling the anchors onto their hosts first leaves it with
+      // nothing to fix.
+      enforce_midpoint_anchors(*feature.sketch_parameters);
+      enforce_point_line_anchors(*feature.sketch_parameters);
+
       const auto solve_start = std::chrono::steady_clock::now();
       ConstraintSolver solver;
       solver.build(*feature.sketch_parameters);
+      if (sketch_solve_trace_enabled()) {
+        trace_sketch_geometry("before solve", *feature.sketch_parameters);
+      }
+      // Capture what the solver is allowed to touch before it runs: geometry
+      // that no constraint can reach must come back untouched (see
+      // solver_touch_guard.inc — DogLeg drags unconstrained lines around).
+      const SolverGeometrySnapshot solver_snapshot =
+          capture_solver_geometry(*feature.sketch_parameters);
       auto result = solver.solve();
       const auto solve_ms =
           std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -258,6 +305,54 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
               {line.start_x, line.start_y, line.end_x, line.end_y});
         }
         solver.apply(*feature.sketch_parameters);
+        if (sketch_solve_trace_enabled()) {
+          trace_sketch_geometry("after solve", *feature.sketch_parameters);
+        }
+        // Put back geometry the solver had no business moving. This is the
+        // "one dimension destroyed my sketch" guard: a driven dimension on one
+        // entity makes DogLeg drag unrelated loose lines (measured: two free
+        // lines, one collapsed, the other jumped to the origin).
+        {
+          const double restored_max = restore_unreachable_solver_geometry(
+              *feature.sketch_parameters, solver_snapshot);
+          if (restored_max > 1e-3) {
+            polysmith::core::log_warn(
+                "sketch",
+                "solver moved unconstrained geometry by " +
+                    std::to_string(restored_max) +
+                    " mm; restored it (only constraint-connected geometry may "
+                    "move)");
+          }
+        }
+        // Verify the solution before trusting it. planegcs drops redundant
+        // constraints from the system it solves, so the answer can violate
+        // constraints the user can see (see solver_touch_guard.inc). A rejected
+        // solution keeps the pre-solve geometry: the sketch does not move,
+        // rather than moving wrongly, and the log names what could not be met.
+        {
+          const std::string violation =
+              solver_constraint_violation(*feature.sketch_parameters);
+          // Degenerate geometry comes first: a collapsed line satisfies the
+          // relations trivially, so the constraint check above would pass it and
+          // the cleanup would then delete the line and its relations.
+          const std::string degenerate = solver_solution_collapses_geometry(
+              *feature.sketch_parameters, solver_snapshot);
+          if (!violation.empty() || !degenerate.empty()) {
+            restore_all_solver_geometry(*feature.sketch_parameters,
+                                        solver_snapshot);
+            // Report the failure as a solver failure, so the command that
+            // added the offending constraint demotes/refuses it instead of
+            // leaving a constraint the solver can only satisfy by destroying
+            // the sketch. This is what turns "the sketch is protected but still
+            // deformed" into "the constraint is refused with a message".
+            feature.sketch_parameters->solver_ok = false;
+            polysmith::core::log_warn(
+                "sketch",
+                "solver solution rejected (" +
+                    (degenerate.empty() ? violation : degenerate) +
+                    "); kept the geometry from before the solve");
+          }
+        }
 
         // Post-solve sanity checks.
         double post_total_length = 0.0;
@@ -349,14 +444,26 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       feature.sketch_parameters->solver_redundant_count =
           static_cast<int>(result.redundant.size());
 
-      if (result.conflicting.size() > 0 || result.redundant.size() > 0 ||
-          result.dofs < 0) {
+      // A negative dofs count is NOT evidence of over-constraint: planegcs
+      // returns -1 when it could not diagnose the system at all (no unknowns /
+      // empty diagnosis matrix) and params-minus-nonredundant otherwise. The
+      // signal that something is actually wrong is a conflicting or redundant
+      // constraint that the solver identified, so only those are reported as an
+      // error — this used to log "sketch over-constrained" (a red line the user
+      // sees in the Logs panel) for perfectly healthy sketches.
+      if (result.conflicting.size() > 0 || result.redundant.size() > 0) {
         polysmith::core::log_error(
             "sketch",
             "sketch over-constrained - dofs=" + std::to_string(result.dofs) +
                 " conflicting=" +
                 std::to_string(result.conflicting.size()) + " redundant=" +
                 std::to_string(result.redundant.size()));
+      } else if (result.dofs < 0) {
+        polysmith::core::log_debug(
+            "sketch",
+            "solver could not count the remaining degrees of freedom (" +
+                std::to_string(result.dofs) +
+                "); no conflicting or redundant constraint was found");
       }
       if (!result.ok()) {
         const char* reason =
@@ -382,6 +489,26 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       if (append_mode) {
         for (size_t i = 0; i < feature.sketch_parameters->vertices.size(); ++i) {
           feature.sketch_parameters->vertices[i].is_fixed = saved_fixed[i];
+        }
+
+        // Append mode freezes every point outside the focus entity, so the DOF
+        // count above belongs to a FROZEN system, not to the sketch: a rectangle
+        // reported 1° of freedom after any constraint command, and the badge
+        // showed that number. Measure the real count on the unfrozen sketch with
+        // a throwaway solver — it is only asked for a diagnosis, and its solution
+        // is never applied, so the geometry the freeze protected stays put.
+        //
+        // The extra solve only happens for COMMANDS (they are what set an append
+        // focus); dragging and dimension edits go through the plain path.
+        ConstraintSolver dof_solver;
+        dof_solver.build(*feature.sketch_parameters);
+        const auto dof_result = dof_solver.solve(GCS::DogLeg, /*diagnose=*/true);
+        if (dof_result.ok()) {
+          feature.sketch_parameters->solver_dofs = dof_result.dofs;
+          feature.sketch_parameters->solver_conflicting_count =
+              static_cast<int>(dof_result.conflicting.size());
+          feature.sketch_parameters->solver_redundant_count =
+              static_cast<int>(dof_result.redundant.size());
         }
       }
     }
@@ -516,6 +643,77 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   sync_driven_dimensions(*feature.sketch_parameters);
   rebuild_sketch_profiles(*feature.sketch_parameters);
   feature.parameters_summary = make_parameters_summary(feature.sketch_parameters.value());
+
+  // ── Flight recorder report ─────────────────────────────────────────
+  if (feature.sketch_parameters.has_value() && !recorder_before.empty()) {
+    const auto& parameters = *feature.sketch_parameters;
+    double recorder_length_after = 0.0;
+    for (const auto& line : parameters.lines) {
+      recorder_length_after +=
+          std::hypot(line.end_x - line.start_x, line.end_y - line.start_y);
+    }
+    double worst_move = 0.0;
+    std::string worst_id;
+    std::string worst_detail;
+    for (const auto& vertex : parameters.vertices) {
+      const auto it = std::find_if(
+          recorder_before.begin(), recorder_before.end(),
+          [&](const RecorderVertex& before) { return before.id == vertex.id; });
+      if (it == recorder_before.end()) continue;
+      const double moved =
+          std::hypot(vertex.x - it->x, vertex.y - it->y);
+      if (moved > worst_move) {
+        worst_move = moved;
+        worst_id = vertex.id;
+        worst_detail = "(" + std::to_string(it->x) + ", " +
+                       std::to_string(it->y) + ")->(" +
+                       std::to_string(vertex.x) + ", " +
+                       std::to_string(vertex.y) + ")";
+      }
+    }
+    // "Drastic" is measured against what the sketch could legitimately be: its
+    // own size plus the largest dimension the user asked for. A dimension edit
+    // moves geometry by design (a 400 mm width on a 160 mm sketch is fine); an
+    // explosion leaves the sketch many times bigger than anything requested.
+    double max_driving_dimension = 0.0;
+    int driving_dimensions = 0;
+    for (const auto& dimension : parameters.dimensions) {
+      if (dimension.driven ||
+          (dimension.is_auto && dimension.expression.empty())) {
+        continue;
+      }
+      ++driving_dimensions;
+      max_driving_dimension =
+          std::max(max_driving_dimension, std::abs(dimension.value));
+    }
+    const double expected_scale = recorder_length_before + max_driving_dimension;
+    const double explosion_limit = 4.0 * expected_scale + 100.0;
+    const bool exploded =
+        (recorder_length_before > 1.0 &&
+         recorder_length_after > explosion_limit) ||
+        (recorder_length_before > 100.0 &&
+         recorder_length_after < recorder_length_before / 4.0) ||
+        worst_move > explosion_limit;
+    if (exploded) {
+      polysmith::core::log_error(
+          "sketch",
+          "sketch geometry changed drastically in one refresh: total line "
+          "length " + std::to_string(recorder_length_before) + " -> " +
+              std::to_string(recorder_length_after) + " mm, worst vertex " +
+              worst_id + " moved " + std::to_string(worst_move) + " mm " +
+              worst_detail + " | lines=" +
+              std::to_string(parameters.lines.size()) + " circles=" +
+              std::to_string(parameters.circles.size()) + " arcs=" +
+              std::to_string(parameters.arcs.size()) + " driving_dims=" +
+              std::to_string(driving_dimensions) + " relations=" +
+              std::to_string(parameters.line_relations.size()) + " anchors=" +
+              std::to_string(parameters.midpoint_anchors.size() +
+                             parameters.point_line_anchors.size()) +
+              " fillets=" + std::to_string(parameters.fillets.size()) +
+              " constraints=" +
+              std::to_string(parameters.constraints.size()));
+    }
+  }
 }
 
 void refresh_sketch_with_append_focus(FeatureEntry& feature,

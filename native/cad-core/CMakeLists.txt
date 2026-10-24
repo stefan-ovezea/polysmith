@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 project(cad_core LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -607,6 +607,11 @@ polysmith_add_core_test(cad_core_select_feature_profiles_test tests/select_featu
 polysmith_add_core_test(cad_core_axis_constraint_driven_test tests/axis_constraint_driven_test.cpp)
 polysmith_add_core_test(cad_core_auto_constraint_detection_test tests/auto_constraint_detection_test.cpp)
 polysmith_add_core_test(cad_core_auto_constrain_apply_test tests/auto_constrain_apply_test.cpp)
+
+# What a rectangle IS as constraints — one horizontal, two parallel pairs, one
+# 90 degree angle, DOF 4, and no coordinate drift when the relations already
+# hold. Pinned separately from the tool so the contract survives refactors.
+polysmith_add_core_test(cad_core_rectangle_constraints_test tests/rectangle_constraints_test.cpp)
 
 # Constraint-completion regression suite — symmetric, collinear,
 # midpoint, tangent pairs, and parametric anchor-t enforcement.

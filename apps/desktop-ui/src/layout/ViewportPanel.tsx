@@ -76,6 +76,7 @@ import {
   lineCommitRelations,
 } from "./viewport/lineCommitRelations";
 import { buildSplineDraftPreview } from "./viewport/splineDraftPreview";
+import { buildInferenceGuideLines } from "./viewport/draftLinePreview";
 import { usePendingLineCommitRelations } from "./viewport/lineCommitRelationEffects";
 import {
   selectionRectOverlayFromDrag,
@@ -631,6 +632,13 @@ export function ViewportPanel({
   const previewSplineRef = useRef<THREE.Group | null>(null);
   /** Inference / tracking guide lines (dotted alignment hints). */
   const previewInferenceRef = useRef<THREE.Line[]>([]);
+  // The alignment hints the last pointer move resolved. The guides themselves
+  // are scene objects that any preview clear or scene rebuild can drop, so the
+  // render loop re-creates them from this record instead of waiting for the next
+  // mouse movement (otherwise the hint only appeared while the mouse was moving).
+  const draftInferenceLinesRef = useRef<
+    Array<{ from: [number, number]; draft: [number, number] }> | null
+  >(null);
   const trimSegmentHighlightRef = useRef<THREE.Line | null>(null);
   const trimArcHighlightRef = useRef<THREE.Line | null>(null);
   // Corner-trim hover preview: the two ghost segments + corner marker
@@ -3440,6 +3448,39 @@ export function ViewportPanel({
       requestRender();
     }
 
+    // Re-creates the draft's inference guides when something else removed them
+    // (preview clear, commit, scene rebuild). Cheap: it returns immediately when
+    // the guides are still in the sketch group, which is the normal case.
+    function restoreDraftInferenceGuides() {
+      if (
+        activeSketchToolRef.current !== "line" ||
+        lineDraftStartRef.current === null
+      ) {
+        return;
+      }
+      const guides = draftInferenceLinesRef.current;
+      const sketchGroup = sketchGroupRef.current;
+      const planeId = activeSketchPlaneIdRef.current;
+      if (!guides || guides.length === 0 || !sketchGroup || !planeId) {
+        return;
+      }
+      const existing = previewInferenceRef.current;
+      if (
+        existing.length === guides.length &&
+        existing.every((line) => line.parent === sketchGroup)
+      ) {
+        return;
+      }
+      clearPreviewInference();
+      const rebuilt = buildInferenceGuideLines({
+        guides,
+        planeId,
+        planeFrame: activeSketchPlaneFrameRef.current,
+      });
+      rebuilt.forEach((line) => sketchGroup.add(line));
+      previewInferenceRef.current = rebuilt;
+    }
+
     function render() {
       controls.update();
       updateDynamicGrids({
@@ -3512,10 +3553,11 @@ export function ViewportPanel({
           (vertexWorldUnitsPerPixel * (boosted ? 4 : 3)) / radius,
         );
       }
-      // Constraint glyphs (Fix/H/V/…) are OFF by default — they sit on
-      // top of dense sketch geometry and read as noise. The toolbar
-      // toggle flips this ref; the override runs per frame so it also
-      // covers sprites rebuilt by scene sync.
+      // Constraint glyphs (H/V/⊥/∥/Fix/…) are ON by default — a sketch that
+      // shows a degree-of-freedom badge while hiding the constraints it is
+      // counting is unreadable, and Fusion draws them too. The viewport toolbar
+      // toggle can still hide them on dense geometry; the override runs per frame
+      // so it also covers sprites rebuilt by scene sync.
       for (const obj of sketchConstraintObjectsRef.current) {
         obj.visible = showConstraintsRef.current;
       }
@@ -3525,6 +3567,13 @@ export function ViewportPanel({
         console.warn("renderDraftDimensions error:", err);
         clearDraftDimGroup();
       }
+      // Keep the draft's inference guides alive between pointer moves: they are
+      // built by the pointer-move path, so a commit, a pointer-up or a scene
+      // rebuild removed them until the next movement, and the hint only showed
+      // while the mouse was actually moving. Re-creating them here — from the
+      // last resolved snap, and only while a line draft is in progress — makes
+      // them persist for as long as the draft does.
+      restoreDraftInferenceGuides();
 
       renderer.render(scene, camera);
       renderViewCube();
@@ -3554,8 +3603,7 @@ export function ViewportPanel({
     }
 
 
-    async function performRectangleSelect(drag: SelectionDrag, additive: boolean) {
-      const camera = cameraRef.current;
+    async function performRectangleSelect(drag: SelectionDrag, additive: boolean) {      const camera = cameraRef.current;
       const renderer = rendererRef.current;
       if (!camera || !renderer) return;
 
@@ -3807,6 +3855,7 @@ export function ViewportPanel({
         splineDraftPolesRef,
         previewDimensionRef,
         previewInferenceRef,
+        draftInferenceLinesRef,
         clearPreviewLine,
         clearPreviewCircle,
         clearPreviewArc,

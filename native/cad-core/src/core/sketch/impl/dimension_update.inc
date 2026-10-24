@@ -118,16 +118,15 @@ void update_sketch_dimension(FeatureEntry& feature,
   // solver, failure is a strong signal — DogLeg rarely fails on
   // under-constrained sketches.
   //
-  // solver_dofs == -1 means the solver hasn't run yet (default value);
-  // it must not be mistaken for over-constrained (dofs < 0).
+  // The test is the solver's OWN diagnosis (conflicting / redundant / not ok),
+  // never the SIGN of the DOF count: planegcs reports a negative count both when
+  // it could not diagnose at all (-1) and as params-minus-nonredundant for an
+  // over-constrained-but-consistent system, so demoting on a negative count
+  // silently turned a healthy dimension into a reference one.
   auto fallback_to_driven = [&]() {
     auto& p = *feature.sketch_parameters;
-    bool solver_ran = p.solver_dofs != -1;
-    if (solver_ran &&
-        (p.solver_conflicting_count > 0 ||
-         p.solver_redundant_count > 0 ||
-         p.solver_dofs < 0 ||
-         !p.solver_ok)) {
+    if (p.solver_conflicting_count > 0 || p.solver_redundant_count > 0 ||
+        !p.solver_ok) {
       dimension.driven = true;
       refresh_sketch_derived_state(feature);
       return true;

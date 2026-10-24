@@ -30,10 +30,15 @@ void set_sketch_parallel_constraint(
   const double saved_line_end_x = line.end_x;
   const double saved_line_end_y = line.end_y;
 
-  // Clear the driven line's H/V constraint — it's incompatible with
-  // parallel. The reference line keeps its own constraints;
-  // enforcement will skip it silently.
-  line.constraint = std::nullopt;
+  // Clear the driven line's H/V constraint only when the new relation still has
+  // to MOVE this line — an axis statement and a parallel relation can disagree,
+  // and then the axis wins unless it goes. When the lines are already parallel
+  // there is nothing to move, and wiping the axis would delete a real constraint
+  // (a rectangle's bottom side is horizontal AND already parallel to its top
+  // side).
+  if (!lines_are_parallel(line, other_line)) {
+    line.constraint = std::nullopt;
+  }
 
   {
     const std::string pa = std::min(line_id, other_line_id.value());

@@ -616,7 +616,11 @@ function commitActiveSketchDraft(params: ViewportPointerUpParams) {
   const sketchPoint = params.resolveSnappedSketchPoint(
     rawPoint,
     params.lineDraftStartRef.current,
-    { inferenceSnapsEnabled: false },
+    // The alignment guide is a SNAP, so the commit must resolve exactly like the
+    // preview did. Passing `false` here meant the dotted line showed an
+    // alignment while the committed point took the raw click position — a
+    // rectangle drawn from four loose lines could never close.
+    { inferenceSnapsEnabled: true },
   );
   params.setSketchSnapLabel(sketchPoint.snapLabel);
   commitDraftPointerUp({

@@ -20,6 +20,21 @@ void set_sketch_line_constraint(FeatureEntry& feature,
     throw std::runtime_error("Sketch line not found: " + line_id);
   }
 
+  // A rectangle's sides are horizontal/vertical because of its parallel and
+  // perpendicular relations, so applying the axis constraint on top of that adds
+  // a duplicate. Skip it: the relations already show the glyph, and the
+  // duplicate is what made the DOF badge drop from 4 to 1 after "Horizontal".
+  if (constraint.has_value() &&
+      line_it->constraint != constraint &&
+      axis_constraint_is_implied(*feature.sketch_parameters, line_id,
+                                 constraint.value())) {
+    polysmith::core::log_info(
+        "sketch", constraint.value() + " on " + line_id +
+                      " is already implied by its parallel/perpendicular "
+                      "relation; not stored as a duplicate");
+    return;
+  }
+
   const double previous_start_x = line_it->start_x;
   const double previous_start_y = line_it->start_y;
   const double previous_end_x = line_it->end_x;
@@ -73,7 +88,8 @@ void set_sketch_line_constraint(FeatureEntry& feature,
     const bool solver_ran = params.solver_dofs != -1;
     if (solver_ran &&
         (params.solver_conflicting_count > 0 ||
-         params.solver_redundant_count > 0 || params.solver_dofs < 0)) {
+         params.solver_redundant_count > 0 || params.solver_dofs < 0 ||
+         !params.solver_ok)) {
       line_it->constraint_driven = true;
       polysmith::core::log_info(
           "sketch", "constraint on " + line_id +

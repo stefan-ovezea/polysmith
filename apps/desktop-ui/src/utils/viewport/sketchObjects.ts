@@ -657,37 +657,6 @@ function makeDimensionLabelSprite(
   });
 }
 
-function makeConstraintBadgeSprite(text: string, isSelected: boolean) {
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return fallbackCanvasSprite(canvas);
-  }
-
-  canvas.width = 44;
-  canvas.height = 44;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.shadowColor = themeColor(
-    "--cad-sketch-label-shadow",
-    "rgba(0, 0, 0, 0.55)",
-  );
-  context.shadowBlur = 3;
-  context.fillStyle = isSelected
-    ? themeColor("--cad-sketch-label-selected", "#e7fbff")
-    : themeColor(
-        "--cad-sketch-dimension-label",
-        "rgba(211, 232, 235, 0.82)",
-      );
-  context.font = '700 24px "Space Grotesk", sans-serif';
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
-
-  return spriteFromCanvas({
-    canvas,
-    scale: [6, 6, 1],
-  });
-}
 
 export function buildSketchDimensionObject(
   dimension: SketchDimensionScene,
@@ -813,12 +782,15 @@ export function buildSketchDimensionObject(
 export function buildSketchConstraintObject(constraint: SketchConstraintScene) {
   // Driven (reference) constraints: wrap label in parentheses like "(V)".
   const labelText = constraint.driven ? `(${constraint.label})` : constraint.label;
-  const badge = makeConstraintBadgeSprite(
-    labelText,
-    constraint.isSelected,
-  );
+  // Painted with the DIMENSION label sprite, and drawn at the dimension label's
+  // render order, on purpose: those sprites are known to be visible in the app,
+  // while the old fixed 44x44 badge sprite was not. Keeping the two on one code
+  // path means a constraint glyph cannot be invisible for a reason a dimension
+  // label is not — and the measured text width also stops long labels ("(H)")
+  // from being clipped by a fixed box.
+  const badge = makeDimensionLabelSprite(labelText, constraint.isSelected);
   badge.position.set(...constraint.position);
-  badge.renderOrder = 8;
+  badge.renderOrder = 7;
   badge.userData.basePosition = constraint.position;
   badge.userData.sketchConstraintId = constraint.constraintId;
   badge.userData.sketchConstraintKind = constraint.kind;
