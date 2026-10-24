@@ -3,6 +3,9 @@
 #include <string>
 
 namespace polysmith::core {
+// Writes the reason for an abnormal exit (terminate / unexpected exception) to
+// %APPDATA%/polysmith/cad_core_crash.log. Safe to call once at startup.
+void install_crash_logger();
 
 enum class LogLevel {
   Debug,

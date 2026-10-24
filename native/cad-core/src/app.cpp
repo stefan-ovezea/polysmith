@@ -210,6 +210,14 @@ void CadCoreApp::run() {
                         std::to_string(generators.size()) + "): " + listed);
   }
 
+  // Crash evidence. A thrown std::exception is handled below and answered with
+  // an error event, so a process that DISAPPEARS is either an access violation
+  // or a std::terminate (an exception escaping a noexcept path or a destructor).
+  // Neither leaves anything in the UI, and the in-app log is gone with the
+  // process. Write the reason to a file first: one reproduction then names the
+  // cause instead of "it crashed".
+  polysmith::core::install_crash_logger();
+
   std::string line;
   while (std::getline(std::cin, line)) {
     if (line.empty()) {
