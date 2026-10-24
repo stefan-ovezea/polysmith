@@ -81,6 +81,7 @@ export function useDimensionEditorEffects({
     ) {
       return;
     }
+    const dimensionChanged = draftSeededFor !== selectedSketchDimension.dimensionId;
     draftSeededForRef.current = selectedSketchDimension.dimensionId;
 
     setDimensionDraftValue(
@@ -91,6 +92,21 @@ export function useDimensionEditorEffects({
             selectedSketchDimensionValue,
           ),
     );
+
+    // Landing on a DIFFERENT dimension must leave the value selected, so typing
+    // replaces it: the select-on-open effect runs before this value lands, which
+    // used to leave the caret after the old text. Same dimension: leave the caret
+    // alone, the user is editing.
+    if (dimensionChanged) {
+      window.requestAnimationFrame(() => {
+        const input = dimensionInputRef.current;
+        if (!input) {
+          return;
+        }
+        input.focus();
+        input.select();
+      });
+    }
   }, [
     selectedSketchDimensionValue,
     selectedSketchDimensionExpression,

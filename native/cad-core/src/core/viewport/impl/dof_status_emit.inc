@@ -16,12 +16,27 @@
         // freshly drawn rectangle as 12 DOF when the solver says 4. Measure it
         // here instead of guessing: one solve on a read-only path is cheap next
         // to showing a number that is wrong by eight.
+        // Measured at most ONCE per document revision: a viewport build happens
+        // on every drag frame and every dimension keystroke, and a full solver
+        // pass per build is what made editing crawl. The cache key covers what
+        // can change the answer; a new revision invalidates it.
         if (solver_dofs < 0) {
-          polysmith::core::ConstraintSolver solver;
-          solver.build(feat.sketch_parameters.value());
-          const auto measured = solver.solve();
-          if (measured.ok()) {
-            solver_dofs = measured.dofs;
+          static std::string measured_key;
+          static int measured_dofs = -1;
+          const std::string key =
+              feat.id + ":" + std::to_string(document->geometry_revision) +
+              ":" + std::to_string(feat.sketch_parameters->constraints.size()) +
+              ":" + std::to_string(feat.sketch_parameters->dimensions.size()) +
+              ":" + std::to_string(feat.sketch_parameters->line_relations.size());
+          if (key != measured_key || measured_dofs < 0) {
+            polysmith::core::ConstraintSolver solver;
+            solver.build(feat.sketch_parameters.value());
+            const auto measured = solver.solve();
+            measured_key = key;
+            measured_dofs = measured.ok() ? measured.dofs : -1;
+          }
+          if (measured_dofs >= 0) {
+            solver_dofs = measured_dofs;
           }
         }
         solver_conflicting_count =
