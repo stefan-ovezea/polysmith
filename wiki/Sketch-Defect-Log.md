@@ -495,3 +495,27 @@ This belongs as a C++ suite (`tests/` alongside `sketch_profile_test.cpp`, asser
 ## How to add an entry
 
 Copy the D-001 shape: **Reported** (what the user did and saw), **Setup** (the exact construction, geometry numbers), **Expected / Actual / Status**, **Evidence** (command transcript, log lines, or "in-app only"), and **Hypothesis** clearly marked as unverified. Never promote a hypothesis to a finding without a reproduction — the point of this file is that it can be trusted.
+
+## D-009 — A Horizontal constraint on a loose line is demoted to `driven` as "over-constrained" (fixed)
+
+**Found:** 2026-10-24, while building S11's candidate detection. Its dedupe test applied a proposal the way the real setter does, then looked for it again — and found the constraint had been demoted instead of applied.
+
+**Symptoms.** One loose line, 0.4 deg off horizontal, no other constraints, endpoints free. `set_sketch_line_constraint("line-1", "horizontal")` logged:
+
+```
+"constraint on line-1 marked driven (solver reported over-constrained)"
+```
+
+and stored the constraint `driven`, so it never drove geometry: a user who applies Horizontal to a slightly tilted line gets an inert constraint and the line stays tilted. A line has four DOF and one axis constraint removes one, so the sketch could not have been over-constrained.
+
+**Root cause.** The demotion test in `sketch_axis_constraint_commands.inc` was `conflicting_count > 0 || redundant_count > 0 || solver_dofs < 0`. After `refresh_sketch_with_append_focus`, `solver_dofs` was still **-1** — its DEFAULT, meaning "the solver has not run" — so `-1 < 0` read as over-constrained. `finalize_new_dimension` in `dimensions.inc` documents exactly this trap and guards it with `const bool solver_ran = solver_dofs != -1;`; the axis path was missing that guard.
+
+**Fix.** The same guard: -1 means "unknown, nothing to demote". A real conflict (conflicting or redundant counts, or a negative count from a failed solve) still demotes to `driven`.
+
+**Test.** `tests/axis_constraint_driven_test.cpp` — Horizontal on a line 0.4 deg off straight: not demoted, and the line comes out horizontal (dy < 1e-6); Vertical likewise; re-applying the same axis constraint is not a new conflict. The first assertion failed before the fix and passes after.
+
+**Separate observation, not fixed.** On this path the solver genuinely never runs (`solver_dofs` stays -1, conflicting/redundant stay -1): a lone line is straightened by the deterministic enforcement, not by planegcs. Defensible for one unconnected line, but the DOF badge has nothing to show for it, and every reader of `solver_dofs` must keep handling -1. S3 (one DOF source) is the right place to decide whether the solver should run here at all.
+
+**Why it mattered beyond the bug.** S11's acceptance rule is "add a candidate, keep it only if the solver's DOF drops". With this defect, `try_add` would have rejected every good candidate and auto-constrain would have looked broken for an unrelated reason.
+
+---
