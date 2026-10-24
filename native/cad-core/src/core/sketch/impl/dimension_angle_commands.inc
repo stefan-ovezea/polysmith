@@ -301,12 +301,39 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
     stored_pivot_x = virtual_pivot_x;
     stored_pivot_y = virtual_pivot_y;
   }
+  // A dimension whose angle is ALREADY determined by the existing constraints
+  // adds no information, and storing it as driving is what has been destroying
+  // sketches: the measured angle is a near miss (89.9997 deg against a true
+  // Perpendicular), which cannot be satisfied, so planegcs resolves it by
+  // collapsing a line. Reference-only is what it actually is, and the value still
+  // displays and re-measures. Precedent: Fusion adds such a dimension as a driven
+  // one and says so.
+  const bool pair_is_related = std::any_of(
+      parameters.line_relations.begin(),
+      parameters.line_relations.end(),
+      [&](const SketchLineRelation& relation) {
+        if (relation.kind != "parallel" && relation.kind != "perpendicular") {
+          return false;
+        }
+        return (relation.first_line_id == first_line_id &&
+                relation.second_line_id == second_line_id) ||
+               (relation.first_line_id == second_line_id &&
+                relation.second_line_id == first_line_id);
+      });
+  const auto& first_line = require_line(parameters, first_line_id);
+  const auto& second_line = require_line(parameters, second_line_id);
+  const bool both_axis_constrained =
+      first_line.constraint.has_value() && second_line.constraint.has_value();
+  const bool angle_already_determined = pair_is_related || both_axis_constrained;
   parameters.dimensions.push_back(SketchDimension{
       .id = "dim-angle-" + first + "-" + second,
       .kind = "angle",
       .entity_id = first_line_id,
       .secondary_entity_id = second_line_id,
       .value = value.value_or(current_angle),
+      // See above: a determined angle is a reference dimension, never a driving
+      // constraint that can fight the relations.
+      .driven = angle_already_determined,
       .is_auto = true,
       .pivot_x = stored_pivot_x,
       .pivot_y = stored_pivot_y,

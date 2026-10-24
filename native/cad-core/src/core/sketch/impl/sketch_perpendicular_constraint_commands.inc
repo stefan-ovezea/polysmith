@@ -22,6 +22,11 @@ void set_sketch_perpendicular_constraint(
 
   auto& other_line = require_line(parameters, other_line_id.value());
 
+  // Snapshot the WHOLE sketch: a refusal (or an enforcement failure) can have
+  // moved vertices through propagation before the refresh, and restoring only
+  // the driven line left the rest of the sketch sheared.
+  const SolverGeometrySnapshot sketch_before = capture_solver_geometry(parameters);
+
   // Save the driven line's full state so we can roll back completely
   // if enforcement fails.
   const auto saved_line_constraint = line.constraint;
@@ -109,6 +114,12 @@ void set_sketch_perpendicular_constraint(
     line.end_x = saved_line_end_x;
     line.end_y = saved_line_end_y;
     line.constraint = saved_line_constraint;
+    restore_all_solver_geometry(parameters, sketch_before);
+    try {
+      refresh_sketch_derived_state(feature);
+    } catch (const std::exception&) {
+      // Reporting the original refusal matters more than a refresh hiccup.
+    }
     throw;
   }
 }
