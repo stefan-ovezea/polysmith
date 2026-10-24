@@ -41,7 +41,12 @@ public:
     void build(const SketchFeatureParameters& params);
 
     /// Run the solver. Returns status + diagnostics.
-    SolveResult solve(GCS::Algorithm alg = GCS::DogLeg);
+    // `diagnose` runs planegcs' redundancy analysis, which is by far the most
+    // expensive part of a solve (it re-solves subsystems per candidate). It is
+    // only needed when the caller wants conflict/redundant counts or a DOF
+    // number; a plain geometry enforcement pass does not.
+    SolveResult solve(GCS::Algorithm alg = GCS::DogLeg,
+                      bool diagnose = true);
 
     /// Write the solved point coordinates back into the sketch parameters.
     /// Call after a successful solve().

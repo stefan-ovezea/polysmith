@@ -1,4 +1,5 @@
-ConstraintSolver::SolveResult ConstraintSolver::solve(GCS::Algorithm alg) {
+ConstraintSolver::SolveResult ConstraintSolver::solve(GCS::Algorithm alg,
+                                             bool diagnose) {
     SolveResult result;
     if (!system_) {
         result.status = GCS::Failed;
@@ -25,8 +26,15 @@ ConstraintSolver::SolveResult ConstraintSolver::solve(GCS::Algorithm alg) {
         result.status = static_cast<GCS::SolveStatus>(status);
     }
 
+    if (!diagnose) {
+        if (result.ok()) {
+            system_->applySolution();
+        }
+        last_result_ = result;
+        return result;
+    }
+
     // Run diagnose to get DOF and conflicting/redundant info.
-    system_->diagnose(alg);
     result.dofs = system_->dofsNumber();
 
     GCS::VEC_I conflicting, redundant, partially_redundant;

@@ -221,9 +221,29 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
         }
       }
 
+      const auto solve_start = std::chrono::steady_clock::now();
       ConstraintSolver solver;
       solver.build(*feature.sketch_parameters);
       auto result = solver.solve();
+      const auto solve_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now() - solve_start)
+              .count();
+      if (solve_ms >= 100) {
+        // Timing evidence, not chatter: the solver's diagnose() is the expensive
+        // part and it grows with the constraint count, so a sketch that feels
+        // slow per edit will show its cost here.
+        polysmith::core::log_warn(
+            "sketch", "solve took " + std::to_string(solve_ms) + " ms for " +
+                          std::to_string(feature.sketch_parameters->lines.size()) +
+                          " lines, " +
+                          std::to_string(
+                              feature.sketch_parameters->constraints.size()) +
+                          " constraints, " +
+                          std::to_string(
+                              feature.sketch_parameters->dimensions.size()) +
+                          " dimensions");
+      }
       if (result.ok()) {
         // Snapshot pre-solve line coordinates so we can roll back
         // if the solver produces runaway geometry (a mathematically
