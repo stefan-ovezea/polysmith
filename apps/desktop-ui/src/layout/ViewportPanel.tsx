@@ -1349,7 +1349,15 @@ export function ViewportPanel({
       setSketchDiagnostics(null);
       return;
     }
-    void onRefreshSketchDiagnostics(activeSketchFeatureId);
+    // Debounced: this fires on EVERY geometry change, and each run is a core
+    // round trip plus a store write that re-renders this panel. With a polyline
+    // that was one request and one re-render per segment while drawing, which is
+    // exactly when the UI must not be doing extra work. 250 ms is short enough
+    // that the counts are current by the time the user looks at them.
+    const timer = window.setTimeout(() => {
+      void onRefreshSketchDiagnostics(activeSketchFeatureId);
+    }, 250);
+    return () => window.clearTimeout(timer);
   }, [
     activeSketchFeatureId,
     geometryRevision,
