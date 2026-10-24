@@ -2,6 +2,14 @@
     system_ = std::make_unique<GCS::System>();
     system_->clear();
 
+    // planegcs prints "Sketcher::RedundantSolving-DogLeg" / "Sketcher Redundant
+    // solving: N redundants" to stderr from inside diagnose(), once per solve.
+    // Each line becomes a Tauri event and a React log entry, so an auto-constrain
+    // pass (dozens of solves) or a dimension edit floods the UI and makes it
+    // crawl. The information is already surfaced through the conflict/redundant
+    // counts, so the raw channel goes quiet here.
+    system_->debugMode = GCS::NoDebug;
+
     // Give the solver more iterations than the planegcs default (100).
     // LM in particular benefits from extra headroom on under-constrained
     // sketches where the error surface is flat and progress is slow.

@@ -318,6 +318,9 @@ fn spawn_stderr_thread(app: AppHandle, stderr: impl std::io::Read + Send + 'stat
         for line_result in reader.lines() {
             match line_result {
                 Ok(line) => {
+                    if is_library_noise_line(&line) {
+                        continue;
+                    }
                     if !is_structured_core_log_line(&line) {
                         let _ = emit_core_log(&app, &line);
                     }
@@ -329,6 +332,18 @@ fn spawn_stderr_thread(app: AppHandle, stderr: impl std::io::Read + Send + 'stat
             }
         }
     });
+}
+
+/// Noise from third-party libraries that is not ours to log and is expensive to
+/// forward: every line becomes a Tauri event and a React log entry, so planegcs'
+/// per-solve diagnostics ("Sketcher::RedundantSolving-DogLeg",
+/// "Sketcher Redundant solving: N redundants") turned a dimension edit into
+/// hundreds of state updates and the app crawled. The same information already
+/// reaches the UI as structured conflict/redundant counts from the sketch core.
+fn is_library_noise_line(line: &str) -> bool {
+    line.starts_with("Sketcher::RedundantSolving")
+        || line.starts_with("Sketcher Redundant solving")
+        || line.starts_with("Sketcher::RedundantSolving-DogLeg")
 }
 
 fn is_structured_core_log_line(line: &str) -> bool {

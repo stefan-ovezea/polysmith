@@ -4741,14 +4741,33 @@ export function ViewportPanel({
             setDimensionLabelPositions({});
           });
         } else {
-          const dimId = `dim-point-distance-${commit.pointAId}-${commit.pointBId}-${commit.axis}`;
           void addSketchVertexDistanceDimensionRef.current(
             commit.pointAId,
             commit.pointBId,
             commit.axis,
           ).then(() => {
+            // Do NOT guess the id from the pick: the core owns it and its
+            // spelling is not the UI's to assume (a guessed
+            // "dim-point-distance-<a>-<b>-x" produced "Sketch dimension not
+            // found" and an error in the Logs panel on every placement). Read
+            // the real id back out of the document instead; if this round trip
+            // has not delivered the dimension yet, skip the label placement -
+            // it is cosmetic, and a missing label is better than an error.
+            const created = useCadCoreStore
+              .getState()
+              .document?.feature_history.find(
+                (feature) => feature.feature_id === activeSketchFeatureId,
+              )?.sketch_parameters?.dimensions.find(
+                (dimension) =>
+                  dimension.entity_id === commit.pointAId &&
+                  dimension.secondary_entity_id === commit.pointBId &&
+                  dimension.kind.startsWith("point_distance"),
+              );
+            if (!created) {
+              return;
+            }
             updateSketchDimensionLabelPositionRef.current(
-              dimId,
+              created.dimension_id,
               commit.labelX,
               commit.labelY,
             );
