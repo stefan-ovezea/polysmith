@@ -311,7 +311,7 @@ bool handle_sketch_edit_command(
     const auto document = manager.auto_constrain_sketch(
         read_optional_dimension(command.payload, "tolerance", 0.5),
         read_optional_dimension(command.payload, "angle_tolerance", 1.0),
-        &added);
+        command.payload.value("dimensions", false), &added);
     polysmith::protocol::write_message(
         polysmith::protocol::make_document_state_event(
             command.id, polysmith::protocol::to_payload(document)));

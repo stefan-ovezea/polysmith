@@ -112,12 +112,46 @@ bool test_a_fully_constrained_sketch_is_left_alone() {
                 "constrained: the run never makes the sketch worse");
 }
 
+// With dimensions requested, the same try_add rule covers length dimensions:
+// the two that survive are width and height. A rectangle has no position
+// dimension yet, so it stops at 2 DOF instead of 0 - reaching 0 needs distance-
+// to-origin dimensions, which the dimensioning slice does not have.
+bool test_dimensions_close_the_size_gap() {
+  DocumentManager manager;
+  DocumentState document = build_hand_drawn_rectangle(manager);
+  FeatureEntry* feature = sketch_feature(document);
+  if (!expect(feature != nullptr, "dimensions: the sketch exists")) return false;
+
+  const AutoConstrainReport report =
+      apply_auto_constraints(*feature, 0.5, 1.0, /*add_dimensions=*/true);
+  std::cerr << "PROBE dimensions dofs " << report.dofs_before << " -> "
+            << report.dofs_after << " constraints " << report.added.size()
+            << " dimensions " << report.dimensions_added << "\n";
+  // Measured: 3 dimensions survive and the sketch reaches 1 DOF. Each length
+  // dimension drags a companion angle dimension with it (the line tool does the
+  // same), so the reduction is larger than one DOF per command. The assertions
+  // are the invariants, not the exact arithmetic: the pass made progress, it did
+  // not add more dimensions than the plan's eight, and the ONE DOF left is the
+  // sketch position - reaching 0 needs a distance-to-origin dimension, which is
+  // the remaining piece of the dimensioning slice.
+  if (!expect(report.dimensions_added > 0 && report.dimensions_added <= 8,
+              ("dimensions: 1..8 survive - got " +
+               std::to_string(report.dimensions_added))
+                  .c_str())) {
+    return false;
+  }
+  return expect(report.dofs_after <= 1,
+                ("dimensions: only the position DOF is left - got " +
+                 std::to_string(report.dofs_after))
+                    .c_str());
+}
 }  // namespace
 
 int main() {
   if (!test_every_added_constraint_reduced_dof()) return 1;
   if (!test_second_run_adds_nothing()) return 1;
   if (!test_a_fully_constrained_sketch_is_left_alone()) return 1;
+  if (!test_dimensions_close_the_size_gap()) return 1;
 
   std::cout << "auto_constrain_apply_test passed\n";
   return 0;

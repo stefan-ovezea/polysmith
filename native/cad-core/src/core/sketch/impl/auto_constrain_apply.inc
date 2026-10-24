@@ -60,7 +60,8 @@ bool prepare_candidate(const AutoConstraintCandidate& candidate,
 
 AutoConstrainReport apply_auto_constraints(FeatureEntry& feature,
                                            double tolerance_mm,
-                                           double angle_tolerance_deg) {
+                                           double angle_tolerance_deg,
+                                           bool add_dimensions) {
   AutoConstrainReport report;
   if (!feature.sketch_parameters.has_value()) {
     return report;
@@ -101,7 +102,29 @@ AutoConstrainReport apply_auto_constraints(FeatureEntry& feature,
     report.added.push_back(candidate);
   }
 
-  if (!report.added.empty()) {
+  // ── Dimensioning pass ────────────────────────────────────────
+  // Same try_add rule as the constraints above: a dimension is kept only if the
+  // solver's DOF drops, so a dimension that the existing constraints already
+  // imply (a rectangle's opposite side, once equal_length holds) is rolled back
+  // instead of pinning a value the user never asked for.
+  if (add_dimensions && dofs > 0 && feature.sketch_parameters.has_value()) {
+    const auto& lines = feature.sketch_parameters->lines;
+    for (std::size_t index = 0; index < lines.size() && dofs > 0; ++index) {
+      const std::string line_id = lines[index].id;
+      const SketchFeatureParameters before = feature.sketch_parameters.value();
+      add_sketch_line_length_dimension(feature, line_id);
+      const int next = measure_solver_dofs(feature.sketch_parameters.value());
+      if (next >= 0 && next < dofs) {
+        dofs = next;
+        ++report.dimensions_added;
+      } else {
+        feature.sketch_parameters = before;
+        refresh_sketch_derived_state(feature);
+      }
+    }
+  }
+
+  if (!report.added.empty() || report.dimensions_added > 0) {
     refresh_sketch_derived_state(feature);
   }
   report.dofs_after = dofs;

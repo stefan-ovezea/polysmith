@@ -950,6 +950,7 @@ export interface AutoConstrainSketchCommand {
   payload: {
     tolerance?: number;
     angle_tolerance?: number;
+    dimensions?: boolean;
   };
 }
 

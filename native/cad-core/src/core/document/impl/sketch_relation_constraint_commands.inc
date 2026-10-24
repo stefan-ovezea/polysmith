@@ -246,6 +246,7 @@ DocumentState DocumentManager::set_sketch_tangent_pair_constraint(
 // S11: run the try_add pass on the active sketch as ONE undo step.
 DocumentState DocumentManager::auto_constrain_sketch(double tolerance_mm,
                                                      double angle_tolerance_deg,
+                                                     bool add_dimensions,
                                                      int* added_count) {
   require_document();
   if (!document_->active_sketch_feature_id.has_value()) {
@@ -265,8 +266,8 @@ DocumentState DocumentManager::auto_constrain_sketch(double tolerance_mm,
   // feature as it probes candidates, so snapshot it and restore on a no-op.
   const FeatureEntry snapshot = *feature_it;
   const AutoConstrainReport report = apply_auto_constraints(
-      *feature_it, tolerance_mm, angle_tolerance_deg);
-  if (report.added.empty()) {
+      *feature_it, tolerance_mm, angle_tolerance_deg, add_dimensions);
+  if (report.added.empty() && report.dimensions_added == 0) {
     *feature_it = snapshot;
     if (added_count != nullptr) {
       *added_count = 0;
@@ -292,7 +293,8 @@ DocumentState DocumentManager::auto_constrain_sketch(double tolerance_mm,
                     " -> " + std::to_string(report.dofs_after) + ", added " +
                     std::to_string(report.added.size()) + ", rejected " +
                     std::to_string(report.rejected.size()) + ", skipped " +
-                    std::to_string(report.skipped.size()));
+                    std::to_string(report.skipped.size()) + ", dimensions " +
+                    std::to_string(report.dimensions_added));
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   bump_geometry_revision();

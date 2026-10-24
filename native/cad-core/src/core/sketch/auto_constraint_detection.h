@@ -47,6 +47,7 @@ struct AutoConstrainReport {
   std::vector<AutoConstraintCandidate> added;
   std::vector<AutoConstraintCandidate> rejected;  // would not reduce DOF
   std::vector<AutoConstraintCandidate> skipped;   // no setter yet (concentric)
+  int dimensions_added = 0;
   int dofs_before = -1;
   int dofs_after = -1;
 };
@@ -55,6 +56,7 @@ struct AutoConstrainReport {
 // drops (see the .inc). The caller owns the undo step.
 AutoConstrainReport apply_auto_constraints(FeatureEntry& feature,
                                            double tolerance_mm,
-                                           double angle_tolerance_deg);
+                                           double angle_tolerance_deg,
+                                           bool add_dimensions = false);
 
 }  // namespace polysmith::core

@@ -1858,6 +1858,7 @@ export function useCadCore() {
     autoConstrainSketch: async (options: {
       tolerance?: number;
       angleTolerance?: number;
+      dimensions?: boolean;
     } = {}) => {
       await sendAndRefreshViewport(makeAutoConstrainSketchCommand(options));
     },

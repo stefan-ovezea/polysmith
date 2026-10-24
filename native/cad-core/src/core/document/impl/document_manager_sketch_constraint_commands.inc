@@ -88,4 +88,5 @@
   // each only if it reduces the solver's DOF count. One undo step.
   DocumentState auto_constrain_sketch(double tolerance_mm,
                                       double angle_tolerance_deg,
+                                      bool add_dimensions = false,
                                       int* added_count = nullptr);

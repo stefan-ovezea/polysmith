@@ -77,7 +77,7 @@ export interface PreviewAutoConstraintsOptions {
 }
 
 export function makeAutoConstrainSketchCommand(
-  options: { tolerance?: number; angleTolerance?: number } = {},
+  options: { tolerance?: number; angleTolerance?: number; dimensions?: boolean } = {},
 ): CoreCommand {
   return {
     id: crypto.randomUUID(),
@@ -87,6 +87,7 @@ export function makeAutoConstrainSketchCommand(
       ...(options.angleTolerance !== undefined
         ? { angle_tolerance: options.angleTolerance }
         : {}),
+      ...(options.dimensions ? { dimensions: true } : {}),
     },
   };
 }

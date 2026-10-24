@@ -89,7 +89,7 @@ Detection + tests 1, 2 and 6, plus `preview_auto_constraints`. Nothing else — 
 | Detection (`detect_auto_constraints`) | **Done** — `1922dc9`. 4 C++ cases; dedupe reads the axis constraint where it actually lives (`SketchLine::constraint`, which is what D-009 pinned down). |
 | Read-only preview (`preview_auto_constraints`) | **Done** — `790848e`. 3 IPC cases, including "the document is byte-identical before and after". |
 | `try_add` apply pass (`auto_constrain_sketch`) | **Done** — 3 C++ cases + 2 IPC cases. A hand-drawn quadrilateral (four loose lines, 16 DOF) reaches **4 DOF** with 8 constraints added and 5 rejected. |
-| Dimensioning pass | **Not started.** This is what takes 4 → 0. |
+| Dimensioning pass | **Started.** Line-length dimensions run through the same try_add loop behind `dimensions: true`: a hand-drawn rectangle goes **16 → 1 DOF** with 3 dimensions kept. |
 | UI entry points (button, finish-offer) | **Not started.** |
 
 ### What the apply pass established
@@ -100,3 +100,16 @@ Detection + tests 1, 2 and 6, plus `preview_auto_constraints`. Nothing else — 
 - **The reported DOF is published** into `solver_dofs`/`solver_ok` so the badge agrees with the constraints that were just added. `-1` (solve failed) leaves the field alone rather than inventing a number.
 - **A rectangle bottoms out at 4 DOF, not 3**: closure plus two horizontal and two vertical sides already implies equal opposite sides, so the remainder is position (x, y) + width + height — **four** dimensions, not three. Fewer would mean a dimension had been invented.
 - `concentric` candidates are **detected but skipped** by the apply pass: there is no `set_sketch_concentric_constraint` yet. They are reported in `skipped[]` rather than silently dropped.
+
+### Dimensioning pass - what is and is not done
+
+- Line-length dimensions run through the **same try_add loop** as the constraints, so a dimension the existing constraints already imply is rolled back rather than pinning a value the user never asked for. Verified on the hand-drawn rectangle: 3 survive, DOF 16 -> 1.
+- **One DOF is left, and the acceptance is therefore not met yet.** Reaching 0 needs a *position* dimension (distance from the sketch origin to a vertex). There is no such call in the pass today, and `add_sketch_distance_dimension(first, second)` takes two entities, so the origin has to be represented as something the dimension can anchor to - that is the design question for the next session, not a one-line addition.
+- Each length dimension drags a companion angle dimension with it (the interactive line tool does the same), which is why 3 dimensions remove more than 3 DOF. The test asserts the invariants (progress made, <= 8 dimensions, only the position DOF left), not the arithmetic.
+- `dimensions` defaults to **false**, so an existing caller keeps the constraint-only behaviour.
+
+### Still open
+
+- Position dimension to reach DOF 0 (the acceptance in the plan).
+- UI entry points: the sketch-panel button and the dismissible finish-offer at `solver_dofs > 20`.
+- `concentric` apply (needs `set_sketch_concentric_constraint`).
