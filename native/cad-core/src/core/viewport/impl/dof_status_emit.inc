@@ -23,8 +23,11 @@
         if (solver_dofs < 0) {
           static std::string measured_key;
           static int measured_dofs = -1;
+          // Keyed on STRUCTURE only. DOF depends on which constraints exist, not
+          // on where the geometry currently is, so including geometry_revision
+          // re-solved on every drag frame - which is what made drawing crawl.
           const std::string key =
-              feat.id + ":" + std::to_string(document->geometry_revision) +
+              feat.id + ":" + std::to_string(feat.sketch_parameters->lines.size()) +
               ":" + std::to_string(feat.sketch_parameters->constraints.size()) +
               ":" + std::to_string(feat.sketch_parameters->dimensions.size()) +
               ":" + std::to_string(feat.sketch_parameters->line_relations.size());

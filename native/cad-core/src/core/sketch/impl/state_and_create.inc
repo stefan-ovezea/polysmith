@@ -156,7 +156,17 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       if (dim.kind == "arc_radius" || dim.kind == "arc_angle") continue;
       ++driving_dims;
     }
+    // A line's own axis constraint (horizontal / vertical) is a real constraint
+    // even though it lives on the line rather than in `constraints`; without this
+    // term a fully axis-constrained rectangle never reached the solver, so
+    // solver_dofs stayed -1 and the DOF badge had to be measured somewhere else
+    // (which cost a diagnose() per redraw).
+    const bool any_line_axis_constraint = std::any_of(
+        feature.sketch_parameters->lines.begin(),
+        feature.sketch_parameters->lines.end(),
+        [](const SketchLine& line) { return line.constraint.has_value(); });
     const bool constraints_exist =
+        any_line_axis_constraint ||
         !feature.sketch_parameters->constraints.empty() ||
         !feature.sketch_parameters->line_relations.empty() ||
         !feature.sketch_parameters->midpoint_anchors.empty() ||
