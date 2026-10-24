@@ -90,7 +90,7 @@ Detection + tests 1, 2 and 6, plus `preview_auto_constraints`. Nothing else — 
 | Read-only preview (`preview_auto_constraints`) | **Done** — `790848e`. 3 IPC cases, including "the document is byte-identical before and after". |
 | `try_add` apply pass (`auto_constrain_sketch`) | **Done** — 3 C++ cases + 2 IPC cases. A hand-drawn quadrilateral (four loose lines, 16 DOF) reaches **4 DOF** with 8 constraints added and 5 rejected. |
 | Dimensioning pass | **Started.** Line-length dimensions run through the same try_add loop behind `dimensions: true`: a hand-drawn rectangle goes **16 → 1 DOF** with 3 dimensions kept. |
-| UI entry points (button, finish-offer) | **Not started.** |
+| UI entry points | **Button done.** "Fully constrain" in the sketch panel drives `auto_constrain_sketch { dimensions: true }` as one undo step. The dismissible finish-offer is not built. |
 
 ### What the apply pass established
 

@@ -323,6 +323,7 @@ export function ViewportPanel({
   onAddSketchSlot,
   onRefreshSketchDiagnostics,
   onTieLooseEnds,
+  onFullyConstrain,
   onAddSketchSpline,
   arcToolMode,
   onSetArcToolMode,
@@ -2961,6 +2962,7 @@ export function ViewportPanel({
       onAddSketchSlot,
       onRefreshSketchDiagnostics,
   onTieLooseEnds,
+  onFullyConstrain,
   onAddSketchSpline,
       onAddSketchChamfer,
       onAddSketchAngleDimension,
@@ -6348,6 +6350,7 @@ export function ViewportPanel({
       onSetSplineToolMode={onSetSplineToolMode}
       sketchDiagnostics={sketchDiagnostics}
       onTieEnds={tieLooseEnds}
+      onFullyConstrain={onFullyConstrain}
       onSplineToolDegreeChange={(value) => {
         setSplineToolDegree(value);
         splineToolDegreeRef.current = value;

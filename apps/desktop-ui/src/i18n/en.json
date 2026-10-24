@@ -2130,6 +2130,7 @@
     "looseEndsTitle": "Loose ends",
     "looseEndsSummary": "{{open}} open ends · {{untied}} untied",
     "tieEnds": "Tie ends",
+    "fullyConstrain": "Fully constrain",
     "mode": "Mode",
     "dimensionHintAuto": "Click a line, circle or arc. Pick a second element for angle or distance.",
     "dimensionHintLinear": "Click a line, then drag to choose horizontal, vertical or aligned.",

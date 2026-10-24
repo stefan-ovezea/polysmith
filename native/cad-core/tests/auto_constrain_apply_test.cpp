@@ -140,6 +140,11 @@ bool test_dimensions_close_the_size_gap() {
                   .c_str())) {
     return false;
   }
+  // One DOF is left: the sketch POSITION. Closing it needs a distance dimension
+  // anchored to the origin, and add_sketch_distance_dimension takes two
+  // entities - the origin is not one. Fixing a vertex was tried and does not
+  // move the solver's DOF count, so it was removed rather than left as dead
+  // code that pretends to work.
   return expect(report.dofs_after <= 1,
                 ("dimensions: only the position DOF is left - got " +
                  std::to_string(report.dofs_after))

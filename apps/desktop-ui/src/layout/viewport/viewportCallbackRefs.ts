@@ -361,6 +361,7 @@ interface ViewportCallbackRefValues
   onAddSketchChamfer: ViewportCallbackRefTargets["addSketchChamferRef"]["current"];
   onAddSketchEllipse: ViewportCallbackRefTargets["addSketchEllipseRef"]["current"];
   onRefreshSketchDiagnostics: (featureId: string) => Promise<void> | void;
+  onFullyConstrain: () => Promise<void> | void;
   onTieLooseEnds: (pairs: Array<{ vertexAId: string; vertexBId: string }>) =>
     | Promise<void>
     | void;

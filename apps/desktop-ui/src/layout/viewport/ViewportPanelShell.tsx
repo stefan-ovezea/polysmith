@@ -193,6 +193,8 @@ interface ViewportPanelShellProps {
   sketchDiagnostics: SketchDiagnosticsEvent["payload"] | null;
   /** Tie every untied loose end with a coincident constraint. */
   onTieEnds: () => void;
+  /** S11: infer/apply constraints, then dimension what is left. */
+  onFullyConstrain: () => void;
   onSplineToolDegreeChange: (degree: number) => void;
   onSetDimensionToolMode: (mode: DimensionToolMode) => void;
   onSketchToolConstructionChange: (checked: boolean) => void;
@@ -306,6 +308,7 @@ export function ViewportPanelShell({
   onSetSplineToolMode,
   sketchDiagnostics,
   onTieEnds,
+  onFullyConstrain,
   onSplineToolDegreeChange,
   onSetDimensionToolMode,
   onSketchToolConstructionChange,
@@ -450,6 +453,7 @@ export function ViewportPanelShell({
             onSetSplineToolMode={onSetSplineToolMode}
             sketchDiagnostics={sketchDiagnostics}
             onTieEnds={onTieEnds}
+            onFullyConstrain={onFullyConstrain}
             onSplineToolDegreeChange={onSplineToolDegreeChange}
             onSetPolygonToolMode={onSetPolygonToolMode}
             onSetDimensionToolMode={onSetDimensionToolMode}

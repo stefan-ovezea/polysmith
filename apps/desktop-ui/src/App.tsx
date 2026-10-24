@@ -2504,6 +2504,7 @@ function App() {
     reenterSketch,
     getSketchProfiles,
     getSketchDiagnostics,
+    autoConstrainSketch,
     clearSelection,
     selectSketchRect,
     selectSketchProfilesRect,
@@ -5422,6 +5423,12 @@ function App() {
                     axisBY,
                     isConstruction,
                   );
+                });
+              }}
+              onFullyConstrain={async () => {
+                // S11: infer + apply, dimension what is left, one undo step.
+                await runAction(async () => {
+                  await autoConstrainSketch({ dimensions: true });
                 });
               }}
               onRefreshSketchDiagnostics={async (featureId) => {

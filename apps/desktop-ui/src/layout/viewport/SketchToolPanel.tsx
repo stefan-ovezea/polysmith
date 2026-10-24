@@ -51,6 +51,8 @@ interface SketchToolPanelProps {
   sketchDiagnostics: SketchDiagnosticsEvent["payload"] | null;
   /** Tie every untied pair with a coincident constraint. */
   onTieEnds: () => void;
+  /** S11: infer and apply constraints, then dimension what is left. */
+  onFullyConstrain: () => void;
   onPolygonSidesChange: (sides: number) => void;
 }
 
@@ -86,6 +88,7 @@ export function SketchToolPanel({
   onSetDimensionToolMode,
   sketchDiagnostics,
   onTieEnds,
+  onFullyConstrain,
   onPolygonSidesChange,
 }: SketchToolPanelProps) {
   // The spline tool draws a draft preview but is deliberately not part of
@@ -205,6 +208,15 @@ export function SketchToolPanel({
           ) : null}
         </div>
       ) : null}
+      {/* S11: one click to infer constraints and dimension what is left. The
+          core keeps a candidate only if the solver's DOF actually drops. */}
+      <button
+        type="button"
+        className="cad-action-ghost mt-4 w-full px-2 py-1 text-xs"
+        onClick={onFullyConstrain}
+      >
+        {translate("viewport.fullyConstrain")}
+      </button>
       {activeSketchTool === "dimension" && (
         <p className="text-xs text-on-surface/50 mt-1">
           {translate(`toolbar.dimension${DIMENSION_MODE_LABEL_SUFFIX[dimensionToolMode]}`)}

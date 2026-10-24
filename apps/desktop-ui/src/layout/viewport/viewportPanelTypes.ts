@@ -324,6 +324,8 @@ export interface ViewportPanelProps {
   /** S5: ask the core for the loose ends of this sketch (read-only command). */
   onRefreshSketchDiagnostics: (featureId: string) => Promise<void>;
   /** S5: tie the given untied vertex pairs with coincident constraints. */
+  /** S11: infer/apply constraints, then dimension what is left. */
+  onFullyConstrain: () => Promise<void> | void;
   onTieLooseEnds: (
     pairs: Array<{ vertexAId: string; vertexBId: string }>,
   ) => Promise<void>;

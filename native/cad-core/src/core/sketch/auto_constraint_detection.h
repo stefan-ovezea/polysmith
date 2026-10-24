@@ -48,6 +48,7 @@ struct AutoConstrainReport {
   std::vector<AutoConstraintCandidate> rejected;  // would not reduce DOF
   std::vector<AutoConstraintCandidate> skipped;   // no setter yet (concentric)
   int dimensions_added = 0;
+  int anchored_points = 0;
   int dofs_before = -1;
   int dofs_after = -1;
 };
