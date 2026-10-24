@@ -242,3 +242,59 @@ DocumentState DocumentManager::set_sketch_tangent_pair_constraint(
   bump_geometry_revision();
   return document_.value();
 }
+
+// S11: run the try_add pass on the active sketch as ONE undo step.
+DocumentState DocumentManager::auto_constrain_sketch(double tolerance_mm,
+                                                     double angle_tolerance_deg,
+                                                     int* added_count) {
+  require_document();
+  if (!document_->active_sketch_feature_id.has_value()) {
+    throw std::runtime_error("No active sketch");
+  }
+  const auto feature_it = std::find_if(
+      document_->feature_history.begin(), document_->feature_history.end(),
+      [&](const FeatureEntry& feature) {
+        return feature.id == document_->active_sketch_feature_id.value();
+      });
+  if (feature_it == document_->feature_history.end()) {
+    throw std::runtime_error("Active sketch feature not found");
+  }
+
+  // A run that adds nothing must not push an undo step (an empty "Auto Constrain
+  // Sketch" entry is noise) and must not bump the revision. The pass mutates the
+  // feature as it probes candidates, so snapshot it and restore on a no-op.
+  const FeatureEntry snapshot = *feature_it;
+  const AutoConstrainReport report = apply_auto_constraints(
+      *feature_it, tolerance_mm, angle_tolerance_deg);
+  if (report.added.empty()) {
+    *feature_it = snapshot;
+    if (added_count != nullptr) {
+      *added_count = 0;
+    }
+    return document_.value();
+  }
+  push_undo_state();
+  clear_redo_stack();
+  if (added_count != nullptr) {
+    *added_count = static_cast<int>(report.added.size());
+  }
+  // Publish the measurement the pass actually made. `solver_dofs` from the
+  // refresh path is only populated when that path happens to run the solver
+  // (D-009), so leaving it stale would make the UI badge disagree with the
+  // constraints that were just added. dofs_after < 0 means the solve failed;
+  // in that case leave the field alone rather than inventing a number.
+  if (report.dofs_after >= 0) {
+    feature_it->sketch_parameters->solver_dofs = report.dofs_after;
+    feature_it->sketch_parameters->solver_ok = true;
+  }
+  polysmith::core::log_info(
+      "sketch", "auto-constrain: dofs " + std::to_string(report.dofs_before) +
+                    " -> " + std::to_string(report.dofs_after) + ", added " +
+                    std::to_string(report.added.size()) + ", rejected " +
+                    std::to_string(report.rejected.size()) + ", skipped " +
+                    std::to_string(report.skipped.size()));
+  refresh_linked_extrudes(*document_, *feature_it);
+  document_->selected_feature_id = feature_it->id;
+  bump_geometry_revision();
+  return document_.value();
+}

@@ -42,4 +42,19 @@ std::vector<AutoConstraintCandidate> detect_auto_constraints(
     const SketchFeatureParameters& parameters, double tolerance_mm,
     double angle_tolerance_deg);
 
+// S11 second slice: the result of applying candidates with the try_add rule.
+struct AutoConstrainReport {
+  std::vector<AutoConstraintCandidate> added;
+  std::vector<AutoConstraintCandidate> rejected;  // would not reduce DOF
+  std::vector<AutoConstraintCandidate> skipped;   // no setter yet (concentric)
+  int dofs_before = -1;
+  int dofs_after = -1;
+};
+
+// Adds candidates one at a time, keeping each only if the solver's DOF count
+// drops (see the .inc). The caller owns the undo step.
+AutoConstrainReport apply_auto_constraints(FeatureEntry& feature,
+                                           double tolerance_mm,
+                                           double angle_tolerance_deg);
+
 }  // namespace polysmith::core

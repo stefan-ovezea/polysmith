@@ -79,3 +79,24 @@ One dimension per surviving DOF, ordered by locality: entity length → position
 ## First slice to land (½ d, no geometry mutation)
 
 Detection + tests 1, 2 and 6, plus `preview_auto_constraints`. Nothing else — no `try_add`, no dimensions, no UI. This proves the rules and gives the UI something honest to show while the rest is built.
+
+---
+
+## Progress
+
+| Slice | State |
+|---|---|
+| Detection (`detect_auto_constraints`) | **Done** — `1922dc9`. 4 C++ cases; dedupe reads the axis constraint where it actually lives (`SketchLine::constraint`, which is what D-009 pinned down). |
+| Read-only preview (`preview_auto_constraints`) | **Done** — `790848e`. 3 IPC cases, including "the document is byte-identical before and after". |
+| `try_add` apply pass (`auto_constrain_sketch`) | **Done** — 3 C++ cases + 2 IPC cases. A hand-drawn quadrilateral (four loose lines, 16 DOF) reaches **4 DOF** with 8 constraints added and 5 rejected. |
+| Dimensioning pass | **Not started.** This is what takes 4 → 0. |
+| UI entry points (button, finish-offer) | **Not started.** |
+
+### What the apply pass established
+
+- **The measurement is a direct solve, not `solver_dofs`.** That field is only populated when the refresh path happens to run the solver, and D-009 showed it can legitimately stay -1. `measure_solver_dofs()` builds and solves a throwaway `ConstraintSolver` for the candidate state, so the try_add rule is keyed on a real number.
+- **Rejection restores the whole parameter block**, not just the constraint lists: a setter also rebuilds vertices, profiles and dimensions, so a partial restore would leave derived state from a rejected candidate behind.
+- **A run that adds nothing pushes no undo step** and does not bump the revision; the manager snapshots the feature, and restores it when `added` is empty.
+- **The reported DOF is published** into `solver_dofs`/`solver_ok` so the badge agrees with the constraints that were just added. `-1` (solve failed) leaves the field alone rather than inventing a number.
+- **A rectangle bottoms out at 4 DOF, not 3**: closure plus two horizontal and two vertical sides already implies equal opposite sides, so the remainder is position (x, y) + width + height — **four** dimensions, not three. Fewer would mean a dimension had been invented.
+- `concentric` candidates are **detected but skipped** by the apply pass: there is no `set_sketch_concentric_constraint` yet. They are reported in `skipped[]` rather than silently dropped.

@@ -32,6 +32,7 @@
 | `add_sketch_spline` | degree (optional_dimension), mode (optional_string_value) |
 | `add_sketch_text` | font_path (optional_string), anchor_x (dimension), anchor_y (dimension), path_entity_id (optional_string) |
 | `add_sketch_vertex_distance_dimension` | vertex_a_id (string), vertex_b_id (string) |
+| `auto_constrain_sketch` | tolerance (optional_dimension), angle_tolerance (optional_dimension) |
 | `cam_capture_edge_reference` |  |
 | `cam_capture_face_reference` |  |
 | `cam_capture_point` |  |

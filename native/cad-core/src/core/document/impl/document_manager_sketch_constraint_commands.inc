@@ -84,3 +84,8 @@
   DocumentState set_sketch_tangent_pair_constraint(
       const std::string& first_id,
       const std::string& second_id);
+  // S11: propose and apply axis/equality/angular/coincident constraints, keeping
+  // each only if it reduces the solver's DOF count. One undo step.
+  DocumentState auto_constrain_sketch(double tolerance_mm,
+                                      double angle_tolerance_deg,
+                                      int* added_count = nullptr);

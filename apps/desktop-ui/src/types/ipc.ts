@@ -944,6 +944,15 @@ export interface GetSketchProfilesCommand {
   };
 }
 
+export interface AutoConstrainSketchCommand {
+  id: string;
+  type: "auto_constrain_sketch";
+  payload: {
+    tolerance?: number;
+    angle_tolerance?: number;
+  };
+}
+
 export interface PreviewAutoConstraintsCommand {
   id: string;
   type: "preview_auto_constraints";
@@ -1256,6 +1265,7 @@ export type CoreCommand =
   | GetSketchProfilesCommand
   | GetSketchDiagnosticsCommand
   | PreviewAutoConstraintsCommand
+  | AutoConstrainSketchCommand
   | ExportDocumentCommand
   | ExportDocumentStlCommand
   | ExportDocumentDxfCommand

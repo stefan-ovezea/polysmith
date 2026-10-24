@@ -144,6 +144,7 @@ import {
   makeGetDocumentStateCommand,
   makeGetSessionStateCommand,
   makeGetViewportStateCommand,
+  makeAutoConstrainSketchCommand,
   makePreviewAutoConstraintsCommand,
   makeGetSketchDiagnosticsCommand,
   makeGetSketchProfilesCommand,
@@ -1853,6 +1854,12 @@ export function useCadCore() {
     reenterSketch: async (featureId: string) => {
       await sendCoreCommand(makeReenterSketchCommand(featureId));
       await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    autoConstrainSketch: async (options: {
+      tolerance?: number;
+      angleTolerance?: number;
+    } = {}) => {
+      await sendAndRefreshViewport(makeAutoConstrainSketchCommand(options));
     },
     previewAutoConstraints: async (options: {
       featureId?: string;

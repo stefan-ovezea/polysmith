@@ -157,6 +157,7 @@
         "get_sketch_profiles",
         "get_sketch_diagnostics",
         "preview_auto_constraints",
+        "auto_constrain_sketch",
         "get_viewport_state",
         "import_dxf",
         "import_iges",

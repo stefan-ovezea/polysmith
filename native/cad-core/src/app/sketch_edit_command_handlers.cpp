@@ -305,6 +305,19 @@ bool handle_sketch_edit_command(
     return true;
   }
 
+  if (command.type == "auto_constrain_sketch") {
+    // One undo step: the manager pushes undo once around the whole pass.
+    int added = 0;
+    const auto document = manager.auto_constrain_sketch(
+        read_optional_dimension(command.payload, "tolerance", 0.5),
+        read_optional_dimension(command.payload, "angle_tolerance", 1.0),
+        &added);
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return true;
+  }
+
   if (command.type == "set_sketch_collinear_constraint") {
     const auto document = manager.set_sketch_collinear_constraint(
         read_string(command.payload, "line_id"),

@@ -76,6 +76,21 @@ export interface PreviewAutoConstraintsOptions {
   angleTolerance?: number;
 }
 
+export function makeAutoConstrainSketchCommand(
+  options: { tolerance?: number; angleTolerance?: number } = {},
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "auto_constrain_sketch",
+    payload: {
+      ...(options.tolerance !== undefined ? { tolerance: options.tolerance } : {}),
+      ...(options.angleTolerance !== undefined
+        ? { angle_tolerance: options.angleTolerance }
+        : {}),
+    },
+  };
+}
+
 export function makePreviewAutoConstraintsCommand(
   options: PreviewAutoConstraintsOptions = {},
 ): CoreCommand {
