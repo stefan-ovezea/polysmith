@@ -4,6 +4,7 @@
 #include "core/document/parameter.h"
 #include "core/sketch/collapsed_line_cleanup.h"
 #include "core/sketch/sketch_diagnostics.h"
+#include "core/sketch/auto_constraint_detection.h"
 
 namespace polysmith::core {
 

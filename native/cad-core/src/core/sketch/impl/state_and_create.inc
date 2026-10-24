@@ -622,4 +622,5 @@ SketchDiagnostics compute_sketch_diagnostics(
   return diagnostics;
 }
 
+#include "core/sketch/impl/auto_constraint_detection.inc"
 #include "core/sketch/impl/sketch_create_and_tool_commands.inc"
