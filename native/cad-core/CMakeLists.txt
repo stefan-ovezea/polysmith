@@ -604,6 +604,7 @@ polysmith_add_core_test(cad_core_collapsed_line_cleanup_test tests/collapsed_lin
 polysmith_add_core_test(cad_core_extrude_profile_degrade_test tests/extrude_profile_degrade_test.cpp)
 polysmith_add_core_test(cad_core_sketch_diagnostics_test tests/sketch_diagnostics_test.cpp)
 polysmith_add_core_test(cad_core_select_feature_profiles_test tests/select_feature_profiles_test.cpp)
+polysmith_add_core_test(cad_core_axis_constraint_driven_test tests/axis_constraint_driven_test.cpp)
 
 # Constraint-completion regression suite — symmetric, collinear,
 # midpoint, tangent pairs, and parametric anchor-t enforcement.

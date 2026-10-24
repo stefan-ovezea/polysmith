@@ -64,9 +64,16 @@ void set_sketch_line_constraint(FeatureEntry& feature,
   // so the solver ignores it and the UI renders it in parentheses.
   if (line_it->constraint.has_value()) {
     auto& params = *feature.sketch_parameters;
-    if (params.solver_conflicting_count > 0 ||
-        params.solver_redundant_count > 0 ||
-        params.solver_dofs < 0) {
+    // D-009: solver_dofs == -1 means the solver has NOT RUN YET (it is the
+    // default), which is not the same as over-constrained. `finalize_new_
+    // dimension` documents the same trap and guards it the same way; this path
+    // did not, so the FIRST axis constraint on a loose line was demoted to
+    // driven and silently failed to straighten it. -1 stays "unknown": nothing
+    // to demote, and the DOF badge keeps its own conventions.
+    const bool solver_ran = params.solver_dofs != -1;
+    if (solver_ran &&
+        (params.solver_conflicting_count > 0 ||
+         params.solver_redundant_count > 0 || params.solver_dofs < 0)) {
       line_it->constraint_driven = true;
       polysmith::core::log_info(
           "sketch", "constraint on " + line_id +
