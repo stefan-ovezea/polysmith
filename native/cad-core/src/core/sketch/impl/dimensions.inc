@@ -2,45 +2,6 @@
 // Moved here from sketch_dimension_create_commands.inc so they are visible
 // before dimension_distance_commands.inc and dimension_angle_commands.inc.
 
-// Count driving (non-auto, non-driven) constraints on the given sorted
-// point-id pair.  2 points have only 2 relative DOF (dx, dy), so >2
-// constraints means at least one is redundant.
-// Counts both dimensions AND line H/V constraints.
-static int count_driving_on_point_pair(
-    const SketchFeatureParameters& parameters,
-    const std::string& pair_a, const std::string& pair_b) {
-  int count = 0;
-  // 1) Dimensions that constrain a point pair.
-  for (const auto& dim : parameters.dimensions) {
-    if (dim.driven) continue;
-    if (dim.is_auto && dim.expression.empty()) continue;
-    std::string pa, pb;
-    if (dim.kind == "line_length") {
-      auto lit = std::find_if(parameters.lines.begin(), parameters.lines.end(),
-          [&](const SketchLine& l) { return l.id == dim.entity_id; });
-      if (lit == parameters.lines.end()) continue;
-      pa = lit->start_vertex_id;
-      pb = lit->end_vertex_id;
-    } else if (!dim.secondary_entity_id.empty()) {
-      pa = dim.entity_id;
-      pb = dim.secondary_entity_id;
-    } else {
-      continue;
-    }
-    if (pa > pb) std::swap(pa, pb);
-    if (pa == pair_a && pb == pair_b) count++;
-  }
-  // 2) Line H/V constraints.  Each constrains one relative DOF (dx or dy)
-  //    of the line's endpoint pair.
-  for (const auto& line : parameters.lines) {
-    if (!line.constraint.has_value()) continue;
-    if (line.constraint_driven) continue;
-    std::string pa = line.start_vertex_id, pb = line.end_vertex_id;
-    if (pa > pb) std::swap(pa, pb);
-    if (pa == pair_a && pb == pair_b) count++;
-  }
-  return count;
-}
 
 // Every dimension creation command MUST call this after adding a new dimension.
 // It runs the solver, checks for over-constraint, and marks the new dimension
@@ -85,14 +46,21 @@ static bool finalize_new_dimension(
     return mark_driven("solver reported over-constrained");
   }
 
-  // 2) Point-pair fallback: >2 driving constraints on 2 DOF → redundant.
-  if (pair_a.has_value() && pair_b.has_value()) {
-    std::string pa = *pair_a, pb = *pair_b;
-    if (pa > pb) std::swap(pa, pb);
-    if (count_driving_on_point_pair(parameters, pa, pb) > 2) {
-      return mark_driven(">2 constraints on point pair");
-    }
-  }
+  // 2) The old point-pair heuristic lived here: ">2 driving constraints on a
+  // point pair means one is redundant", counting a pair as 2 DOF. That is wrong
+  // for the pairs these dimensions actually constrain - two POINTS have four
+  // DOF (two coordinates each), so a line with a horizontal constraint, a length
+  // and an angle is three constraints on four DOF, not over-constrained. The
+  // symptom was a perfectly valid dimension being marked driven ("dimension
+  // dim-line-line-1 marked driven (>2 constraints on point pair)") whenever it
+  // was edited on a fully constrained sketch.
+  //
+  // The solver already answers this question with real numbers - conflicting and
+  // redundant counts after a solve - so the heuristic is gone rather than
+  // retuned: one source of truth, and it is the one that can see the whole
+  // system instead of a single pair.
+  (void)pair_a;
+  (void)pair_b;
 
   return false;
 }
