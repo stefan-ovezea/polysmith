@@ -59,6 +59,7 @@
 #include "core/cam/toolpath_geometry.h"
 #include "core/document/appearance.h"
 #include "core/sketch/dof_counter.h"
+#include "core/sketch/constraint_solver.h"
 #include "core/sketch/spline_math.h"
 #include "core/geometry/feature_shape.h"
 #include "core/geometry/refresh_dependents.h"

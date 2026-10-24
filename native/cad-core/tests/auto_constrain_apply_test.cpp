@@ -10,6 +10,7 @@
 
 #include "core/document/document.h"
 #include "core/sketch/auto_constraint_detection.h"
+#include "core/viewport/viewport.h"
 
 namespace {
 
@@ -105,9 +106,8 @@ bool test_a_fully_constrained_sketch_is_left_alone() {
   FeatureEntry* feature = sketch_feature(document);
   if (!expect(feature != nullptr, "constrained: the sketch exists")) return false;
 
-  const AutoConstrainReport report = apply_auto_constraints(*feature, 0.5, 1.0);
-  std::cerr << "PROBE constrained dofs " << report.dofs_before << " -> "
-            << report.dofs_after << " added " << report.added.size() << "\n";
+  const AutoConstrainReport report =
+      apply_auto_constraints(*feature, 0.5, 1.0, /*add_dimensions=*/true);
   return expect(report.dofs_after <= report.dofs_before,
                 "constrained: the run never makes the sketch worse");
 }
@@ -150,6 +150,20 @@ bool test_dimensions_close_the_size_gap() {
                  std::to_string(report.dofs_after))
                     .c_str());
 }
+// The user-visible number: a freshly drawn rectangle must read 4 DOF, not the
+// heuristic's 12. The emitter measures when the refresh left solver_dofs unset,
+// so the badge and the solver agree.
+bool test_viewport_reports_the_solver_dof_for_a_rectangle() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  const DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 30.0);
+  const auto viewport = polysmith::core::build_viewport_state(document);
+  return expect(viewport.solver_dofs == 4,
+                ("viewport: a rectangle reports 4 DOF (position, width, height) - got " +
+                 std::to_string(viewport.solver_dofs))
+                    .c_str());
+}
 }  // namespace
 
 int main() {
@@ -157,6 +171,7 @@ int main() {
   if (!test_second_run_adds_nothing()) return 1;
   if (!test_a_fully_constrained_sketch_is_left_alone()) return 1;
   if (!test_dimensions_close_the_size_gap()) return 1;
+  if (!test_viewport_reports_the_solver_dof_for_a_rectangle()) return 1;
 
   std::cout << "auto_constrain_apply_test passed\n";
   return 0;
