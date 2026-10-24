@@ -14,18 +14,20 @@ export function SketchDofBadge() {
 
   if (!viewport) return null;
 
-  // Use solver DOF when available; fall back to per-entity DOF aggregate
-  // (manual counter) when the planegcs solver hasn't run.
-  let solverDof: number;
-  if (viewport.solver_dofs !== undefined && viewport.solver_dofs !== null && viewport.solver_dofs >= 0) {
-    solverDof = viewport.solver_dofs;
-  } else if (viewport.dof_statuses && viewport.dof_statuses.length > 0) {
-    // Manual DOF fallback: sum remaining DOF across all entities.
-    solverDof = viewport.dof_statuses.reduce(
-      (sum, e) => sum + e.total_dof - e.consumed_dof, 0);
-  } else {
-    return null; // No DOF data at all.
+  // Show a DOF count ONLY when the solver produced one. The old fallback summed a
+  // per-entity counter that gives every line its own four DOF, so a rectangle read
+  // 12 when the truth is 4 - a wrong number is worse than no number, and the
+  // counter cannot be fixed cheaply (see S3 in the completion plan). A sketch the
+  // solver has not touched therefore shows no badge rather than a lie; Fully
+  // constrain publishes a measured DOF, and from then on the badge is real.
+  if (
+    viewport.solver_dofs === undefined ||
+    viewport.solver_dofs === null ||
+    viewport.solver_dofs < 0
+  ) {
+    return null;
   }
+  const solverDof = viewport.solver_dofs;
 
   const dof = solverDof;
   const conflicting = viewport.solver_conflicting_count ?? 0;
