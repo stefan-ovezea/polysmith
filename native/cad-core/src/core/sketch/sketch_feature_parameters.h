@@ -143,6 +143,13 @@ struct SketchFeatureParameters {
   // -1 = solver hasn't run yet (or no constraints exist).
   int solver_dofs = -1;
 
+  // Monotonic count of solutions the safety net has REJECTED (a degenerate or
+  // constraint-violating solve). Commands compare it across their own refresh to
+  // tell whether the constraint they just added is the one the solver could only
+  // satisfy by destroying geometry - the later ad-hoc passes may well re-solve
+  // cleanly, so solver_ok alone is not a reliable signal.
+  int solver_rejections = 0;
+
   // Whether the last solver pass converged (Success or Converged).
   // When false, the solver failed to find a solution — typically
   // because the constraint system is infeasible (contradictory

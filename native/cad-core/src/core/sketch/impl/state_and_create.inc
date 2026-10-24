@@ -346,6 +346,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
             // the sketch. This is what turns "the sketch is protected but still
             // deformed" into "the constraint is refused with a message".
             feature.sketch_parameters->solver_ok = false;
+            ++feature.sketch_parameters->solver_rejections;
             polysmith::core::log_warn(
                 "sketch",
                 "solver solution rejected (" +

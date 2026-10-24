@@ -75,8 +75,31 @@ void set_sketch_perpendicular_constraint(
     enforce_perpendicular_relations(parameters, line_id);
     enforce_parallel_relations(parameters, line_id);
     sync_all_line_dimensions(parameters);
+    const int rejections_before = feature.sketch_parameters->solver_rejections;
     refresh_sketch_with_append_focus(
         feature, {line_id, other_line_id.value()});
+
+    // Refuse a relation the solver can only satisfy by destroying geometry.
+    // A contradictory pair makes planegcs collapse a line (a zero-length line is
+    // trivially parallel AND perpendicular to everything), and the collapsed-line
+    // cleanup then deletes it together with its relations. Rejecting the solve
+    // marks the sketch solver-failed; throwing here rolls the relation back (the
+    // catch restores the geometry) so the user is told the truth instead of
+    // silently losing a side of the sketch.
+    {
+      auto& params = *feature.sketch_parameters;
+      const bool rejected =
+          params.solver_rejections != rejections_before ||
+          params.solver_conflicting_count > 0 ||
+          params.solver_redundant_count > 0 ||
+          (params.solver_dofs != -1 && params.solver_dofs < 0);
+      if (rejected) {
+        throw std::runtime_error(std::string("Cannot make these lines ") +
+                                 "perpendicular" +
+                                 ": the constraint cannot be satisfied "
+                                 "without destroying the sketch");
+      }
+    }
   } catch (...) {
     // Roll back completely: remove the relation, restore the driven
     // line's endpoints, and restore its original constraint.
