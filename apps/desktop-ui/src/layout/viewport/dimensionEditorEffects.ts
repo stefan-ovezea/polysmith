@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -49,6 +50,9 @@ export function useDimensionEditorEffects({
   isProjectedCircleDimension,
   formattedDimensionDisplayValue,
 }: DimensionEditorEffectsContext) {
+  // Which dimension the current draft value belongs to. See the seeding effect.
+  const draftSeededForRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (selectedSketchDimensionValue === null) {
       setDimensionDraftValue("");
@@ -66,9 +70,18 @@ export function useDimensionEditorEffects({
         expression: selectedSketchDimensionExpression,
       };
     }
-    if (window.document.activeElement === dimensionInputRef.current) {
+    // Do NOT bail out merely because the input still has focus: clicking a
+    // different dimension while the field is focused kept the PREVIOUS value in
+    // the box (reported in-app - edit dimension A, click B, the box shows A's
+    // value). Only the SAME dimension may keep its in-progress text.
+    const draftSeededFor = draftSeededForRef.current;
+    if (
+      window.document.activeElement === dimensionInputRef.current &&
+      draftSeededFor === selectedSketchDimension.dimensionId
+    ) {
       return;
     }
+    draftSeededForRef.current = selectedSketchDimension.dimensionId;
 
     setDimensionDraftValue(
       selectedSketchDimensionExpression.trim().length > 0
