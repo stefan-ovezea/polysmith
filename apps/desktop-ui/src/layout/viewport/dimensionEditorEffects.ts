@@ -84,28 +84,45 @@ export function useDimensionEditorEffects({
     const dimensionChanged = draftSeededFor !== selectedSketchDimension.dimensionId;
     draftSeededForRef.current = selectedSketchDimension.dimensionId;
 
-    setDimensionDraftValue(
+    const seedText =
       selectedSketchDimensionExpression.trim().length > 0
         ? selectedSketchDimensionExpression
         : formattedDimensionDisplayValue(
             selectedSketchDimension,
             selectedSketchDimensionValue,
-          ),
-    );
+          );
+    setDimensionDraftValue(seedText);
 
     // Landing on a DIFFERENT dimension must leave the value selected, so typing
-    // replaces it: the select-on-open effect runs before this value lands, which
-    // used to leave the caret after the old text. Same dimension: leave the caret
-    // alone, the user is editing.
+    // replaces it. A single requestAnimationFrame still raced the other editor
+    // effects (the value lands, then something focuses or re-places the caret),
+    // which is why it held ~90% of the time. Wait until the DOM actually holds
+    // the seeded text, select, and then re-assert on the next frame in case an
+    // effect moved the caret afterwards. Same dimension: leave the caret alone.
     if (dimensionChanged) {
-      window.requestAnimationFrame(() => {
+      let passes = 0;
+      const selectOnceLanded = () => {
         const input = dimensionInputRef.current;
         if (!input) {
           return;
         }
+        if (input.value !== seedText && passes < 4) {
+          passes += 1;
+          window.requestAnimationFrame(selectOnceLanded);
+          return;
+        }
         input.focus();
         input.select();
-      });
+        // Second pass: the select-on-open effect may run after ours within the
+        // same frame. Re-assert only while the text is still ours.
+        window.requestAnimationFrame(() => {
+          const again = dimensionInputRef.current;
+          if (again && again.value === seedText) {
+            again.select();
+          }
+        });
+      };
+      window.requestAnimationFrame(selectOnceLanded);
     }
   }, [
     selectedSketchDimensionValue,
