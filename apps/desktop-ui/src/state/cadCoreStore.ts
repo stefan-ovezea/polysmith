@@ -20,6 +20,7 @@ import {
 } from "../lib/ipcProtocol";
 import { useToastStore } from "./toastStore";
 import { appendLogWithinWindow } from "../lib/logWindow";
+import { makeUiLogEntry } from "../lib/logger";
 
 interface CadCoreStoreState {
   status: "idle" | "starting" | "connected" | "error" | "stopped";
@@ -59,6 +60,7 @@ export function awaitDocumentChange(
   timeoutMs = 4000,
 ): Promise<DocumentState> {
   return new Promise((resolve, reject) => {
+    const startedAt = performance.now();
     const initial = useCadCoreStore.getState().document;
     const timer = window.setTimeout(() => {
       unsubscribe();
@@ -72,6 +74,21 @@ export function awaitDocumentChange(
       if (predicate(doc, initial)) {
         window.clearTimeout(timer);
         unsubscribe();
+        // Timing evidence: this promise settles only when the matching event
+        // arrives, so a slow settle is a slow ROUND TRIP (or a predicate that
+        // does not match until a later event). Logged only when it is slow.
+        const elapsedMs = Math.round(performance.now() - startedAt);
+        if (elapsedMs > 300) {
+          useCadCoreStore
+            .getState()
+            .addLogEntry(
+              makeUiLogEntry(
+                "warn",
+                "desktop_ui",
+                `awaitDocumentChange settled after ${elapsedMs} ms`,
+              ),
+            );
+        }
         resolve(doc);
       }
     });
@@ -86,6 +103,7 @@ export function awaitViewportChange(
   timeoutMs = 4000,
 ): Promise<ViewportState> {
   return new Promise((resolve, reject) => {
+    const startedAt = performance.now();
     const initial = useCadCoreStore.getState().viewport;
     const timer = window.setTimeout(() => {
       unsubscribe();
