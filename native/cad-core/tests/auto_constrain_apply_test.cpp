@@ -150,17 +150,20 @@ bool test_dimensions_close_the_size_gap() {
                  std::to_string(report.dofs_after))
                     .c_str());
 }
-// The user-visible number: a freshly drawn rectangle must read 4 DOF, not the
-// heuristic's 12. The emitter measures when the refresh left solver_dofs unset,
-// so the badge and the solver agree.
-bool test_viewport_reports_the_solver_dof_for_a_rectangle() {
+// A rectangle's sketch has no solver_dofs, and that is DELIBERATE: solving it
+// would run diagnose() (planegcs' redundancy analysis) on every edit, which made
+// drawing take about a second per segment. The DOF badge falls back to the
+// per-entity counter for such sketches, which over-counts a closed profile (it
+// counts endpoints per entity, not unique vertices) - giving it a real number
+// cheaply is S3's job, not a diagnose per edit.
+bool test_axis_only_sketch_does_not_solve_per_edit() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
   const DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 30.0);
   const auto viewport = polysmith::core::build_viewport_state(document);
-  return expect(viewport.solver_dofs == 4,
-                ("viewport: a rectangle reports 4 DOF (position, width, height) - got " +
+  return expect(viewport.solver_dofs == -1,
+                ("viewport: an axis-only sketch reports no solver dof (-1) - got " +
                  std::to_string(viewport.solver_dofs))
                     .c_str());
 }
@@ -171,7 +174,7 @@ int main() {
   if (!test_second_run_adds_nothing()) return 1;
   if (!test_a_fully_constrained_sketch_is_left_alone()) return 1;
   if (!test_dimensions_close_the_size_gap()) return 1;
-  if (!test_viewport_reports_the_solver_dof_for_a_rectangle()) return 1;
+  if (!test_axis_only_sketch_does_not_solve_per_edit()) return 1;
 
   std::cout << "auto_constrain_apply_test passed\n";
   return 0;

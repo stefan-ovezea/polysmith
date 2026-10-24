@@ -156,17 +156,14 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       if (dim.kind == "arc_radius" || dim.kind == "arc_angle") continue;
       ++driving_dims;
     }
-    // A line's own axis constraint (horizontal / vertical) is a real constraint
-    // even though it lives on the line rather than in `constraints`; without this
-    // term a fully axis-constrained rectangle never reached the solver, so
-    // solver_dofs stayed -1 and the DOF badge had to be measured somewhere else
-    // (which cost a diagnose() per redraw).
-    const bool any_line_axis_constraint = std::any_of(
-        feature.sketch_parameters->lines.begin(),
-        feature.sketch_parameters->lines.end(),
-        [](const SketchLine& line) { return line.constraint.has_value(); });
+    // Do NOT count per-line axis constraints here. Making them count meant every
+    // edit of an axis-constrained sketch ran a solve WITH diagnose() (planegcs'
+    // redundancy analysis, which re-solves subsystems per candidate) - and an
+    // axis-constrained sketch is exactly what the rectangle and line tools
+    // produce. That turned drawing from instant into about a second per segment.
+    // The DOF badge reads the heuristic for such sketches instead; giving it a
+    // real number is S3's job (a cheap rank, not a diagnose per edit).
     const bool constraints_exist =
-        any_line_axis_constraint ||
         !feature.sketch_parameters->constraints.empty() ||
         !feature.sketch_parameters->line_relations.empty() ||
         !feature.sketch_parameters->midpoint_anchors.empty() ||
