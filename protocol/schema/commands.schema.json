@@ -156,6 +156,7 @@
         "get_session_state",
         "get_sketch_profiles",
         "get_sketch_diagnostics",
+        "preview_auto_constraints",
         "get_viewport_state",
         "import_dxf",
         "import_iges",

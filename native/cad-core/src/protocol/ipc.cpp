@@ -104,6 +104,15 @@ json make_sketch_profiles_event(const std::string& id, const json& profiles) {
   };
 }
 
+json make_auto_constraints_preview_event(const std::string& id,
+                                         const json& preview) {
+  return {
+      {"id", id},
+      {"type", "auto_constraints_preview"},
+      {"payload", preview},
+  };
+}
+
 json make_sketch_diagnostics_event(const std::string& id,
                                    const json& diagnostics) {
   return {

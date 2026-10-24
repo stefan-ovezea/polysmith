@@ -70,6 +70,28 @@ export function makeGetSketchProfilesCommand(featureId: string): CoreCommand {
   };
 }
 
+export interface PreviewAutoConstraintsOptions {
+  featureId?: string;
+  tolerance?: number;
+  angleTolerance?: number;
+}
+
+export function makePreviewAutoConstraintsCommand(
+  options: PreviewAutoConstraintsOptions = {},
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "preview_auto_constraints",
+    payload: {
+      ...(options.featureId ? { feature_id: options.featureId } : {}),
+      ...(options.tolerance !== undefined ? { tolerance: options.tolerance } : {}),
+      ...(options.angleTolerance !== undefined
+        ? { angle_tolerance: options.angleTolerance }
+        : {}),
+    },
+  };
+}
+
 export function makeGetSketchDiagnosticsCommand(featureId: string): CoreCommand {
   return {
     id: crypto.randomUUID(),

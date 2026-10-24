@@ -527,11 +527,34 @@ export const sketchDiagnosticsEventSchema = z.object({
   }),
 });
 
+// S11: the read-only auto-constrain preview. Declared here or the parser rejects
+// the reply and the request times out (the documented zod trap).
+export const autoConstraintsPreviewEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("auto_constraints_preview"),
+  payload: z.object({
+    feature_id: z.string(),
+    candidate_count: z.number(),
+    candidates: z
+      .array(
+        z.object({
+          kind: z.string(),
+          target_ids: z.array(z.string()).default([]),
+          error: z.number(),
+          reason: z.string().default(""),
+        }),
+      )
+      .default([]),
+    current_dofs: z.number(),
+  }),
+});
+
 export const coreMessageSchema = z.union([
   sketchEntitiesChangedEventSchema,
   featureChangedEventSchema,
   sketchProfilesEventSchema,
   sketchDiagnosticsEventSchema,
+  autoConstraintsPreviewEventSchema,
   helloEventSchema,
   pongEventSchema,
   documentCreatedEventSchema,

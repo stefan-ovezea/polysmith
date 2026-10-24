@@ -166,6 +166,7 @@
 | `pcb_remove_layer` | feature_id (string) |
 | `pcb_update_layer` | feature_id (string) |
 | `ping` |  |
+| `preview_auto_constraints` | feature_id (optional_string), tolerance (optional_dimension), angle_tolerance (optional_dimension) |
 | `project_body_into_sketch` | body_id (string), mode (string) |
 | `project_edge_into_sketch` | edge_id (string) |
 | `project_face_into_sketch` | face_id (string) |

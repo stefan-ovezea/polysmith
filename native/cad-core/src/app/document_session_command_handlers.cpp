@@ -141,6 +141,71 @@ bool handle_document_session_command(
     return true;
   }
 
+  if (command.type == "preview_auto_constraints") {
+    const auto document = manager.get_document();
+    if (!document.has_value()) {
+      polysmith::core::log_error("cad_core", "No active document");
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NO_ACTIVE_DOCUMENT", "No active document"));
+      return true;
+    }
+    // Read-only: this asks the detector what it WOULD propose. Nothing is
+    // applied here (S11's apply pass is a separate command).
+    std::string feature_id =
+        read_optional_string(command.payload, "feature_id").value_or("");
+    if (feature_id.empty() && document->active_sketch_feature_id.has_value()) {
+      feature_id = document->active_sketch_feature_id.value();
+    }
+    if (feature_id.empty()) {
+      polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+          command.id, "NOT_A_SKETCH", "No sketch is active or named"));
+      return true;
+    }
+    const double tolerance =
+        read_optional_dimension(command.payload, "tolerance", 0.5);
+    const double angle_tolerance =
+        read_optional_dimension(command.payload, "angle_tolerance", 1.0);
+    for (const auto& feature : document->feature_history) {
+      if (feature.id != feature_id) {
+        continue;
+      }
+      if (!feature.sketch_parameters.has_value()) {
+        polysmith::protocol::write_message(
+            polysmith::protocol::make_error_event(
+                command.id, "NOT_A_SKETCH",
+                "Feature '" + feature_id + "' is not a sketch"));
+        return true;
+      }
+      const auto& parameters = feature.sketch_parameters.value();
+      const auto candidates = polysmith::core::detect_auto_constraints(
+          parameters, tolerance, angle_tolerance);
+      polysmith::protocol::json entries = polysmith::protocol::json::array();
+      for (const auto& candidate : candidates) {
+        entries.push_back({
+            {"kind", candidate.kind},
+            {"target_ids", candidate.target_ids},
+            {"error", candidate.error},
+            {"reason", candidate.reason},
+        });
+      }
+      polysmith::protocol::write_message(
+          polysmith::protocol::make_auto_constraints_preview_event(
+              command.id,
+              polysmith::protocol::json{
+                  {"feature_id", feature.id},
+                  {"candidate_count", entries.size()},
+                  {"candidates", entries},
+                  // -1 means the solver has not run on this sketch; the caller
+                  // must treat it as unknown, not as "fully constrained".
+                  {"current_dofs", parameters.solver_dofs},
+              }));
+      return true;
+    }
+    polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+        command.id, "FEATURE_NOT_FOUND", "No feature '" + feature_id + "'"));
+    return true;
+  }
+
   if (command.type == "get_viewport_state") {
     polysmith::protocol::write_message(
         polysmith::protocol::make_viewport_state_event(

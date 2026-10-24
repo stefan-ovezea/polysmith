@@ -27,6 +27,8 @@ json make_selection_changed_event(const std::string& id, const json& selection);
 // Detected profiles of one sketch, fetched on demand (`get_sketch_profiles`):
 // derived data, no longer carried on the event stream.
 json make_sketch_profiles_event(const std::string& id, const json& profiles);
+json make_auto_constraints_preview_event(const std::string& id,
+                                            const json& preview);
 json make_sketch_diagnostics_event(const std::string& id,
                                     const json& diagnostics);
 // An incremental reply for a command that changed sketch entities in place

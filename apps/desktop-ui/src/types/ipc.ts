@@ -609,6 +609,25 @@ export interface SketchDiagnosticsEvent extends BaseMessage {
   };
 }
 
+// S11: what auto-constrain WOULD propose for a sketch (read-only preview). No
+// geometry changes; the apply pass is a separate command.
+export interface AutoConstraintsPreviewEvent extends BaseMessage {
+  type: "auto_constraints_preview";
+  id: string;
+  payload: {
+    feature_id: string;
+    candidate_count: number;
+    candidates: Array<{
+      kind: string;
+      target_ids: string[];
+      error: number;
+      reason: string;
+    }>;
+    /** Solver dofs; -1 means the solver has not run (unknown, not zero). */
+    current_dofs: number;
+  };
+}
+
 export interface SelectionChangedEvent extends BaseMessage {
   type: "selection_changed";
   id: string;
@@ -865,6 +884,7 @@ export type CoreMessage =
   | FeatureChangedEvent
   | SketchProfilesEvent
   | SketchDiagnosticsEvent
+  | AutoConstraintsPreviewEvent
   | SessionStateEvent
   | ViewportStateEvent
   | DocumentExportedEvent
@@ -921,6 +941,16 @@ export interface GetSketchProfilesCommand {
   type: "get_sketch_profiles";
   payload: {
     feature_id: string;
+  };
+}
+
+export interface PreviewAutoConstraintsCommand {
+  id: string;
+  type: "preview_auto_constraints";
+  payload: {
+    feature_id?: string;
+    tolerance?: number;
+    angle_tolerance?: number;
   };
 }
 
@@ -1225,6 +1255,7 @@ export type CoreCommand =
   | GetViewportStateCommand
   | GetSketchProfilesCommand
   | GetSketchDiagnosticsCommand
+  | PreviewAutoConstraintsCommand
   | ExportDocumentCommand
   | ExportDocumentStlCommand
   | ExportDocumentDxfCommand
