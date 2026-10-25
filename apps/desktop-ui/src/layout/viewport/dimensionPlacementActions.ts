@@ -13,6 +13,7 @@ import {
   radialLeaderDimension,
   type AngleDimensionFrame,
 } from "./dimensionLabelDrag";
+import { dimensionDisplayValue } from "./dimensionValueDisplay";
 import {
   clampAngleRadius,
   type DimensionLabelDragState,
@@ -381,8 +382,16 @@ export function createDimensionPlacementActions({
       dimensionDrag.anglePlacementRelation?.kind === "line_angle"
     ) {
       const labelPosition = anglePlacementPreview.labelPosition;
+      // The preview value is in radians (scene geometry); the
+      // update_sketch_dimension IPC boundary takes display degrees and
+      // converts to radians once.
+      const displayAngle = dimensionDisplayValue({
+        dimension: anglePlacementPreview,
+        coreValue: anglePlacementValue,
+        sketch: null,
+      });
       void updateSketchDimensionRef
-        .current(dimensionDrag.dimensionId, anglePlacementValue)
+        .current(dimensionDrag.dimensionId, displayAngle)
         .then(() => {
           persistDimensionLabelPosition(dimensionDrag.dimensionId, labelPosition);
         })

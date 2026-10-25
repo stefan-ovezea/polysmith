@@ -38,14 +38,14 @@ export function coreBinaryPath(): string {
     return process.env.POLYSMITH_CORE_BIN;
   }
   const binaryName = process.platform === "win32" ? "cad_core.exe" : "cad_core";
-  return join(
-    findRepoRoot(),
-    "native",
-    "cad-core",
-    "build",
-    "Release",
-    binaryName,
-  );
+  const buildDir = join(findRepoRoot(), "native", "cad-core", "build");
+  // Multi-config generators (Visual Studio) put binaries under
+  // build/<config>/; single-config generators (Unix Makefiles, Ninja —
+  // the Linux/macOS default) put them directly in build/.  Mirror the
+  // resolution in scripts/run-core-tests.mjs so the harness finds the
+  // core on every platform.
+  const release = join(buildDir, "Release", binaryName);
+  return existsSync(release) ? release : join(buildDir, binaryName);
 }
 
 // Replicates the child environment from src-tauri/src/cad_core.rs: prepends

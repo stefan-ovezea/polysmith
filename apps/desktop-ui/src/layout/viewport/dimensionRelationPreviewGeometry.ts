@@ -9,7 +9,11 @@ import { clampAngleRadius, formatDraftDimension } from "./draftDimensions";
 
 interface AnglePreviewState {
   shouldApply: boolean;
+  /** Unsigned included angle (radians) used for the preview label/arc. */
   angle: number;
+  /** Signed directed angle from the first line to the second (radians);
+   *  sent to the core when the pick differs from its measurement. */
+  signedAngle: number;
 }
 
 function lineLength(line: SketchLineEntry) {
@@ -219,40 +223,6 @@ function lineHasEndpointAt(
   );
 }
 
-function lineDirectionTowardSmallerAngle(
-  line: SketchLineEntry,
-  point: [number, number],
-  otherDirection: [number, number],
-): [number, number] | null {
-  const candidates: [number, number][] = [
-    [line.start_x - point[0], line.start_y - point[1]],
-    [line.end_x - point[0], line.end_y - point[1]],
-  ];
-  let best: [number, number] | null = null;
-  let bestAngle = Number.POSITIVE_INFINITY;
-  for (const candidate of candidates) {
-    const length = Math.hypot(candidate[0], candidate[1]);
-    if (length <= 1e-9) {
-      continue;
-    }
-    const unit: [number, number] = [
-      candidate[0] / length,
-      candidate[1] / length,
-    ];
-    const angle = Math.abs(
-      Math.atan2(
-        unit[0] * otherDirection[1] - unit[1] * otherDirection[0],
-        unit[0] * otherDirection[0] + unit[1] * otherDirection[1],
-      ),
-    );
-    if (angle < bestAngle) {
-      bestAngle = angle;
-      best = unit;
-    }
-  }
-  return best;
-}
-
 function lineEndpointDirections(
   line: SketchLineEntry,
   point: [number, number],
@@ -419,8 +389,8 @@ export function createLineAnglePreview({
         // Virtual pivot: neither line touches the pivot.  Pair each
         // endpoint direction of the first line with every endpoint
         // direction of the second so the user can hover to select
-        // acute, obtuse, or reflex angles — the same way T‑connections
-        // let you pick which side of the shared endpoint to measure.
+        // either included angle — the same way T‑connections let you
+        // pick which side of the shared endpoint to measure.
         ? lineEndpointDirections(first, pivot).flatMap((firstCandidate) =>
             lineEndpointDirections(second, pivot).map((secondCandidate) => ({
               firstDir: firstCandidate,
@@ -475,23 +445,32 @@ export function createLineAnglePreview({
       if (cOnAPlus === onAPlus && cOnBPlus === onBPlus) { selected = c; break; }
     }
   }
-  // Compare against the core's default (dir_away), not smallestCandidateAngle.
-  // When dir_away yields the obtuse angle but the user picks the acute
-  // quadrant, smallestCandidateAngle doesn't detect the mismatch.
+  // Compare against the angle the core will store when it has to measure
+  // the dimension itself (no value passed at creation). The core uses
+  // dir_away (towards the farther endpoint) for both rays, including the
+  // T-connection case, so mirror it here; otherwise a pick that differs
+  // from the core's default is never sent and the created dimension
+  // shows the wrong quadrant/supplement.
   const defaultAngle = angleBetweenDirections(firstDir, secondDir);
   const differsFromDefault = Math.abs(selected.angle - defaultAngle) > 1e-6;
-  let useReflex = false;
-  if (cursorDir && candidates.length === 1) {
-    const dot =
-      cursorDir[0] * selected.bisector[0] +
-      cursorDir[1] * selected.bisector[1];
-    useReflex = dot < 0;
-  }
 
-  const angle = useReflex ? 2 * Math.PI - selected.angle : selected.angle;
-  const shouldApply = differsFromDefault || useReflex;
+  // Two lines have no reflex angle: the directed-angle solver constraint
+  // (planegcs L2LAngle) cannot represent a target above 180°, and storing
+  // one made the first driving solve flip the geometry to the far side.
+  // Always dimension the included (≤180°) angle.
+  const angle = selected.angle;
+  const shouldApply = differsFromDefault;
   const resolvedFirstDir = selected.firstDir;
   const resolvedSecondDir = selected.secondDir;
+  // Directed angle (first → second), matching planegcs L2LAngle's
+  // angle(gl2) - angle(gl1) convention.  The core stores this sign so a
+  // "Toggle Driving" on a T-junction picks the same ray the user saw.
+  const signedAngle = Math.atan2(
+    resolvedFirstDir[0] * resolvedSecondDir[1] -
+      resolvedFirstDir[1] * resolvedSecondDir[0],
+    resolvedFirstDir[0] * resolvedSecondDir[0] +
+      resolvedFirstDir[1] * resolvedSecondDir[1],
+  );
   const cursorRadius = Math.hypot(cursor[0] - pivot[0], cursor[1] - pivot[1]);
   const radius = clampAngleRadius(cursorRadius);
   const dimensionStart: [number, number] = [
@@ -521,7 +500,7 @@ export function createLineAnglePreview({
   ];
 
   return {
-    anglePreview: { shouldApply, angle },
+    anglePreview: { shouldApply, angle, signedAngle },
     dimension: {
       dimensionId: "preview-dim-line-angle",
       planeId,

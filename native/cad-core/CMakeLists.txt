@@ -580,6 +580,11 @@ polysmith_add_core_test(cad_core_circle_modes_test tests/circle_modes_test.cpp)
 # angle sweeps, arc length driving.
 polysmith_add_core_test(cad_core_dimension_completion_test tests/dimension_completion_test.cpp)
 
+# Line-line angle dimension regression suite — normal driving, reflex
+# target normalisation (the "solver flips the sketch" bug), T-junction
+# dir_away measurement, and line_angle driving.
+polysmith_add_core_test(cad_core_sketch_angle_dimension_test tests/sketch_angle_dimension_test.cpp)
+
 # Sketch array regression suite — linear/circular exploded copies,
 # unique ids, on-circle placement (1e-6), single-undo removal.
 polysmith_add_core_test(cad_core_array_test tests/array_test.cpp)

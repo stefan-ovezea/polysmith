@@ -63,6 +63,10 @@ interface CancelDimensionEditorEditParams {
     dimension: SketchDimensionScene,
     coreValue: number,
   ) => string;
+  toDisplayValue: (
+    dimension: SketchDimensionScene,
+    coreValue: number,
+  ) => number;
 }
 
 interface CancelDimensionEditorPlacementParams {
@@ -106,9 +110,14 @@ export async function submitDimensionEditorValue({
     rawValue,
     displayUnits,
   });
+  // A parsed number is always sent numerically — including negative
+  // angles (the core's angle kinds accept signed values) and zero or
+  // negative lengths, which the core rejects with its own validation
+  // error.  Only non-numeric text is an expression; sending "-45" as an
+  // expression used to turn a plain angle entry into a stored formula.
   await updateSketchDimension(
     dimension.dimensionId,
-    parsed !== null && parsed > 0 ? toCoreValue(dimension, parsed) : rawValue,
+    parsed !== null ? toCoreValue(dimension, parsed) : rawValue,
   );
 }
 
@@ -157,6 +166,7 @@ export function cancelDimensionEditorEdit({
   setDraftValue,
   setIsEditorOpen,
   formatDisplayValue,
+  toDisplayValue,
 }: CancelDimensionEditorEditParams) {
   clearDimensionExpressionPreview(expressionTimeoutRef);
   const originalValue = originalValueRef.current;
@@ -166,7 +176,10 @@ export function cancelDimensionEditorEdit({
       dimension.dimensionId,
       originalValue.expression.trim().length > 0
         ? originalValue.expression
-        : originalValue.value,
+        : // Restore through the display unit: angle dimensions store
+          // radians in core state but the IPC update command takes
+          // degrees (and converts once on the core side).
+          toDisplayValue(dimension, originalValue.value),
     );
     setDimensionLabelPositions((current) => {
       if (!(dimension.dimensionId in current)) {

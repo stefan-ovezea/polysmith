@@ -63,34 +63,14 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
     if (len < 1e-12) return {1.0, 0.0};
     return {dx / len, dy / len};
   };
-  auto dir_toward_smaller_angle =
-      [](double px, double py,
-         double host0x, double host0y,
-         double host1x, double host1y,
-         double other_dx, double other_dy) -> std::pair<double, double> {
-    auto unit = [&](double x, double y) {
-      double dx = x - px;
-      double dy = y - py;
-      double len = std::sqrt(dx * dx + dy * dy);
-      if (len < 1e-12) return std::pair<double, double>{1.0, 0.0};
-      return std::pair<double, double>{dx / len, dy / len};
-    };
-    // Skip a candidate that sits at the pivot — the fallback (1,0)
-    // can win the scoring and turn the inter-line angle into a
-    // single-line angle from horizontal.
-    double len0 = std::sqrt((host0x - px)*(host0x - px) + (host0y - py)*(host0y - py));
-    double len1 = std::sqrt((host1x - px)*(host1x - px) + (host1y - py)*(host1y - py));
-    if (len0 < 1e-9) return unit(host1x, host1y);
-    if (len1 < 1e-9) return unit(host0x, host0y);
-    auto d0 = unit(host0x, host0y);
-    auto d1 = unit(host1x, host1y);
-    auto angle_to_other = [&](const std::pair<double, double>& dir) {
-      return std::abs(std::atan2(
-          dir.first * other_dy - dir.second * other_dx,
-          dir.first * other_dx + dir.second * other_dy));
-    };
-    return angle_to_other(d0) <= angle_to_other(d1) ? d0 : d1;
-  };
+
+  // The T-connection branches below (one line's endpoint lies on the
+  // other's segment) must build the same directed angle the UI preview
+  // shows.  The UI measures both lines with `dir_away` (towards the
+  // farther endpoint), so mirror that here.  Using the smaller-angle
+  // host ray instead measured the supplement for an unequal-distance
+  // T-junction, and the dimension created from the same two picks
+  // disagreed with the preview.
 
   // --- Parallelism gate: parallel lines that do NOT share a point
   //     ID get a line-line distance dimension, not an angle.  This
@@ -214,11 +194,10 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
                           a_ends[a_pivot_index].second);
     a_dx = a_dir.first;
     a_dy = a_dir.second;
-    auto b_dir = dir_toward_smaller_angle(
+    auto b_dir = dir_away(
         pivot_x, pivot_y,
         b_ends[0].first, b_ends[0].second,
-        b_ends[1].first, b_ends[1].second,
-        a_dx, a_dy);
+        b_ends[1].first, b_ends[1].second);
     b_dx = b_dir.first;
     b_dy = b_dir.second;
   } else if (b_pivot_index >= 0) {
@@ -232,11 +211,10 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
                           b_ends[b_pivot_index].second);
     b_dx = b_dir.first;
     b_dy = b_dir.second;
-    auto a_dir = dir_toward_smaller_angle(
+    auto a_dir = dir_away(
         pivot_x, pivot_y,
         a_ends[0].first, a_ends[0].second,
-        a_ends[1].first, a_ends[1].second,
-        b_dx, b_dy);
+        a_ends[1].first, a_ends[1].second);
     a_dx = a_dir.first;
     a_dy = a_dir.second;
   } else {
@@ -325,12 +303,30 @@ void add_sketch_angle_dimension(FeatureEntry& feature,
   const bool both_axis_constrained =
       first_line.constraint.has_value() && second_line.constraint.has_value();
   const bool angle_already_determined = pair_is_related || both_axis_constrained;
+  // A caller-supplied value comes from the UI preview and is the SIGNED
+  // directed angle from the first line to the second (matching the
+  // L2LAngle convention), in radians.  Two lines have no reflex angle,
+  // and planegcs L2LAngle cannot enforce a target above 180°, so clamp
+  // the magnitude to the included angle and keep the caller's sign.
+  double stored_angle = current_angle;
+  if (value.has_value()) {
+    constexpr double kPi = 3.14159265358979323846;
+    constexpr double kTwoPi = 2.0 * kPi;
+    double provided = std::fmod(std::abs(*value), kTwoPi);
+    if (provided < 0.0) {
+      provided += kTwoPi;
+    }
+    if (provided > kPi) {
+      provided = kTwoPi - provided;
+    }
+    stored_angle = (*value < 0.0) ? -provided : provided;
+  }
   parameters.dimensions.push_back(SketchDimension{
       .id = "dim-angle-" + first + "-" + second,
       .kind = "angle",
       .entity_id = first_line_id,
       .secondary_entity_id = second_line_id,
-      .value = value.value_or(current_angle),
+      .value = stored_angle,
       // See above: a determined angle is a reference dimension, never a driving
       // constraint that can fight the relations.
       .driven = angle_already_determined,

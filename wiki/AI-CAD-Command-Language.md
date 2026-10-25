@@ -2867,6 +2867,13 @@ expressions are authored in degrees. The core converts degrees→radians
 during expression evaluation. `line_angle` preserves the sign quadrant
 from the current geometry when re-evaluated.
 
+For a **numeric** `value` on an angle dimension, the IPC value is the
+displayed value in degrees: the core converts it to radians exactly once
+(on the way in) and the `value` it emits back in document state is
+radians. Do not pre-convert numeric angle values to radians. A line-line
+`angle` target above 180° is normalised to the included angle, since the
+directed-angle constraint cannot represent reflex angles.
+
 For `circle_radius`, the `value` over IPC **is the displayed value**:
 the diameter when `display_as` is `""` (diameter mode, the default) and
 the radius when `display_as` is `"radius"`. The core converts it to the

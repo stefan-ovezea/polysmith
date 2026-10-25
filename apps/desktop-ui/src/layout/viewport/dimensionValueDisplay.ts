@@ -65,7 +65,12 @@ export function dimensionCoreValue({
   sketch: SketchFeatureParameters | null;
 }) {
   if (dimension.kind === "angle" || dimension.kind === "line_angle") {
-    return displayValue * (Math.PI / 180);
+    // The IPC `update_sketch_dimension` boundary takes the DISPLAYED
+    // value (degrees) and converts degrees→radians exactly once, like
+    // the diameter-mode circle convention above.  Converting here too
+    // sent every typed angle as radians and the core converted again —
+    // 45° arrived as 0.79°, collapsing the geometry.
+    return displayValue;
   }
   // circle_radius: send the displayed value as-is; the core's
   // update_sketch_dimension handler halves diameter-mode values when it

@@ -9,8 +9,8 @@ interface DimensionToolActionParams {
   pendingDimSourceEntityIdRef: MutableRefObject<string | null>;
   pendingDimensionPlacementRef: MutableRefObject<boolean>;
   dimensionToolFirstLineRef: MutableRefObject<string | null>;
-  pendingAngleIsReflexRef: MutableRefObject<boolean>;
-  pendingReflexAngleRef: MutableRefObject<number>;
+  pendingAnglePreviewAppliesRef: MutableRefObject<boolean>;
+  pendingAnglePreviewValueRef: MutableRefObject<number>;
   pendingRelationPlacementLabelRef: MutableRefObject<
     [number, number, number] | null
   >;
@@ -53,8 +53,8 @@ export function createDimensionToolActions({
   pendingDimSourceEntityIdRef,
   pendingDimensionPlacementRef,
   dimensionToolFirstLineRef,
-  pendingAngleIsReflexRef,
-  pendingReflexAngleRef,
+  pendingAnglePreviewAppliesRef,
+  pendingAnglePreviewValueRef,
   pendingRelationPlacementLabelRef,
   pendingRelationPlacementMatchRef,
   addSketchCircleRadiusDimensionRef,
@@ -226,8 +226,8 @@ export function createDimensionToolActions({
             (relation.firstEntityId === secondEntityId &&
               relation.targetEntityId === firstEntityId))
         ) {
-          pendingAngleIsReflexRef.current = false;
-          pendingReflexAngleRef.current = 0;
+          pendingAnglePreviewAppliesRef.current = false;
+          pendingAnglePreviewValueRef.current = 0;
           void addSketchDistanceDimensionRef
             .current(firstEntityId, secondEntityId)
             .then(clearRelationPlacementStage)
@@ -236,10 +236,10 @@ export function createDimensionToolActions({
         }
       }
       if (forceMode !== "distance") {
-        const shouldApply = pendingAngleIsReflexRef.current;
-        const previewAngle = pendingReflexAngleRef.current;
-        pendingAngleIsReflexRef.current = false;
-        pendingReflexAngleRef.current = 0;
+        const shouldApply = pendingAnglePreviewAppliesRef.current;
+        const previewAngle = pendingAnglePreviewValueRef.current;
+        pendingAnglePreviewAppliesRef.current = false;
+        pendingAnglePreviewValueRef.current = 0;
         const angleValue = shouldApply ? previewAngle : undefined;
         void addSketchAngleDimensionRef
           .current(firstEntityId, secondEntityId, angleValue)
@@ -274,8 +274,8 @@ export function createDimensionToolActions({
     pendingDimensionPlacementRef.current = false;
     pendingRelationPlacementLabelRef.current = null;
     pendingRelationPlacementMatchRef.current = null;
-    pendingAngleIsReflexRef.current = false;
-    pendingReflexAngleRef.current = 0;
+    pendingAnglePreviewAppliesRef.current = false;
+    pendingAnglePreviewValueRef.current = 0;
   }
 
   return {

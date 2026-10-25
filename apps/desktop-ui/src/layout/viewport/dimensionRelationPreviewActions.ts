@@ -35,8 +35,8 @@ interface DimensionRelationPreviewActionsContext {
   activeSketchToolRef: MutableRef<SketchTool>;
   activeSketchPlaneIdRef: MutableRef<string | null>;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
-  pendingAngleIsReflexRef: MutableRef<boolean>;
-  pendingReflexAngleRef: MutableRef<number>;
+  pendingAnglePreviewAppliesRef: MutableRef<boolean>;
+  pendingAnglePreviewValueRef: MutableRef<number>;
   worldUnitsPerPixelRef: MutableRef<number>;
   clearPreviewDimension: () => void;
   hideRelationPreviewDimension: (dimensionId: string | null) => void;
@@ -55,8 +55,8 @@ export function createDimensionRelationPreviewActions({
   activeSketchToolRef,
   activeSketchPlaneIdRef,
   activeSketchPlaneFrameRef,
-  pendingAngleIsReflexRef,
-  pendingReflexAngleRef,
+  pendingAnglePreviewAppliesRef,
+  pendingAnglePreviewValueRef,
   worldUnitsPerPixelRef,
   clearPreviewDimension,
   hideRelationPreviewDimension,
@@ -102,18 +102,21 @@ export function createDimensionRelationPreviewActions({
       dimensionToolMode: dimensionToolModeRef.current,
     });
     if (!preview) {
-      pendingAngleIsReflexRef.current = false;
-      pendingReflexAngleRef.current = 0;
+      pendingAnglePreviewAppliesRef.current = false;
+      pendingAnglePreviewValueRef.current = 0;
       return null;
     }
     if (preview.anglePreview) {
-      pendingAngleIsReflexRef.current = preview.anglePreview.shouldApply;
-      pendingReflexAngleRef.current = preview.anglePreview.shouldApply
-        ? preview.anglePreview.angle
+      pendingAnglePreviewAppliesRef.current = preview.anglePreview.shouldApply;
+      // Signed radians (first → second): add_sketch_angle_dimension
+      // stores this directed value so the solver and a later
+      // "Toggle Driving" agree with the quadrant the user picked.
+      pendingAnglePreviewValueRef.current = preview.anglePreview.shouldApply
+        ? preview.anglePreview.signedAngle
         : 0;
     } else {
-      pendingAngleIsReflexRef.current = false;
-      pendingReflexAngleRef.current = 0;
+      pendingAnglePreviewAppliesRef.current = false;
+      pendingAnglePreviewValueRef.current = 0;
     }
     renderDimensionRelationPreview(preview.relation, preview.dimension);
     return preview.relation;

@@ -245,6 +245,7 @@ import { ViewportPanelShell } from "./viewport/ViewportPanelShell";
 import { computeViewportCrosshairState } from "./viewport/viewportCrosshairState";
 import {
   dimensionCoreValue as computeDimensionCoreValue,
+  dimensionDisplayValue as computeDimensionDisplayValue,
   formattedDimensionDisplayValue as formatDimensionDisplayValue,
   isProjectedCircleDimension as isProjectedCircleDimensionForSketch,
 } from "./viewport/dimensionValueDisplay";
@@ -1118,8 +1119,8 @@ export function ViewportPanel({
     useRef<[number, number, number] | null>(null);
   const pendingRelationPlacementLabelRef =
     useRef<[number, number, number] | null>(null);
-  const pendingAngleIsReflexRef = useRef(false);
-  const pendingReflexAngleRef = useRef(0);
+  const pendingAnglePreviewAppliesRef = useRef(false);
+  const pendingAnglePreviewValueRef = useRef(0);
   const worldUnitsPerPixelRef = useRef(1);
   const pendingRelationPlacementMatchRef =
     useRef<DimensionRelationPreview | null>(null);
@@ -1917,8 +1918,8 @@ export function ViewportPanel({
       activeSketchToolRef,
       activeSketchPlaneIdRef,
       activeSketchPlaneFrameRef,
-      pendingAngleIsReflexRef,
-      pendingReflexAngleRef,
+      pendingAnglePreviewAppliesRef,
+      pendingAnglePreviewValueRef,
       worldUnitsPerPixelRef,
       clearPreviewDimension,
       hideRelationPreviewDimension,
@@ -2092,8 +2093,8 @@ export function ViewportPanel({
     pendingDimSourceEntityIdRef,
     pendingDimensionPlacementRef,
     dimensionToolFirstLineRef,
-    pendingAngleIsReflexRef,
-    pendingReflexAngleRef,
+    pendingAnglePreviewAppliesRef,
+    pendingAnglePreviewValueRef,
     pendingRelationPlacementLabelRef,
     pendingRelationPlacementMatchRef,
     addSketchCircleRadiusDimensionRef,
@@ -2146,6 +2147,17 @@ export function ViewportPanel({
     return computeDimensionCoreValue({
       dimension,
       displayValue,
+      sketch: sketchLinesRef.current,
+    });
+  }
+
+  function dimensionDisplayValue(
+    dimension: SketchDimensionScene,
+    coreValue: number,
+  ) {
+    return computeDimensionDisplayValue({
+      dimension,
+      coreValue,
       sketch: sketchLinesRef.current,
     });
   }
@@ -2240,6 +2252,9 @@ export function ViewportPanel({
         isSelected: currentDimension?.isSelected ?? true,
         driven: currentDimension?.driven,
       },
+      // Radians, matching the preview geometry. The draft-add path
+      // stores this directly (core units); the drag-commit path converts
+      // it to display degrees at the update_sketch_dimension boundary.
       preview.anglePreview.angle,
     );
     return true;
@@ -6234,6 +6249,7 @@ export function ViewportPanel({
     updateSketchDimension: updateSketchDimensionRef.current,
     deleteSketchDimension: deleteSketchDimensionRef.current,
     dimensionCoreValue,
+    dimensionDisplayValue,
     formattedDimensionDisplayValue,
     finishDimensionPlacement,
     cancelDimensionPlacement,

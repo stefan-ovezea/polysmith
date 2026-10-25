@@ -121,8 +121,15 @@ void update_angle_dimension(FeatureEntry& feature,
   if (requested < 0.0) {
     requested += kTwoPi;
   }
-  const double target_small_angle =
-      requested > kPi ? kTwoPi - requested : requested;
+  // The angle between two lines is the included angle (0..180°).
+  // planegcs L2LAngle enforces a DIRECTED angle in (-180°, 180°], so a
+  // reflex input (e.g. 300°) has no representation: storing it as-is
+  // made the first driving solve flip the geometry by the reflex
+  // complement.  Normalise to the included angle before rotating.
+  if (requested > kPi) {
+    requested = kTwoPi - requested;
+  }
+  const double target_small_angle = requested;
 
   if (use_virtual_pivot) {
     // Compute angle delta from virtual-pivot directions, then rotate
@@ -219,10 +226,7 @@ void update_angle_dimension(FeatureEntry& feature,
 
     constexpr double kLocalAngleConfirmTolerance = 1e-4;
     if (std::abs(delta) <= kLocalAngleConfirmTolerance) {
-      dimension.value = requested > kPi
-                            ? (current_signed_for_value < 0.0 ? -std::abs(value)
-                                                       : std::abs(value))
-                            : current_signed_for_value;
+      dimension.value = current_signed_for_value;
       return;
     }
 
@@ -290,10 +294,7 @@ void update_angle_dimension(FeatureEntry& feature,
     };
     const double target_signed =
         final_wrap(current_signed_for_value + delta);
-    dimension.value = requested > kPi
-                          ? (target_signed < 0.0 ? -std::abs(value)
-                                                 : std::abs(value))
-                          : target_signed;
+    dimension.value = target_signed;
     refresh_sketch_derived_state(feature);
     return;
   } else if (b_pivot_index >= 0) {
@@ -368,10 +369,7 @@ void update_angle_dimension(FeatureEntry& feature,
 
   constexpr double kAngleConfirmTolerance = 1e-4;
   if (std::abs(delta) <= kAngleConfirmTolerance) {
-    dimension.value = requested > kPi
-                          ? (current_signed < 0.0 ? -std::abs(value)
-                                                   : std::abs(value))
-                          : current_signed;
+    dimension.value = current_signed;
     return;
   }
   }  // !use_virtual_pivot
@@ -426,10 +424,7 @@ void update_angle_dimension(FeatureEntry& feature,
   };
   const double target_signed =
       final_wrap(current_signed_for_value + delta);
-  dimension.value = requested > kPi
-                        ? (target_signed < 0.0 ? -std::abs(value)
-                                               : std::abs(value))
-                        : target_signed;
+  dimension.value = target_signed;
   refresh_sketch_derived_state(feature);
   return;
 }

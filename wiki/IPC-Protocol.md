@@ -727,6 +727,15 @@ Kind checking: the expression resolver validates that angle-type parameters
 `"line_angle"`). Using an angle parameter in a length dimension produces
 a descriptive error.
 
+Numeric `value` units: the IPC value is the **displayed** value. For
+`angle` / `line_angle` a number is degrees and the core converts it to
+radians exactly once (the same rule as diameter-mode circle numbers); the
+`value` emitted back in `sketch_parameters.dimensions[]` stays in core
+units (radians). Sending radians from the UI double-converts and collapses
+the geometry. A line-line `angle` target above 180° is normalised to the
+included angle (0–180°), because planegcs `L2LAngle` enforces a directed
+angle and cannot represent a reflex target.
+
 ### Selection Filter
 
 The `update_selection_filter` command allows the UI to control which

@@ -41,6 +41,10 @@ interface DimensionEditorActionParams {
     dimension: SketchDimensionScene,
     displayValue: number,
   ) => number;
+  dimensionDisplayValue: (
+    dimension: SketchDimensionScene,
+    coreValue: number,
+  ) => number;
   formattedDimensionDisplayValue: (
     dimension: SketchDimensionScene,
     coreValue: number,
@@ -70,6 +74,7 @@ export function createDimensionEditorActions({
   updateSketchDimension,
   deleteSketchDimension,
   dimensionCoreValue,
+  dimensionDisplayValue,
   formattedDimensionDisplayValue,
   finishDimensionPlacement,
   cancelDimensionPlacement,
@@ -144,6 +149,7 @@ export function createDimensionEditorActions({
       setDraftValue: setDimensionDraftValue,
       setIsEditorOpen: setIsDimensionEditorOpen,
       formatDisplayValue: formattedDimensionDisplayValue,
+      toDisplayValue: dimensionDisplayValue,
     });
   }
 

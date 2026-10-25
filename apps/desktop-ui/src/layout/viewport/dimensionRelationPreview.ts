@@ -26,7 +26,11 @@ interface PreviewBuildContext {
 
 interface AnglePreviewState {
   shouldApply: boolean;
+  /** Unsigned included angle (radians) used for the preview label/arc. */
   angle: number;
+  /** Signed directed angle from the first line to the second (radians);
+   *  sent to the core when the pick differs from its measurement. */
+  signedAngle: number;
 }
 
 export interface DimensionRelationPreviewResult {
