@@ -125,32 +125,42 @@ AutoConstrainReport apply_auto_constraints(FeatureEntry& feature,
   }
 
   // ── Position pass ────────────────────────────────────────────
-  // Whatever DOF survives the dimensions is the sketch's POSITION: nothing has
-  // anchored it to the plane, so x/y are free. Dimensions cannot close that (a
-  // width does not say where the rectangle is), and adding a distance-to-origin
-  // dimension would mean teaching the solver a new kind for a statement the
-  // sketch can already make - a fixed vertex pins x AND y.
+  // Whatever DOF survives the dimensions might be the sketch's POSITION: nothing
+  // has anchored it to the plane, so x/y are free. Dimensions cannot close that
+  // (a width does not say where the rectangle is), and adding a distance-to-origin
+  // dimension would mean teaching the solver a new kind for a statement the sketch
+  // can already make - a fixed vertex pins x AND y.
   //
-  // So pin one corner per surviving DOF. Measured: a 100x50 rectangle goes
-  // 4 DOF -> 2 (width, height) -> 0 with one fixed corner, with no new solver
-  // plumbing at all. The pin is a first-class constraint the user can see (FIX
-  // badge) and delete, which is why this is honest rather than magic: "Fully
-  // constrain" anchors the sketch where it stands.
-  if (add_dimensions && dofs > 0 && feature.sketch_parameters.has_value()) {
+  // THE PASS PINS AT MOST ONE VERTEX, AND ONLY WHEN THE SKETCH IS NEARLY DONE.
+  // It was written for a rectangle at 2 DOF and shipped as "pin one vertex per
+  // surviving DOF", which on a real drawing is a catastrophe: a 17-DOF sketch came
+  // back with EIGHT pinned points ("... dimensions 2, fixed 8"), so most of the
+  // geometry could no longer move - drags either snapped back or dragged something
+  // unrelated, and endpoints visibly came apart. Pinning only means anything about
+  // POSITION (a rigid body's x and y), so it is restricted to the case where that
+  // is all that is left (<= 3 DOF: x, y and maybe a rotation), to a single pin, and
+  // to a pin that removes exactly the two translation degrees of freedom. A loose
+  // sketch is then reported as loose, which is the truth, instead of being nailed
+  // down.
+  // Exactly 2: pure translation, no rotation and no shape freedom left. Pinning a
+  // sketch that still has a free rotation would leave one DOF and a point the user
+  // can no longer drag, which is worse than reporting the truth.
+  constexpr int kPositionOnlyDof = 2;
+  if (add_dimensions && dofs == kPositionOnlyDof &&
+      feature.sketch_parameters.has_value()) {
     for (const auto& vertex :
          std::vector<SketchVertex>(feature.sketch_parameters->vertices)) {
-      if (dofs <= 0) break;
       if (vertex.is_fixed) continue;
       const SketchFeatureParameters before = feature.sketch_parameters.value();
       set_sketch_vertex_fixed(feature, vertex.id, true);
       const int next = measure_solver_dofs(feature.sketch_parameters.value());
-      if (next >= 0 && next < dofs) {
+      if (next >= 0 && next == dofs - 2) {
         dofs = next;
         ++report.vertices_fixed;
-      } else {
-        feature.sketch_parameters = before;
-        refresh_sketch_derived_state(feature);
+        break;  // one pin closes the translation; never pin shape freedom
       }
+      feature.sketch_parameters = before;
+      refresh_sketch_derived_state(feature);
     }
   }
   if (!report.added.empty() || report.dimensions_added > 0 ||
