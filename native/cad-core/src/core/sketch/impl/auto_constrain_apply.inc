@@ -124,7 +124,37 @@ AutoConstrainReport apply_auto_constraints(FeatureEntry& feature,
     }
   }
 
-  if (!report.added.empty() || report.dimensions_added > 0) {
+  // ── Position pass ────────────────────────────────────────────
+  // Whatever DOF survives the dimensions is the sketch's POSITION: nothing has
+  // anchored it to the plane, so x/y are free. Dimensions cannot close that (a
+  // width does not say where the rectangle is), and adding a distance-to-origin
+  // dimension would mean teaching the solver a new kind for a statement the
+  // sketch can already make - a fixed vertex pins x AND y.
+  //
+  // So pin one corner per surviving DOF. Measured: a 100x50 rectangle goes
+  // 4 DOF -> 2 (width, height) -> 0 with one fixed corner, with no new solver
+  // plumbing at all. The pin is a first-class constraint the user can see (FIX
+  // badge) and delete, which is why this is honest rather than magic: "Fully
+  // constrain" anchors the sketch where it stands.
+  if (add_dimensions && dofs > 0 && feature.sketch_parameters.has_value()) {
+    for (const auto& vertex :
+         std::vector<SketchVertex>(feature.sketch_parameters->vertices)) {
+      if (dofs <= 0) break;
+      if (vertex.is_fixed) continue;
+      const SketchFeatureParameters before = feature.sketch_parameters.value();
+      set_sketch_vertex_fixed(feature, vertex.id, true);
+      const int next = measure_solver_dofs(feature.sketch_parameters.value());
+      if (next >= 0 && next < dofs) {
+        dofs = next;
+        ++report.vertices_fixed;
+      } else {
+        feature.sketch_parameters = before;
+        refresh_sketch_derived_state(feature);
+      }
+    }
+  }
+  if (!report.added.empty() || report.dimensions_added > 0 ||
+      report.vertices_fixed > 0) {
     refresh_sketch_derived_state(feature);
   }
   report.dofs_after = dofs;

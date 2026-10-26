@@ -261,20 +261,26 @@ DocumentState DocumentManager::auto_constrain_sketch(double tolerance_mm,
     throw std::runtime_error("Active sketch feature not found");
   }
 
-  // A run that adds nothing must not push an undo step (an empty "Auto Constrain
-  // Sketch" entry is noise) and must not bump the revision. The pass mutates the
-  // feature as it probes candidates, so snapshot it and restore on a no-op.
-  const FeatureEntry snapshot = *feature_it;
+  // Run the pass on a COPY, then commit it only if it changed something.
+  //
+  // Two reasons. A run that adds nothing must not push an undo step (an empty
+  // "Auto Constrain Sketch" entry is noise) and must not bump the revision. And
+  // the undo step has to capture the sketch as it was BEFORE the pass: calling
+  // push_undo_state() after mutating recorded the already-constrained state, so
+  // "one undo restores it" silently did nothing (caught by the fully-constrain
+  // test: undo left the pin in place).
+  FeatureEntry probe = *feature_it;
   const AutoConstrainReport report = apply_auto_constraints(
-      *feature_it, tolerance_mm, angle_tolerance_deg, add_dimensions);
-  if (report.added.empty() && report.dimensions_added == 0) {
-    *feature_it = snapshot;
+      probe, tolerance_mm, angle_tolerance_deg, add_dimensions);
+  if (report.added.empty() && report.dimensions_added == 0 &&
+      report.vertices_fixed == 0) {
     if (added_count != nullptr) {
       *added_count = 0;
     }
     return document_.value();
   }
   push_undo_state();
+  *feature_it = probe;
   clear_redo_stack();
   if (added_count != nullptr) {
     *added_count = static_cast<int>(report.added.size());
@@ -294,7 +300,8 @@ DocumentState DocumentManager::auto_constrain_sketch(double tolerance_mm,
                     std::to_string(report.added.size()) + ", rejected " +
                     std::to_string(report.rejected.size()) + ", skipped " +
                     std::to_string(report.skipped.size()) + ", dimensions " +
-                    std::to_string(report.dimensions_added));
+                    std::to_string(report.dimensions_added) + ", fixed " +
+                    std::to_string(report.vertices_fixed));
   refresh_linked_extrudes(*document_, *feature_it);
   document_->selected_feature_id = feature_it->id;
   bump_geometry_revision();

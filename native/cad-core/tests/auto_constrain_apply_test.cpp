@@ -171,6 +171,71 @@ bool test_axis_only_sketch_does_not_solve_per_edit() {
                  std::to_string(viewport.solver_dofs))
                     .c_str());
 }
+
+// "Fully constrain" must actually fully constrain. Before the position pass it
+// stopped at 2 DOF: the dimensions pin width and height, and nothing said WHERE
+// the rectangle is. Adding a distance-to-origin dimension would mean teaching the
+// solver a new kind for a statement the sketch can already make - a fixed vertex
+// pins x and y - so the pass pins one corner per surviving DOF instead.
+bool test_fully_constrain_reaches_zero_dof() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 100.0, 50.0);
+
+  int added = 0;
+  document = manager.auto_constrain_sketch(0.5, 1.0, /*add_dimensions=*/true, &added);
+  FeatureEntry* feature = sketch_feature(document);
+  if (!expect(feature != nullptr, "fully constrain: the sketch exists")) {
+    return false;
+  }
+  const auto& parameters = *feature->sketch_parameters;
+  if (!expect(parameters.solver_dofs == 0,
+              ("fully constrain: DOF reaches 0 - got " +
+               std::to_string(parameters.solver_dofs))
+                  .c_str())) {
+    return false;
+  }
+  // The geometry must be untouched: pinning the position locks the sketch where
+  // it stands, it does not move it.
+  if (!expect(parameters.lines.size() == 4,
+              "fully constrain: the four sides survive")) {
+    return false;
+  }
+  int fixed_vertices = 0;
+  for (const auto& vertex : parameters.vertices) {
+    if (vertex.is_fixed) ++fixed_vertices;
+  }
+  if (!expect(fixed_vertices == 1,
+              ("fully constrain: exactly one corner is pinned - got " +
+               std::to_string(fixed_vertices))
+                  .c_str())) {
+    return false;
+  }
+  const double width = std::hypot(parameters.lines[0].end_x - parameters.lines[0].start_x,
+                                  parameters.lines[0].end_y - parameters.lines[0].start_y);
+  if (!expect(std::abs(width - 100.0) < 1e-6,
+              ("fully constrain: the width is unchanged - got " +
+               std::to_string(width))
+                  .c_str())) {
+    return false;
+  }
+
+  // One undo must take the sketch back to where it was: no dimensions, no pin.
+  document = manager.undo();
+  FeatureEntry* undone = sketch_feature(document);
+  if (!expect(undone != nullptr, "fully constrain: undo keeps the sketch")) {
+    return false;
+  }
+  for (const auto& vertex : undone->sketch_parameters->vertices) {
+    if (!expect(!vertex.is_fixed, "fully constrain: undo removes the pin")) {
+      return false;
+    }
+  }
+  return expect(undone->sketch_parameters->solver_dofs != 0,
+                "fully constrain: undo reopens the degrees of freedom");
+}
+
 }  // namespace
 
 int main() {
@@ -179,6 +244,7 @@ int main() {
   if (!test_a_fully_constrained_sketch_is_left_alone()) return 1;
   if (!test_dimensions_close_the_size_gap()) return 1;
   if (!test_axis_only_sketch_does_not_solve_per_edit()) return 1;
+  if (!test_fully_constrain_reaches_zero_dof()) return 1;
 
   std::cout << "auto_constrain_apply_test passed\n";
   return 0;
