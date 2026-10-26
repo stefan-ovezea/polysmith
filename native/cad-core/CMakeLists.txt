@@ -617,6 +617,7 @@ polysmith_add_core_test(cad_core_auto_constrain_apply_test tests/auto_constrain_
 # 90 degree angle, DOF 4, and no coordinate drift when the relations already
 # hold. Pinned separately from the tool so the contract survives refactors.
 polysmith_add_core_test(cad_core_rectangle_constraints_test tests/rectangle_constraints_test.cpp)
+polysmith_add_core_test(cad_core_solver_solution_check_test tests/solver_solution_check_test.cpp)
 
 # Constraint-completion regression suite — symmetric, collinear,
 # midpoint, tangent pairs, and parametric anchor-t enforcement.
