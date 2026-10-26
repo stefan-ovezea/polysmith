@@ -9,6 +9,11 @@ import {
 import { useToastStore } from "./state/toastStore";
 import { useCadCore } from "./hooks";
 import { useAppConfig } from "./lib";
+import {
+  dismissAutoConstrainOffer,
+  loadDismissedAutoConstrainOffers,
+  shouldOfferAutoConstrain,
+} from "./app/autoConstrainOffer";
 import { useDrawingTool } from "./app/drawing/useDrawingTool";
 import {
   bestFitIsoScale,
@@ -20,6 +25,7 @@ import {
 } from "./lib/drawingViewMath";
 import {
   AiAssistantPanel,
+  AutoConstrainOfferDialog,
   CamGenerationResultPopup,
   FeatureTimeline,
   LogsWindow,
@@ -2727,6 +2733,98 @@ function App() {
     addMessage,
   });
 
+  const {
+    clearArmedSketchConstraint,
+    finishActiveSketch,
+    handleSketchConstraintLinePick,
+    handleSketchConstraintVertexPick,
+    setActiveSketchTool,
+  } = createSketchToolActions({
+    armedSketchConstraint,
+    setArmedSketchConstraint,
+    runAction,
+    finishSketch,
+    restoreTimelineCursorAfterEdit,
+    setSketchTool,
+    selectSketchEntity,
+    // Tangent / tangent-pair need to tell a line id from a circle/arc id; the
+    // label map is built from the document's lines, so membership is the test.
+    isLineEntity: (entityId: string) => sketchLineLabelById.has(entityId),
+    selectSketchPoint,
+    setSketchPointFixed,
+    setSketchLineConstraint,
+    clearSketchLineConstraints,
+    setSketchEqualLengthConstraint,
+    setSketchParallelConstraint,
+    setSketchPerpendicularConstraint,
+    setSketchCollinearConstraint,
+    setSketchMidpointConstraint,
+    setSketchTangentConstraint,
+    setSketchTangentPairConstraint,
+    setSketchSymmetricConstraint,
+    setSketchCoincidentConstraint,
+    addMessage,
+  });
+
+  // S11: offer "Fully constrain" once, on the way out of a sketch that is still
+  // loose. A question, never an action — the sketch only changes if the user says
+  // so, and "don't ask again" silences that sketch for good.
+  const [pendingFinishOffer, setPendingFinishOffer] = useState<{
+    featureId: string;
+    dofs: number;
+  } | null>(null);
+  const dismissedFinishOffersRef = useRef<Set<string>>(
+    loadDismissedAutoConstrainOffers(),
+  );
+
+  const requestFinishActiveSketch = useCallback(async () => {
+    // The sketch being finished is the DOCUMENT's active sketch; the viewport
+    // only carries the solver's DOF for it.
+    const featureId = document?.active_sketch_feature_id ?? null;
+    const dofs = viewport?.solver_dofs;
+    if (
+      shouldOfferAutoConstrain({
+        featureId,
+        dofs,
+        dismissed: dismissedFinishOffersRef.current,
+      })
+    ) {
+      setPendingFinishOffer({
+        featureId: featureId as string,
+        dofs: dofs as number,
+      });
+      return;
+    }
+    await finishActiveSketch();
+  }, [document, viewport, finishActiveSketch]);
+
+  const handleOfferFullyConstrain = useCallback(async () => {
+    setPendingFinishOffer(null);
+    try {
+      await autoConstrainSketch({ dimensions: true });
+    } finally {
+      // Finish regardless: the offer must never trap the user inside a sketch
+      // because the solver refused to add something.
+      await finishActiveSketch();
+    }
+  }, [autoConstrainSketch, finishActiveSketch]);
+
+  const handleOfferFinishAnyway = useCallback(async () => {
+    setPendingFinishOffer(null);
+    await finishActiveSketch();
+  }, [finishActiveSketch]);
+
+  const handleOfferDontAskAgain = useCallback(async () => {
+    const offer = pendingFinishOffer;
+    setPendingFinishOffer(null);
+    if (offer !== null) {
+      dismissedFinishOffersRef.current = dismissAutoConstrainOffer(
+        offer.featureId,
+      );
+    }
+    await finishActiveSketch();
+  }, [pendingFinishOffer, finishActiveSketch]);
+
   const { triggerLoftAction, triggerRevolveAction, triggerSweepAction } =
     useProfileFeatureActions({
       selectedSketchProfileIds,
@@ -2989,39 +3087,6 @@ function App() {
       deleteFeature,
     });
   }
-
-  const {
-    clearArmedSketchConstraint,
-    finishActiveSketch,
-    handleSketchConstraintLinePick,
-    handleSketchConstraintVertexPick,
-    setActiveSketchTool,
-  } = createSketchToolActions({
-    armedSketchConstraint,
-    setArmedSketchConstraint,
-    runAction,
-    finishSketch,
-    restoreTimelineCursorAfterEdit,
-    setSketchTool,
-    selectSketchEntity,
-    // Tangent / tangent-pair need to tell a line id from a circle/arc id; the
-    // label map is built from the document's lines, so membership is the test.
-    isLineEntity: (entityId: string) => sketchLineLabelById.has(entityId),
-    selectSketchPoint,
-    setSketchPointFixed,
-    setSketchLineConstraint,
-    clearSketchLineConstraints,
-    setSketchEqualLengthConstraint,
-    setSketchParallelConstraint,
-    setSketchPerpendicularConstraint,
-    setSketchCollinearConstraint,
-    setSketchMidpointConstraint,
-    setSketchTangentConstraint,
-    setSketchTangentPairConstraint,
-    setSketchSymmetricConstraint,
-    setSketchCoincidentConstraint,
-    addMessage,
-  });
 
   const {
     createRecentProjectFolder,
@@ -4059,7 +4124,7 @@ function App() {
       // before the pick branch), and sketch tooling overlaps the
       // workspace panels.
       if (view !== "cad" && activeSketchPlaneId) {
-        finishActiveSketch();
+        void requestFinishActiveSketch();
       }
       setWorkspaceView(view);
     },
@@ -4560,7 +4625,7 @@ function App() {
           canStartHelixRibbonAction={canStartHelixRibbonAction}
           triggerHelixAction={triggerHelixAction}
           triggerCreateSketchAction={triggerCreateSketchAction}
-          finishActiveSketch={finishActiveSketch}
+          finishActiveSketch={requestFinishActiveSketch}
           cancelActiveSketchSession={async () => {
             // D4: Cancel Sketch rolls the whole session back — the core
             // restores the snapshot taken when the sketch was entered
@@ -6232,7 +6297,7 @@ function App() {
                   );
                 });
               }}
-              onFinishSketch={finishActiveSketch}
+              onFinishSketch={requestFinishActiveSketch}
               onClearSelection={clearSelection}
               onSetSketchTool={setActiveSketchTool}
               arrayCenterPicking={arrayCenterPicking}
@@ -7187,6 +7252,21 @@ function App() {
       ) : null}
       <ToastViewport />
       <CamGenerationResultPopup />
+      {pendingFinishOffer ? (
+        <AutoConstrainOfferDialog
+          dofs={pendingFinishOffer.dofs}
+          onFullyConstrain={() => {
+            void handleOfferFullyConstrain();
+          }}
+          onFinishAnyway={() => {
+            void handleOfferFinishAnyway();
+          }}
+          onDontAskAgain={() => {
+            void handleOfferDontAskAgain();
+          }}
+          onCancel={() => setPendingFinishOffer(null)}
+        />
+      ) : null}
     </main>
   );
 }

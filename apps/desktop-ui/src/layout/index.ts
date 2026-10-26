@@ -35,6 +35,7 @@ export * from "./CamToolLibraryDialog";
 export * from "./ToolSchematicView";
 export * from "./CamEngravePanel";
 export * from "./CamGrblPanel";
+export * from "./AutoConstrainOfferDialog";
 export * from "./CamGenerationResultPopup";
 export * from "./MirrorToolPanel";
 export * from "./ParametersPanel";

@@ -2194,6 +2194,14 @@
     }
   },
   "sketch": {
+    "autoConstrainOffer": {
+      "title": "This sketch is not fully constrained",
+      "body": "{{count}} degrees of freedom are still free, so the sketch can move. Fully constrain it now?",
+      "detail": "Fully constrain adds dimensions for the sizes it can measure and pins one corner so the sketch stops moving. It is a single undo step, and you can delete anything it adds.",
+      "finishAnyway": "Finish anyway",
+      "dontAskAgain": "Don't ask again for this sketch",
+      "cancel": "Keep editing"
+    },
     "removeProjections": "Remove projections",
     "unlinkProjections": "Unlink projections",
     "mergeCoincidentPoints": "Merge coincident points",
