@@ -8,6 +8,9 @@
     "core:window:allow-destroy",
     "core:window:allow-set-title",
     "dialog:default",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "dialog:allow-message",
     "opener:default"
   ]
 }
