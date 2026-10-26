@@ -328,11 +328,24 @@ function dispatchPendingLineCommitRelations(
   dispatchParallelConstraintRelation(newLine, pending, actions);
 }
 
+// A T-junction can be made from either end of the new line. Only the END used to
+// be dispatched, so the most common way to draw one - start the second line ON
+// the first line's midpoint - produced NO anchor at all: the lines merely touched,
+// dragging the stem detached it and it stayed detached, and "Merge coincident
+// points" had nothing to merge because nothing was ever bound. The pending record
+// always carried both ends (startHostLineId/startHost); the dispatchers ignored
+// the start half.
 function dispatchMidpointAnchorRelation(
   newLine: CommittedSketchLine,
   pending: PendingLineCommitRelationSnapshot,
   actions: PendingLineCommitRelationActions,
 ) {
+  if (pending.midpointAnchor?.startHostLineId) {
+    void actions.setSketchMidpointAnchor(
+      newLine.start_vertex_id,
+      pending.midpointAnchor.startHostLineId,
+    );
+  }
   if (pending.midpointAnchor?.endHostLineId) {
     void actions.setSketchMidpointAnchor(
       newLine.end_vertex_id,
@@ -359,6 +372,20 @@ function dispatchPointLineAnchorRelation(
   pending: PendingLineCommitRelationSnapshot,
   actions: PendingLineCommitRelationActions,
 ) {
+  // Same omission as the midpoint dispatcher: a point-on-line attachment at the
+  // START of the new line was never bound. A midpoint snap wins over a plain
+  // on-line one on its own end (the two are alternative bindings of the same
+  // point), which is why each end checks only its own half.
+  if (
+    pending.pointLineAnchor?.startHost &&
+    !pending.midpointAnchor?.startHostLineId
+  ) {
+    void actions.setSketchPointLineAnchor(
+      newLine.start_vertex_id,
+      pending.pointLineAnchor.startHost.lineId,
+      pending.pointLineAnchor.startHost.t,
+    );
+  }
   if (
     pending.pointLineAnchor?.endHost &&
     !pending.midpointAnchor?.endHostLineId

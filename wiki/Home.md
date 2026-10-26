@@ -74,6 +74,7 @@
 | 🏗️ **[2D Sketch System Architecture](2D-Sketch-System-Architecture)** | As-built constraints, snapping, and unified selection filter |
 | 🧭 **[Sketch Completion Plan](Sketch-Completion-Plan)** | **Research + plan.** PolySmith ↔ SolidCraft sketch inventory: reach (unreachable commands), the hybrid solver contract, creation modes, legibility — phased P0–P2 with file-level items |
 | 🐞 **[Sketch Defect Log](Sketch-Defect-Log)** | **Live.** Defects found while using the app, with the evidence that exists and what is still needed — starts with D-001, an extrude that dies when its sketch's circles are edited |
+| 🐞 **[Sketch Snap matrix](Sketch-Snap-Matrix)** | **Live.** Defects found while using the app, with the evidence that exists and what is still needed — starts with D-001, an extrude that dies when its sketch's circles are edited |
 | 🛠️ **[Sketch Tools Parity](Sketch-Tools-Parity)** | **In progress.** SolidCraft ↔ PolySmith tool matrix (variant by variant) and the T1–T3 implementation plan; rounded rectangle core done |
 | ➡️ **[Sketch — Next Session](Sketch-Next-Session)** | **Handoff.** Branch state, what is verified, the immediate next step, and the environment traps |
 | ✂️ **[Trim Tool — Implementation Plan](Trim-Tool-Implementation-Plan)** | Shipped. Reference documentation for the trim engine design. |
