@@ -297,7 +297,12 @@ import type {
 } from "@/types";
 
 import { useCadCoreStore } from "@/state";
+import {
+  readSketchSnapshot,
+  summarizeAutoConstrainRun,
+} from "@/app/autoConstrainSummary";
 import { SketchTool } from "@/types";
+import type { DocumentState } from "@/types/ipc";
 import {
   drawingTemplateSchema,
   drawingViewPreviewResultSchema,
@@ -1855,12 +1860,24 @@ export function useCadCore() {
       await sendCoreCommand(makeReenterSketchCommand(featureId));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
+    // Returns what the run changed, so the caller can say it out loud. The reply
+    // is a document state with no counts (the core logs them for the Logs panel),
+    // and adding a field to the reply would mean touching the zod schema, where an
+    // undeclared field silently drops the whole reply - so the UI measures the
+    // difference itself.
     autoConstrainSketch: async (options: {
       tolerance?: number;
       angleTolerance?: number;
       dimensions?: boolean;
     } = {}) => {
+      const before = readSketchSnapshot(
+        activeSketchFeature(useCadCoreStore.getState().document),
+      );
       await sendAndRefreshViewport(makeAutoConstrainSketchCommand(options));
+      const after = readSketchSnapshot(
+        activeSketchFeature(useCadCoreStore.getState().document),
+      );
+      return summarizeAutoConstrainRun(before, after);
     },
     previewAutoConstraints: async (options: {
       featureId?: string;
@@ -2582,4 +2599,18 @@ export function useCadCore() {
       };
     },
   };
+}
+
+/** The sketch the document is editing, or null. */
+function activeSketchFeature(
+  document: DocumentState | null,
+): { sketch_parameters?: unknown } | null {
+  const featureId = document?.active_sketch_feature_id ?? null;
+  if (document === null || featureId === null) return null;
+  const feature = document.feature_history.find(
+    (entry) => entry.feature_id === featureId,
+  );
+  return feature === undefined
+    ? null
+    : { sketch_parameters: feature.sketch_parameters };
 }

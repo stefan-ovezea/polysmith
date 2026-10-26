@@ -2194,6 +2194,10 @@
     }
   },
   "sketch": {
+    "autoConstrainReport": {
+      "done": "Fully constrain: {{before}} -> {{after}} degrees of freedom, {{dimensions}} dimensions, {{pins}} corners pinned",
+      "nothing": "Fully constrain: nothing to add, the sketch is already as constrained as it can be"
+    },
     "autoConstrainOffer": {
       "title": "This sketch is not fully constrained",
       "body": "{{count}} degrees of freedom are still free, so the sketch can move. Fully constrain it now?",

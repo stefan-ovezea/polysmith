@@ -14,6 +14,10 @@ import {
   loadDismissedAutoConstrainOffers,
   shouldOfferAutoConstrain,
 } from "./app/autoConstrainOffer";
+import {
+  autoConstrainSummaryIsEmpty,
+  type AutoConstrainSummary,
+} from "./app/autoConstrainSummary";
 import { useDrawingTool } from "./app/drawing/useDrawingTool";
 import {
   bestFitIsoScale,
@@ -2798,16 +2802,39 @@ function App() {
     await finishActiveSketch();
   }, [document, viewport, finishActiveSketch]);
 
+  // Say what "Fully constrain" did. Without this the only trace is a Logs line:
+  // the user clicks a button, the sketch changes, and nothing explains it.
+  const reportAutoConstrainRun = useCallback(
+    (summary: AutoConstrainSummary) => {
+      if (autoConstrainSummaryIsEmpty(summary)) {
+        useToastStore
+          .getState()
+          .pushToast("info", t("sketch.autoConstrainReport.nothing"));
+        return;
+      }
+      const message = t("sketch.autoConstrainReport.done", {
+        before: summary.dofsBefore ?? "?",
+        after: summary.dofsAfter ?? "?",
+        dimensions: summary.dimensions,
+        pins: summary.pins,
+      });
+      useToastStore.getState().pushToast("info", message);
+      addMessage(message);
+    },
+    [t, addMessage],
+  );
+
   const handleOfferFullyConstrain = useCallback(async () => {
     setPendingFinishOffer(null);
     try {
-      await autoConstrainSketch({ dimensions: true });
+      const summary = await autoConstrainSketch({ dimensions: true });
+      reportAutoConstrainRun(summary);
     } finally {
       // Finish regardless: the offer must never trap the user inside a sketch
       // because the solver refused to add something.
       await finishActiveSketch();
     }
-  }, [autoConstrainSketch, finishActiveSketch]);
+  }, [autoConstrainSketch, finishActiveSketch, reportAutoConstrainRun]);
 
   const handleOfferFinishAnyway = useCallback(async () => {
     setPendingFinishOffer(null);
@@ -5493,7 +5520,8 @@ function App() {
               onFullyConstrain={async () => {
                 // S11: infer + apply, dimension what is left, one undo step.
                 await runAction(async () => {
-                  await autoConstrainSketch({ dimensions: true });
+                  const summary = await autoConstrainSketch({ dimensions: true });
+                  reportAutoConstrainRun(summary);
                 });
               }}
               onRefreshSketchDiagnostics={async (featureId) => {
