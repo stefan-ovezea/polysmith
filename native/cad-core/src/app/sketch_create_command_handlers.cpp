@@ -37,7 +37,8 @@ bool handle_sketch_create_command(
         read_dimension(command.payload, "start_y"),
         read_dimension(command.payload, "end_x"),
         read_dimension(command.payload, "end_y"), is_construction,
-        read_optional_string(command.payload, "line_type").value_or(""));
+        read_optional_string(command.payload, "line_type").value_or(""),
+        /*attach_to_geometry=*/true);
     if (emit_sketch_entities_changed(command.id, before_document, document)) {
       return true;
     }

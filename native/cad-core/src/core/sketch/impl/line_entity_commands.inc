@@ -3,7 +3,7 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
                      bool is_construction, bool snap_start,
                      bool auto_dimensions, bool refresh_immediately,
                      bool infer_constraints, bool share_endpoints,
-                     const std::string &line_type) {
+                     const std::string &line_type, bool attach_to_geometry) {
   if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
     throw std::runtime_error("Only sketch features can accept sketch lines");
   }
@@ -122,6 +122,18 @@ void add_sketch_line(FeatureEntry &feature, int line_index, double start_x,
   if (!effective_construction && refresh_immediately) {
     run_inference_on_new_line(*feature.sketch_parameters,
                               feature.sketch_parameters->lines.back());
+  }
+  if (refresh_immediately && attach_to_geometry) {
+    // A line the USER drew: attach it to whatever it was drawn onto, from the
+    // geometry, so a T holds no matter what the UI's snap bookkeeping kept.
+    // Opt-in on purpose - trim/import/projection/CAM share this function and must
+    // not gain anchors they never asked for.
+    attach_committed_vertex_to_geometry(*feature.sketch_parameters,
+                                        line.start_vertex_id, line.start_x,
+                                        line.start_y, kCommittedAttachToleranceMm);
+    attach_committed_vertex_to_geometry(*feature.sketch_parameters,
+                                        line.end_vertex_id, line.end_x,
+                                        line.end_y, kCommittedAttachToleranceMm);
   }
   if (refresh_immediately) {
     refresh_sketch_with_append_focus(feature, {line.id});

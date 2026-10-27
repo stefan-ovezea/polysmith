@@ -38,7 +38,13 @@ void add_sketch_line(FeatureEntry& feature,
                      // "" for a plain line; "centerline" / "infinite" also
                      // force is_construction and add only presentation
                      // behaviour (dash-dot / drawn to the viewport edge).
-                     const std::string& line_type = "");
+                     const std::string& line_type = "",
+
+                     // Attach the new endpoints to the geometry they were drawn
+                     // onto (Fusion behaviour). Opt-in: only the IPC handler for a
+                     // user-drawn line passes true; trim / import / projection /
+                     // mirror / offset / CAM keep the default and are unchanged.
+                     bool attach_to_geometry = false);
 void add_sketch_rectangle(FeatureEntry& feature,
                           int& next_line_index,
                           double start_x,

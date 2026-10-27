@@ -5,12 +5,16 @@
   // `line_type` is "" for an ordinary line; "centerline" / "infinite" mark
   // a reference line (they also force the construction flag, so profiles
   // and auto dimensions ignore them).
+  // ttach_to_geometry attaches the new endpoints to whatever line they were
+  // drawn onto (Fusion behaviour). Only the IPC handler for a user-drawn line sets
+  // it; every internal caller keeps the default so trim/import/CAM are unchanged.
   DocumentState add_sketch_line(double start_x,
                                 double start_y,
                                 double end_x,
                                 double end_y,
                                 bool is_construction = false,
-                                const std::string& line_type = "");
+                                const std::string& line_type = "",
+                                bool attach_to_geometry = false);
   // Toggle the construction-line flag on an existing sketch line.
   // Construction lines render dashed and are skipped during profile
   // detection so they don't seal pickable faces.
