@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   applyPendingLineCommitRelations,
+  lineCommitRelations,
   type PendingLineCommitRelationActions,
   type PendingLineCommitRelationRefs,
 } from "./lineCommitRelations";
@@ -162,5 +163,43 @@ describe("pending line commit anchors", () => {
     expect(calls).toEqual([
       { kind: "midpoint", vertexId: "vertex-start", hostLineId: "line-1" },
     ]);
+  });
+});
+
+describe("a point attachment beats an angle relation to the same line", () => {
+  // Reported: two lines drawn from a stem, one near-perpendicular - and the stem could
+  // then only be dragged along its own axis, with a relation badge on that line.
+  // A perpendicular/parallel relation fixes the angle BETWEEN the two lines, so the
+  // stem legitimately stops rotating. Starting a line ON a line says nothing about the
+  // angle; the anchor is the truth and the relation must not be inferred.
+  const snapToStem = {
+    local: [50, 0] as [number, number],
+    snapMidpointHostLineId: "stem",
+    snapMidpointT: 0.5,
+    snapPerpendicularHostLineId: "stem",
+    snapParallelHostLineId: "stem",
+  };
+
+  it("drops perpendicular and parallel when the host is the anchored line", () => {
+    const relations = lineCommitRelations({
+      sketchPoint: snapToStem,
+      fromLineCount: 1,
+      startMidpointHostLineId: null,
+      startLineBodyHost: null,
+    });
+    expect(relations.midpointAnchor?.endHostLineId).toBe("stem");
+    expect(relations.perpendicularConstraint).toBeNull();
+    expect(relations.parallelConstraint).toBeNull();
+  });
+
+  it("keeps them when the angle host is a different line", () => {
+    const relations = lineCommitRelations({
+      sketchPoint: { ...snapToStem, snapPerpendicularHostLineId: "other" },
+      fromLineCount: 1,
+      startMidpointHostLineId: null,
+      startLineBodyHost: null,
+    });
+    expect(relations.midpointAnchor?.endHostLineId).toBe("stem");
+    expect(relations.perpendicularConstraint?.hostLineId).toBe("other");
   });
 });

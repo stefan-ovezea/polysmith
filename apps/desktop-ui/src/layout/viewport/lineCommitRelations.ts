@@ -166,7 +166,14 @@ export function lineCommitRelations({
     ? (sketchPoint.snapMidpointHostLineId ?? null)
     : null;
 
-  const perpHostLineId = sketchPoint.snapPerpendicularHostLineId;
+  // A point attachment and an angle relation to the SAME line are two answers to one
+  // question, and the relation wins the argument: a perpendicular/parallel relation
+  // fixes the angle between the new line and its host, so rotating the host stopped
+  // being possible - the reported symptom was a stem that could only be dragged along
+  // its own axis after two lines were drawn from it, with a relation badge on the one
+  // that happened to be drawn near-perpendicular. Starting a line ON a line is a
+  // coincidence (an anchor), not a statement about the angle. When the anchor host and
+  // the angle host turn out to be the same line, the anchor is the truth.
   const endIsSubSegmentMidpoint =
     sketchPoint.snapMidpointHostLineId &&
     endMidpointT !== null &&
@@ -182,6 +189,25 @@ export function lineCommitRelations({
           lineId: sketchPoint.snapLineBodyHostLineId,
           t: sketchPoint.snapLineBodyT,
         }
+      : null;
+
+  const anchorHosts = [
+    startMidpointHostLineId,
+    startLineBodyHost?.lineId ?? null,
+    endHostLineId,
+    endLineBodyHost?.lineId ?? null,
+  ];
+  const hostIsAnchored = (host: string | null) =>
+    host !== null && anchorHosts.includes(host);
+  const perpHostLineId =
+    sketchPoint.snapPerpendicularHostLineId !== null &&
+    !hostIsAnchored(sketchPoint.snapPerpendicularHostLineId)
+      ? sketchPoint.snapPerpendicularHostLineId
+      : null;
+  const parallelHostLineId =
+    sketchPoint.snapParallelHostLineId !== null &&
+    !hostIsAnchored(sketchPoint.snapParallelHostLineId)
+      ? sketchPoint.snapParallelHostLineId
       : null;
 
   return {
@@ -222,13 +248,13 @@ export function lineCommitRelations({
           }
         : null,
     parallelConstraint:
-      sketchPoint.snapParallelHostLineId &&
+      parallelHostLineId &&
       !perpHostLineId &&
       !sketchPoint.snapAxisLock &&
       !sketchPoint.snapTangentCircleId
         ? {
             fromLineCount,
-            hostLineId: sketchPoint.snapParallelHostLineId,
+            hostLineId: parallelHostLineId,
           }
         : null,
     endHostLineId,
