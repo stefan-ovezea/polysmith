@@ -12,6 +12,14 @@ bool sketch_solve_trace_enabled() {
   return enabled;
 }
 
+// D-008: gate the per-constraint solve trace (ConstraintSolver::point_on_circle_trace)
+// the same way as the geometry trace. The trace method itself always computes; the
+// app only logs when this is set.
+bool point_on_circle_trace_enabled() {
+  static const bool enabled = std::getenv("PS_TRACE_POINT_ON_CIRCLE") != nullptr;
+  return enabled;
+}
+
 std::string sketch_geometry_summary(const SketchFeatureParameters& parameters) {
   std::ostringstream summary;
   for (const auto& line : parameters.lines) {

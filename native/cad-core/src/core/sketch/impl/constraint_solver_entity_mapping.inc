@@ -65,6 +65,13 @@
         // The circle's center is a sketch point referenced by the circle.
         // For now, use a dedicated parameter for the radius.
         param_storage_.push_back(sc.radius);
+        // Capture the radius index NOW, before the anonymous-centre fallback may
+        // push two more parameters. The old `size() - 3` below was written for the
+        // fallback path and was off by two whenever the centre was found in the
+        // vertex table (the common case): the solver then drove a circle centre's
+        // x-coordinate as the "radius", so a point_on_circle collapsed the point
+        // onto the centre instead of the boundary (D-008).
+        const size_t radius_idx = param_storage_.size() - 1;
 
         GCS::Circle gc;
         // Find the center point via the shared vertex-lookup helper.
@@ -83,7 +90,7 @@
             anon_center.y = &param_storage_[param_storage_.size() - 1];
             gc.center = anon_center;
         }
-        gc.rad = &param_storage_[param_storage_.size() - 3]; // radius param
+        gc.rad = &param_storage_[radius_idx];
         gcs_circles_.push_back(gc);
         circle_id_to_index_[sc.id] = gcs_circles_.size() - 1;
     }

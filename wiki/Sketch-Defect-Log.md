@@ -468,9 +468,45 @@ If this had shipped, creating a collinear constraint would have made the documen
 2. **A constraint that names a VERTEX did not seed the reachability guard.** `point_on_circle` is `{vertex, curve}`; that vertex was not seeded, so `restore_unreachable_solver_geometry` put it back after every solve ("solver moved unconstrained geometry by 16.47 mm; restored it") and the constraint could never be satisfied. All constraint `target_ids` now seed the closure.
 3. **`param_storage_` was a `std::vector<double>` holding solver parameters by ADDRESS** (`gc.rad = &param_storage_[i]`), so any later `push_back` could reallocate and leave every stored pointer dangling - constraints then read garbage and silently do nothing. It is a `std::deque<double>` now, which keeps element addresses stable (the `reserve()` call went with it). This is the most likely original cause of D-008 itself.
 
-**Still not fixed:** with `point_on_circle` mapped (radius pinned so the solver cannot satisfy it by resizing the circle), a circle edit still does not move the attached point. The branch is provably reached (a deliberate throw terminated the process), the constraint is stored, the radius is pinned, and nothing rejects - the point simply stays. So the attachment to a circle's boundary is NOT shipped: `attach_committed_vertex.inc` attaches to line bodies only. Next step is to instrument the solve itself (residual after solve, and whether the point is in `plist`), not to guess further.
+**Root cause found and fixed (2026-10-27).** The solve was instrumented instead of
+guessed at — `PS_TRACE_POINT_ON_CIRCLE=1` prints, per constraint, whether the vertex
+was declared an unknown (`declared_unknown`), the vertex position in solver space vs
+the `params` record, and the radius the solver drove (`rad_solver`) vs the slot
+`apply()` reads back (`rad_slot`). Two defects, both confirmed by that trace:
 
-**Next step.** Compare the parameter vector a *line endpoint* and a *standalone point* produce (`constraint_solver_entity_mapping.inc` fills `gcs_points_` from `params.vertices`, so both should be there), then check `num_points` / the appended-focus solve path for kind `point`, and only then re-add the constraint kind. The rule to keep: a new constraint kind ships with a test that proves the geometry MOVES, not just that the record exists.
+1. **`gc.rad` was off by two.** `constraint_solver_entity_mapping.inc` set
+   `gc.rad = &param_storage_[size() - 3]`, arithmetic written for the
+   anonymous-centre *fallback* path. Whenever the centre was found in the vertex
+   table (the common case) only the radius had been pushed, so the pointer landed
+   two slots early — onto the circle centre's x-coordinate. `PointOnCircle` is
+   `P2PDistance(point, centre, rad)`, so the solver drove `dist(point, centre) ==
+   centre.x` instead of `== radius`, collapsing the point onto the centre and
+   reporting a zero residual. The trace read `rad_solver=0` against `rad_slot=10`.
+2. **`apply()` never wrote standalone points back.** It only wrote line endpoints,
+   circle centres, arc vertices and spline poles, so a `kind:"point"` vertex moved
+   in `param_storage_` and then dropped the move — the trace showed
+   `solver_xy=(0,0)` but `params_xy=(2,0)` even after `apply()`.
+
+**Fix.** `gc.rad` now captures the radius index at push time
+(`const size_t radius_idx = param_storage_.size() - 1;` immediately after the radius
+push), and `apply()` writes every mapped vertex back from `param_storage_` up front.
+The tangent-pair test still passes because it is enforced by the ad-hoc
+`enforce_tangent_pair_constraints` pass, not by the solver — which is exactly why the
+broken `gc.rad` was invisible everywhere except `point_on_circle`, which has no such
+fallback.
+
+**Verified.** New `tests/point_on_circle_test.cpp` (registered as
+`cad_core_point_on_circle_test`) drives `build` + `solve` + `apply` directly and
+asserts the geometry MOVES: a standalone point rides the circle, and a line endpoint
+follows a circle-centre edit. Both failed before the fix and pass after; the trace now
+reads `rad_solver=10`/`rad_slot=10` and `params_residual=0`. Full `pnpm test:core`
+**91/91**.
+
+**Still not shipped (unchanged).** `attach_committed_vertex.inc` still attaches to
+line bodies only; the circle/arc boundary attachment is the next slice now that the
+constraint itself moves geometry. A pre-existing, unrelated debug log
+("solver could not count the remaining degrees of freedom (-2)") is S3's "one DOF
+source" work, not this defect.
 
 ---
 

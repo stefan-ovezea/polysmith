@@ -269,6 +269,11 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
       const SolverGeometrySnapshot solver_snapshot =
           capture_solver_geometry(*feature.sketch_parameters);
       auto result = solver.solve();
+      if (point_on_circle_trace_enabled()) {
+        const std::string poc = solver.point_on_circle_trace(
+            *feature.sketch_parameters, "post-solve");
+        if (!poc.empty()) polysmith::core::log_info("sketch_trace_poc", poc);
+      }
       const auto solve_ms =
           std::chrono::duration_cast<std::chrono::milliseconds>(
               std::chrono::steady_clock::now() - solve_start)
@@ -305,6 +310,11 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
               {line.start_x, line.start_y, line.end_x, line.end_y});
         }
         solver.apply(*feature.sketch_parameters);
+        if (point_on_circle_trace_enabled()) {
+          const std::string poc = solver.point_on_circle_trace(
+              *feature.sketch_parameters, "post-apply");
+          if (!poc.empty()) polysmith::core::log_info("sketch_trace_poc", poc);
+        }
         if (sketch_solve_trace_enabled()) {
           trace_sketch_geometry("after solve", *feature.sketch_parameters);
         }

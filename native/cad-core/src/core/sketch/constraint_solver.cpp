@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 
 namespace polysmith::core {
@@ -68,5 +69,6 @@ void ConstraintSolver::build(const SketchFeatureParameters& params) {
 }
 
 #include "core/sketch/impl/constraint_solver_lifecycle.inc"
+#include "core/sketch/impl/constraint_solver_diagnostics.inc"
 
 }  // namespace polysmith::core

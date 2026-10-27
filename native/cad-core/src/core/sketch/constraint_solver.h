@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <set>
 
 namespace polysmith::core {
 
@@ -56,6 +57,17 @@ public:
     /// Number of degrees of freedom after the last solve/diagnose.
     int dofs() const;
 
+    /// D-008 diagnostic: a human-readable line per `point_on_circle` constraint
+    /// describing what the solver did to it — whether the vertex was declared an
+    /// unknown (its proxy for "is it in planegcs' plist"), the vertex position in
+    /// solver space (`param_storage_`) vs the `params` record, and the radius the
+    /// solver drove vs the radius slot `apply()` reads back. `stage` names the
+    /// call ("post-solve" / "post-apply"). Returns an empty string when the sketch
+    /// has no `point_on_circle` constraints. Always computed; callers gate logging
+    /// behind PS_TRACE_POINT_ON_CIRCLE so the app does not log by default.
+    std::string point_on_circle_trace(const SketchFeatureParameters& params,
+                                      const char* stage) const;
+
 private:
     // Per-point parameter indices into param_storage_
     struct PointMapping {
@@ -96,6 +108,11 @@ private:
     std::map<std::string, size_t> line_id_to_index_;
     std::map<std::string, size_t> circle_id_to_index_;
     std::map<std::string, size_t> arc_id_to_index_;
+
+    // Vertex ids whose x/y were pushed to `unknown_params` during build() — i.e.
+    // the vertices this bridge declared as solver unknowns (planegcs' plist is
+    // private, so this records what *we* declared). Used by point_on_circle_trace.
+    std::set<std::string> declared_unknown_ids_;
 
     // The solver system — owned, rebuilt on each build() call.
     std::unique_ptr<GCS::System> system_;
