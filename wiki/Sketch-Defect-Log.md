@@ -502,11 +502,34 @@ follows a circle-centre edit. Both failed before the fix and pass after; the tra
 reads `rad_solver=10`/`rad_slot=10` and `params_residual=0`. Full `pnpm test:core`
 **91/91**.
 
-**Still not shipped (unchanged).** `attach_committed_vertex.inc` still attaches to
-line bodies only; the circle/arc boundary attachment is the next slice now that the
-constraint itself moves geometry. A pre-existing, unrelated debug log
-("solver could not count the remaining degrees of freedom (-2)") is S3's "one DOF
-source" work, not this defect.
+**Follow-up (2026-10-27).** `attach_committed_vertex.inc` now attaches a committed
+vertex to a CIRCLE boundary too — a `point_on_circle` constraint, created only when a
+fresh (non-derived) vertex lands within tolerance of the perimeter. Two gaps surfaced
+and were fixed by changing the model, not by bolting on a solver fallback:
+
+1. **Attach time.** The solver alone cannot map the constraint, because at commit the
+   vertex table is stale and the just-committed endpoint is unmapped (`vertex=UNMAPPED`
+   in the trace) — so the endpoint stayed a hair off the circle and the verifier
+   rejected the solve. Fix: `attach_committed_vertex` snaps the point onto the
+   perimeter ONCE, radially, when it creates the constraint (the circle keeps its size;
+   the point moves the small distance).
+2. **Drag time.** The raw solver minimum-move relaxed the *centre* back toward the
+   point (and dragged the point radially), so a circle drag detached the line and
+   re-snapped it at a different angle. Fix: `update_sketch_vertex`'s centre branch
+   translates every `point_on_circle`-attached point by the centre's delta (so it rides
+   at its same relative spot) and freezes the centre for the solve.
+
+The correct semantics, matching Fusion/SolidCraft: a point attached to a circle stays
+on it — attach snaps the point to the circle; a centre drag translates the point with
+the circle (radius fixed); a perimeter resize (deferred) changes the radius and the
+point rides radially. Covered by four cases in `committed_attach_test` (constraint
+exists with the right targets, opt-in guard holds, the line start rides a centre edit
+to its same relative spot with the centre staying put, and an endpoint drawn slightly
+off is pulled onto the circle). ARC boundary is still left alone: planegcs'
+`addConstraintPointOnArc` is also just `P2PDistance(point, centre, radius)` — the
+circumcircle, not the swept span — so a point could legally drift to the half the arc
+does not cover. A pre-existing, unrelated debug log ("solver could not count the
+remaining degrees of freedom (-2)") is S3's "one DOF source" work, not this defect.
 
 ---
 

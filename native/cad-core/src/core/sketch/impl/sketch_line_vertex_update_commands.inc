@@ -110,9 +110,37 @@ void update_sketch_vertex(FeatureEntry& feature,
       // Need mutable access to update coords
       for (auto& c : parameters.circles) {
         if (c.id == circle->id) {
+          const double old_x = c.center_x;
+          const double old_y = c.center_y;
           c.center_x = x;
           c.center_y = y;
+          // Translate the point_on_circle-attached points by the centre's delta so
+          // they ride the circle at their same relative spot, and freeze the centre
+          // for the solve so it does not relax back toward them. The solver's raw
+          // minimum-move would instead drag the point radially (or the centre back),
+          // which is the "snapped to a different vertex" behaviour.
+          for (const auto& constraint : parameters.constraints) {
+            if (constraint.kind != "point_on_circle") continue;
+            if (constraint.target_ids.size() < 2) continue;
+            if (constraint.target_ids[1] != c.id) continue;
+            const auto pos = point_position_of(parameters, constraint.target_ids[0]);
+            if (!pos.has_value()) continue;
+            propagate_connected_point_move(parameters, constraint.target_ids[0],
+                                           pos->first + (x - old_x),
+                                           pos->second + (y - old_y));
+          }
+          bool was_fixed = false;
+          for (const auto& v : parameters.vertices) {
+            if (v.id == point_id) { was_fixed = v.is_fixed; break; }
+          }
+          for (auto& v : parameters.vertices) {
+            if (v.id == point_id) { v.is_fixed = true; break; }
+          }
           refresh_sketch_derived_state(feature);
+          // The vertex table is rebuilt by the refresh; re-find and restore.
+          for (auto& v : parameters.vertices) {
+            if (v.id == point_id) { v.is_fixed = was_fixed; break; }
+          }
           return;
         }
       }

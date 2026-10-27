@@ -16,15 +16,17 @@
 // did not ask for changes what their refresh does. It is OPT-IN
 // (`attach_to_geometry`), and only the IPC handler for a user-drawn line passes true.
 //
-// NOT covered: a circle's or an arc's boundary. The constraint exists (planegcs
-// PointOnCircle, mapped and verified - see solver_solution_check.h) but it does not move
-// the point yet after a circle edit, so attaching would ship a constraint that does
-// nothing, which is exactly what D-008 warns about. Investigated and recorded there.
+// CIRCLE boundary IS covered: a committed vertex within tolerance of a circle's
+// perimeter gets a `point_on_circle` constraint (D-008 is fixed — the constraint now
+// moves geometry; see solver_solution_check.h and point_on_circle_test.cpp).
 //
-// An arc's boundary additionally needs the sweep: PointOnCircle knows only the radius,
-// so the point could legally sit on the half the arc does not cover. Not covered yet: an arc's boundary (PointOnCircle knows only the radius, not the
-// sweep, so the point could jump to the half the arc does not cover) and a settled
-// intersection (needs two constraints; the candidate set does not carry the pair).
+// ARC boundary is NOT covered. planegcs' addConstraintPointOnArc is also just
+// P2PDistance(point, centre, radius) — the same circumcircle as PointOnCircle — so it
+// knows the radius, not the sweep, and the point could legally drift to the half the
+// arc does not cover. Attaching with point_on_circle would ship a constraint that does
+// the wrong thing, so arcs are left alone until a sweep-aware mapping exists. A settled
+// intersection is also not covered (needs two constraints; the candidate set does not
+// carry the pair).
 
 // How close a committed vertex has to be to count as drawn onto something. The core
 // coincidence tolerance is 0.01 mm; this is a PICK tolerance - a click 0.2 mm off the
@@ -102,6 +104,51 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
       host_t = std::clamp(t, 0.0, 1.0);
       host_length = length;
     }
+  }
+
+  // Find the nearest circle boundary. A circle's boundary is its perimeter: a vertex
+  // within `tolerance` of |dist(vertex, centre) - radius| = 0 was aimed at the edge.
+  // The centre itself reads `radial == radius`, so it is never mistaken for an edge.
+  const SketchCircle* circle_host = nullptr;
+  double circle_distance = tolerance_mm;
+  for (const auto& circle : parameters.circles) {
+    const double radial = std::abs(std::hypot(x - circle.center_x,
+                                              y - circle.center_y) -
+                                   circle.radius);
+    if (radial <= circle_distance) {
+      circle_distance = radial;
+      circle_host = &circle;
+    }
+  }
+
+  // Attach to whichever is nearer: the line body or the circle boundary. A shared
+  // endpoint on a circle is already tied to it (endpoint sharing), so this only fires
+  // for a fresh vertex drawn onto the perimeter.
+  if (circle_host != nullptr && (host == nullptr || circle_distance <= host_distance)) {
+    parameters.constraints.push_back(SketchConstraint{
+        .constraint_id = next_constraint_id(parameters, "constraint-point-on-circle-"),
+        .kind = "point_on_circle",
+        .target_ids = {vertex_id, circle_host->id},
+    });
+    // Snap the point onto the boundary NOW, once, radially (the circle keeps its
+    // size, the point moves the small distance to the perimeter). The recurring
+    // solve then keeps it there as the circle is edited; a point the user aimed at
+    // the edge is expected to land exactly on it, not sit a hair outside and get
+    // rejected by the verifier.
+    const double dx = x - circle_host->center_x;
+    const double dy = y - circle_host->center_y;
+    const double radial_dist = std::hypot(dx, dy);
+    if (radial_dist > 1e-9) {
+      const double snap_x = circle_host->center_x +
+                            circle_host->radius * (dx / radial_dist);
+      const double snap_y = circle_host->center_y +
+                            circle_host->radius * (dy / radial_dist);
+      propagate_connected_point_move(parameters, vertex_id, snap_x, snap_y);
+    }
+    log_info("sketch", "attached " + vertex_id + " to the boundary of " +
+                           circle_host->id +
+                           " (from the geometry, not from a snap)");
+    return;
   }
 
   if (host == nullptr) return;

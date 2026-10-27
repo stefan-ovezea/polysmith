@@ -165,6 +165,125 @@ bool test_without_the_flag_nothing_is_attached() {
                 "flag off: no anchor is invented");
 }
 
+bool test_a_stem_on_a_circle_boundary_is_attached() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  const DocumentState document =
+      manager.add_sketch_line(6.0, 8.0, 16.0, 18.0, false, "", true);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "circle: the sketch exists")) return false;
+
+  const std::string& line_start = parameters->lines.back().start_vertex_id;
+  const std::string& circle_id = parameters->circles.front().id;
+
+  const std::vector<std::string>* targets = nullptr;
+  int count = 0;
+  for (const auto& constraint : parameters->constraints) {
+    if (constraint.kind != "point_on_circle") continue;
+    ++count;
+    targets = &constraint.target_ids;
+  }
+  if (!expect(count == 1,
+              ("circle: exactly one point_on_circle constraint - got " +
+               std::to_string(count))
+                  .c_str())) {
+    return false;
+  }
+  if (!expect(targets != nullptr && targets->size() == 2,
+              "circle: the constraint names a vertex and a circle")) {
+    return false;
+  }
+  if (!expect((*targets)[0] == line_start,
+              "circle: the bound vertex is the line start")) {
+    return false;
+  }
+  return expect((*targets)[1] == circle_id, "circle: the host is the circle");
+}
+
+bool test_without_the_flag_a_circle_is_not_attached() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  const DocumentState document =
+      manager.add_sketch_line(6.0, 8.0, 16.0, 18.0, false, "", false);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "circle flag off: sketch exists")) {
+    return false;
+  }
+  for (const auto& constraint : parameters->constraints) {
+    if (constraint.kind == "point_on_circle") {
+      return expect(false, "circle flag off: no point_on_circle is invented");
+    }
+  }
+  return true;
+}
+
+bool test_the_attached_end_stays_on_the_circle_after_an_edit() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_line(6.0, 8.0, 16.0, 18.0, false, "", true);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "follow: the sketch exists")) return false;
+  const std::string center_vertex = before->circles.front().center_vertex_id;
+
+  // Move the circle centre; the centre must STAY where it was dragged (not snap
+  // back toward the point), and the line start must follow to stay on the boundary.
+  document = manager.update_sketch_vertex(center_vertex, 5.0, 0.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "follow: the sketch survives")) return false;
+
+  const auto& line = after->lines.back();
+  const auto& circle = after->circles.front();
+  if (!expect(std::abs(circle.center_x - 5.0) < 1e-3 &&
+                  std::abs(circle.center_y) < 1e-3,
+              ("follow: the centre stays at the dragged position - got (" +
+               std::to_string(circle.center_x) + ", " +
+               std::to_string(circle.center_y) + ")").c_str())) {
+    return false;
+  }
+  // The line start was at (6,8) relative to the centre at (0,0); a move of the
+  // centre to (5,0) must translate the point the same way — (11,8) — so it keeps
+  // its angle around the circle (the "snapped to a different vertex" complaint).
+  const double dist = std::hypot(line.start_x - 5.0, line.start_y - 0.0);
+  return expect(
+      std::abs(dist - circle.radius) < 1e-3 &&
+          std::abs(line.start_x - 11.0) < 1e-3 &&
+          std::abs(line.start_y - 8.0) < 1e-3,
+      ("follow: the line start rides the circle to its same relative spot (11,8) - got (" +
+       std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
+          .c_str());
+}
+
+bool test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  // (8, 6.1) is ~0.06 mm outside the boundary — inside the 0.25 mm attach
+  // tolerance, but NOT exactly on the circle, so the solver must pull it in.
+  const DocumentState document =
+      manager.add_sketch_line(8.0, 6.1, 18.0, 8.0, false, "", true);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "off-circle: the sketch exists")) {
+    return false;
+  }
+  const auto& line = parameters->lines.back();
+  const auto& circle = parameters->circles.front();
+  const double dist =
+      std::hypot(line.start_x - circle.center_x, line.start_y - circle.center_y);
+  return expect(
+      std::abs(dist - circle.radius) < 1e-3,
+      ("off-circle: the endpoint is pulled onto the circle (dist " +
+       std::to_string(dist) + " vs radius " + std::to_string(circle.radius) +
+       ")").c_str());
+}
+
 }  // namespace
 
 int main() {
@@ -175,6 +294,10 @@ int main() {
   if (!test_a_stem_at_the_host_endpoint_is_not_anchored()) return 1;
   if (!test_attaching_is_idempotent()) return 1;
   if (!test_without_the_flag_nothing_is_attached()) return 1;
+  if (!test_a_stem_on_a_circle_boundary_is_attached()) return 1;
+  if (!test_without_the_flag_a_circle_is_not_attached()) return 1;
+  if (!test_the_attached_end_stays_on_the_circle_after_an_edit()) return 1;
+  if (!test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it()) return 1;
 
   std::cout << "committed_attach_test passed\n";
   return 0;
