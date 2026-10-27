@@ -133,6 +133,18 @@ SolverGeometrySnapshot capture_solver_geometry(
   for (const auto& anchor : parameters.point_line_anchors) {
     snapshot.reachable_vertices.insert(anchor.vertex_id);
   }
+  // A constraint record may name a VERTEX directly - `point_on_circle` is
+  // {vertex, curve}. That vertex is part of the constrained component by definition, but
+  // it was not seeded here, so the reachability guard put it back after every solve and
+  // the constraint could never be satisfied: measured, "solver moved unconstrained
+  // geometry by 16.47 mm; restored it" immediately followed by "solver solution rejected
+  // (point_on_circle vertex-2/circle-1 off by 48.99 mm)". Seeding every target id is
+  // enough; ids that are not vertices simply never match one.
+  for (const auto& constraint : parameters.constraints) {
+    for (const auto& target : constraint.target_ids) {
+      snapshot.reachable_vertices.insert(target);
+    }
+  }
 
   // Seed every line that carries a constraint of its own.
   for (const auto& line : parameters.lines) {

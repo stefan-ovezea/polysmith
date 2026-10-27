@@ -90,6 +90,31 @@
                     gcs_points_[pit1->second],
                     gcs_points_[pit2->second]);
             }
+        } else if (sc.kind == "point_on_circle" && sc.target_ids.size() >= 2) {
+            // target_ids = [vertex_id, circle_id]: a point that rides the circle's
+            // boundary. planegcs has this natively, so no P2PDistance workaround and
+            // no pinned radius is needed - the point stays on the circle when the
+            // circle is moved or resized, which is the whole point of the constraint.
+            auto pit = point_id_to_index_.find(sc.target_ids[0]);
+            auto cit = circle_id_to_index_.find(sc.target_ids[1]);
+
+            if (pit != point_id_to_index_.end() &&
+                cit != circle_id_to_index_.end()) {
+                // PIN THE RADIUS. PointOnCircle is P2PDistance(point, center, radius),
+                // so without this the solver happily satisfies it by changing the RADIUS
+                // parameter - which is never written back to the circle, so nothing
+                // visibly moves while the constraint counts as satisfied. That is
+                // exactly why D-008 looked like a constraint that did nothing: the point
+                // stayed put and the DOF count dropped by way of the radius. With the
+                // radius pinned at its current value the only solution is to move the
+                // point onto the boundary, which is the constraint the user asked for.
+                param_storage_.push_back(*gcs_circles_[cit->second].rad);
+                system_->addConstraintCircleRadius(
+                    gcs_circles_[cit->second],
+                    &param_storage_[param_storage_.size() - 1]);
+                system_->addConstraintPointOnCircle(gcs_points_[pit->second],
+                                                    gcs_circles_[cit->second]);
+            }
         } else if (sc.kind == "symmetric" && sc.target_ids.size() >= 3) {
             // NOT solver-mapped: planegcs has no native mirror-symmetry
             // primitive (PointOnPerpBisector constrains equidistance

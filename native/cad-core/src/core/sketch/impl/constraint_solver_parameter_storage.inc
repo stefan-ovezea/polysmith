@@ -51,7 +51,8 @@
                               num_length_params;
 
     param_storage_.clear();
-    param_storage_.reserve(num_params);
+    // No reserve(): param_storage_ is a deque so element addresses stay valid (see the
+    // member comment); reserve() does not exist on it.
 
     gcs_points_.clear();
     gcs_points_.reserve(num_points);

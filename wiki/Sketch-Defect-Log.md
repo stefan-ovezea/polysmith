@@ -462,6 +462,14 @@ If this had shipped, creating a collinear constraint would have made the documen
 
 **Why it was reverted.** A constraint kind that silently does nothing is worse than no constraint: it would appear in the panel, count as a DOF, and not move the geometry. The command, the solver mapping, the schema entry and the test were removed together; the tree is back to the committed state with the core suite green (82/82).
 
+**Three real bugs found while trying to fix it (2026-10-27), all fixed and green.**
+
+1. **The verifier measured stale geometry.** `rebuild_sketch_vertices` and the entity-coord sync run LATER in the refresh, so immediately after `solver.apply` the vertex table still holds the pre-solve positions while the line caches hold the solved ones. Every vertex-based check therefore rejected good solutions - "point_on_circle ... off by 18.97 mm" for a point that was exactly on its circle - and the rejection restored the pre-solve geometry, so a working constraint looked like it did nothing. `vertex_position()` in `solver_solution_check.h` now reads entity caches first, the vertex table last.
+2. **A constraint that names a VERTEX did not seed the reachability guard.** `point_on_circle` is `{vertex, curve}`; that vertex was not seeded, so `restore_unreachable_solver_geometry` put it back after every solve ("solver moved unconstrained geometry by 16.47 mm; restored it") and the constraint could never be satisfied. All constraint `target_ids` now seed the closure.
+3. **`param_storage_` was a `std::vector<double>` holding solver parameters by ADDRESS** (`gc.rad = &param_storage_[i]`), so any later `push_back` could reallocate and leave every stored pointer dangling - constraints then read garbage and silently do nothing. It is a `std::deque<double>` now, which keeps element addresses stable (the `reserve()` call went with it). This is the most likely original cause of D-008 itself.
+
+**Still not fixed:** with `point_on_circle` mapped (radius pinned so the solver cannot satisfy it by resizing the circle), a circle edit still does not move the attached point. The branch is provably reached (a deliberate throw terminated the process), the constraint is stored, the radius is pinned, and nothing rejects - the point simply stays. So the attachment to a circle's boundary is NOT shipped: `attach_committed_vertex.inc` attaches to line bodies only. Next step is to instrument the solve itself (residual after solve, and whether the point is in `plist`), not to guess further.
+
 **Next step.** Compare the parameter vector a *line endpoint* and a *standalone point* produce (`constraint_solver_entity_mapping.inc` fills `gcs_points_` from `params.vertices`, so both should be there), then check `num_points` / the appended-focus solve path for kind `point`, and only then re-add the constraint kind. The rule to keep: a new constraint kind ships with a test that proves the geometry MOVES, not just that the record exists.
 
 ---

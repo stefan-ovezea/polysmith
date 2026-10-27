@@ -70,6 +70,59 @@ inline const SketchVertex* find_vertex(const SketchFeatureParameters& parameters
   return nullptr;
 }
 
+// Where a vertex ACTUALLY is right after a solve.
+//
+// The vertex table is rebuilt later in the refresh (Phase 5), so immediately after
+// `solver.apply` it still holds the PRE-solve positions while the entity caches hold the
+// solved ones. Measuring through the table therefore rejected good solutions and told the
+// user "point_on_circle off by 18.97 mm" for a point that was exactly on its circle - and
+// the rejection then restored the pre-solve geometry, so the constraint looked like it did
+// nothing at all (which is what D-008 chased for a day). Entity caches first, table last.
+inline bool vertex_position(const SketchFeatureParameters& parameters,
+                            const std::string& id, double& x, double& y) {
+  for (const auto& line : parameters.lines) {
+    if (line.start_vertex_id == id) {
+      x = line.start_x;
+      y = line.start_y;
+      return true;
+    }
+    if (line.end_vertex_id == id) {
+      x = line.end_x;
+      y = line.end_y;
+      return true;
+    }
+  }
+  for (const auto& arc : parameters.arcs) {
+    if (arc.start_vertex_id == id) {
+      x = arc.start_x;
+      y = arc.start_y;
+      return true;
+    }
+    if (arc.end_vertex_id == id) {
+      x = arc.end_x;
+      y = arc.end_y;
+      return true;
+    }
+    if (arc.center_vertex_id == id) {
+      x = arc.center_x;
+      y = arc.center_y;
+      return true;
+    }
+  }
+  for (const auto& circle : parameters.circles) {
+    if (circle.center_vertex_id == id) {
+      x = circle.center_x;
+      y = circle.center_y;
+      return true;
+    }
+  }
+  const SketchVertex* vertex = find_vertex(parameters, id);
+  if (vertex == nullptr) return false;
+  x = vertex->x;
+  y = vertex->y;
+  return true;
+}
+
 inline double line_length(const SketchLine& line) {
   return std::hypot(line.end_x - line.start_x, line.end_y - line.start_y);
 }
@@ -154,25 +207,54 @@ inline std::string solver_constraint_violation(
   // off its host has silently broken a promise the user cannot see.
   for (const auto& anchor : parameters.midpoint_anchors) {
     const SketchLine* host = find_line(parameters, anchor.line_id);
-    const SketchVertex* vertex = find_vertex(parameters, anchor.vertex_id);
-    if (host == nullptr || vertex == nullptr) continue;
+    double vx = 0.0;
+    double vy = 0.0;
+    if (host == nullptr ||
+        !vertex_position(parameters, anchor.vertex_id, vx, vy)) {
+      continue;
+    }
     const double mid_x = (host->start_x + host->end_x) * 0.5;
     const double mid_y = (host->start_y + host->end_y) * 0.5;
-    if (std::hypot(vertex->x - mid_x, vertex->y - mid_y) > kLengthTolerance) {
-      return "midpoint anchor of " + vertex->id + " on " + host->id;
+    if (std::hypot(vx - mid_x, vy - mid_y) > kLengthTolerance) {
+      return "midpoint anchor of " + anchor.vertex_id + " on " + host->id;
     }
   }
   for (const auto& anchor : parameters.point_line_anchors) {
     const SketchLine* host = find_line(parameters, anchor.line_id);
-    const SketchVertex* vertex = find_vertex(parameters, anchor.vertex_id);
-    if (host == nullptr || vertex == nullptr) continue;
+    double vx = 0.0;
+    double vy = 0.0;
+    if (host == nullptr ||
+        !vertex_position(parameters, anchor.vertex_id, vx, vy)) {
+      continue;
+    }
     const double expected_x =
         host->start_x + anchor.t * (host->end_x - host->start_x);
     const double expected_y =
         host->start_y + anchor.t * (host->end_y - host->start_y);
-    if (std::hypot(vertex->x - expected_x, vertex->y - expected_y) >
-        kLengthTolerance) {
-      return "point-on-line anchor of " + vertex->id + " on " + host->id;
+    if (std::hypot(vx - expected_x, vy - expected_y) > kLengthTolerance) {
+      return "point-on-line anchor of " + anchor.vertex_id + " on " + host->id;
+    }
+  }
+
+  // Point-on-circle constraints (a vertex that rides a circle's boundary). These are
+  // stored as constraint records rather than anchors, and they are exactly the kind
+  // whose violation is invisible: the point still looks near the circle.
+  for (const auto& constraint : parameters.constraints) {
+    if (constraint.kind != "point_on_circle") continue;
+    if (constraint.target_ids.size() < 2) continue;
+    double px = 0.0;
+    double py = 0.0;
+    const SketchCircle* circle = find_circle(parameters, constraint.target_ids[1]);
+    if (circle == nullptr ||
+        !vertex_position(parameters, constraint.target_ids[0], px, py)) {
+      continue;
+    }
+    const double radial =
+        std::abs(std::hypot(px - circle->center_x, py - circle->center_y) -
+                 circle->radius);
+    if (radial > kLengthTolerance) {
+      return "point_on_circle " + constraint.target_ids[0] + "/" + circle->id +
+             " off by " + std::to_string(radial) + " mm";
     }
   }
 
@@ -244,17 +326,22 @@ inline std::string solver_constraint_violation(
                std::to_string(dimension.value) + ")";
       }
     } else if (dimension.kind == "point_distance") {
-      const SketchVertex* a = find_vertex(parameters, dimension.entity_id);
-      const SketchVertex* b =
-          find_vertex(parameters, dimension.secondary_entity_id);
-      if (a == nullptr || b == nullptr) continue;
-      const double dx = b->x - a->x;
-      const double dy = b->y - a->y;
+      double ax = 0.0;
+      double ay = 0.0;
+      double bx = 0.0;
+      double by = 0.0;
+      if (!vertex_position(parameters, dimension.entity_id, ax, ay) ||
+          !vertex_position(parameters, dimension.secondary_entity_id, bx, by)) {
+        continue;
+      }
+      const double dx = bx - ax;
+      const double dy = by - ay;
       const double measured = dimension.display_as == "x"   ? std::abs(dx)
                               : dimension.display_as == "y" ? std::abs(dy)
                                                             : std::hypot(dx, dy);
       if (std::abs(measured - dimension.value) > kLengthTolerance) {
-        return "distance " + a->id + "-" + b->id + " = " +
+        return "distance " + dimension.entity_id + "-" +
+               dimension.secondary_entity_id + " = " +
                std::to_string(measured) + " (wanted " +
                std::to_string(dimension.value) + ")";
       }

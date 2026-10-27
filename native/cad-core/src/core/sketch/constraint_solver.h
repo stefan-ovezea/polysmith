@@ -3,6 +3,7 @@
 #include "core/sketch/sketch_types.h"
 #include <GCS.h>
 #include <Geo.h>
+#include <deque>
 #include <vector>
 #include <memory>
 #include <string>
@@ -66,7 +67,14 @@ private:
     // Owns all double values (point coordinates, dimensional values).
     // Must not reallocate after GCS::Point objects are created pointing
     // into it — use reserve() to pre-allocate.
-    std::vector<double> param_storage_;
+    // A DEQUE, not a vector, ON PURPOSE: every element address in here is handed to
+    // planegcs as a solver parameter (`gc.rad = &param_storage_[i]`, dimension values,
+    // radius pins), so a reallocation would leave every previously stored pointer
+    // dangling and the constraints reading garbage - constraints that then silently do
+    // nothing, which is exactly how D-008 looked (a point_on_circle that was "stored
+    // correctly", reported solver_ok, and never moved the point). deque keeps element
+    // addresses stable across push_back.
+    std::deque<double> param_storage_;
 
     // GCS geometry objects, referencing into param_storage_.
     std::vector<GCS::Point> gcs_points_;
