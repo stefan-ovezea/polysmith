@@ -290,6 +290,25 @@ export class PlanegcsBridge {
           p1_id: cid1,
           p2_id: cid2,
         });
+      } else if (c.kind === "point_on_circle" && c.target_ids.length >= 2) {
+        // target_ids = [vertex_id, circle_id]. A point riding the circle's
+        // boundary: dist(point, centre) == radius, with the radius held fixed so
+        // the point follows the circle (mirrors the core's PointOnCircle mapping).
+        const circle = params.circles.find(
+          (circ) => circ.circle_id === c.target_ids[1],
+        );
+        if (circle) {
+          const centerId =
+            circle.center_vertex_id ??
+            `point-circle-${circle.circle_id}-center`;
+          w.push_primitive({
+            id: c.constraint_id,
+            type: "p2p_distance",
+            p1_id: c.target_ids[0],
+            p2_id: centerId,
+            distance: circle.radius,
+          } as any);
+        }
       }
     }
 

@@ -270,5 +270,38 @@
               }
             }
           }
+          if (c.kind == "point_on_circle") {
+            // A point riding a circle's boundary: target_ids is {vertex_id,
+            // circle_id}. Badge at the point; the WASM drag solve also reads this
+            // entry to keep the point on the circle during a live drag. The lateral
+            // (screen-space) nudge is applied in the UI, where the zoom is known.
+            if (c.target_ids.size() == 2) {
+              const auto pt_pos = find_point_position(
+                  *feature.sketch_parameters, c.target_ids[0]);
+              if (pt_pos.has_value()) {
+                const WorldPoint pos = to_world_point(
+                    *feature.sketch_parameters,
+                    std::get<0>(pt_pos.value()),
+                    std::get<1>(pt_pos.value()),
+                    kSketchPlaneOffset + kConstraintBadgeOffset);
+                const bool is_sel =
+                    is_sketch_vertex_selected(c.target_ids[0]) ||
+                    is_sketch_entity_selected(c.target_ids[1]);
+                sketch_constraints.push_back(
+                    ViewportSketchConstraintPrimitive{
+                        .constraint_id = c.constraint_id,
+                        .plane_id = feature.sketch_parameters->plane_id,
+                        .kind = "point_on_circle",
+                        .entity_id = c.target_ids[0],
+                        .related_entity_id = c.target_ids[1],
+                        .label = "O",
+                        .is_selected = is_sel,
+                        .position_x = pos.x,
+                        .position_y = pos.y,
+                        .position_z = pos.z,
+                    });
+              }
+            }
+          }
         }
       }

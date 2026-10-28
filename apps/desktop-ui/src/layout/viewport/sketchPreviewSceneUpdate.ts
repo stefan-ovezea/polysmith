@@ -149,9 +149,25 @@ export function applySolvedPointsToSketchScene({
       if (!delta) {
         continue;
       }
-      object.position.x += delta[0];
-      object.position.y += delta[1];
-      object.position.z += delta[2];
+      // Set the position ABSOLUTELY (base + delta). The screen-space sprite pass
+      // resets sprites to basePosition every frame, so an incremental += would be
+      // wiped before the next frame; setting base+delta and marking the sprite as
+      // drag-mutated lets it survive that reset.
+      const base = object.userData.basePosition as
+        | [number, number, number]
+        | undefined;
+      if (base) {
+        object.position.set(
+          base[0] + delta[0],
+          base[1] + delta[1],
+          base[2] + delta[2],
+        );
+      } else {
+        object.position.x += delta[0];
+        object.position.y += delta[1];
+        object.position.z += delta[2];
+      }
+      object.userData.dragMutated = true;
     }
   }
 }

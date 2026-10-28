@@ -172,7 +172,7 @@ function updateSpriteScale({
     | [number, number, number]
     | null
     | undefined;
-  if (basePosition) {
+  if (basePosition && !sprite.userData.dragMutated) {
     sprite.position.set(...basePosition);
     // Offset the label slightly toward the camera so raycasting
     // always hits the label before overlapping arc/line geometry
@@ -182,6 +182,16 @@ function updateSpriteScale({
     camera.getWorldDirection(cameraDir);
     sprite.position.addScaledVector(cameraDir, -worldUnitsPerPixel * 3);
   }
+
+  // point_on_circle badges sit on a bound vertex; nudge them up-right by a
+  // constant SCREEN-space offset (worldUnitsPerPixel converts pixels to world
+  // units), so they clear the vertex at any zoom instead of a fixed mm offset.
+  if (sprite.userData.sketchConstraintKind === "point_on_circle") {
+    const nudgePx = 12;
+    sprite.position.addScaledVector(cameraRight, worldUnitsPerPixel * nudgePx);
+    sprite.position.addScaledVector(cameraUp, worldUnitsPerPixel * nudgePx);
+  }
+
   sprite.scale.set(
     screenSize.width * scale * viewportScale * worldUnitsPerPixel,
     screenSize.height * scale * viewportScale * worldUnitsPerPixel,

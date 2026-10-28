@@ -115,6 +115,25 @@ export function endpointDragConstraintDeltas(
       line.end_vertex_id === draggedVertexId,
   );
 
+  // Dragging a circle centre: every point_on_circle badge on that circle sits on
+  // an attached point that translates with the centre by the full delta, so the
+  // "O" glyph must ride along instead of snapping only when the drag stops.
+  const draggedCircle = sketch.circles.find(
+    (c) =>
+      c.center_vertex_id === draggedVertexId ||
+      `point-circle-${c.circle_id}-center` === draggedVertexId,
+  );
+  if (draggedCircle) {
+    for (const constraint of constraints) {
+      if (
+        constraint.kind === "point_on_circle" &&
+        constraint.relatedEntityId === draggedCircle.circle_id
+      ) {
+        deltas.set(constraint.constraintId, fullDelta);
+      }
+    }
+  }
+
   for (const constraint of constraints) {
     if (constraint.entityId === draggedVertexId) {
       deltas.set(constraint.constraintId, fullDelta);
@@ -325,7 +344,36 @@ export function resolveEndpointDragFrame({
           : p,
       ),
     };
-    const activePointIds = computeRippleActivePoints(sketch, next.vertexId);
+    let activePointIds = computeRippleActivePoints(sketch, next.vertexId);
+
+    // Dragging a circle CENTRE: the centre is the dragged (fixed) party and the
+    // point_on_circle-attached points must ride it. The raw WASM solve would
+    // instead relax the centre back toward the frozen point, so translate the
+    // attached points by the centre's delta and freeze the centre for the solve.
+    const draggedCircle = sketch?.circles.find(
+      (c) => c.center_vertex_id === next.vertexId,
+    );
+    if (draggedCircle && sketch) {
+      const base = sketch.vertices.find((v) => v.vertex_id === next.vertexId);
+      const dx = sketchPoint.local[0] - (base?.x ?? sketchPoint.local[0]);
+      const dy = sketchPoint.local[1] - (base?.y ?? sketchPoint.local[1]);
+      const attachedIds = (constraints ?? [])
+        .filter(
+          (c) =>
+            c.kind === "point_on_circle" &&
+            c.target_ids.length >= 2 &&
+            c.target_ids[1] === draggedCircle.circle_id,
+        )
+        .map((c) => c.target_ids[0]);
+      paramsCopy.vertices = paramsCopy.vertices.map((p) =>
+        attachedIds.includes(p.vertex_id)
+          ? { ...p, x: p.x + dx, y: p.y + dy }
+          : p,
+      );
+      // Freeze the centre, unfreeze the attached points.
+      activePointIds = attachedIds;
+    }
+
     const result = gcsBridge.solve(paramsCopy, constraints ?? [], {
       activePointIds,
     });

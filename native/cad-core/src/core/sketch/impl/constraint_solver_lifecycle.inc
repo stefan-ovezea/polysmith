@@ -60,14 +60,14 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
     // ── Phase 5: write solved coords to canonical vertices first,
     // then sync back to entity cached fields ─────────────────────
 
-    // Standalone vertices (a Point-tool point, a spline pole not shared with a
-    // curve endpoint) are solver unknowns but are not owned by any
+    // Standalone Point-tool points are solver unknowns but are not owned by any
     // line/circle/arc, so the entity loops below never write their solved
     // position back — a point_on_circle on a standalone point moved it in
     // param_storage_ and then dropped the move, leaving the point frozen at its
-    // pre-solve position (D-008). Write every mapped vertex back once up front;
-    // the entity loops then re-sync their cached fields from the same values.
+    // pre-solve position (D-008). Only these orphaned "point" vertices are written
+    // back up front; entity-owned vertices stay with their owning loops.
     for (auto& vertex : params.vertices) {
+        if (vertex.kind != "point") continue;
         auto pit = point_id_to_index_.find(vertex.id);
         if (pit == point_id_to_index_.end()) continue;
         vertex.x = param_storage_[pit->second * 2];
