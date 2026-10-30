@@ -535,6 +535,12 @@ export interface ViewportPanelProps {
     // absorbs it in the same undo step.
     bindToVertexId?: string,
   ) => Promise<void>;
+  onUpdateSketchCircle: (
+    circleId: string,
+    centerX: number,
+    centerY: number,
+    radius: number,
+  ) => Promise<void>;
   onMoveSketchEntities: (params: {
     entityIds: string[];
     dx: number;

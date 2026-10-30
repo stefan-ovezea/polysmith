@@ -102,6 +102,7 @@ interface ViewportPointerUpParams {
   moveGizmoDragRef: MutableRef<MoveGizmoDragState | null>;
   finishDimensionLabelDragPointerUp: () => "inactive" | "continue" | "consumed";
   finishEndpointDragPointerUp: (event: PointerEvent) => EndpointDragPointerUpResult;
+  finishCircleResizePointerUp: (event: PointerEvent) => EndpointDragPointerUpResult;
   finishSketchMovePointerUp: (event: PointerEvent) => SketchMovePointerUpResult;
   finishViewCubePointerUp: (event: PointerEvent) => "inactive" | "consumed";
   draftStartedOnPointerDownRef: MutableRef<boolean>;
@@ -314,6 +315,9 @@ function finishTransientPointerUp(params: ViewportPointerUpParams) {
     return true;
   }
   if (params.finishEndpointDragPointerUp(params.event) === "consumed") {
+    return true;
+  }
+  if (params.finishCircleResizePointerUp(params.event) === "consumed") {
     return true;
   }
   return params.finishViewCubePointerUp(params.event) === "consumed";

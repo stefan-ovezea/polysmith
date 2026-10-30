@@ -4,6 +4,10 @@ import type { ArmedSketchConstraint, SketchFeatureParameters, SketchPlaneFrame }
 import type { ViewportPickHit } from "./contextMenuState";
 import type { EndpointDrag } from "./endpointDrag";
 import { beginEndpointDragPointerDown } from "./endpointDragPointerDown";
+import {
+  beginCircleResizePointerDown,
+  type CircleResizeDrag,
+} from "./circleResizeDrag";
 import type { SelectionDrag } from "./selectionGeometry";
 
 interface MutableRef<T> {
@@ -19,6 +23,7 @@ interface BeginSelectPointerDownParams {
   activeSketchPlaneFrame: SketchPlaneFrame | null;
   sketch: SketchFeatureParameters | null;
   endpointDragRef: MutableRef<EndpointDrag | null>;
+  circleResizeDragRef: MutableRef<CircleResizeDrag | null>;
   selectionDragRef: MutableRef<SelectionDrag | null>;
   intersectSceneTargets: (event: PointerEvent) => ViewportPickHit | null;
   armedSketchConstraint: ArmedSketchConstraint;
@@ -38,6 +43,7 @@ export function beginSelectPointerDown({
   activeSketchPlaneFrame,
   sketch,
   endpointDragRef,
+  circleResizeDragRef,
   selectionDragRef,
   intersectSceneTargets,
   armedSketchConstraint,
@@ -56,6 +62,25 @@ export function beginSelectPointerDown({
       activeSketchPlaneFrame,
       sketch,
       endpointDragRef,
+      armedSketchConstraint,
+    })
+  ) {
+    return { handled: true, clearPointerDown: true };
+  }
+
+  // Grabbing a circle's perimeter resizes it (centre fixed, radius follows the
+  // cursor) instead of starting a marquee. The centre is still draggable as a
+  // point (handled above); the edge is the resize affordance.
+  if (
+    hit?.kind === "sketch_entity" &&
+    hit.entityKind === "circle" &&
+    beginCircleResizePointerDown({
+      event,
+      renderer,
+      controls,
+      hit,
+      sketch,
+      circleResizeDragRef,
       armedSketchConstraint,
     })
   ) {

@@ -86,6 +86,11 @@ import {
 import { type EndpointDrag } from "./viewport/endpointDrag";
 import { handleEndpointDragPointerMove } from "./viewport/endpointDragPointerMove";
 import { finishEndpointDragPointerUp } from "./viewport/endpointDragPointerUp";
+import {
+  type CircleResizeDrag,
+  handleCircleResizePointerMove,
+  finishCircleResizePointerUp,
+} from "./viewport/circleResizeDrag";
 import { handleSketchMovePointerMove } from "./viewport/sketchMovePointerMove";
 import { finishSketchMovePointerUp } from "./viewport/sketchMovePointerUp";
 import { notifyTrimPreviewResponse } from "./viewport/trimPointerMove";
@@ -388,6 +393,7 @@ export function ViewportPanel({
   arrayCenterPicking,
   onArrayCenterPicked,
   onUpdateSketchPoint,
+  onUpdateSketchCircle,
   onMoveSketchEntities,
   onFinishSketch,
   onClearSelection,
@@ -963,6 +969,9 @@ export function ViewportPanel({
   // Endpoint drag state — active when the user grabs a sketch
   // line endpoint in Select mode and drags it to a new position.
   const endpointDragRef = useRef<EndpointDrag | null>(null);
+  // Circle-perimeter resize state — active when the user grabs a circle's
+  // edge in Select mode and drags it to resize the circle.
+  const circleResizeDragRef = useRef<CircleResizeDrag | null>(null);
   // rAF batching for endpoint drag — same pattern as flushMoveGizmoChange.
   const pendingDragRef = useRef<{
     vertexId: string;
@@ -1085,6 +1094,7 @@ export function ViewportPanel({
   );
   const pickSketchPointRef = useRef(onPickSketchPoint);
   const updateSketchPointRef = useRef(onUpdateSketchPoint);
+  const updateSketchCircleRef = useRef(onUpdateSketchCircle);
   const moveSketchEntitiesRef = useRef(onMoveSketchEntities);
   const selectSketchDimensionRef = useRef(onSelectSketchDimension);
   const updateSketchDimensionRef = useRef(onUpdateSketchDimension);
@@ -4226,6 +4236,7 @@ export function ViewportPanel({
         moveGizmoDragRef,
         sketchLinesRef,
         endpointDragRef,
+        circleResizeDragRef,
         selectionDragRef,
         sketchMoveDragRef,
         sketchMoveRingGroupRef,
@@ -4459,6 +4470,29 @@ export function ViewportPanel({
           }
         }
         // Always consume the event — user is in placement mode.
+        return;
+      }
+
+      if (
+        handleCircleResizePointerMove({
+          event,
+          renderer,
+          camera,
+          circleResizeDragRef,
+          activeSketchPlaneIdRef,
+          activeSketchPlaneFrameRef,
+          sketchLinesRef,
+          sketchConstraintsRef,
+          sceneConstraintsRef,
+          sketchEntityObjectByIdRef,
+          sketchPointObjectByIdRef,
+          sketchConstraintObjectsRef,
+          sketchProfileObjectsRef,
+          dragPreviewMutatingRef,
+          setSketchSnapLabel,
+          requestRender,
+        })
+      ) {
         return;
       }
 
@@ -4734,6 +4768,27 @@ export function ViewportPanel({
           pointerDown = point;
         },
         restorePreviewScene,
+      });
+    }
+
+    function finishCircleResizePointerUpFromViewport(event: PointerEvent) {
+      return finishCircleResizePointerUp({
+        event,
+        renderer,
+        camera,
+        controls,
+        circleResizeDragRef,
+        activeSketchPlaneIdRef,
+        activeSketchPlaneFrameRef,
+        dragPreviewMutatingRef,
+        updateSketchCircle: updateSketchCircleRef.current,
+        restorePreviewScene,
+        setSketchSnapLabel,
+        setHoveredSketchEntity,
+        setHoveredSketchPoint,
+        setPointerDown: (point) => {
+          pointerDown = point;
+        },
       });
     }
 
@@ -5281,6 +5336,7 @@ export function ViewportPanel({
         moveGizmoDragRef,
         finishDimensionLabelDragPointerUp,
         finishEndpointDragPointerUp: finishEndpointDragPointerUpFromViewport,
+        finishCircleResizePointerUp: finishCircleResizePointerUpFromViewport,
         finishSketchMovePointerUp: finishSketchMovePointerUpFromViewport,
         finishViewCubePointerUp: finishViewCubePointerUpFromViewport,
         draftStartedOnPointerDownRef,
@@ -5899,6 +5955,7 @@ export function ViewportPanel({
   // scene objects (drag released without moving, Escape, lost pointer-up).
   const restorePreviewScene = useCallback(() => {
     endpointDragRef.current = null;
+    circleResizeDragRef.current = null;
     dragPreviewMutatingRef.current = false;
     moveDragPreviewActiveRef.current = false;
     forceSceneRebuildRef.current = true;
@@ -5924,6 +5981,7 @@ export function ViewportPanel({
         pendingEndpointCommit: pendingEndpointCommitRef,
         pendingMoveCommit: pendingMoveCommitRef,
         endpointDrag: endpointDragRef,
+        circleResizeDrag: circleResizeDragRef,
         dragPreviewMutating: dragPreviewMutatingRef,
         moveDragPreviewActive: moveDragPreviewActiveRef,
         forceSceneRebuild: forceSceneRebuildRef,

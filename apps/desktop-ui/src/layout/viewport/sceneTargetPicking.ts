@@ -349,9 +349,7 @@ function pickActiveSketchTarget({
 }): ViewportPickHit | null {
   const checkDimensionsLast = activeSketchTool === "dimension";
 
-  if (checkDimensionsLast || activeSketchTool === "trim") {
-    // Dimension tool: check entities before dimensions so the user
-    // can pick lines/circles to create dimensions on them.
+  if (activeSketchTool === "trim") {
     // Trim tool: entities must win over sketch points, dimension
     // labels and constraints — the zoom-aware point-pick radius
     // otherwise swallows a circle's outline around its center and
@@ -374,6 +372,19 @@ function pickActiveSketchTarget({
     raycaster, sketchPointObjects, worldUnitsPerPixel, tolerancePx);
   if (pointHit) {
     return pointHit;
+  }
+
+  // Dimension tool: entities are checked AFTER points but BEFORE dimension
+  // labels, so the user can pick a line/circle body to dimension while a
+  // click on a line endpoint still resolves to the endpoint (not the circle
+  // the endpoint happens to sit on — the "hijacked" circle_line_distance bug).
+  if (checkDimensionsLast) {
+    const entityHit = nearestEntityIntersection(raycaster, sketchEntityObjects);
+    const entityResult =
+      sketchEntitySelectionHitFromIntersection(entityHit);
+    if (entityResult) {
+      return entityResult;
+    }
   }
 
   const dimensionHit = pickSketchDimension(raycaster, sketchDimensionObjects);

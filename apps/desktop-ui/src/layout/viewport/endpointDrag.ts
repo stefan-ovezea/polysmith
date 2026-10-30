@@ -365,13 +365,21 @@ export function resolveEndpointDragFrame({
             c.target_ids[1] === draggedCircle.circle_id,
         )
         .map((c) => c.target_ids[0]);
+      // A line endpoint drawn exactly on a quadrant REUSES that quadrant vertex
+      // id and carries no point_on_circle, so it must be translated explicitly to
+      // ride the circle during the preview (mirrors the core commit fix).
+      const quadrantPrefix = `vertex-${draggedCircle.circle_id}-quadrant-`;
+      const quadrantSharedIds = sketch.lines
+        .flatMap((l) => [l.start_vertex_id, l.end_vertex_id])
+        .filter((id) => id.startsWith(quadrantPrefix));
+      const rideIds = [...new Set([...attachedIds, ...quadrantSharedIds])];
       paramsCopy.vertices = paramsCopy.vertices.map((p) =>
-        attachedIds.includes(p.vertex_id)
+        rideIds.includes(p.vertex_id)
           ? { ...p, x: p.x + dx, y: p.y + dy }
           : p,
       );
       // Freeze the centre, unfreeze the attached points.
-      activePointIds = attachedIds;
+      activePointIds = rideIds;
     }
 
     const result = gcsBridge.solve(paramsCopy, constraints ?? [], {

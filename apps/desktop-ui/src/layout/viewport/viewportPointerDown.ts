@@ -39,6 +39,7 @@ import {
 } from "./sketchMoveTool";
 import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
 import type { EndpointDrag } from "./endpointDrag";
+import type { CircleResizeDrag } from "./circleResizeDrag";
 import type { SelectionDrag } from "./selectionGeometry";
 import type { ActiveSketchGridPlaneFrame } from "./grid";
 import type {
@@ -80,6 +81,7 @@ interface ViewportPointerDownParams {
   moveGizmoDragRef: MutableRef<MoveGizmoDragState | null>;
   sketchLinesRef: MutableRef<SketchFeatureParameters | null>;
   endpointDragRef: MutableRef<EndpointDrag | null>;
+  circleResizeDragRef: MutableRef<CircleResizeDrag | null>;
   selectionDragRef: MutableRef<SelectionDrag | null>;
   sketchMoveDragRef: MutableRef<SketchMoveDrag | null>;
   sketchMoveRingGroupRef: MutableRef<THREE.Group | null>;
@@ -155,8 +157,13 @@ function handlePrimaryButtonPointerDown(params: ViewportPointerDownParams) {
 
   // Lost pointer-up safety net: restore committed geometry before
   // starting a new interaction.
-  if (params.endpointDragRef.current || params.sketchMoveDragRef.current) {
+  if (
+    params.endpointDragRef.current ||
+    params.circleResizeDragRef.current ||
+    params.sketchMoveDragRef.current
+  ) {
     params.endpointDragRef.current = null;
+    params.circleResizeDragRef.current = null;
     params.sketchMoveDragRef.current = null;
     params.restorePreviewScene();
   }
@@ -467,6 +474,7 @@ function beginSelectToolPointerDown(params: ViewportPointerDownParams) {
     activeSketchPlaneFrame: params.activeSketchPlaneFrameRef.current,
     sketch: params.sketchLinesRef.current,
     endpointDragRef: params.endpointDragRef,
+    circleResizeDragRef: params.circleResizeDragRef,
     selectionDragRef: params.selectionDragRef,
     intersectSceneTargets: params.intersectSceneTargets,
     armedSketchConstraint: params.armedSketchConstraintRef.current,

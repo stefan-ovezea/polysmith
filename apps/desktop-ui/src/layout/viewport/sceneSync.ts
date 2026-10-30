@@ -37,6 +37,7 @@ import { addSketchSceneObjects } from "./sketchSceneObjects";
 import { buildMoveGizmoObject, type MoveGizmoDescriptor } from "./moveGizmo";
 import type { SelectedConstraintState } from "./contextMenuState";
 import type { EndpointDrag } from "./endpointDrag";
+import type { CircleResizeDrag } from "./circleResizeDrag";
 
 interface MutableRef<T> {
   current: T;
@@ -70,6 +71,8 @@ interface ViewportSceneSyncRefs {
    *  keep-preview-alive semantics as pendingEndpointCommit). */
   pendingMoveCommit: MutableRef<boolean>;
   endpointDrag: MutableRef<EndpointDrag | null>;
+  /** Circle-perimeter resize drag (same keep-preview-alive semantics). */
+  circleResizeDrag: MutableRef<CircleResizeDrag | null>;
   /** True while an endpoint-drag preview is mutating committed scene
    *  objects — mid-drag viewport_state syncs must not overwrite it. */
   dragPreviewMutating: MutableRef<boolean>;
@@ -316,7 +319,10 @@ function syncEndpointDragScene({
   clearDragPreviewLines: () => void;
   setConstraintPreview: (preview: null) => void;
 }) {
-  const isDragging = refs.endpointDrag.current !== null && !hadPendingCommit;
+  const draggingEndpoint = refs.endpointDrag.current !== null;
+  const isDragging =
+    (draggingEndpoint || refs.circleResizeDrag.current !== null) &&
+    !hadPendingCommit;
   if (!isDragging || !sceneData || sketchGroup.children.length === 0) {
     return false;
   }
@@ -328,13 +334,15 @@ function syncEndpointDragScene({
     return true;
   }
 
-  updateEndpointDragSceneObjects({
-    sceneData,
-    planeFrame: refs.activeSketchPlaneFrame.current,
-    sketchEntityObjectById: refs.sketchEntityObjectById.current,
-    sketchPointObjectById: refs.sketchPointObjectById.current,
-    sketchConstraintObjects: refs.sketchConstraintObjects.current,
-  });
+  if (draggingEndpoint) {
+    updateEndpointDragSceneObjects({
+      sceneData,
+      planeFrame: refs.activeSketchPlaneFrame.current,
+      sketchEntityObjectById: refs.sketchEntityObjectById.current,
+      sketchPointObjectById: refs.sketchPointObjectById.current,
+      sketchConstraintObjects: refs.sketchConstraintObjects.current,
+    });
+  }
 
   releaseEndpointDragPreview({
     refs,
@@ -483,6 +491,18 @@ function viewportSceneBuildKey({
     wcsOrientation,
     moveGizmoKey(moveGizmo),
     displayedSketchDimensions.map(sketchDimensionBuildKey).join("|"),
+    // Sketch circle geometry: a perimeter/diameter resize changes the radius
+    // (and the derived profile) without moving any 3D primitive, so without
+    // this entry the profile fill/boundary stay at the original size.
+    sceneData.sketchCircles
+      .map((c) => `${c.circleId}@${c.radius}@${c.center.join(",")}`)
+      .join("|"),
+    sceneData.sketchProfiles
+      .map(
+        (p) =>
+          `${p.profileId}@${p.profileKind}@${p.radius ?? 0}@${p.start.join(",")}`,
+      )
+      .join("|"),
     // Constraint glyphs are sprites built with the scene, and applying a
     // constraint changes the relation set without moving any geometry. Without
     // this entry the rebuild key stays the same and the new glyph is never
@@ -705,6 +725,7 @@ function releaseEndpointDragPreview({
     return;
   }
   refs.endpointDrag.current = null;
+  refs.circleResizeDrag.current = null;
   refs.dragPreviewMutating.current = false;
   refs.moveDragPreviewActive.current = false;
   clearDragPreviewLines();

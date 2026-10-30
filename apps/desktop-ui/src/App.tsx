@@ -2438,6 +2438,7 @@ function App() {
     cancelMirrorPreview,
     setSketchPointFixed,
     updateSketchPoint,
+    updateSketchCircle,
     moveSketchEntities,
     updateSketchDimension,
     updateSketchDimensionLabelPosition,
@@ -6341,6 +6342,11 @@ function App() {
               onUpdateSketchPoint={async (vertexId, x, y, bindToVertexId) => {
                 await runAction(async () => {
                   await updateSketchPoint(vertexId, x, y, bindToVertexId);
+                });
+              }}
+              onUpdateSketchCircle={async (circleId, centerX, centerY, radius) => {
+                await runAction(async () => {
+                  await updateSketchCircle(circleId, centerX, centerY, radius);
                 });
               }}
               onMoveSketchEntities={async (params) => {
