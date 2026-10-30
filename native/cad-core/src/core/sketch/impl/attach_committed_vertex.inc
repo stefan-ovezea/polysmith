@@ -156,7 +156,7 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
     }
     log_info("sketch", "attached " + vertex_id + " to the boundary of " +
                            circle_host->id +
-                           " (from the geometry, not from a snap)");
+                           " (point_on_circle)");
     return;
   }
 
@@ -176,7 +176,7 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
         .line_id = host->id,
     });
     log_info("sketch", "attached " + vertex_id + " to the midpoint of " +
-                           host->id + " (from the geometry, not from a snap)");
+                           host->id + " (midpoint anchor)");
     return;
   }
 
@@ -188,6 +188,5 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
       .t = host_t,
   });
   log_info("sketch", "attached " + vertex_id + " to " + host->id + " at t=" +
-                         std::to_string(host_t) +
-                         " (from the geometry, not from a snap)");
+                         std::to_string(host_t) + " (point_line anchor)");
 }
