@@ -690,9 +690,11 @@ function App() {
   // full region geometry for ANY sketch whose derived profile set is stale —
   // this covers a freshly-loaded document (no active sketch yet), a sketch
   // being drawn (its `profile_count` rises as regions close), and a closed
-  // sketch. The fetch is gated on `profiles.length !== profile_count`, so a
-  // pure point move (count unchanged) does not refetch, and a selection-only
-  // change is a cheap no-op.
+  // sketch. The fetch is gated on the profile count AND on the sketch geometry
+  // (see the comment inside): a region count alone does not change when an edit
+  // reshapes a profile in place, which is how a resized circle used to leave the
+  // old fill and the old profile id behind.
+  const profileFetchGeometryKeyRef = useRef<Record<string, string>>({});
   useEffect(() => {
     if (!document) {
       return;
@@ -704,9 +706,37 @@ function App() {
       }
       const fetched = params.profiles?.length ?? 0;
       const live = params.profile_count ?? 0;
-      if (fetched === live) {
+      // The region COUNT is not enough to know whether the fetched geometry is
+      // still valid. A polygon profile id embeds its boundary vertex keys
+      // (`profile-poly-<entity ids>-<node keys>`, see make_polygon_profile_id),
+      // so any edit that moves a vertex rewrites the ids and the sampled outline
+      // while the count stays the same — which left the fill at the old size and
+      // a stale id selected, and made clicking that fill fail in the core with
+      // "Sketch profile not found". Key the fetch on the sketch geometry too, so
+      // a resize, a move, a trim or a boundary edit all refresh it.
+      const geometryKey = [
+        ...(params.circles ?? []).map(
+          (circle) =>
+            `${circle.circle_id}@${circle.center_x},${circle.center_y},${circle.radius}`,
+        ),
+        ...(params.lines ?? []).map(
+          (line) =>
+            `${line.line_id}@${line.start_x},${line.start_y},${line.end_x},${line.end_y}`,
+        ),
+        ...(params.arcs ?? []).map(
+          (arc) =>
+            `${arc.arc_id}@${arc.center_x},${arc.center_y},${arc.radius},` +
+            `${arc.start_x},${arc.start_y},${arc.end_x},${arc.end_y}`,
+        ),
+      ].join("|");
+      const fetchKey = `${live}:${geometryKey}`;
+      if (
+        fetched === live &&
+        profileFetchGeometryKeyRef.current[feature.feature_id] === fetchKey
+      ) {
         continue;
       }
+      profileFetchGeometryKeyRef.current[feature.feature_id] = fetchKey;
       void getSketchProfiles(feature.feature_id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
