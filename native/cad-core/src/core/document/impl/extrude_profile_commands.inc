@@ -50,10 +50,11 @@ DocumentState DocumentManager::extrude_profiles(
       throw std::runtime_error(
           "Selected profiles must belong to the same sketch plane");
     }
-    const auto profile_it = std::find_if(
-        sketch.profiles.begin(), sketch.profiles.end(),
-        [&](const SketchProfileRegion& profile) { return profile.id == profile_id; });
-    if (profile_it == sketch.profiles.end()) {
+    // A stored id can predate an edit that rewrote the region's id, so resolve it
+    // against the live set; the extrude then records the id the region has now.
+    const SketchProfileRegion* profile_it = resolve_sketch_profile(
+        sketch.profiles, profile_id);
+    if (profile_it == nullptr) {
       throw std::runtime_error("Sketch profile not found: " + profile_id);
     }
     selected_profiles.push_back(*profile_it);

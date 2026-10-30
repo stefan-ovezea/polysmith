@@ -152,14 +152,17 @@ DocumentState DocumentManager::select_sketch_profile(const std::string& profile_
     throw std::runtime_error("Sketch profile not found: " + profile_id);
   }
 
-  const auto profile_it = std::find_if(
-      feature_it->sketch_parameters->profiles.begin(),
-      feature_it->sketch_parameters->profiles.end(),
-      [&](const SketchProfileRegion& profile) { return profile.id == profile_id; });
+  // A stored id can predate an edit that rewrote the region's id (the polygon id
+  // embeds its boundary vertex keys), so resolve it against the live set first and
+  // record the id the region has NOW — a selection that keeps the stale spelling
+  // fails the next command that consumes it.
+  const SketchProfileRegion* profile =
+      resolve_sketch_profile(feature_it->sketch_parameters->profiles, profile_id);
 
-  if (profile_it == feature_it->sketch_parameters->profiles.end()) {
+  if (profile == nullptr) {
     throw std::runtime_error("Sketch profile not found: " + profile_id);
   }
+  const std::string& resolved_id = profile->id;
 
   document_->selected_feature_id = feature_it->id;
   document_->selected_sketch_vertex_id = std::nullopt;
@@ -167,14 +170,14 @@ DocumentState DocumentManager::select_sketch_profile(const std::string& profile_
   document_->selected_sketch_dimension_id = std::nullopt;
   if (additive) {
     auto& selected = document_->selected_sketch_profile_ids;
-    const auto existing = std::find(selected.begin(), selected.end(), profile_id);
+    const auto existing = std::find(selected.begin(), selected.end(), resolved_id);
     if (existing == selected.end()) {
-      selected.push_back(profile_id);
+      selected.push_back(resolved_id);
     } else {
       selected.erase(existing);
     }
   } else {
-    document_->selected_sketch_profile_ids = {profile_id};
+    document_->selected_sketch_profile_ids = {resolved_id};
     // A non-additive profile click REPLACES the previous selection:
     // entity and vertex ids survive here otherwise, so a Delete after
     // clicking a surface would remove BOTH the previously-selected

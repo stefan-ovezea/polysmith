@@ -268,3 +268,55 @@ const SketchProfileRegion* find_equivalent_profile(
 
   return candidates.size() == 1 ? candidates.front() : nullptr;
 }
+
+// How many of a region's own entities the stored id still names.
+size_t profile_entity_overlap(const SketchProfileRegion& profile,
+                              const std::string& stored_id) {
+  size_t overlap = 0;
+  for (const auto& entity_id : profile.line_ids) {
+    if (profile_id_mentions_entity(stored_id, entity_id)) ++overlap;
+  }
+  if (profile.source_circle_id.has_value() &&
+      profile_id_mentions_entity(stored_id, profile.source_circle_id.value())) {
+    ++overlap;
+  }
+  return overlap;
+}
+
+// Resolve a STORED profile id against the CURRENT region set.
+//
+// A polygon profile id embeds its boundary vertex keys (see
+// make_polygon_profile_id), so every edit that moves one of its vertices rewrites
+// it. A stored copy then names a region that no longer exists: selecting or
+// extruding it failed with "Sketch profile not found" while the region was still
+// there under its new id.
+//
+// The entity section of the id does survive such an edit, but it does not identify
+// a region on its own - the disc and the wedge of a circle cut by two chords both
+// name that circle. The region whose entities the id names MOST is the one it was
+// written for, provided that answer is unique; otherwise this returns nullptr and
+// the caller keeps its existing failure behaviour rather than guessing.
+const SketchProfileRegion* resolve_sketch_profile(
+    const std::vector<SketchProfileRegion>& profiles,
+    const std::string& profile_id) {
+  if (const SketchProfileRegion* exact =
+          find_profile_by_id(profiles, profile_id)) {
+    return exact;
+  }
+
+  const SketchProfileRegion* best = nullptr;
+  size_t best_overlap = 0;
+  bool tied = false;
+  for (const auto& profile : profiles) {
+    const size_t overlap = profile_entity_overlap(profile, profile_id);
+    if (overlap == 0) continue;
+    if (overlap > best_overlap) {
+      best_overlap = overlap;
+      best = &profile;
+      tied = false;
+    } else if (overlap == best_overlap) {
+      tied = true;
+    }
+  }
+  return tied ? nullptr : best;
+}

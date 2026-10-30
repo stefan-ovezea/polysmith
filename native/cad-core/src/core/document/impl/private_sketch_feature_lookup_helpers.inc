@@ -1,6 +1,6 @@
 std::vector<FeatureEntry>::iterator find_sketch_feature_owning_profile(
     std::vector<FeatureEntry>& features, const std::string& profile_id) {
-  return std::find_if(
+  const auto exact = std::find_if(
       features.begin(), features.end(), [&](const FeatureEntry& feature) {
         if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
           return false;
@@ -11,6 +11,21 @@ std::vector<FeatureEntry>::iterator find_sketch_feature_owning_profile(
             [&](const SketchProfileRegion& profile) {
               return profile.id == profile_id;
             });
+      });
+  if (exact != features.end()) {
+    return exact;
+  }
+
+  // A stored id can name a region that a geometry edit has since rewritten (the
+  // polygon id embeds its boundary vertex keys). It still identifies the SKETCH
+  // it lives in, so fall back to the sketch that owns the region it resolves to.
+  return std::find_if(
+      features.begin(), features.end(), [&](const FeatureEntry& feature) {
+        if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+          return false;
+        }
+        return resolve_sketch_profile(feature.sketch_parameters->profiles,
+                                      profile_id) != nullptr;
       });
 }
 
