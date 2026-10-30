@@ -457,18 +457,28 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
 
       // A negative dofs count is NOT evidence of over-constraint: planegcs
       // returns -1 when it could not diagnose the system at all (no unknowns /
-      // empty diagnosis matrix) and params-minus-nonredundant otherwise. The
-      // signal that something is actually wrong is a conflicting or redundant
-      // constraint that the solver identified, so only those are reported as an
-      // error — this used to log "sketch over-constrained" (a red line the user
-      // sees in the Logs panel) for perfectly healthy sketches.
-      if (result.conflicting.size() > 0 || result.redundant.size() > 0) {
+      // empty diagnosis matrix) and params-minus-nonredundant otherwise.
+      //
+      // A CONFLICTING constraint is a real contradiction and stays an error. A
+      // REDUNDANT one is not: planegcs drops it and the sketch solves fine, which
+      // happens routinely as soon as two rules describe the same thing (a second
+      // point on the same circle, a point-line anchor that coincides with a shared
+      // vertex). Logging that at error level filled the user's Logs panel with red
+      // "sketch over-constrained" lines for a perfectly healthy sketch, so it is
+      // debug-level: still visible when diagnosing, not an alarm.
+      if (result.conflicting.size() > 0) {
         polysmith::core::log_error(
             "sketch",
             "sketch over-constrained - dofs=" + std::to_string(result.dofs) +
                 " conflicting=" +
                 std::to_string(result.conflicting.size()) + " redundant=" +
                 std::to_string(result.redundant.size()));
+      } else if (result.redundant.size() > 0) {
+        polysmith::core::log_debug(
+            "sketch",
+            "sketch has " + std::to_string(result.redundant.size()) +
+                " redundant constraint(s), dropped by the solver (dofs=" +
+                std::to_string(result.dofs) + ")");
       } else if (result.dofs < 0) {
         polysmith::core::log_debug(
             "sketch",

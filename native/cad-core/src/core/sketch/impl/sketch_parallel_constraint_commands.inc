@@ -92,10 +92,17 @@ void set_sketch_parallel_constraint(
     // silently losing a side of the sketch.
     {
       auto& params = *feature.sketch_parameters;
+      // REDUNDANCY IS NOT A FAILURE. planegcs drops a redundant constraint and
+      // solves the rest, so a sketch that describes the same rule twice still
+      // solves — and adding the second description is exactly what a user does
+      // ("these are already parallel"). Treating it as rejection made a valid
+      // relation throw "cannot be satisfied without destroying the sketch" on any
+      // sketch that carries a duplicate constraint (a second point on one circle,
+      // for instance). What the guard exists for is a solve that DESTROYS
+      // geometry: a rejected solve, a real contradiction, or a negative dof count.
       const bool rejected =
           params.solver_rejections != rejections_before ||
           params.solver_conflicting_count > 0 ||
-          params.solver_redundant_count > 0 ||
           (params.solver_dofs != -1 && params.solver_dofs < 0);
       if (rejected) {
         throw std::runtime_error(std::string("Cannot make these lines ") +
