@@ -198,8 +198,51 @@ void update_sketch_dimension(FeatureEntry& feature,
 
     circle_it->radius = value;
     sync_circle_dimension(parameters, *circle_it);
+
+    // Collect the attached point ids and project each one radially onto the NEW
+    // radius at its same angle (see update_sketch_circle).
+    std::vector<std::string> attached_ids;
+    const double cx = circle_it->center_x;
+    const double cy = circle_it->center_y;
+    for (const auto& constraint : parameters.constraints) {
+      if (constraint.kind != "point_on_circle") continue;
+      if (constraint.target_ids.size() < 2) continue;
+      if (constraint.target_ids[1] != dimension.entity_id) continue;
+      const auto pos = point_position_of(parameters, constraint.target_ids[0]);
+      if (!pos.has_value()) continue;
+      const double dx = pos->first - cx;
+      const double dy = pos->second - cy;
+      const double old_radius = std::hypot(dx, dy);
+      if (old_radius <= kMinimumSketchDimensionValue) continue;
+      propagate_connected_point_move(parameters, constraint.target_ids[0],
+                                     cx + value * (dx / old_radius),
+                                     cy + value * (dy / old_radius));
+      attached_ids.push_back(constraint.target_ids[0]);
+    }
+
+    // Freeze the centre AND the attached points during the solve (see
+    // update_sketch_circle): the centre is authoritative and the points were
+    // just placed at their correct radial positions, so neither may drift.
+    const std::string center_point_id = circle_center_vertex_id(*circle_it);
+    std::vector<std::pair<std::string, bool>> saved_fixed;
+    saved_fixed.reserve(1 + attached_ids.size());
+    const auto save_fixed = [&](const std::string& id) {
+      for (const auto& v : parameters.vertices) {
+        if (v.id == id) { saved_fixed.push_back({id, v.is_fixed}); return; }
+      }
+    };
+    const auto set_fixed = [&](const std::string& id, bool fixed) {
+      for (auto& v : parameters.vertices) {
+        if (v.id == id) { v.is_fixed = fixed; return; }
+      }
+    };
+    save_fixed(center_point_id);
+    for (const auto& id : attached_ids) save_fixed(id);
+    set_fixed(center_point_id, true);
+    for (const auto& id : attached_ids) set_fixed(id, true);
     refresh_sketch_derived_state(feature);
     fallback_to_driven();
+    for (const auto& [id, was_fixed] : saved_fixed) set_fixed(id, was_fixed);
     sync_all_labels();
     return;
   }

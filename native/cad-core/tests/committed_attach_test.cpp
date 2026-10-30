@@ -12,6 +12,7 @@
 // broke four suites - trim, CAM, a partial-event test and auto-constrain all create lines
 // through the same function and must not gain anchors. The last case below is that
 // guard: with the flag off, nothing is attached.
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -284,6 +285,268 @@ bool test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it() {
        ")").c_str());
 }
 
+// A line drawn FROM a circle whose start lands exactly on a quadrant REUSES the
+// quadrant vertex id (endpoint sharing), so `vertex_is_derived` skips the
+// point_on_circle attachment. The endpoint is then only tied to the circle via
+// that shared id — which the circle-move translate does not move. Regression:
+// "line from circle does not stay attached when I move the circle", while a
+// line drawn TO the circle (fresh end vertex) stays.
+bool test_a_line_drawn_from_a_quadrant_follows_the_circle() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  // Start exactly on quadrant-0 (10,0); the line extends off to the right.
+  DocumentState document =
+      manager.add_sketch_line(10.0, 0.0, 30.0, 0.0, false, "", true);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "quadrant: the sketch exists")) return false;
+  const std::string center_vertex = before->circles.front().center_vertex_id;
+
+  document = manager.update_sketch_vertex(center_vertex, 5.0, 0.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "quadrant: the sketch survives")) return false;
+  const auto& line = after->lines.back();
+  return expect(
+      std::abs(line.start_x - 15.0) < 1e-3 && std::abs(line.start_y) < 1e-3,
+      ("quadrant: the line start follows the circle to (15,0) - got (" +
+       std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
+          .c_str());
+}
+
+// Resizing a circle with an attached line endpoint must keep the CENTRE fixed
+// and ride only the endpoint (SolidCraft: centre fixed, line length modifies).
+// The solver maps point_on_circle to P2PDistance(point, centre, radius); with
+// both the centre and the point free, DogLeg's minimum-move splits the radius
+// correction between them, so enlarging a circle also drifts its centre —
+// "modifying both geometries at once" (the reported unpredictable result).
+bool test_resizing_a_circle_keeps_the_centre_fixed() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  // (6,8) is on the boundary (dist 10) — a fresh vertex with point_on_circle.
+  DocumentState document =
+      manager.add_sketch_line(6.0, 8.0, 16.0, 18.0, false, "", true);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "resize: the sketch exists")) return false;
+  const std::string circle_id = before->circles.front().id;
+
+  // Enlarge radius 10 -> 20, centre stays (0,0).
+  document = manager.update_sketch_circle(circle_id, 0.0, 0.0, 20.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "resize: the sketch survives")) return false;
+
+  const auto& circle = after->circles.front();
+  if (!expect(std::abs(circle.center_x) < 1e-3 && std::abs(circle.center_y) < 1e-3,
+              ("resize: the centre stays fixed at (0,0) - got (" +
+               std::to_string(circle.center_x) + ", " +
+               std::to_string(circle.center_y) + ")").c_str())) {
+    return false;
+  }
+  const auto& line = after->lines.back();
+  const double dist =
+      std::hypot(line.start_x - circle.center_x, line.start_y - circle.center_y);
+  return expect(
+      std::abs(dist - 20.0) < 1e-3,
+      ("resize: the attached endpoint rides out to radius 20 - got dist " +
+       std::to_string(dist)).c_str());
+}
+
+// Resizing a circle must also re-derive its PROFILE region (the extrudable
+// surface) to the new radius. The extrude body is correct because it re-reads
+// the wire from the circle, but the profile fill/highlight was reported as
+// stuck at the original circle size.
+bool test_resizing_a_circle_updates_its_profile() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  const DocumentState initial = manager.add_sketch_circle(0.0, 0.0, 10.0);
+  const SketchFeatureParameters* before = sketch_of(initial);
+  if (!expect(before != nullptr, "profile: the sketch exists")) return false;
+  const std::string circle_id = before->circles.front().id;
+
+  const DocumentState document =
+      manager.update_sketch_circle(circle_id, 0.0, 0.0, 20.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "profile: the sketch survives")) return false;
+
+  for (const auto& profile : after->profiles) {
+    if (profile.kind != "circle") continue;
+    return expect(
+        std::abs(profile.radius - 20.0) < 1e-3,
+        ("profile: the circle profile re-derives to radius 20 - got " +
+         std::to_string(profile.radius)).c_str());
+  }
+  return expect(false, "profile: the circle profile was not found");
+}
+
+// Resizing a circle with an attached point AND a driving line-length dimension
+// must keep the point at its same angle (radial ride), not drift it around the
+// circle. The solver's minimum-move otherwise moves the point off-angle to also
+// satisfy the length constraint.
+bool test_resizing_a_circle_keeps_the_attached_point_at_its_angle() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  // Line from (6,8) [on the circle, angle atan2(8,6)] to (14,14) [diagonal,
+  // length 10 — deliberately NOT axis-aligned so no H/V constraint clamps the
+  // radial ride].
+  DocumentState document =
+      manager.add_sketch_line(6.0, 8.0, 14.0, 14.0, false, "", true);
+  // Make the auto line-length dimension DRIVING so the solver must preserve it.
+  document = manager.update_sketch_dimension("dim-line-line-1", 10.0);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "angle: the sketch exists")) return false;
+  const std::string circle_id = before->circles.front().id;
+
+  // Enlarge radius 10 -> 20, centre fixed.
+  document = manager.update_sketch_circle(circle_id, 0.0, 0.0, 20.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "angle: the sketch survives")) return false;
+
+  const auto& line = after->lines.back();
+  // The start should ride radially to (12,16) — same angle, radius 20.
+  return expect(
+      std::abs(line.start_x - 12.0) < 1e-1 && std::abs(line.start_y - 16.0) < 1e-1,
+      ("angle: the attached point stays at its angle (12,16) - got (" +
+       std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
+          .c_str());
+}
+
+// Moving the circle CENTRE with an attached point AND a driving line-length
+// dimension must not let the solver slide the point around the circle (the
+// "end wanders on the circle" report). The point rides the centre by the
+// translation delta and stays at its angle; only the free end moves.
+bool test_moving_a_circle_centre_keeps_the_attached_point_on_its_radius() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_line(6.0, 8.0, 14.0, 14.0, false, "", true);
+  document = manager.update_sketch_dimension("dim-line-line-1", 10.0);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "centre: the sketch exists")) return false;
+  const std::string center_vertex = before->circles.front().center_vertex_id;
+
+  // Move the centre (0,0) -> (5,0).
+  document = manager.update_sketch_vertex(center_vertex, 5.0, 0.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "centre: the sketch survives")) return false;
+
+  const auto& line = after->lines.back();
+  // The start rides the translate to (11,8): same angle, still on the radius.
+  return expect(
+      std::abs(line.start_x - 11.0) < 1e-1 && std::abs(line.start_y - 8.0) < 1e-1,
+      ("centre: the attached point stays at its angle (11,8) - got (" +
+       std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
+          .c_str());
+}
+
+// Dragging the circle must OVERRIDE the length dimension, not fight it. The
+// user's model is the one already used when they drag a line's free end: the
+// geometry they hold onto wins and the dimension re-measures itself. Here the
+// attached end is carried by the centre and the free end is never asked to
+// move, so the length dimension has to record the new distance.
+bool test_moving_a_circle_centre_does_not_push_the_dimensioned_free_end() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_line(6.0, 8.0, 14.0, 14.0, false, "", true);
+  document = manager.update_sketch_dimension("dim-line-line-1", 10.0);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "free end: the sketch exists")) return false;
+  const std::string center_vertex = before->circles.front().center_vertex_id;
+
+  // Move the centre (0,0) -> (5,0): the attached end rides to (11,8).
+  document = manager.update_sketch_vertex(center_vertex, 5.0, 0.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "free end: the sketch survives")) return false;
+
+  const auto& line = after->lines.back();
+  if (!expect(std::abs(line.end_x - 14.0) < 1e-1 &&
+                  std::abs(line.end_y - 14.0) < 1e-1,
+              ("free end: the free end stays at (14,14) - got (" +
+               std::to_string(line.end_x) + ", " + std::to_string(line.end_y) +
+               ")")
+                  .c_str())) {
+    return false;
+  }
+
+  // …and the dimension re-measures to the new length: (11,8) -> (14,14).
+  const auto& dimensions = after->dimensions;
+  const auto dimension_it = std::find_if(
+      dimensions.begin(), dimensions.end(), [](const auto& dimension) {
+        return dimension.kind == "line_length";
+      });
+  if (!expect(dimension_it != dimensions.end(),
+              "free end: the length dimension survives")) {
+    return false;
+  }
+  const double expected = std::sqrt(9.0 + 36.0);
+  return expect(std::abs(dimension_it->value - expected) < 1e-2,
+                ("free end: the dimension re-measures to " +
+                 std::to_string(expected) + " - got " +
+                 std::to_string(dimension_it->value))
+                    .c_str());
+}
+
+// The perimeter drag is the resize counterpart: the attached point is
+// projected onto the new radius, so the line has already changed length before
+// the solve runs and a driving length dimension must not yank the free end to
+// restore the old one ("dragging from the perimeter the line snaps").
+bool test_resizing_a_circle_does_not_push_the_dimensioned_free_end() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_line(6.0, 8.0, 14.0, 14.0, false, "", true);
+  document = manager.update_sketch_dimension("dim-line-line-1", 10.0);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "resize free end: the sketch exists")) {
+    return false;
+  }
+  const std::string circle_id = before->circles.front().id;
+
+  // Enlarge radius 10 -> 20: the attached end projects radially to (12,16).
+  document = manager.update_sketch_circle(circle_id, 0.0, 0.0, 20.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "resize free end: the sketch survives")) {
+    return false;
+  }
+
+  const auto& line = after->lines.back();
+  if (!expect(std::abs(line.end_x - 14.0) < 1e-1 &&
+                  std::abs(line.end_y - 14.0) < 1e-1,
+              ("resize free end: the free end stays at (14,14) - got (" +
+               std::to_string(line.end_x) + ", " + std::to_string(line.end_y) +
+               ")")
+                  .c_str())) {
+    return false;
+  }
+
+  // …and the dimension re-measures to the new length: (12,16) -> (14,14).
+  const auto dimension_it = std::find_if(
+      after->dimensions.begin(), after->dimensions.end(), [](const auto& dimension) {
+        return dimension.kind == "line_length";
+      });
+  if (!expect(dimension_it != after->dimensions.end(),
+              "resize free end: the length dimension survives")) {
+    return false;
+  }
+  const double expected = std::sqrt(4.0 + 4.0);
+  return expect(std::abs(dimension_it->value - expected) < 1e-2,
+                ("resize free end: the dimension re-measures to " +
+                 std::to_string(expected) + " - got " +
+                 std::to_string(dimension_it->value))
+                    .c_str());
+}
+
 }  // namespace
 
 int main() {
@@ -298,6 +561,13 @@ int main() {
   if (!test_without_the_flag_a_circle_is_not_attached()) return 1;
   if (!test_the_attached_end_stays_on_the_circle_after_an_edit()) return 1;
   if (!test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it()) return 1;
+  if (!test_a_line_drawn_from_a_quadrant_follows_the_circle()) return 1;
+  if (!test_resizing_a_circle_keeps_the_centre_fixed()) return 1;
+  if (!test_resizing_a_circle_updates_its_profile()) return 1;
+  if (!test_resizing_a_circle_keeps_the_attached_point_at_its_angle()) return 1;
+  if (!test_moving_a_circle_centre_keeps_the_attached_point_on_its_radius()) return 1;
+  if (!test_moving_a_circle_centre_does_not_push_the_dimensioned_free_end()) return 1;
+  if (!test_resizing_a_circle_does_not_push_the_dimensioned_free_end()) return 1;
 
   std::cout << "committed_attach_test passed\n";
   return 0;

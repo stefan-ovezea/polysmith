@@ -115,10 +115,12 @@ void update_sketch_vertex(FeatureEntry& feature,
           c.center_x = x;
           c.center_y = y;
           // Translate the point_on_circle-attached points by the centre's delta so
-          // they ride the circle at their same relative spot, and freeze the centre
-          // for the solve so it does not relax back toward them. The solver's raw
-          // minimum-move would instead drag the point radially (or the centre back),
-          // which is the "snapped to a different vertex" behaviour.
+          // they ride the circle at their same relative spot. Collect them — with
+          // the quadrant-shared endpoints below — so the solve can FREEZE them
+          // along with the centre: with a driving line-length dimension an
+          // otherwise-free point gets pulled off-angle around the circle ("the end
+          // wanders on the circle").
+          std::vector<std::string> ride_ids;
           for (const auto& constraint : parameters.constraints) {
             if (constraint.kind != "point_on_circle") continue;
             if (constraint.target_ids.size() < 2) continue;
@@ -128,19 +130,56 @@ void update_sketch_vertex(FeatureEntry& feature,
             propagate_connected_point_move(parameters, constraint.target_ids[0],
                                            pos->first + (x - old_x),
                                            pos->second + (y - old_y));
+            ride_ids.push_back(constraint.target_ids[0]);
           }
-          bool was_fixed = false;
-          for (const auto& v : parameters.vertices) {
-            if (v.id == point_id) { was_fixed = v.is_fixed; break; }
+          // A line endpoint drawn exactly on a quadrant REUSES that quadrant
+          // vertex id (endpoint sharing), so `attach_committed_vertex_to_geometry`
+          // skipped it as derived and it carries no point_on_circle. The endpoint
+          // is tied to the circle only through that shared id, which the quadrant
+          // regeneration does not move — translate it by the centre delta so a line
+          // drawn FROM a quadrant rides the circle like a point_on_circle point
+          // does (regression: "line from circle does not stay attached").
+          const std::string quadrant_prefix = "vertex-" + c.id + "-quadrant-";
+          for (auto& line : parameters.lines) {
+            if (line.start_vertex_id.rfind(quadrant_prefix, 0) == 0) {
+              propagate_connected_point_move(parameters, line.start_vertex_id,
+                                             line.start_x + (x - old_x),
+                                             line.start_y + (y - old_y));
+              ride_ids.push_back(line.start_vertex_id);
+            }
+            if (line.end_vertex_id.rfind(quadrant_prefix, 0) == 0) {
+              propagate_connected_point_move(parameters, line.end_vertex_id,
+                                             line.end_x + (x - old_x),
+                                             line.end_y + (y - old_y));
+              ride_ids.push_back(line.end_vertex_id);
+            }
           }
-          for (auto& v : parameters.vertices) {
-            if (v.id == point_id) { v.is_fixed = true; break; }
-          }
+          // Dragging OVERRIDES the dimensions, exactly as it does when the
+          // user drags a line's free end (update_line_vertex re-measures after
+          // the edit): the geometry the user is holding wins and the dimension
+          // records the new measurement. Re-measure BEFORE the solve, while the
+          // free end is still where it was, so a driving length dimension has
+          // nothing left to enforce and cannot push the far end of the line
+          // ("the line free end moves to keep the original length").
+          sync_all_line_dimensions(parameters);
+          // Freeze the centre AND every riding point for the solve, then restore.
+          std::vector<std::pair<std::string, bool>> saved_fixed;
+          const auto save_fixed = [&](const std::string& id) {
+            for (const auto& v : parameters.vertices) {
+              if (v.id == id) { saved_fixed.push_back({id, v.is_fixed}); return; }
+            }
+          };
+          const auto set_fixed = [&](const std::string& id, bool fixed) {
+            for (auto& v : parameters.vertices) {
+              if (v.id == id) { v.is_fixed = fixed; return; }
+            }
+          };
+          save_fixed(point_id);
+          for (const auto& id : ride_ids) save_fixed(id);
+          set_fixed(point_id, true);
+          for (const auto& id : ride_ids) set_fixed(id, true);
           refresh_sketch_derived_state(feature);
-          // The vertex table is rebuilt by the refresh; re-find and restore.
-          for (auto& v : parameters.vertices) {
-            if (v.id == point_id) { v.is_fixed = was_fixed; break; }
-          }
+          for (const auto& [id, was_fixed] : saved_fixed) set_fixed(id, was_fixed);
           return;
         }
       }

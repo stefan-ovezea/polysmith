@@ -240,5 +240,64 @@ void update_sketch_circle(FeatureEntry& feature,
   }
   circle_it->radius = radius;
   sync_circle_dimension(*feature.sketch_parameters, *circle_it);
+
+  auto& parameters = feature.sketch_parameters.value();
+
+  // Collect the attached point ids (point_on_circle on this circle) and
+  // project each one radially onto the NEW radius at its same angle. The
+  // solver alone (P2PDistance with a frozen centre) minimises movement and —
+  // when a driving line-length dimension also pulls on the point — drifts it
+  // around the circle to a different angle. This one-time projection is the
+  // resize counterpart of the centre-drag's one-time translate.
+  std::vector<std::string> attached_ids;
+  const double cx = circle_it->center_x;
+  const double cy = circle_it->center_y;
+  for (const auto& constraint : parameters.constraints) {
+    if (constraint.kind != "point_on_circle") continue;
+    if (constraint.target_ids.size() < 2) continue;
+    if (constraint.target_ids[1] != circle_id) continue;
+    const auto pos = point_position_of(parameters, constraint.target_ids[0]);
+    if (!pos.has_value()) continue;
+    const double dx = pos->first - cx;
+    const double dy = pos->second - cy;
+    const double old_radius = std::hypot(dx, dy);
+    if (old_radius <= kMinimumSketchDimensionValue) continue;
+    propagate_connected_point_move(parameters, constraint.target_ids[0],
+                                   cx + radius * (dx / old_radius),
+                                   cy + radius * (dy / old_radius));
+    attached_ids.push_back(constraint.target_ids[0]);
+  }
+
+  // Dragging OVERRIDES the dimensions — the same rule the centre drag and the
+  // free-end drag follow. The projection above has already changed the length
+  // of every line attached to this circle, so re-measure now, while the far end
+  // of each line is still where the user left it: a driving length dimension
+  // then has nothing to enforce and cannot snap the line back to its old
+  // length ("dragging from the perimeter the line snaps").
+  sync_all_line_dimensions(parameters);
+
+  // Freeze the centre AND the attached points during the solve. The centre is
+  // authoritative (the caller set it explicitly), and the points were just
+  // placed at their correct radial positions — freezing both stops DogLeg from
+  // drifting either one (a driving line-length dimension would otherwise pull
+  // the point around the circle, and a free centre would absorb part of the
+  // radius correction). Mirrors the centre-drag freeze in update_sketch_vertex.
+  std::vector<std::pair<std::string, bool>> saved_fixed;
+  saved_fixed.reserve(1 + attached_ids.size());
+  const auto save_fixed = [&](const std::string& id) {
+    for (const auto& v : parameters.vertices) {
+      if (v.id == id) { saved_fixed.push_back({id, v.is_fixed}); return; }
+    }
+  };
+  const auto set_fixed = [&](const std::string& id, bool fixed) {
+    for (auto& v : parameters.vertices) {
+      if (v.id == id) { v.is_fixed = fixed; return; }
+    }
+  };
+  save_fixed(center_point_id);
+  for (const auto& id : attached_ids) save_fixed(id);
+  set_fixed(center_point_id, true);
+  for (const auto& id : attached_ids) set_fixed(id, true);
   refresh_sketch_derived_state(feature);
+  for (const auto& [id, was_fixed] : saved_fixed) set_fixed(id, was_fixed);
 }

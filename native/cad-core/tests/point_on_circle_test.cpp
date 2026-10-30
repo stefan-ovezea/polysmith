@@ -164,11 +164,51 @@ bool test_line_endpoint_follows_circle_centre_edit() {
                  std::to_string(dist)).c_str());
 }
 
+// Circle (0,0) r10 with a FIXED centre; a point already on the boundary at
+// (10,0). Enlarging the radius 10 -> 20 must push the point radially out to
+// distance 20 — the core half of "perimeter drag = resize". If the solver
+// instead changed the radius or left the point behind, the resize gesture
+// would have nothing to commit.
+bool test_point_rides_circle_resize() {
+  auto params = standalone_fixture();
+  params.vertices[0].x = 10.0;
+  params.vertices[0].y = 0.0;
+
+  {
+    ConstraintSolver solver;
+    solver.build(params);
+    if (!expect(solver.solve().ok(), "resize: initial solve ok")) return false;
+    solver.apply(params);
+  }
+
+  // Enlarge the circle, centre fixed. Only the record changes — the radius
+  // has no vertex-table entry of its own.
+  params.circles[0].radius = 20.0;
+
+  {
+    ConstraintSolver solver;
+    solver.build(params);
+    if (!expect(solver.solve().ok(), "resize: edit solve ok")) return false;
+    trace_if_enabled(solver, params, "post-solve");
+    solver.apply(params);
+    trace_if_enabled(solver, params, "post-apply");
+  }
+
+  const double point_x = params.vertices[0].x;
+  const double point_y = params.vertices[0].y;
+  const double dist = std::hypot(point_x, point_y);
+  return expect(
+      std::abs(dist - 20.0) < 1e-3,
+      ("resize: the point rides the enlarged circle at distance 20 - got " +
+       std::to_string(dist)).c_str());
+}
+
 }  // namespace
 
 int main() {
   if (!test_standalone_point_moves_onto_circle()) return 1;
   if (!test_line_endpoint_follows_circle_centre_edit()) return 1;
+  if (!test_point_rides_circle_resize()) return 1;
   std::cout << "point_on_circle_test passed\n";
   return 0;
 }
