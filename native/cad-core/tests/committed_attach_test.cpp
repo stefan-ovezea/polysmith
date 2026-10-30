@@ -285,6 +285,43 @@ bool test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it() {
        ")").c_str());
 }
 
+// The mechanism behind the "line from a quadrant" bug: a new endpoint used to
+// adopt the DERIVED quadrant vertex id, so it was tied to the circle by a shared
+// name instead of by a constraint, and `vertex_is_derived` skipped attaching it.
+// It now takes a fresh vertex and is bound by point_on_circle like any other
+// point on a circle.
+bool test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  // Start exactly on quadrant-0 (10,0) — the case that used to share the id.
+  const DocumentState document =
+      manager.add_sketch_line(10.0, 0.0, 30.0, 0.0, false, "", true);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "quadrant id: the sketch exists")) return false;
+
+  const auto& line = parameters->lines.back();
+  if (!expect(line.start_vertex_id.rfind("vertex-circle-", 0) != 0,
+              ("quadrant id: the endpoint owns its vertex - got " +
+               line.start_vertex_id)
+                  .c_str())) {
+    return false;
+  }
+
+  const std::string circle_id = parameters->circles.front().id;
+  const auto constraint_it = std::find_if(
+      parameters->constraints.begin(), parameters->constraints.end(),
+      [&](const auto& constraint) {
+        return constraint.kind == "point_on_circle" &&
+               constraint.target_ids.size() >= 2 &&
+               constraint.target_ids[0] == line.start_vertex_id &&
+               constraint.target_ids[1] == circle_id;
+      });
+  return expect(constraint_it != parameters->constraints.end(),
+                "quadrant id: the endpoint is bound by a point_on_circle constraint");
+}
+
 // A line drawn FROM a circle whose start lands exactly on a quadrant REUSES the
 // quadrant vertex id (endpoint sharing), so `vertex_is_derived` skips the
 // point_on_circle attachment. The endpoint is then only tied to the circle via
@@ -562,6 +599,7 @@ int main() {
   if (!test_the_attached_end_stays_on_the_circle_after_an_edit()) return 1;
   if (!test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it()) return 1;
   if (!test_a_line_drawn_from_a_quadrant_follows_the_circle()) return 1;
+  if (!test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint()) return 1;
   if (!test_resizing_a_circle_keeps_the_centre_fixed()) return 1;
   if (!test_resizing_a_circle_updates_its_profile()) return 1;
   if (!test_resizing_a_circle_keeps_the_attached_point_at_its_angle()) return 1;

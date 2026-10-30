@@ -80,9 +80,18 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
 
   // The vertices list aggregates all sketch vertices — line/arc
   // endpoints, circle centres, circle quadrants, and projected
-  // points.  Checking it last catches quadrant vertices and any
-  // future vertex kinds without needing individual geometry loops.
+  // points.  Checking it last catches any future vertex kinds without
+  // needing individual geometry loops.
+  //
+  // Quadrant points are EXCLUDED: they are derived from their owning circle, so an
+  // endpoint that adopts one is tied to the circle by a shared ID rather than by a
+  // constraint — and `vertex_is_derived` then refuses to attach it at all, leaving
+  // the endpoint behind whenever the circle moves ("line from circle does not stay
+  // attached"). Keeping the endpoint on a fresh vertex puts it on the ordinary path:
+  // it sits on the boundary and `attach_committed_vertex_to_geometry` binds it with
+  // point_on_circle, exactly like any other point on a circle.
   for (const auto& vertex : parameters.vertices) {
+    if (vertex.kind == "quadrant") continue;
     if (points_match(vertex.x, vertex.y, x, y))
       return std::tuple<std::string, double, double>{
           vertex.id, vertex.x, vertex.y};
