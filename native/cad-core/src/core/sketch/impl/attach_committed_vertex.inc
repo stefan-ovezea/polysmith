@@ -125,11 +125,20 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
   // endpoint on a circle is already tied to it (endpoint sharing), so this only fires
   // for a fresh vertex drawn onto the perimeter.
   if (circle_host != nullptr && (host == nullptr || circle_distance <= host_distance)) {
-    parameters.constraints.push_back(SketchConstraint{
-        .constraint_id = next_constraint_id(parameters, "constraint-point-on-circle-"),
-        .kind = "point_on_circle",
-        .target_ids = {vertex_id, circle_host->id},
-    });
+    // add_sketch_constraint keeps (kind, targets, value) unique, which covers this
+    // case: two lines meeting at the same point on the perimeter share one vertex,
+    // so the second line's commit routes the SAME vertex through here again. It used
+    // to register a second point_on_circle - seen in the field as "attached vertex-4
+    // to the boundary of circle-1" twice, with constraint-point-on-circle-2 and -3
+    // both naming vertex-4 - which doubled the radius pin and the diagnosis.
+    const bool added = add_sketch_constraint(
+        parameters, SketchConstraint{
+                        .constraint_id = next_constraint_id(
+                            parameters, "constraint-point-on-circle-"),
+                        .kind = "point_on_circle",
+                        .target_ids = {vertex_id, circle_host->id},
+                    });
+    if (!added) return;
     // Snap the point onto the boundary NOW, once, radially (the circle keeps its
     // size, the point moves the small distance to the perimeter). The recurring
     // solve then keeps it there as the circle is edited; a point the user aimed at

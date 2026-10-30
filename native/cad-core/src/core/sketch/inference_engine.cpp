@@ -69,14 +69,15 @@ int run_inference_on_new_line(SketchFeatureParameters& params,
   auto end_near = find_nearest_existing_point(
       params, line.end_x, line.end_y, line.end_vertex_id);
   if (end_near.has_value() &&
-      !constraint_already_exists(params, "coincident",
-          {line.end_vertex_id, end_near->vertex_id})) {
-    params.constraints.push_back(SketchConstraint{
-        .constraint_id = "constraint-" +
-            std::to_string(params.constraints.size() + 1),
-        .kind = "coincident",
-        .target_ids = {line.end_vertex_id, end_near->vertex_id},
-    });
+      add_sketch_constraint(params, SketchConstraint{
+                                        .constraint_id =
+                                            "constraint-" +
+                                            std::to_string(
+                                                params.constraints.size() + 1),
+                                        .kind = "coincident",
+                                        .target_ids = {line.end_vertex_id,
+                                                       end_near->vertex_id},
+                                    })) {
     ++count;
   }
 
@@ -93,14 +94,14 @@ int run_inference_on_new_circle(SketchFeatureParameters& params,
     const double dy = other.center_y - circle.center_y;
     const double d = std::sqrt(dx * dx + dy * dy);
     if (d <= kCoincidentTolerance &&
-        !constraint_already_exists(params, "concentric",
-            {circle.id, other.id})) {
-      params.constraints.push_back(SketchConstraint{
-          .constraint_id = "constraint-" +
-              std::to_string(params.constraints.size() + 1),
-          .kind = "concentric",
-          .target_ids = {circle.id, other.id},
-      });
+        add_sketch_constraint(
+            params, SketchConstraint{
+                        .constraint_id = "constraint-" +
+                                         std::to_string(
+                                             params.constraints.size() + 1),
+                        .kind = "concentric",
+                        .target_ids = {circle.id, other.id},
+                    })) {
       ++count;
     }
   }

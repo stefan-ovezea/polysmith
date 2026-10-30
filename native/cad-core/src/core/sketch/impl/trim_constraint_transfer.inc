@@ -406,7 +406,7 @@ void apply_trim_constraint_transfer(
           [&](const SketchArc& a) { return a.id == id; });
       if (!survivor_is_arc) continue;
       if (pair_constraint_exists(params, "concentric", id, other)) continue;
-      params.constraints.push_back(SketchConstraint{
+      add_sketch_constraint(params, SketchConstraint{
           .constraint_id = next_constraint_id(params, "constraint-"),
           .kind = "concentric",
           .target_ids = {id, other},
@@ -502,6 +502,6 @@ void apply_trim_constraint_transfer(
   const auto positions = live_sketch_point_positions(params);
   for (const auto& c : plan.coincident_snapshot) {
     if (!coincident_record_alive(params, c, positions)) continue;
-    params.constraints.push_back(c);
+    add_sketch_constraint(params, c);
   }
 }

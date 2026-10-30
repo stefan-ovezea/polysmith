@@ -37,7 +37,7 @@ void set_sketch_symmetric_constraint(FeatureEntry& feature,
     }
   }
 
-  parameters.constraints.push_back(SketchConstraint{
+  add_sketch_constraint(parameters, SketchConstraint{
       .constraint_id = next_constraint_id(parameters, "constraint-symmetric-"),
       .kind = "symmetric",
       .target_ids = {point_id, other_point_id, axis_line_id},
@@ -71,7 +71,7 @@ void set_sketch_midpoint_constraint(FeatureEntry& feature,
     }
   }
 
-  parameters.constraints.push_back(SketchConstraint{
+  add_sketch_constraint(parameters, SketchConstraint{
       .constraint_id = next_constraint_id(parameters, "constraint-midpoint-"),
       .kind = "midpoint",
       .target_ids = {vertex_id, line_id},
@@ -201,7 +201,7 @@ void set_sketch_tangent_pair_constraint(FeatureEntry& feature,
       std::get<3>(second_curve.value()) == "arc";
   const std::string kind = any_arc ? "tangent_arc_arc" : "tangent_circle_circle";
 
-  parameters.constraints.push_back(SketchConstraint{
+  add_sketch_constraint(parameters, SketchConstraint{
       .constraint_id = next_constraint_id(parameters, "constraint-tangent-"),
       .kind = kind,
       .target_ids = {first_id, second_id},

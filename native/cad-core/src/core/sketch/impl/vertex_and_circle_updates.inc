@@ -81,11 +81,13 @@ void set_sketch_coincident_constraint(FeatureEntry& feature,
       }
     }
     if (!already_exists && !affected_line_ids.empty()) {
-      parameters.constraints.push_back(SketchConstraint{
-          .constraint_id = "constraint-coincident-" + other_point_id,
-          .kind = "coincident",
-          .target_ids = affected_line_ids,
-      });
+      add_sketch_constraint(parameters, SketchConstraint{
+                                           .constraint_id =
+                                               "constraint-coincident-" +
+                                               other_point_id,
+                                           .kind = "coincident",
+                                           .target_ids = affected_line_ids,
+                                       });
     }
   }
 }
@@ -204,9 +206,8 @@ void set_sketch_vertex_fixed(FeatureEntry& feature,
     fixed.constraint_id = "constraint-fixed-" + point_id;
     fixed.kind = "fixed";
     fixed.target_ids = {point_id};
-    parameters.constraints.push_back(std::move(fixed));
-  }
-  if (refresh_immediately) {
+    add_sketch_constraint(parameters, std::move(fixed));
+  }  if (refresh_immediately) {
     refresh_sketch_derived_state(feature);
   }
 }

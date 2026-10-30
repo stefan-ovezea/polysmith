@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "core/document/document.h"
+#include "core/sketch/constraint_solver.h"
 #include "core/sketch/dof_counter.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/viewport/viewport.h"
@@ -35,6 +36,7 @@ using polysmith::core::DocumentManager;
 using polysmith::core::DocumentState;
 using polysmith::core::FeatureEntry;
 using polysmith::core::SketchDimension;
+using polysmith::core::SketchVertex;
 using polysmith::core::SketchFeatureParameters;
 using polysmith::core::SketchLine;
 using polysmith::core::SketchLineRelation;
@@ -631,6 +633,61 @@ bool test_the_entity_status_follows_the_solver() {
   return true;
 }
 
+// The constraint list is a SET of rules, not a log. "point_on_circle(vertex-4,
+// circle-1)" written twice says nothing the first one did not, but it costs a
+// second solver constraint, a second radius pin (reported redundant) and a
+// duplicate in the saved file - which is exactly what the user found in
+// test.polysmith: constraint-point-on-circle-2 and -3 both naming vertex-4.
+// add_sketch_constraint is the single insertion point that makes that impossible.
+bool test_a_constraint_cannot_be_added_twice() {
+  polysmith::core::SketchFeatureParameters parameters;
+  polysmith::core::SketchConstraint attachment;
+  attachment.constraint_id = "constraint-point-on-circle-1";
+  attachment.kind = "point_on_circle";
+  attachment.target_ids = {"vertex-4", "circle-1"};
+
+  if (!expect(polysmith::core::add_sketch_constraint(parameters, attachment),
+              "invariant: the first attachment is accepted")) {
+    return false;
+  }
+  attachment.constraint_id = "constraint-point-on-circle-2";
+  if (!expect(!polysmith::core::add_sketch_constraint(parameters, attachment),
+              "invariant: the same rule a second time is refused")) {
+    return false;
+  }
+  if (!expect(parameters.constraints.size() == 1,
+              "invariant: the sketch holds one attachment - got " +
+                  std::to_string(parameters.constraints.size()))) {
+    return false;
+  }
+
+  // Order does not make a coincidence a different rule…
+  polysmith::core::SketchConstraint coincidence;
+  coincidence.constraint_id = "constraint-coincident-1";
+  coincidence.kind = "coincident";
+  coincidence.target_ids = {"vertex-1", "vertex-2"};
+  polysmith::core::add_sketch_constraint(parameters, coincidence);
+  coincidence.constraint_id = "constraint-coincident-2";
+  coincidence.target_ids = {"vertex-2", "vertex-1"};
+  if (!expect(!polysmith::core::add_sketch_constraint(parameters, coincidence),
+              "invariant: coincident(a,b) and coincident(b,a) are the same rule")) {
+    return false;
+  }
+
+  // …but the VALUE does: two symmetries over one pair about different axes are
+  // genuinely different rules and must both survive.
+  polysmith::core::SketchConstraint symmetry;
+  symmetry.constraint_id = "constraint-symmetric-1";
+  symmetry.kind = "symmetric";
+  symmetry.target_ids = {"vertex-1", "vertex-2", "line-1"};
+  symmetry.value = 0.0;
+  polysmith::core::add_sketch_constraint(parameters, symmetry);
+  symmetry.constraint_id = "constraint-symmetric-2";
+  symmetry.value = 1.0;
+  return expect(polysmith::core::add_sketch_constraint(parameters, symmetry),
+                "invariant: a different axis value is a different rule");
+}
+
 }  // namespace
 
 int main() {
@@ -642,6 +699,7 @@ int main() {
   if (!test_applying_a_constraint_keeps_the_degree_count()) return 1;
   if (!test_a_contradictory_relation_does_not_collapse_a_line()) return 1;
   if (!test_the_entity_status_follows_the_solver()) return 1;
+  if (!test_a_constraint_cannot_be_added_twice()) return 1;
 
   std::cout << "rectangle_constraints_test passed\n";
   return 0;

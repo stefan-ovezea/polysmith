@@ -71,4 +71,24 @@ namespace {
 #include "core/sketch/impl/sketch_chamfer_update_command.inc"
 #include "core/sketch/impl/sketch_chamfer_delete_command.inc"
 
+bool add_sketch_constraint(SketchFeatureParameters& parameters,
+                           SketchConstraint constraint) {
+  // Compare targets as an unordered set: "coincident(a,b)" and "coincident(b,a)"
+  // are the same rule. `value` is part of the identity because a symmetric
+  // constraint carries its axis in it - two symmetries over the same pair but about
+  // different axes are genuinely different rules.
+  auto sorted_ids = [](std::vector<std::string> ids) {
+    std::sort(ids.begin(), ids.end());
+    return ids;
+  };
+  const std::vector<std::string> targets = sorted_ids(constraint.target_ids);
+  for (const auto& existing : parameters.constraints) {
+    if (existing.kind != constraint.kind) continue;
+    if (existing.value != constraint.value) continue;
+    if (sorted_ids(existing.target_ids) == targets) return false;
+  }
+  parameters.constraints.push_back(std::move(constraint));
+  return true;
+}
+
 }  // namespace polysmith::core

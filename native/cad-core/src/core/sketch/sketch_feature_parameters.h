@@ -187,4 +187,18 @@ struct SketchFeatureParameters {
   int next_vertex_index = 1;
 };
 
+/// Insert a constraint, keeping the set unique by (kind, targets, value).
+///
+/// A constraint list is a SET of rules, not a log: "point_on_circle(vertex-4,
+/// circle-1)" written twice says nothing the first one did not, but it costs a
+/// second solver constraint, a second radius pin (which planegcs reports as
+/// redundant) and a duplicate in the saved file — the user then has two identical
+/// entries they never asked for and cannot tell apart.
+///
+/// Every model-side insertion goes through here, so no code path — present or
+/// future — can put the same rule in twice. Returns false when the rule was
+/// already present (callers that must report can say so; the rest just call it).
+bool add_sketch_constraint(SketchFeatureParameters& parameters,
+                           SketchConstraint constraint);
+
 }  // namespace polysmith::core

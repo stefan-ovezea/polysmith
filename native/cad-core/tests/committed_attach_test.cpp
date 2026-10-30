@@ -611,6 +611,44 @@ bool test_resizing_a_circle_does_not_push_the_dimensioned_free_end() {
                     .c_str());
 }
 
+// Two lines meeting at one point on a circle SHARE that vertex, so the second
+// line's commit routes the same vertex through the attach path again. It used to
+// register a second point_on_circle for the same pair - seen in the field as
+// "attached vertex-4 to the boundary of circle-1" twice, with
+// constraint-point-on-circle-2 and -3 both naming vertex-4. Harmless to the solve,
+// but it doubles the radius pin, which planegcs reports as redundant.
+bool test_attaching_the_same_circle_point_twice_registers_one_constraint() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  // A line whose END lands on the boundary at (0,10)…
+  manager.add_sketch_line(20.0, 0.0, 0.0, 10.0, false, "", true);
+  // …then a second line starting at that same point adopts its vertex.
+  const DocumentState document =
+      manager.add_sketch_line(0.0, 10.0, 30.0, 10.0, false, "", true);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "double attach: the sketch exists")) {
+    return false;
+  }
+
+  const std::string circle_id = parameters->circles.front().id;
+  int attachments = 0;
+  std::string detail;
+  for (const auto& constraint : parameters->constraints) {
+    if (constraint.kind == "point_on_circle" &&
+        constraint.target_ids.size() >= 2 &&
+        constraint.target_ids[1] == circle_id) {
+      ++attachments;
+      detail += " [" + constraint.target_ids[0] + "]";
+    }
+  }
+  return expect(attachments == 1,
+                ("double attach: one point_on_circle for the shared vertex, got " +
+                 std::to_string(attachments) + detail)
+                    .c_str());
+}
+
 }  // namespace
 
 int main() {
@@ -633,6 +671,7 @@ int main() {
   if (!test_resizing_a_circle_keeps_the_attached_point_at_its_angle()) return 1;
   if (!test_moving_a_circle_centre_keeps_the_attached_point_on_its_radius()) return 1;
   if (!test_moving_a_circle_centre_does_not_push_the_dimensioned_free_end()) return 1;
+  if (!test_attaching_the_same_circle_point_twice_registers_one_constraint()) return 1;
   if (!test_resizing_a_circle_does_not_push_the_dimensioned_free_end()) return 1;
 
   std::cout << "committed_attach_test passed\n";

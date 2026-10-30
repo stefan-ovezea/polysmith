@@ -29,7 +29,10 @@
           constraint_payload.at("driven").is_boolean()) {
         constraint.driven = constraint_payload.at("driven").get<bool>();
       }
-      params.constraints.push_back(constraint);
+      // Through the same invariant as every other insertion: a document cannot
+      // hold the same rule twice, so a file that contains one (from a build that
+      // could still create them) loads as the single rule it means.
+      polysmith::core::add_sketch_constraint(params, constraint);
     }
   }
   // Older saves predate midpoint anchors — silently default to none.
