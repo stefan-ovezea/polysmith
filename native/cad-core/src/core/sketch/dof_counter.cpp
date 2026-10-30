@@ -165,11 +165,11 @@ std::vector<EntityDofResult> count_sketch_dof(
   std::vector<EntityDofResult> results;
   const auto push = [&](const std::string& id, const char* kind, int total,
                         int consumed, const std::vector<std::string>& vertices) {
-    const DofStatus status = status_for(vertices);
-    const int clamped = status == DofStatus::UnderConstrained
-                            ? std::min(consumed, std::max(total - 1, 0))
-                            : total;
-    results.push_back({id, kind, total, clamped, status});
+    // `consumed` stays the estimator's number: it counts how many rules touch the
+    // entity, which is useful in its own right (a symmetric constraint is expected
+    // to show up on both points) and is NOT a claim about completeness. The STATUS
+    // is what must agree with the solver, and that comes from status_for() above.
+    results.push_back({id, kind, total, consumed, status_for(vertices)});
   };
   for (const auto& l : params.lines) {
     push(l.id, "line", map[l.id].total, map[l.id].consumed,
