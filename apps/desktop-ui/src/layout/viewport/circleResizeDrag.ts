@@ -120,6 +120,7 @@ export function handleCircleResizePointerMove({
   sketchConstraintObjectsRef,
   sketchProfileObjectsRef,
   dragPreviewMutatingRef,
+  dragFollowDimensionsRef,
   setSketchSnapLabel,
   requestRender,
 }: {
@@ -137,6 +138,9 @@ export function handleCircleResizePointerMove({
   sketchConstraintObjectsRef: MutableRef<THREE.Object3D[]>;
   sketchProfileObjectsRef: MutableRef<THREE.Group[]>;
   dragPreviewMutatingRef: MutableRef<boolean>;
+  /** Re-anchors the dimensions the drag moved, once the solved positions are in
+   *  the scene objects (the sync pass skips those frames). */
+  dragFollowDimensionsRef: MutableRef<(() => void) | null>;
   setSketchSnapLabel: (label: string | null) => void;
   requestRender: () => void;
 }): boolean {
@@ -250,6 +254,7 @@ export function handleCircleResizePointerMove({
     radius,
   });
   setSketchSnapLabel(null);
+  dragFollowDimensionsRef.current?.();
   requestRender();
   return true;
 }

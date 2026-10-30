@@ -21,6 +21,8 @@ import type {
   ViewportState,
 } from "@/types";
 import { disposeGroup, frameCamera } from "@/utils";
+import { type Point3, snapshotPointPositions } from "./dimensionFollow";
+import { followDraggedDimensions } from "./dimensionSceneFollow";
 import { updateEndpointDragSceneObjects } from "./sceneIncrementalUpdate";
 import {
   addCamSceneObjects,
@@ -121,6 +123,14 @@ interface ViewportSceneSyncRefs {
   sketchDimensionObjects: MutableRef<THREE.Object3D[]>;
   dimensionObjectById: MutableRef<
     Map<string, { line: THREE.Group; label: THREE.Sprite }>
+  >;
+  /** Point positions from the last committed scene — the reference a drag's
+   *  dimension follow measures against. */
+  dimensionFollowBase: MutableRef<Map<string, Point3>>;
+  /** Where each dimension was last rebuilt during the current drag, with the
+   *  value it showed, so a label is not re-rendered on every frame. */
+  dimensionFollowApplied: MutableRef<
+    Map<string, { position: Point3; value: number }>
   >;
   sketchProfileObjects: MutableRef<THREE.Group[]>;
   sketchProfileVisuals: MutableRef<Map<string, SketchProfileVisual>>;
@@ -227,6 +237,8 @@ export function syncViewportScene(params: SyncViewportSceneParams) {
       refs: params.refs,
       sceneData: params.sceneData,
       sketchGroup: groups.sketchGroup,
+      dimensions: params.displayedSketchDimensions,
+      displayUnits: params.displayUnits,
       hadPendingCommit,
       clearDragPreviewLines: params.clearDragPreviewLines,
       setConstraintPreview: params.setConstraintPreview,
@@ -308,6 +320,8 @@ function syncEndpointDragScene({
   refs,
   sceneData,
   sketchGroup,
+  dimensions,
+  displayUnits,
   hadPendingCommit,
   clearDragPreviewLines,
   setConstraintPreview,
@@ -315,6 +329,8 @@ function syncEndpointDragScene({
   refs: ViewportSceneSyncRefs;
   sceneData: ViewportScene | null;
   sketchGroup: THREE.Group;
+  dimensions: readonly SketchDimensionScene[];
+  displayUnits: "mm" | "in";
   hadPendingCommit: boolean;
   clearDragPreviewLines: () => void;
   setConstraintPreview: (preview: null) => void;
@@ -341,6 +357,22 @@ function syncEndpointDragScene({
       sketchEntityObjectById: refs.sketchEntityObjectById.current,
       sketchPointObjectById: refs.sketchPointObjectById.current,
       sketchConstraintObjects: refs.sketchConstraintObjects.current,
+    });
+  }
+
+  // The geometry moved but the dimensions still point at where it WAS: re-anchor
+  // the ones the drag touched and rebuild just those, so a leader tracks its
+  // geometry instead of jumping when the commit lands.
+  if (!hadPendingCommit) {
+    followDraggedDimensions({
+      dimensions,
+      base: refs.dimensionFollowBase.current,
+      current: sceneData.sketchPoints,
+      sketchGroup,
+      dimensionObjectById: refs.dimensionObjectById.current,
+      sketchDimensionObjects: refs.sketchDimensionObjects.current,
+      lastApplied: refs.dimensionFollowApplied.current,
+      displayUnits,
     });
   }
 
@@ -396,6 +428,13 @@ function rebuildViewportScene(
   addModelSceneObjects(params, groups);
   addMoveGizmoSceneObject(params, groups.contentGroup);
   addSketchSceneObjectSet(params, groups.sketchGroup);
+  // The dimensions now point at the freshly built objects, so this is the
+  // committed reference a drag measures against. Refreshing it while a drag
+  // previews would let the anchors ride along and leave nothing to follow.
+  params.refs.dimensionFollowBase.current = snapshotPointPositions(
+    params.sceneData.sketchPoints,
+  );
+  params.refs.dimensionFollowApplied.current.clear();
   params.refs.lastSceneBuildKey.current = sceneBuildKey;
 }
 

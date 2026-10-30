@@ -91,6 +91,11 @@ import {
   handleCircleResizePointerMove,
   finishCircleResizePointerUp,
 } from "./viewport/circleResizeDrag";
+import type { Point3 } from "./viewport/dimensionFollow";
+import {
+  followDraggedDimensions,
+  replaceSketchDimensionObject,
+} from "./viewport/dimensionSceneFollow";
 import { handleSketchMovePointerMove } from "./viewport/sketchMovePointerMove";
 import { finishSketchMovePointerUp } from "./viewport/sketchMovePointerUp";
 import { notifyTrimPreviewResponse } from "./viewport/trimPointerMove";
@@ -777,6 +782,45 @@ export function ViewportPanel({
   const dimensionObjectByIdRef = useRef<
     Map<string, { line: THREE.Group; label: THREE.Sprite }>
   >(new Map());
+  /** Committed point positions a drag's dimension follow measures against
+   *  (refreshed on every scene rebuild, frozen while a drag previews). */
+  const dimensionFollowBaseRef = useRef<Map<string, Point3>>(new Map());
+  /** Where each dimension was last rebuilt during this drag, with the value it
+   *  showed, so a label is not re-rendered every frame. */
+  const dimensionFollowAppliedRef = useRef<
+    Map<string, { position: Point3; value: number }>
+  >(new Map());
+  /** Called by the drag preview modules after they write solved positions —
+   *  one entry point, so each of them does not need the whole ref set. */
+  const dragFollowDimensionsRef = useRef<(() => void) | null>(null);
+  // The drag preview modules write solved positions straight into the scene
+  // objects, so the sync pass never sees those frames (it returns early while
+  // dragPreviewMutating is set). They call this after writing, which re-anchors
+  // the dimensions the drag moved instead of leaving them at the pre-drag pose
+  // until the commit rebuilds the scene.
+  useEffect(() => {
+    dragFollowDimensionsRef.current = () => {
+      const sketchGroup = sketchGroupRef.current;
+      if (!sketchGroup) return;
+      const current: { id: string; position: Point3 }[] = [];
+      for (const [id, mesh] of sketchPointObjectByIdRef.current) {
+        current.push({
+          id,
+          position: [mesh.position.x, mesh.position.y, mesh.position.z],
+        });
+      }
+      followDraggedDimensions({
+        dimensions: displayedSketchDimensionsRef.current,
+        base: dimensionFollowBaseRef.current,
+        current,
+        sketchGroup,
+        dimensionObjectById: dimensionObjectByIdRef.current,
+        sketchDimensionObjects: sketchDimensionObjectsRef.current,
+        lastApplied: dimensionFollowAppliedRef.current,
+        displayUnits: config.displayUnits,
+      });
+    };
+  }, [config.displayUnits]);
   const sketchConstraintObjectsRef = useRef<Array<THREE.Object3D>>([]);
   const sketchPointObjectsRef = useRef<THREE.Mesh[]>([]);
   const sketchPointObjectByIdRef = useRef(new Map<string, THREE.Mesh>());
@@ -2270,49 +2314,23 @@ export function ViewportPanel({
     return true;
   }
 
-  /** Rebuild the Three.js objects for a single dimension in-place —
-   *  disposes the old geometry, builds new geometry from the shifted
-   *  scene data, and swaps it into the sketch group.  Used during
-   *  label drag to avoid full scene rebuilds. */
+  /** Rebuild the Three.js objects for a single dimension in-place — disposes the
+   *  old geometry, builds new geometry from the shifted scene data, and swaps it
+   *  into the sketch group.  Used during label drag to avoid full scene rebuilds,
+   *  and by the drag-time follow in sceneSync through the same helper. */
   function rebuildDimensionSceneObject(
     shifted: SketchDimensionScene,
     displayUnits?: "mm" | "in",
   ) {
     const sketchGroup = sketchGroupRef.current;
     if (!sketchGroup) return;
-
-    const objects = dimensionObjectByIdRef.current.get(shifted.dimensionId);
-    if (!objects) return;
-
-    // Build replacement objects from the shifted dimension data
-    const replacement = buildSketchDimensionObject(shifted, displayUnits);
-
-    // Swap line group: remove old, dispose, add new
-    sketchGroup.remove(objects.line);
-    disposeGroup(objects.line);
-
-    // Swap label sprite: remove old, dispose, add new
-    sketchGroup.remove(objects.label);
-    objects.label.geometry?.dispose();
-    const mat = objects.label.material as THREE.SpriteMaterial;
-    mat?.map?.dispose();
-    mat?.dispose();
-
-    sketchGroup.add(replacement.line);
-    sketchGroup.add(replacement.label);
-
-    // Update refs so the dimension is still findable
-    dimensionObjectByIdRef.current.set(shifted.dimensionId, {
-      line: replacement.line as THREE.Group,
-      label: replacement.label,
+    replaceSketchDimensionObject({
+      dimension: shifted,
+      sketchGroup,
+      dimensionObjectById: dimensionObjectByIdRef.current,
+      sketchDimensionObjects: sketchDimensionObjectsRef.current,
+      displayUnits,
     });
-
-    // Update sketchDimensionObjectsRef (flat array) — swap old entries
-    const all = sketchDimensionObjectsRef.current;
-    const oldLineIdx = all.indexOf(objects.line);
-    const oldLabelIdx = all.indexOf(objects.label);
-    if (oldLineIdx !== -1) all[oldLineIdx] = replacement.line;
-    if (oldLabelIdx !== -1) all[oldLabelIdx] = replacement.label;
   }
 
   const {
@@ -4489,6 +4507,7 @@ export function ViewportPanel({
           sketchConstraintObjectsRef,
           sketchProfileObjectsRef,
           dragPreviewMutatingRef,
+          dragFollowDimensionsRef,
           setSketchSnapLabel,
           requestRender,
         })
@@ -4512,6 +4531,7 @@ export function ViewportPanel({
           dragSnapResultRef,
           dragCursorRef,
           dragPreviewMutatingRef,
+          dragFollowDimensionsRef,
           sketchEntityObjectByIdRef,
           sketchPointObjectByIdRef,
           sketchConstraintObjectsRef,
@@ -6018,6 +6038,8 @@ export function ViewportPanel({
         sketchEntityObjects: sketchEntityObjectsRef,
         sketchDimensionObjects: sketchDimensionObjectsRef,
         dimensionObjectById: dimensionObjectByIdRef,
+        dimensionFollowBase: dimensionFollowBaseRef,
+        dimensionFollowApplied: dimensionFollowAppliedRef,
         sketchProfileObjects: sketchProfileObjectsRef,
         sketchProfileVisuals: sketchProfileVisualsRef,
         sketchProfileStates: sketchProfileStatesRef,

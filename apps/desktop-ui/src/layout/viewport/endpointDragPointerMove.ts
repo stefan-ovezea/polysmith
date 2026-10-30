@@ -50,6 +50,9 @@ interface HandleEndpointDragPointerMoveParams {
   /** Set while the preview is mutating committed scene objects — keeps
    *  mid-drag viewport_state syncs from snapping the preview back. */
   dragPreviewMutatingRef: MutableRef<boolean>;
+  /** Re-anchors the dimensions the drag moved, once the solved positions are in
+   *  the scene objects (the sync pass skips those frames). */
+  dragFollowDimensionsRef: MutableRef<(() => void) | null>;
   sketchEntityObjectByIdRef: MutableRef<
     Map<string, THREE.Line | THREE.LineLoop>
   >;
@@ -152,4 +155,5 @@ function applyEndpointDragFrameResult(
     sketchProfileObjects: params.sketchProfileObjectsRef.current,
     constraintDeltas: result.constraintDeltas,
   });
+  params.dragFollowDimensionsRef.current?.();
 }
