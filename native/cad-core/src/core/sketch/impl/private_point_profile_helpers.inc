@@ -26,6 +26,15 @@ double endpoint_y(const SketchLine& line, bool is_start) {
   return is_start ? line.start_y : line.end_y;
 }
 
+// A quadrant vertex derived from a circle (as opposed to one derived from an arc).
+bool circle_owns_quadrant(const SketchVertex& vertex) {
+  return std::any_of(vertex.geometry_owner_ids.begin(),
+                     vertex.geometry_owner_ids.end(),
+                     [](const std::string& owner_id) {
+                       return owner_id.rfind("circle-", 0) == 0;
+                     });
+}
+
 std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
     const SketchFeatureParameters& parameters,
     const std::string& ignored_entity_id,
@@ -83,15 +92,22 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
   // points.  Checking it last catches any future vertex kinds without
   // needing individual geometry loops.
   //
-  // Quadrant points are EXCLUDED: they are derived from their owning circle, so an
+  // CIRCLE quadrant points are EXCLUDED: they are derived from their circle, so an
   // endpoint that adopts one is tied to the circle by a shared ID rather than by a
   // constraint — and `vertex_is_derived` then refuses to attach it at all, leaving
-  // the endpoint behind whenever the circle moves ("line from circle does not stay
-  // attached"). Keeping the endpoint on a fresh vertex puts it on the ordinary path:
-  // it sits on the boundary and `attach_committed_vertex_to_geometry` binds it with
-  // point_on_circle, exactly like any other point on a circle.
+  // the endpoint behind whenever the circle moves or is resized ("line from circle
+  // does not stay attached"). Keeping the endpoint on a fresh vertex puts it on the
+  // ordinary path: it sits on the boundary and
+  // `attach_committed_vertex_to_geometry` binds it with point_on_circle, exactly
+  // like any other point on a circle.
+  //
+  // ARC quadrants must keep sharing their ID for now: trim's live-point tracking
+  // resumes a trimmed piece through `vertex-<arc>-quadrant-N`, and
+  // test_trim_vertex_owners_and_center_sharing pins that contract. Arcs therefore
+  // still have the same latent attachment bug; fixing them means reworking that
+  // tracking first.
   for (const auto& vertex : parameters.vertices) {
-    if (vertex.kind == "quadrant") continue;
+    if (vertex.kind == "quadrant" && circle_owns_quadrant(vertex)) continue;
     if (points_match(vertex.x, vertex.y, x, y))
       return std::tuple<std::string, double, double>{
           vertex.id, vertex.x, vertex.y};

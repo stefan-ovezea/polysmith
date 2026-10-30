@@ -115,11 +115,14 @@ void update_sketch_vertex(FeatureEntry& feature,
           c.center_x = x;
           c.center_y = y;
           // Translate the point_on_circle-attached points by the centre's delta so
-          // they ride the circle at their same relative spot. Collect them — with
-          // the quadrant-shared endpoints below — so the solve can FREEZE them
-          // along with the centre: with a driving line-length dimension an
-          // otherwise-free point gets pulled off-angle around the circle ("the end
-          // wanders on the circle").
+          // they ride the circle at their same relative spot. Collect them so the
+          // solve can FREEZE them along with the centre: with a driving line-length
+          // dimension an otherwise-free point gets pulled off-angle around the
+          // circle ("the end wanders on the circle").
+          //
+          // A line drawn onto the circle is covered by this loop like any other
+          // point: its endpoint no longer adopts the circle's derived quadrant id
+          // (see find_coincident_endpoint), so it carries a real point_on_circle.
           std::vector<std::string> ride_ids;
           for (const auto& constraint : parameters.constraints) {
             if (constraint.kind != "point_on_circle") continue;
@@ -131,28 +134,6 @@ void update_sketch_vertex(FeatureEntry& feature,
                                            pos->first + (x - old_x),
                                            pos->second + (y - old_y));
             ride_ids.push_back(constraint.target_ids[0]);
-          }
-          // A line endpoint drawn exactly on a quadrant REUSES that quadrant
-          // vertex id (endpoint sharing), so `attach_committed_vertex_to_geometry`
-          // skipped it as derived and it carries no point_on_circle. The endpoint
-          // is tied to the circle only through that shared id, which the quadrant
-          // regeneration does not move — translate it by the centre delta so a line
-          // drawn FROM a quadrant rides the circle like a point_on_circle point
-          // does (regression: "line from circle does not stay attached").
-          const std::string quadrant_prefix = "vertex-" + c.id + "-quadrant-";
-          for (auto& line : parameters.lines) {
-            if (line.start_vertex_id.rfind(quadrant_prefix, 0) == 0) {
-              propagate_connected_point_move(parameters, line.start_vertex_id,
-                                             line.start_x + (x - old_x),
-                                             line.start_y + (y - old_y));
-              ride_ids.push_back(line.start_vertex_id);
-            }
-            if (line.end_vertex_id.rfind(quadrant_prefix, 0) == 0) {
-              propagate_connected_point_move(parameters, line.end_vertex_id,
-                                             line.end_x + (x - old_x),
-                                             line.end_y + (y - old_y));
-              ride_ids.push_back(line.end_vertex_id);
-            }
           }
           // Dragging OVERRIDES the dimensions, exactly as it does when the
           // user drags a line's free end (update_line_vertex re-measures after

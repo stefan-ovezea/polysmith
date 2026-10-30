@@ -365,14 +365,10 @@ export function resolveEndpointDragFrame({
             c.target_ids[1] === draggedCircle.circle_id,
         )
         .map((c) => c.target_ids[0]);
-      // A line endpoint drawn exactly on a quadrant REUSES that quadrant vertex
-      // id and carries no point_on_circle, so it must be translated explicitly to
-      // ride the circle during the preview (mirrors the core commit fix).
-      const quadrantPrefix = `vertex-${draggedCircle.circle_id}-quadrant-`;
-      const quadrantSharedIds = sketch.lines
-        .flatMap((l) => [l.start_vertex_id, l.end_vertex_id])
-        .filter((id) => id.startsWith(quadrantPrefix));
-      const rideIds = [...new Set([...attachedIds, ...quadrantSharedIds])];
+      // A line drawn onto the circle is in this set like any other point: its
+      // endpoint no longer adopts the circle's derived quadrant id, so it carries
+      // a real point_on_circle (see find_coincident_endpoint in the core).
+      const rideIds = [...new Set(attachedIds)];
       paramsCopy.vertices = paramsCopy.vertices.map((p) =>
         rideIds.includes(p.vertex_id)
           ? { ...p, x: p.x + dx, y: p.y + dy }

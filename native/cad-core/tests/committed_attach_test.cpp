@@ -322,12 +322,13 @@ bool test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint() {
                 "quadrant id: the endpoint is bound by a point_on_circle constraint");
 }
 
-// A line drawn FROM a circle whose start lands exactly on a quadrant REUSES the
-// quadrant vertex id (endpoint sharing), so `vertex_is_derived` skips the
-// point_on_circle attachment. The endpoint is then only tied to the circle via
-// that shared id — which the circle-move translate does not move. Regression:
-// "line from circle does not stay attached when I move the circle", while a
-// line drawn TO the circle (fresh end vertex) stays.
+// A line drawn FROM a circle keeps its endpoint on the boundary. It used to reuse
+// the derived quadrant vertex id, so `vertex_is_derived` skipped attaching it and
+// the endpoint was tied to the circle by that shared name alone — which the circle
+// move never touched. Now the endpoint owns a real vertex and carries a
+// point_on_circle, so it rides like any other attached point. Regression: "line
+// from circle does not stay attached when I move the circle", while a line drawn
+// TO the circle (fresh end vertex) always stayed.
 bool test_a_line_drawn_from_a_quadrant_follows_the_circle() {
   DocumentManager manager;
   manager.create_document();
@@ -347,6 +348,32 @@ bool test_a_line_drawn_from_a_quadrant_follows_the_circle() {
   return expect(
       std::abs(line.start_x - 15.0) < 1e-3 && std::abs(line.start_y) < 1e-3,
       ("quadrant: the line start follows the circle to (15,0) - got (" +
+       std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
+          .c_str());
+}
+
+// …and a RESIZE too. The radial projection in update_sketch_circle only walks
+// point_on_circle points, so while a quadrant-shared endpoint carried none it was
+// left at the old radius — the line detached from the circle the moment the
+// circle grew.
+bool test_a_line_drawn_from_a_quadrant_follows_a_resize() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_line(10.0, 0.0, 30.0, 0.0, false, "", true);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "quadrant resize: the sketch exists")) return false;
+  const std::string circle_id = before->circles.front().id;
+
+  document = manager.update_sketch_circle(circle_id, 0.0, 0.0, 20.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "quadrant resize: the sketch survives")) return false;
+  const auto& line = after->lines.back();
+  return expect(
+      std::abs(line.start_x - 20.0) < 1e-1 && std::abs(line.start_y) < 1e-1,
+      ("quadrant resize: the start follows to (20,0) - got (" +
        std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
           .c_str());
 }
@@ -599,6 +626,7 @@ int main() {
   if (!test_the_attached_end_stays_on_the_circle_after_an_edit()) return 1;
   if (!test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it()) return 1;
   if (!test_a_line_drawn_from_a_quadrant_follows_the_circle()) return 1;
+  if (!test_a_line_drawn_from_a_quadrant_follows_a_resize()) return 1;
   if (!test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint()) return 1;
   if (!test_resizing_a_circle_keeps_the_centre_fixed()) return 1;
   if (!test_resizing_a_circle_updates_its_profile()) return 1;
