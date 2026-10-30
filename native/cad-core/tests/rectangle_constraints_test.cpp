@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "core/document/document.h"
+#include "core/sketch/dof_counter.h"
 #include "core/sketch/sketch_feature.h"
 #include "core/viewport/viewport.h"
 #include "core/sketch/sketch_feature.h"
@@ -573,6 +574,63 @@ bool test_a_contradictory_relation_does_not_collapse_a_line() {
   return true;
 }
 
+// S3: ONE DOF source. The sketch-level count comes from the solver; the per-entity
+// breakdown is a hand-written estimate that charges a constraint to every target it
+// touches. On the rectangle the estimate said 9 remaining where the solver says 4,
+// so an entity could claim "fully constrained" while the sketch still had freedom —
+// two answers to one question, both untrustworthy. The status now follows the
+// solver, and the counts are clamped so they cannot claim completeness it has not
+// granted.
+bool test_the_entity_status_follows_the_solver() {
+  DocumentManager manager;
+  DocumentState document = build_rectangle(manager);
+  FeatureEntry* feature = sketch_feature(document);
+  if (!expect(feature != nullptr, "dof source: the sketch exists")) return false;
+  const auto& parameters = *feature->sketch_parameters;
+  if (!expect(parameters.solver_dofs == 4,
+              "dof source: the fixture has 4 DOF - got " +
+                  std::to_string(parameters.solver_dofs))) {
+    return false;
+  }
+
+  // With four degrees of freedom left, nothing may be painted "fully constrained".
+  int fixed_vertex_count = 0;
+  for (const auto& vertex : parameters.vertices) {
+    if (vertex.is_fixed) ++fixed_vertex_count;
+  }
+  for (const auto& entity : polysmith::core::count_sketch_dof(parameters)) {
+    if (!expect(entity.status != polysmith::core::DofStatus::FullyConstrained,
+                "dof source: " + entity.entity_id +
+                    " is not fully constrained while the sketch has 4 DOF "
+                    "(status=" + std::to_string(static_cast<int>(entity.status)) +
+                    " consumed=" + std::to_string(entity.consumed_dof) + "/" +
+                    std::to_string(entity.total_dof) + " fixed vertices=" +
+                    std::to_string(fixed_vertex_count) + ")")) {
+      return false;
+    }
+  }
+
+  // Pin every point: the solver now says 0, and every entity agrees.
+  for (auto& vertex : feature->sketch_parameters->vertices) {
+    vertex.is_fixed = true;
+  }
+  polysmith::core::refresh_sketch_derived_state(*feature);
+  if (!expect(feature->sketch_parameters->solver_dofs == 0,
+              "dof source: pinning every point leaves 0 DOF - got " +
+                  std::to_string(feature->sketch_parameters->solver_dofs))) {
+    return false;
+  }
+  for (const auto& entity :
+       polysmith::core::count_sketch_dof(*feature->sketch_parameters)) {
+    if (!expect(entity.status == polysmith::core::DofStatus::FullyConstrained,
+                "dof source: " + entity.entity_id +
+                    " is fully constrained once the sketch is")) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -583,6 +641,7 @@ int main() {
   if (!test_anchored_line_follows_a_height_drive()) return 1;
   if (!test_applying_a_constraint_keeps_the_degree_count()) return 1;
   if (!test_a_contradictory_relation_does_not_collapse_a_line()) return 1;
+  if (!test_the_entity_status_follows_the_solver()) return 1;
 
   std::cout << "rectangle_constraints_test passed\n";
   return 0;

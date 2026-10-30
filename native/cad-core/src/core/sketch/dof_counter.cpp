@@ -1,5 +1,7 @@
 #include "core/sketch/dof_counter.h"
 
+#include <algorithm>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -133,21 +135,59 @@ std::vector<EntityDofResult> count_sketch_dof(
     if (map.count(a.vertex_id)) map[a.vertex_id].consumed += 2;
   }
 
+  // ── S3: ONE DOF SOURCE ────────────────────────────────────────────
+  // How many degrees of freedom REMAIN is the solver's answer to give
+  // (`params.solver_dofs`). The arithmetic above is a per-entity estimate that
+  // charges a constraint to every entity it touches, so it cannot agree with the
+  // solver by construction — a rectangle with 4 DOF came out at 9 remaining — and
+  // a badge that contradicts the sketch status makes both numbers untrustworthy.
+  // The estimate is still worth keeping for ORDERING (which entity carries more
+  // rules), but the STATUS now comes from the solve, and the counts are clamped so
+  // they can never claim completeness the solver has not granted.
+  std::set<std::string> fixed_vertex_ids;
+  for (const auto& vertex : params.vertices) {
+    if (vertex.is_fixed) fixed_vertex_ids.insert(vertex.id);
+  }
+  const bool over_constrained = params.solver_conflicting_count > 0;
+  const bool fully_constrained = !over_constrained && params.solver_dofs == 0;
+  const auto status_for = [&](const std::vector<std::string>& vertex_ids) {
+    if (over_constrained) return DofStatus::OverConstrained;
+    if (fully_constrained) return DofStatus::FullyConstrained;
+    // An entity pinned entirely by its own fixed points is fully constrained even
+    // while other geometry in the sketch is still free.
+    if (vertex_ids.empty()) return DofStatus::UnderConstrained;
+    for (const auto& id : vertex_ids) {
+      if (fixed_vertex_ids.count(id) == 0) return DofStatus::UnderConstrained;
+    }
+    return DofStatus::FullyConstrained;
+  };
+
   std::vector<EntityDofResult> results;
+  const auto push = [&](const std::string& id, const char* kind, int total,
+                        int consumed, const std::vector<std::string>& vertices) {
+    const DofStatus status = status_for(vertices);
+    const int clamped = status == DofStatus::UnderConstrained
+                            ? std::min(consumed, std::max(total - 1, 0))
+                            : total;
+    results.push_back({id, kind, total, clamped, status});
+  };
   for (const auto& l : params.lines) {
-    auto& e = map[l.id]; results.push_back({l.id, "line", e.total, e.consumed, e.status()});
+    push(l.id, "line", map[l.id].total, map[l.id].consumed,
+         {l.start_vertex_id, l.end_vertex_id});
   }
   for (const auto& c : params.circles) {
-    auto& e = map[c.id]; results.push_back({c.id, "circle", e.total, e.consumed, e.status()});
+    push(c.id, "circle", map[c.id].total, map[c.id].consumed,
+         {c.center_vertex_id});
   }
   for (const auto& p : params.polygons) {
-    auto& e = map[p.id]; results.push_back({p.id, "polygon", e.total, e.consumed, e.status()});
+    push(p.id, "polygon", map[p.id].total, map[p.id].consumed, {});
   }
   for (const auto& a : params.arcs) {
-    auto& e = map[a.id]; results.push_back({a.id, "arc", e.total, e.consumed, e.status()});
+    push(a.id, "arc", map[a.id].total, map[a.id].consumed,
+         {a.start_vertex_id, a.end_vertex_id, a.center_vertex_id});
   }
   for (const auto& p : params.vertices) {
-    auto& e = map[p.id]; results.push_back({p.id, "point", e.total, e.consumed, e.status()});
+    push(p.id, "point", map[p.id].total, map[p.id].consumed, {p.id});
   }
   return results;
 }
