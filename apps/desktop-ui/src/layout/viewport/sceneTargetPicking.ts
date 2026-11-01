@@ -352,11 +352,11 @@ function pickActiveSketchTarget({
   if (activeSketchTool === "trim") {
     // Trim tool: entities must win over sketch points, dimension
     // labels and constraints — the zoom-aware point-pick radius
-    // otherwise swallows a circle's outline around its center and
-    // quadrant vertices, making the red trim highlight unreachable
-    // except in the gaps between vertices.  The 2px outline rule for
-    // circle/arc entities is deliberately skipped here too: the trim
-    // tool has no profile hover to protect.
+    // otherwise swallows a circle's outline near its centre vertex,
+    // making the red trim highlight unreachable except in the gaps
+    // between vertices.  The 2px outline rule for circle/arc entities
+    // is deliberately skipped here too: the trim tool has no profile
+    // hover to protect.
     const entityHit = nearestEntityIntersection(raycaster, sketchEntityObjects);
     const entityResult =
       sketchEntitySelectionHitFromIntersection(entityHit);

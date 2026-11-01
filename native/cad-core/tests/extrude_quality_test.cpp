@@ -182,7 +182,7 @@ bool test_filleted_rectangle_extrudes_full_prism() {
 
 
 // Regression test for the part.json sketch: two tangent lines from
-// (-100, 0) to a circle, a horizontal line to the circle's left quadrant,
+// (-100, 0) to a circle, a horizontal line to the circle's leftmost point,
 // and a remnant arc left over from trimming another circle.  The exact
 // arrangement treats every bounded closed region as a profile — the two
 // tangent wedges are the extrudable regions, and the region between the
@@ -1376,10 +1376,8 @@ bool test_load_recomputes_stale_profiles() {
 }
 
 // Vertex-model follow-ups after arc trims:
-// - A line drawn to an arc's quadrant point keeps the legacy
-//   "vertex-<arc>-quadrant-N" id on its endpoint.  Once the arc pieces
-//   through that point are trimmed away, the vertex must lose the arc
-//   from its owners, and the vertices list must never carry two
+// - A line drawn to a point on an arc keeps its own minted vertex (never an
+//   id adopted from the curve), and the vertices list must never carry two
 //   records with the same id.
 // - The arc produced by a middle-segment trim shares the source arc's
 //   center vertex id instead of minting a second vertex at the same
@@ -1403,13 +1401,10 @@ bool test_trim_vertex_owners_and_center_sharing() {
 
   const auto& params =
       document.feature_history.back().sketch_parameters.value();
-  const std::string kQuadId = "vertex-arc-1-quadrant-0";
 
   // Pre-trim: the horizontal line (its start is exactly (50,0)) ends on the
-  // arc's quadrant position, but the endpoint no longer ADOPTS the derived
-  // quadrant id — it keeps a fresh vertex, so it can bind by point_on_arc the
-  // way a circle endpoint binds by point_on_circle. The quadrant marker itself
-  // must still appear exactly once and be owned by the arc.
+  // arc's 0° position. The endpoint carries its own minted vertex, so it can
+  // bind by point_on_arc the way a circle endpoint binds by point_on_circle.
   const auto horizontal_line = std::find_if(
       params.lines.begin(), params.lines.end(),
       [&](const auto& l) { return l.start_x == 50.0 && l.start_y == 0.0; });
@@ -1418,28 +1413,11 @@ bool test_trim_vertex_owners_and_center_sharing() {
     return false;
   }
   const std::string kLineId = horizontal_line->id;
-  if (!expect(horizontal_line->end_vertex_id != kQuadId,
-              "vertex purge: line endpoint must not adopt the arc quadrant id")) {
+  if (!expect(horizontal_line->end_vertex_id.rfind("vertex-", 0) == 0 &&
+                  horizontal_line->end_vertex_id.find("-quadrant-") ==
+                      std::string::npos,
+              "vertex purge: line endpoint must own a minted vertex")) {
     return false;
-  }
-  {
-    const auto quad_count = std::count_if(
-        params.vertices.begin(), params.vertices.end(),
-        [&](const auto& v) { return v.id == kQuadId; });
-    if (!expect(quad_count == 1,
-                "vertex purge: quadrant id must appear exactly once")) {
-      return false;
-    }
-    const auto quad = std::find_if(
-        params.vertices.begin(), params.vertices.end(),
-        [&](const auto& v) { return v.id == kQuadId; });
-    if (!expect(quad != params.vertices.end() &&
-                    std::find(quad->geometry_owner_ids.begin(),
-                              quad->geometry_owner_ids.end(),
-                              "arc-1") != quad->geometry_owner_ids.end(),
-                "vertex purge: in-sweep quadrant must be owned by the arc")) {
-      return false;
-    }
   }
 
   // Trim the arc piece between the upper tangent and the rightmost
@@ -1485,8 +1463,7 @@ bool test_trim_vertex_owners_and_center_sharing() {
     }
 
     // The line's own endpoint vertex survives the trim (the line still ends
-    // there), and the derived quadrant marker no longer belongs to any arc —
-    // the surviving arcs no longer pass through that cardinal point.
+    // there).
     const auto line_it = std::find_if(
         p.lines.begin(), p.lines.end(),
         [&](const auto& l) { return l.id == kLineId; });
@@ -1499,19 +1476,6 @@ bool test_trim_vertex_owners_and_center_sharing() {
         [&](const auto& v) { return v.id == line_it->end_vertex_id; });
     if (!expect(line_end != p.vertices.end(),
                 "vertex purge: line endpoint vertex must survive")) {
-      return false;
-    }
-    const auto quad = std::find_if(
-        p.vertices.begin(), p.vertices.end(),
-        [&](const auto& v) { return v.id == kQuadId; });
-    if (!expect(quad == p.vertices.end() ||
-                    (std::find(quad->geometry_owner_ids.begin(),
-                               quad->geometry_owner_ids.end(),
-                               "arc-1") == quad->geometry_owner_ids.end() &&
-                     std::find(quad->geometry_owner_ids.begin(),
-                               quad->geometry_owner_ids.end(),
-                               "arc-2") == quad->geometry_owner_ids.end()),
-                "vertex purge: stale arc ownership must be removed")) {
       return false;
     }
 

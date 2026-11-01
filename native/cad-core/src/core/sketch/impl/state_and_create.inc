@@ -633,7 +633,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // ── Phase 5: entity cached coords now mirror canonical vertices ──
   sync_entity_coords_from_vertices(*feature.sketch_parameters);
 
-  // Derived points (projected, quadrant, arc endpoints) are derived
+  // Derived points (projected, arc endpoints, slot corners) are derived
   // geometry — lock them by default so new derived points start as fixed.
   // Must run before sync_fixed_point_flags so the user's explicit
   // unfix (set_sketch_vertex_fixed) survives the refresh.

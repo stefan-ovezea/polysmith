@@ -122,7 +122,7 @@ export function createViewportContextMenuActions({
   pickSketchPointRef: MutableRef<
     (
       pointId: string,
-      kind: "endpoint" | "center" | "quadrant",
+      kind: "endpoint" | "center",
       additive: boolean,
     ) => Promise<void>
   >;

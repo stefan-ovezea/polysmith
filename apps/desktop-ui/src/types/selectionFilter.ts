@@ -10,7 +10,6 @@ export interface SelectionFilter {
   snap_nearest: boolean;
   snap_circle_body: boolean;
   snap_arc_body: boolean;
-  snap_quadrant: boolean;
   snap_perpendicular: boolean;
   snap_parallel: boolean;
   snap_tangent: boolean;
@@ -37,7 +36,6 @@ export type SelectionFilterUpdate = Partial<
     | "snap_center"
     | "snap_intersection"
     | "snap_nearest"
-    | "snap_quadrant"
     | "snap_perpendicular"
     | "snap_parallel"
     | "snap_tangent"

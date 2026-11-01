@@ -296,11 +296,10 @@ export interface SketchVertexScene {
   // renderer draws these with a small distinguishing crosshair so
   // the user can tell derived geometry from sketched geometry at a
   // glance.
-  // "quadrant" — derived cardinal point on a circle perimeter.
   // "fillet_corner" — internal fillet bookkeeping vertex, filtered from scene.
   /** vertex-N ID from Phase 4 vertex unification (canonical). */
   id: string;
-  kind: "endpoint" | "center" | "projected" | "quadrant" | "fillet_corner";
+  kind: "endpoint" | "center" | "projected" | "fillet_corner";
   position: [number, number, number];
   isFixed: boolean;
   isSelected: boolean;

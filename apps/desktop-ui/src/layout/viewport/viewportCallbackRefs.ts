@@ -224,7 +224,7 @@ interface ViewportCallbackRefTargets {
   pickSketchPointRef: MutableRefObject<
     (
       pointId: string,
-      kind: "endpoint" | "center" | "quadrant",
+      kind: "endpoint" | "center",
       additive: boolean,
     ) => Promise<void>
   >;

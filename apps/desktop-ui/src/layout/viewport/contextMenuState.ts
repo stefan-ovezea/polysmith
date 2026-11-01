@@ -21,7 +21,7 @@ export type ViewportPickHit =
   | {
       kind: "sketch_point";
       id: string;
-      pointKind?: "endpoint" | "center" | "quadrant" | string;
+      pointKind?: "endpoint" | "center" | string;
     }
   | { kind: "sketch_profile"; id: string }
   | {

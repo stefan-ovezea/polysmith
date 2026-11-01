@@ -72,58 +72,6 @@
             snap_candidates.push_back({.kind="center",.entity_id=poly.id,.vertex_id="",.local_x=poly.center_x,.local_y=poly.center_y,.distance=0,.label="Center"});
           }
         }
-        // Quadrant points (4 per circle, plus cardinal points within arc sweeps)
-        if (filter.snap_quadrant) {
-          for (const auto& circle : sketch.circles) {
-            if (circle.is_construction && !filter.select_construction) continue;
-            const double cx = circle.center_x;
-            const double cy = circle.center_y;
-            const double r = circle.radius;
-            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx+r,.local_y=cy,.distance=0,.label="Quadrant"});
-            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx,.local_y=cy+r,.distance=0,.label="Quadrant"});
-            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx-r,.local_y=cy,.distance=0,.label="Quadrant"});
-            snap_candidates.push_back({.kind="quadrant",.entity_id=circle.id,.vertex_id="",.local_x=cx,.local_y=cy-r,.distance=0,.label="Quadrant"});
-          }
-          for (const auto& arc : sketch.arcs) {
-            if (arc.is_construction && !filter.select_construction) continue;
-            const double cx = arc.center_x;
-            const double cy = arc.center_y;
-            const double r = arc.radius;
-            // Normalise to [0, 2π) so angles at the ±π boundary don't
-            // bounce and break the sweep test.
-            auto norm = [](double angle) {
-              angle = std::fmod(angle, 2.0 * M_PI);
-              if (angle < 0.0) angle += 2.0 * M_PI;
-              return angle;
-            };
-            const double ns = norm(std::atan2(arc.start_y - cy, arc.start_x - cx));
-            const double ne = norm(std::atan2(arc.end_y   - cy, arc.end_x   - cx));
-            // Cardinal angles in sketch-plane coords: 0°=east, 90°=north, 180°=west, 270°=south.
-            const double cardinals[4] = {0.0, M_PI_2, M_PI, M_PI + M_PI_2};
-            for (const double angle : cardinals) {
-              const double a = norm(angle);
-              // Check whether `a` lies within the sweep from start to end.
-              bool on_arc = false;
-              if (arc.ccw) {
-                if (ns <= ne) {
-                  on_arc = a >= ns && a <= ne;
-                } else {
-                  on_arc = a >= ns || a <= ne;
-                }
-              } else {
-                if (ns >= ne) {
-                  on_arc = a <= ns && a >= ne;
-                } else {
-                  on_arc = a <= ns || a >= ne;
-                }
-              }
-              if (!on_arc) continue;
-              snap_candidates.push_back({.kind="quadrant",.entity_id=arc.id,.vertex_id="",
-                  .local_x=cx + r * std::cos(a),.local_y=cy + r * std::sin(a),
-                  .distance=0,.label="Quadrant"});
-            }
-          }
-        }
         // Intersection points (line-line and line-arc)
         if (filter.snap_intersection) {
           // Line-line intersections

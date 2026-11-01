@@ -4,7 +4,7 @@ import type { SelectedConstraintState } from "./contextMenuState";
 
 export interface CoincidentLineEndpointFallback {
   vertexId: string;
-  vertexKind: "endpoint" | "center" | "quadrant";
+  vertexKind: "endpoint" | "center";
   distance: number;
 }
 
@@ -27,7 +27,7 @@ export type SketchEntitySelectionHit = {
   worldPoint: readonly [number, number, number];
 };
 
-type SketchPointKind = "endpoint" | "center" | "quadrant";
+type SketchPointKind = "endpoint" | "center";
 
 export type ActiveSketchSelectHit =
   | SketchEntitySelectionHit
@@ -516,7 +516,6 @@ export function coincidentLineEndpointFallback({
   const vertexKind = bestMesh.userData.sketchPointKind as
     | "endpoint"
     | "center"
-    | "quadrant"
     | undefined;
   if (!vertexId || !vertexKind) {
     return null;

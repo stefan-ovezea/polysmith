@@ -142,16 +142,11 @@ void trim_remove_entity_attachments(
 }
 
 // Every point id the sketch currently owns, with its position:
-// entity endpoints, centers, axis points, poles, derived quadrant
-// points, and fillet/chamfer corner bookkeeping points. Trim paths
-// use the id set to drop coincident constraints that reference ids
-// orphaned by a trim; the constraint transfer uses the positions to
-// verify a coincident pair STILL coincides (a severed endpoint pair
-// keeps its ids alive). ONE copy of the quadrant id format — the old
-// code hardcoded it in three separate safety nets (circle/arc/ellipse
-// phases).
-// TODO(phase-6-followup): give quadrants stable vertex-N IDs so this
-// deterministic legacy format can die.
+// entity endpoints, centers, axis points, poles, and fillet/chamfer
+// corner bookkeeping points. Trim paths use the id set to drop
+// coincident constraints that reference ids orphaned by a trim; the
+// constraint transfer uses the positions to verify a coincident pair
+// STILL coincides (a severed endpoint pair keeps its ids alive).
 std::unordered_map<std::string, std::pair<double, double>>
 live_sketch_point_positions(const SketchFeatureParameters& parameters) {
   std::unordered_map<std::string, std::pair<double, double>> live;
@@ -161,15 +156,6 @@ live_sketch_point_positions(const SketchFeatureParameters& parameters) {
   }
   for (const auto& circle : parameters.circles) {
     live[circle_center_vertex_id(circle)] = {circle.center_x, circle.center_y};
-    const double r = circle.radius;
-    live["vertex-" + circle.id + "-quadrant-0"] = {circle.center_x + r,
-                                                   circle.center_y};
-    live["vertex-" + circle.id + "-quadrant-1"] = {circle.center_x,
-                                                   circle.center_y + r};
-    live["vertex-" + circle.id + "-quadrant-2"] = {circle.center_x - r,
-                                                   circle.center_y};
-    live["vertex-" + circle.id + "-quadrant-3"] = {circle.center_x,
-                                                   circle.center_y - r};
   }
   for (const auto& arc : parameters.arcs) {
     live[arc.start_vertex_id] = {arc.start_x, arc.start_y};

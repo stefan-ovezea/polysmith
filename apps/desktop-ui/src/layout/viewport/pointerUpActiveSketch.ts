@@ -148,7 +148,7 @@ export interface ActiveSketchPointerUpContext {
   selectSketchEntity: (entityId: string, additive: boolean) => Promise<void>;
   pickSketchPoint: (
     pointId: string,
-    pointKind: "endpoint" | "center" | "quadrant",
+    pointKind: "endpoint" | "center",
     additive: boolean,
   ) => Promise<void>;
   handleDimensionClick: (dimensionId: string) => void;
@@ -207,7 +207,7 @@ export interface ActiveSketchPointerUpContext {
 /**
  * Where a Point-tool click places its point.
  *
- * Order: an exact vertex hit first (endpoint / centre / quadrant markers are
+ * Order: an exact vertex hit first (endpoint / centre markers are
  * vertex hits, and a hit carries the stored coordinates even when the snap did
  * not latch), then the snapped cursor position — grid, on-line, intersection,
  * tangent, perpendicular/parallel and H/V alignment, i.e. everything the
@@ -500,7 +500,7 @@ export function handleActiveSketchPointerUpTool(
       } else {
         void context.pickSketchPoint(
           context.hit.id,
-          context.hit.pointKind as "endpoint" | "center" | "quadrant",
+          context.hit.pointKind as "endpoint" | "center",
           context.additiveSelection,
         );
       }

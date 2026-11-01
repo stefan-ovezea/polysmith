@@ -285,25 +285,24 @@ bool test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it() {
        ")").c_str());
 }
 
-// The mechanism behind the "line from a quadrant" bug: a new endpoint used to
-// adopt the DERIVED quadrant vertex id, so it was tied to the circle by a shared
-// name instead of by a constraint, and `vertex_is_derived` skipped attaching it.
-// It now takes a fresh vertex and is bound by point_on_circle like any other
-// point on a circle.
-bool test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint() {
+// A line started on a circle's boundary takes a fresh vertex and is bound by
+// point_on_circle like any other point on the circle. (Historically the endpoint
+// adopted the derived quadrant vertex id, which tied it to the circle by a shared
+// name instead of a constraint — and `vertex_is_derived` then skipped attaching it.)
+bool test_a_line_drawn_on_a_circle_cardinal_point_is_bound_by_a_constraint() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
   manager.add_sketch_circle(0.0, 0.0, 10.0);
-  // Start exactly on quadrant-0 (10,0) — the case that used to share the id.
+  // Start exactly on the boundary at 0° (10,0) — the historical share-the-id case.
   const DocumentState document =
       manager.add_sketch_line(10.0, 0.0, 30.0, 0.0, false, "", true);
   const SketchFeatureParameters* parameters = sketch_of(document);
-  if (!expect(parameters != nullptr, "quadrant id: the sketch exists")) return false;
+  if (!expect(parameters != nullptr, "circle attach: the sketch exists")) return false;
 
   const auto& line = parameters->lines.back();
   if (!expect(line.start_vertex_id.rfind("vertex-circle-", 0) != 0,
-              ("quadrant id: the endpoint owns its vertex - got " +
+              ("circle attach: the endpoint owns its vertex - got " +
                line.start_vertex_id)
                   .c_str())) {
     return false;
@@ -319,10 +318,10 @@ bool test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint() {
                constraint.target_ids[1] == circle_id;
       });
   return expect(constraint_it != parameters->constraints.end(),
-                "quadrant id: the endpoint is bound by a point_on_circle constraint");
+                "circle attach: the endpoint is bound by a point_on_circle constraint");
 }
 
-// A line drawn onto an ARC's body (not an endpoint or a quadrant) is bound by
+// A line drawn onto an ARC's body (not an endpoint) is bound by
 // point_on_arc, mirroring the circle's point_on_circle. planegcs has no native
 // PointOnArc, so the solver pins the circumcircle radius and
 // enforce_point_on_arc_constraints keeps the point on the swept span after each
@@ -334,7 +333,7 @@ bool test_a_line_drawn_on_an_arc_body_is_bound_by_point_on_arc() {
   // Quarter arc centred at the origin: (10,0) → (0,10) through (7.07,7.07).
   manager.add_sketch_arc(10.0, 0.0, 0.0, 10.0, 7.0710678, 7.0710678,
                          "three_point");
-  // Start exactly on the arc body (45°) — not an endpoint or a quadrant.
+  // Start exactly on the arc body (45°) — not one of its endpoints.
   const DocumentState document =
       manager.add_sketch_line(7.0710678, 7.0710678, 20.0, 20.0, false, "", true);
   const SketchFeatureParameters* parameters = sketch_of(document);
@@ -354,41 +353,37 @@ bool test_a_line_drawn_on_an_arc_body_is_bound_by_point_on_arc() {
                 "arc attach: the endpoint is bound by a point_on_arc constraint");
 }
 
-// A line drawn FROM a circle keeps its endpoint on the boundary. It used to reuse
-// the derived quadrant vertex id, so `vertex_is_derived` skipped attaching it and
-// the endpoint was tied to the circle by that shared name alone — which the circle
-// move never touched. Now the endpoint owns a real vertex and carries a
-// point_on_circle, so it rides like any other attached point. Regression: "line
-// from circle does not stay attached when I move the circle", while a line drawn
-// TO the circle (fresh end vertex) always stayed.
-bool test_a_line_drawn_from_a_quadrant_follows_the_circle() {
+// A line drawn FROM a circle keeps its endpoint on the boundary. The endpoint
+// owns a real vertex and carries a point_on_circle, so it rides the circle like
+// any other attached point. Regression: "line from circle does not stay attached
+// when I move the circle".
+bool test_a_line_drawn_from_a_circle_follows_the_circle() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
   manager.add_sketch_circle(0.0, 0.0, 10.0);
-  // Start exactly on quadrant-0 (10,0); the line extends off to the right.
+  // Start exactly on the boundary at 0° (10,0); the line extends to the right.
   DocumentState document =
       manager.add_sketch_line(10.0, 0.0, 30.0, 0.0, false, "", true);
   const SketchFeatureParameters* before = sketch_of(document);
-  if (!expect(before != nullptr, "quadrant: the sketch exists")) return false;
+  if (!expect(before != nullptr, "circle attach: the sketch exists")) return false;
   const std::string center_vertex = before->circles.front().center_vertex_id;
 
   document = manager.update_sketch_vertex(center_vertex, 5.0, 0.0);
   const SketchFeatureParameters* after = sketch_of(document);
-  if (!expect(after != nullptr, "quadrant: the sketch survives")) return false;
+  if (!expect(after != nullptr, "circle attach: the sketch survives")) return false;
   const auto& line = after->lines.back();
   return expect(
       std::abs(line.start_x - 15.0) < 1e-3 && std::abs(line.start_y) < 1e-3,
-      ("quadrant: the line start follows the circle to (15,0) - got (" +
+      ("circle attach: the line start follows the circle to (15,0) - got (" +
        std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
           .c_str());
 }
 
 // …and a RESIZE too. The radial projection in update_sketch_circle only walks
-// point_on_circle points, so while a quadrant-shared endpoint carried none it was
-// left at the old radius — the line detached from the circle the moment the
-// circle grew.
-bool test_a_line_drawn_from_a_quadrant_follows_a_resize() {
+// point_on_circle points, so an endpoint without one would be left at the old
+// radius — the line detaching from the circle the moment the circle grew.
+bool test_a_line_drawn_from_a_circle_follows_a_resize() {
   DocumentManager manager;
   manager.create_document();
   manager.start_sketch_on_plane("ref-plane-xy");
@@ -396,16 +391,16 @@ bool test_a_line_drawn_from_a_quadrant_follows_a_resize() {
   DocumentState document =
       manager.add_sketch_line(10.0, 0.0, 30.0, 0.0, false, "", true);
   const SketchFeatureParameters* before = sketch_of(document);
-  if (!expect(before != nullptr, "quadrant resize: the sketch exists")) return false;
+  if (!expect(before != nullptr, "circle resize: the sketch exists")) return false;
   const std::string circle_id = before->circles.front().id;
 
   document = manager.update_sketch_circle(circle_id, 0.0, 0.0, 20.0);
   const SketchFeatureParameters* after = sketch_of(document);
-  if (!expect(after != nullptr, "quadrant resize: the sketch survives")) return false;
+  if (!expect(after != nullptr, "circle resize: the sketch survives")) return false;
   const auto& line = after->lines.back();
   return expect(
       std::abs(line.start_x - 20.0) < 1e-1 && std::abs(line.start_y) < 1e-1,
-      ("quadrant resize: the start follows to (20,0) - got (" +
+      ("circle resize: the start follows to (20,0) - got (" +
        std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
           .c_str());
 }
@@ -695,9 +690,9 @@ int main() {
   if (!test_without_the_flag_a_circle_is_not_attached()) return 1;
   if (!test_the_attached_end_stays_on_the_circle_after_an_edit()) return 1;
   if (!test_a_stem_drawn_slightly_off_the_circle_is_pulled_onto_it()) return 1;
-  if (!test_a_line_drawn_from_a_quadrant_follows_the_circle()) return 1;
-  if (!test_a_line_drawn_from_a_quadrant_follows_a_resize()) return 1;
-  if (!test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint()) return 1;
+  if (!test_a_line_drawn_from_a_circle_follows_the_circle()) return 1;
+  if (!test_a_line_drawn_from_a_circle_follows_a_resize()) return 1;
+  if (!test_a_line_drawn_on_a_circle_cardinal_point_is_bound_by_a_constraint()) return 1;
   if (!test_a_line_drawn_on_an_arc_body_is_bound_by_point_on_arc()) return 1;
   if (!test_resizing_a_circle_keeps_the_centre_fixed()) return 1;
   if (!test_resizing_a_circle_updates_its_profile()) return 1;

@@ -38,12 +38,11 @@ constexpr double kCommittedAttachToleranceMm = 0.25;
 constexpr double kCommittedAttachMidpointFraction = 0.02;
 constexpr double kCommittedAttachMidpointLimitMm = 2.0;
 
-// Vertices owned by an entity and pinned by it. The circle/arc quadrant and centre
-// points matter most: a line started exactly on a quadrant REUSES that vertex (endpoint
-// sharing), so it is already tied to the circle - adding point_on_circle on top
-// constrains a FIXED point, which is unsatisfiable and made the verifier reject every
-// solve of that sketch ("point_on_circle vertex-circle-1-quadrant-0/circle-1 off by
-// 38.97 mm", after which the whole geometry froze).
+// Vertices owned by an entity and pinned by it (text vertices, slot
+// corners, anything minted with an entity prefix). Adding point_on_circle
+// to one of those constrains a FIXED point, which is unsatisfiable and
+// made the verifier reject every solve of that sketch, after which the
+// whole geometry froze.
 bool vertex_is_derived(const std::string& vertex_id) {
   static constexpr const char* kPrefixes[] = {
       "vertex-text-", "vertex-slot-", "vertex-circle-", "vertex-arc-",

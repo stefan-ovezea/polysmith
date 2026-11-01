@@ -216,8 +216,6 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
       filter.snap_intersection = sf.at("snap_intersection").get<bool>();
     if (sf.contains("snap_nearest") && sf.at("snap_nearest").is_boolean())
       filter.snap_nearest = sf.at("snap_nearest").get<bool>();
-    if (sf.contains("snap_quadrant") && sf.at("snap_quadrant").is_boolean())
-      filter.snap_quadrant = sf.at("snap_quadrant").get<bool>();
     if (sf.contains("snap_perpendicular") && sf.at("snap_perpendicular").is_boolean())
       filter.snap_perpendicular = sf.at("snap_perpendicular").get<bool>();
     if (sf.contains("snap_parallel") && sf.at("snap_parallel").is_boolean())

@@ -38,7 +38,7 @@ DocumentState DocumentManager::merge_coincident_sketch_points(
   // Gather every vertex id referenced by the sketch, with its cached
   // position.  Entities contribute their endpoint/center coords;
   // the vertex table fills in ids not covered there (ellipse axis
-  // points, quadrant points, standalone projected points).
+  // points, standalone projected points).
   struct VertexEntry {
     std::string id;
     double x;

@@ -39,7 +39,6 @@ const snapTypeRows: FilterRow[] = [
   { key: "snap_nearest", labelKey: "selectionFilter.nearest" },
   { key: "snap_circle_body", labelKey: "selectionFilter.circleBody" },
   { key: "snap_arc_body", labelKey: "selectionFilter.arcBody" },
-  { key: "snap_quadrant", labelKey: "selectionFilter.quadrant" },
   { key: "snap_perpendicular", labelKey: "selectionFilter.perpendicular" },
   { key: "snap_parallel", labelKey: "selectionFilter.parallel" },
   { key: "snap_tangent", labelKey: "selectionFilter.tangent" },

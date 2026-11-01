@@ -6,7 +6,7 @@
 // command consumes ("mid:<line>", "on:<curve>:x,y", "vertex:x,y,z") and which the
 // core turns into a point AND its constraint atomically - which is why a line drawn
 // onto geometry there simply stays. PolySmith splits it differently: the core emits
-// candidate points (endpoint, midpoint, center, quadrant, intersection, projected),
+// candidate points (endpoint, midpoint, center, intersection, projected),
 // the UI decides which one wins and runs its own dynamic geometry (line body, circle
 // body, tangent, perpendicular, parallel, alignment), and the UI then *asks* the core
 // to attach - through snap bookkeeping that crosses draft -> commit -> effect.
@@ -122,12 +122,12 @@ function matrixSketch() {
 
 // What the core emits for that sketch: the static candidates. Hand-written here
 // because this file measures the UI side; the core-side emission is `endpoint`,
-// `midpoint`, `center`, `quadrant`, `intersection`, `projected`.
+// `midpoint`, `center`, `intersection`, `projected`.
 function coreCandidates(): SketchSnapCandidate[] {
   // Faithful to what appendCoreSnapCandidates() builds: a midpoint carries its host
-  // line id (t = 0.5), an endpoint carries endpointHostLineId. Center and quadrant
-  // carry NO host in the product mapping - noted below, because that means a snap to
-  // a centre or a quadrant has nothing to attach to.
+  // line id (t = 0.5), an endpoint carries endpointHostLineId. A centre carries NO
+  // host in the product mapping - noted below, because that means a snap to a centre
+  // has nothing to attach to.
   const candidate = (
     local: [number, number],
     label: string,
@@ -151,8 +151,6 @@ function coreCandidates(): SketchSnapCandidate[] {
     candidate([50, -60], "Endpoint", "endpoint", { endpointHostLineId: "line-2" }),
     candidate([50, -20], "Endpoint", "endpoint", { endpointHostLineId: "line-2" }),
     candidate([140, 0], "Center", "center"),
-    candidate([160, 0], "Quadrant", "quadrant"),
-    candidate([20, 100], "Quadrant", "quadrant"),
     candidate([20, 40], "Intersection", "intersection"),
   ];
 }
@@ -168,7 +166,6 @@ const cells: Cell[] = [
   { name: "line endpoint", cursor: [100.6, 0.5], draftStart: [-40, -40] },
   { name: "line midpoint", cursor: [50.4, 0.5], draftStart: [-40, -40] },
   { name: "circle centre", cursor: [140.5, 0.6], draftStart: [-40, -40] },
-  { name: "arc quadrant", cursor: [20.5, 100.6], draftStart: [-40, -40] },
   { name: "line x line intersection", cursor: [20.4, 40.5], draftStart: [-40, -40] },
   // Targets that are UI-side dynamic geometry.
   { name: "line body (t != 0.5)", cursor: [30.5, 0.6], draftStart: [-40, -40] },
@@ -253,16 +250,15 @@ describe("snap matrix", () => {
     }
   });
 
-  // Measured on 2026-10-26 with the fixture above. Each of these loses the binding,
-  // so nothing can attach: the label may even be a feature ("Quadrant") while the
-  // binding is empty, or the axis lock / alignment steals the label and the position
-  // still comes from the candidate.
+  // Measured on 2026-10-26 with the fixture above (quadrant rows removed 2026-11-01,
+  // when quadrant vertices and the quadrant snap type were deleted). Each of these
+  // loses the binding, so nothing can attach: the axis lock / alignment steals the
+  // label while the position still comes from the candidate.
   const knownGaps = [
     "circle centre", // centre snap carries no host id, so no attachment exists
-    "arc quadrant", // quadrant snap carries no host id either
     "line x line intersection", // core emits the pair; the mapping drops it
     "line body (t != 0.5)", // body snaps lose to the alignment/axis label
-    "circle perimeter", // quadrant wins the label, no body binding recorded
+    "circle perimeter",
     "vertical stem body",
     "horizontal alignment",
     "parallel host", // axis lock wins before the parallel inference can

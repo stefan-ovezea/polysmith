@@ -3,7 +3,7 @@ sketch_parameters_from_payload(const json& payload) {
   polysmith::core::SketchFeatureParameters params{};
   params.plane_id = read_string(payload, "plane_id");
   // Restore the vertex-id counter so regenerated vertices (centers,
-  // quadrants, trim split points) never collide with restored entity
+  // trim split points) never collide with restored entity
   // ids — a collision would silently adopt another vertex's coordinates
   // (user-reported: a circle's center moved onto a projected corner
   // point after save/reload).

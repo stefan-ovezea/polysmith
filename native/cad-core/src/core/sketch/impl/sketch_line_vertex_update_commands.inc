@@ -121,8 +121,8 @@ void update_sketch_vertex(FeatureEntry& feature,
           // circle ("the end wanders on the circle").
           //
           // A line drawn onto the circle is covered by this loop like any other
-          // point: its endpoint no longer adopts the circle's derived quadrant id
-          // (see find_coincident_endpoint), so it carries a real point_on_circle.
+          // point: its endpoint carries a real point_on_circle, never an id
+          // adopted from the curve (see find_coincident_endpoint).
           std::vector<std::string> ride_ids;
           for (const auto& constraint : parameters.constraints) {
             if (constraint.kind != "point_on_circle") continue;

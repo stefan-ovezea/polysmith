@@ -41,9 +41,8 @@
     };
 
     // The circle being converted must not resolve against its own
-    // centre or quadrant vertices — exclude it from the shared-point
-    // scan (the old code passed "" as the ignored id and could match
-    // the circle itself).
+    // centre — exclude it from the shared-point scan (the old code
+    // passed "" as the ignored id and could match the circle itself).
     const std::unordered_set<std::string> excluded_entities{entity_id};
     auto arc_endpoint_id = [&](double px, double py) -> std::string {
       const auto shared = resolve_shared_point(params, px, py, excluded_entities);

@@ -64,7 +64,6 @@ struct SelectionFilter {
   bool snap_center          = true;
   bool snap_intersection    = true;
   bool snap_nearest         = true;
-  bool snap_quadrant        = true;
   bool snap_perpendicular   = true;
   bool snap_parallel        = true;
   bool snap_tangent         = true;

@@ -240,8 +240,6 @@ function constraintPreviewGlyph(kind: ConstraintPreviewState["kind"]) {
       return "/";
     case "on_circle":
       return "c";
-    case "quadrant":
-      return "Q";
   }
 }
 

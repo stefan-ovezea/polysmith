@@ -215,7 +215,7 @@ export function createViewportVisualStateActions({
             ? themeColor("--color-tertiary-plane-edge-hover", "#fff2b2")
             : kind === "projected"
               ? themeColor("--cad-sketch-projected", "#a678d6")
-              : kind === "center" || kind === "quadrant"
+              : kind === "center"
                 ? themeColor("--color-axis-z", "#6db4ff")
                 : themeColor("--color-tertiary-plane-edge", "#ffe784"),
       );

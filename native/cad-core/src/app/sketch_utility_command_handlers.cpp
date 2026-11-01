@@ -82,10 +82,6 @@ bool handle_sketch_utility_command(
         command.payload.at("snap_nearest").is_boolean()) {
       filter.snap_nearest = command.payload.at("snap_nearest").get<bool>();
     }
-    if (command.payload.contains("snap_quadrant") &&
-        command.payload.at("snap_quadrant").is_boolean()) {
-      filter.snap_quadrant = command.payload.at("snap_quadrant").get<bool>();
-    }
     if (command.payload.contains("snap_perpendicular") &&
         command.payload.at("snap_perpendicular").is_boolean()) {
       filter.snap_perpendicular =

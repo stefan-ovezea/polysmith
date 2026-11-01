@@ -461,7 +461,7 @@ export interface ViewportPanelProps {
   profileMarqueeArmed?: boolean;
   onPickSketchPoint: (
     pointId: string,
-    kind: "endpoint" | "center" | "quadrant",
+    kind: "endpoint" | "center",
     additive: boolean,
   ) => Promise<void>;
   armedSketchConstraint: ArmedSketchConstraint;

@@ -178,7 +178,6 @@ function makeViewport(lines: Line[]): ViewportState {
       snap_nearest: true,
       snap_circle_body: true,
       snap_arc_body: true,
-      snap_quadrant: true,
       snap_perpendicular: true,
       snap_parallel: true,
       snap_tangent: true,

@@ -311,9 +311,6 @@ function addSketchPointObjects({
   sketchPointObjectById: Map<string, THREE.Mesh>;
 }) {
   for (const sketchPoint of sceneData.sketchPoints) {
-    if (sketchPoint.kind === "quadrant") {
-      continue;
-    }
     const sketchPointObject = buildSketchPointObject(sketchPoint);
     sketchPointObject.userData.isSelected = sketchPoint.isSelected;
     sketchPointObjects.push(sketchPointObject);

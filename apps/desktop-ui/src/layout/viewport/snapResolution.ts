@@ -19,8 +19,7 @@ export interface SketchSnapCandidate {
     | "center"
     | "intersection"
     | "nearest"
-    | "tangent"
-    | "quadrant";
+    | "tangent";
   hostLineId?: string;
   tValue?: number;
   endpointHostLineId?: string;
@@ -332,7 +331,7 @@ function resolvedStaticSnapFromCandidate({
 }
 
 function isPriorityStaticSnap(candidate: SketchSnapCandidate) {
-  return candidate.kind === "endpoint" || candidate.kind === "midpoint" || candidate.kind === "quadrant";
+  return candidate.kind === "endpoint" || candidate.kind === "midpoint";
 }
 
 type ResolvedDynamicSnap = {
@@ -553,13 +552,6 @@ function appendCoreSnapCandidates(
           local: [candidate.local_x, candidate.local_y],
           label: candidate.label,
           kind: "center",
-        });
-        break;
-      case "quadrant":
-        candidates.push({
-          local: [candidate.local_x, candidate.local_y],
-          label: candidate.label,
-          kind: "quadrant",
         });
         break;
       // Projected vertices (from 3D body geometry projected onto the
@@ -1233,7 +1225,6 @@ const SNAP_FILTER_KEY_BY_KIND = {
   intersection: "snap_intersection",
   nearest: "snap_nearest",
   tangent: "snap_tangent",
-  quadrant: "snap_quadrant",
 } satisfies Record<SketchSnapKind, keyof SelectionFilter>;
 
 function selectionFilterKeyForSnapKind(kind: SketchSnapKind) {
