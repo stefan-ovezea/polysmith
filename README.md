@@ -258,6 +258,22 @@ pnpm core:build        # build native CAD core (native/cad-core/build/cad_core)
 
 You can run those steps individually if a single phase fails and you want to retry from there.
 
+#### If `occt:configure` fails with "does not appear to contain CMakeLists.txt"
+
+The source tree is empty: a submodule can be registered, look clean in
+`git submodule status`, and still have no files on disk — what an interrupted
+first checkout leaves behind. `git submodule update` will not repair that (it
+only compares commits), so use the correction sequence:
+
+```bash
+git pull            # get the current scripts
+pnpm deps:sync      # verifies every submodule and repairs the empty ones
+pnpm occt:configure # passes, or names the submodule that is still broken
+```
+
+Do this on any workstation that already cloned the repo before this fix landed;
+a fresh `git clone --recurse-submodules` is not affected.
+
 ### 4. Run the desktop app
 
 ```bash
