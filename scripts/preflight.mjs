@@ -15,7 +15,7 @@
  * real step.
  */
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,14 +70,25 @@ if (!gitVersion) {
   console.log(`git      : ${gitVersion}`);
   const gitmodules = readFileSync(join(root, ".gitmodules"), "utf-8");
   const submodulePaths = [...gitmodules.matchAll(/^\s*path\s*=\s*(.+)$/gm)].map((m) => m[1].trim());
-  const empty = submodulePaths.filter((p) => {
-    const dir = join(root, p);
-    return !existsSync(dir) || readdirSync(dir).length === 0;
+  // Count files in the submodule's *index*, not directory entries: a
+  // half-cloned submodule still contains a `.git` link file, so a
+  // readdir-based check reports "initialized" for an empty worktree and the
+  // failure surfaces later as a CMake error.
+  const notCheckedOut = submodulePaths.filter((p) => {
+    const result = spawnSync("git", ["ls-files"], {
+      cwd: join(root, p),
+      encoding: "utf8",
+      // third_party/occt8 lists ~35k paths; keep well clear of the 1 MB
+      // spawnSync default, which fails the call with ENOBUFS.
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (result.status !== 0) return true;
+    return (result.stdout ?? "").split(/\r?\n/).filter(Boolean).length === 0;
   });
-  if (empty.length > 0) {
-    warn(`submodules not initialized: ${empty.join(", ")} — pnpm deps:sync will pull them.`);
+  if (notCheckedOut.length > 0) {
+    warn(`submodules not checked out: ${notCheckedOut.join(", ")} — pnpm deps:sync will repair them.`);
   } else {
-    console.log(`✅  all ${submodulePaths.length} submodules initialized`);
+    console.log(`✅  all ${submodulePaths.length} submodules checked out`);
   }
 }
 

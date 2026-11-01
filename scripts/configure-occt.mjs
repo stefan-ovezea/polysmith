@@ -35,6 +35,32 @@ const freetypeBuild = join(root, "third_party", "freetype-build");
 const freetypeInstall = join(root, "third_party", "freetype-install");
 
 // ---------------------------------------------------------------------------
+// guards
+// ---------------------------------------------------------------------------
+
+/**
+ * A git submodule can be registered, have the expected HEAD, and still have an
+ * empty worktree — that is what an interrupted checkout leaves behind, and
+ * `git submodule update` will not repair it (see scripts/deps-sync.mjs).  Fail
+ * here with an actionable message instead of handing CMake a directory that
+ * exists but has no CMakeLists.txt; the raw CMake error ("The source directory
+ * ... does not appear to contain CMakeLists.txt") reads like a repo layout bug
+ * rather than a missing checkout.
+ */
+function requireSources(dir, name, submodule) {
+  if (existsSync(join(dir, "CMakeLists.txt"))) return;
+
+  console.error(`\n❌  ${name} sources are missing — ${join(dir, "CMakeLists.txt")} not found.`);
+  console.error(`    The ${submodule} submodule is registered but its working tree is empty.`);
+  console.error("    Fix:  pnpm deps:sync    (verifies and repairs empty submodules)");
+  console.error(`    Or:   git submodule update --init --force --checkout ${submodule}`);
+  process.exit(1);
+}
+
+requireSources(occtSrc, "OpenCascade 8", "third_party/occt8");
+requireSources(freetypeSrc, "FreeType", "third_party/freetype");
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 

@@ -135,10 +135,17 @@ git clone --recurse-submodules https://github.com/stefan-ovezea/polysmith.git
 cd polysmith
 ```
 
-If you already cloned without submodules:
+If you already cloned without submodules — or an interrupted first checkout
+left a submodule registered but empty — repair it with:
 
 ```bash
-git submodule update --init --recursive
+pnpm deps:sync        # verifies each submodule really has files on disk
+```
+
+Before `pnpm` is installed, the equivalent is:
+
+```bash
+git submodule update --init --recursive --force
 ```
 
 ### 2. Install prerequisites

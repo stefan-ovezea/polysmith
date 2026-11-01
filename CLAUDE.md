@@ -406,6 +406,25 @@ The bootstrap script handles this, but if skipping bootstrap:
 git submodule update --init --recursive
 ```
 
+### CMake: "source directory ... does not appear to contain CMakeLists.txt"
+
+A submodule is registered and `git submodule status` looks clean, yet its
+working tree is empty. That is what an interrupted first checkout leaves
+behind (Ctrl-C during a slow clone, dropped connection, antivirus lock):
+`.git/modules/<name>` carries the right HEAD, no files exist on disk, and a
+plain `git submodule update` exits 0 without repairing it — git only compares
+the recorded SHA-1 against HEAD, never the worktree.
+
+```bash
+pnpm deps:sync                                             # verify + repair all
+git submodule update --init --force --checkout third_party/occt8
+git -C third_party/occt8 reset --hard
+```
+
+`pnpm deps:sync` (`scripts/deps-sync.mjs`) is the supported path: it updates,
+checks that every submodule has files on disk, force-checks-out the broken
+ones, and fails with an actionable message if a repair does not stick.
+
 ## Wiki Documentation
 
 All project documentation lives in `wiki/` — this is the single canonical
