@@ -10,6 +10,9 @@ export type ConstraintType =
   // A point riding a circle's boundary (created when a line endpoint is drawn
   // onto a circle). Rendered as an "O" badge at the point.
   | "point_on_circle"
+  // A point riding an arc's swept boundary (created when a line endpoint is
+  // drawn onto an arc). Rendered as an "O" badge at the point.
+  | "point_on_arc"
   | "tangent"
   // Two entities tangent to each other (arcs/circles/line-circle) — the
   // pair form, distinct from the line+circle "tangent" constraint.

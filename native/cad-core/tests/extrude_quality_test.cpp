@@ -1405,19 +1405,23 @@ bool test_trim_vertex_owners_and_center_sharing() {
       document.feature_history.back().sketch_parameters.value();
   const std::string kQuadId = "vertex-arc-1-quadrant-0";
 
-  // Pre-trim: the horizontal line's endpoint snapped to the arc's
-  // quadrant vertex id (the arc's endpoint point indices consumed
-  // line ids 1-2, so the first added line is line-3) and the id
-  // appears exactly once — the quadrant emission must not push a
-  // second record with the same id.
+  // Pre-trim: the horizontal line (its start is exactly (50,0)) ends on the
+  // arc's quadrant position, but the endpoint no longer ADOPTS the derived
+  // quadrant id — it keeps a fresh vertex, so it can bind by point_on_arc the
+  // way a circle endpoint binds by point_on_circle. The quadrant marker itself
+  // must still appear exactly once and be owned by the arc.
   const auto horizontal_line = std::find_if(
       params.lines.begin(), params.lines.end(),
-      [&](const auto& l) { return l.end_vertex_id == kQuadId; });
+      [&](const auto& l) { return l.start_x == 50.0 && l.start_y == 0.0; });
   if (!expect(horizontal_line != params.lines.end(),
-              "vertex purge: line endpoint must snap to the arc quadrant id")) {
+              "vertex purge: horizontal line must exist")) {
     return false;
   }
   const std::string kLineId = horizontal_line->id;
+  if (!expect(horizontal_line->end_vertex_id != kQuadId,
+              "vertex purge: line endpoint must not adopt the arc quadrant id")) {
+    return false;
+  }
   {
     const auto quad_count = std::count_if(
         params.vertices.begin(), params.vertices.end(),
@@ -1480,24 +1484,33 @@ bool test_trim_vertex_owners_and_center_sharing() {
       return false;
     }
 
-    // The quadrant-named endpoint survives (line-1 still ends there)
-    // but no arc owns it anymore — the arcs no longer pass through it.
-    const auto quad = std::find_if(
+    // The line's own endpoint vertex survives the trim (the line still ends
+    // there), and the derived quadrant marker no longer belongs to any arc —
+    // the surviving arcs no longer pass through that cardinal point.
+    const auto line_it = std::find_if(
+        p.lines.begin(), p.lines.end(),
+        [&](const auto& l) { return l.id == kLineId; });
+    if (!expect(line_it != p.lines.end(),
+                "vertex purge: trimmed line must survive")) {
+      return false;
+    }
+    const auto line_end = std::find_if(
         p.vertices.begin(), p.vertices.end(),
-        [&](const auto& v) { return v.id == kQuadId; });
-    if (!expect(quad != p.vertices.end(),
+        [&](const auto& v) { return v.id == line_it->end_vertex_id; });
+    if (!expect(line_end != p.vertices.end(),
                 "vertex purge: line endpoint vertex must survive")) {
       return false;
     }
-    if (!expect(std::find(quad->geometry_owner_ids.begin(),
-                          quad->geometry_owner_ids.end(),
-                          kLineId) != quad->geometry_owner_ids.end() &&
-                    std::find(quad->geometry_owner_ids.begin(),
-                              quad->geometry_owner_ids.end(),
-                              "arc-1") == quad->geometry_owner_ids.end() &&
-                    std::find(quad->geometry_owner_ids.begin(),
-                              quad->geometry_owner_ids.end(),
-                              "arc-2") == quad->geometry_owner_ids.end(),
+    const auto quad = std::find_if(
+        p.vertices.begin(), p.vertices.end(),
+        [&](const auto& v) { return v.id == kQuadId; });
+    if (!expect(quad == p.vertices.end() ||
+                    (std::find(quad->geometry_owner_ids.begin(),
+                               quad->geometry_owner_ids.end(),
+                               "arc-1") == quad->geometry_owner_ids.end() &&
+                     std::find(quad->geometry_owner_ids.begin(),
+                               quad->geometry_owner_ids.end(),
+                               "arc-2") == quad->geometry_owner_ids.end()),
                 "vertex purge: stale arc ownership must be removed")) {
       return false;
     }

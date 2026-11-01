@@ -115,6 +115,29 @@
                 system_->addConstraintPointOnCircle(gcs_points_[pit->second],
                                                     gcs_circles_[cit->second]);
             }
+        } else if (sc.kind == "point_on_arc" && sc.target_ids.size() >= 2) {
+            // target_ids = [vertex_id, arc_id]: a point that rides the arc's
+            // boundary. planegcs has no native PointOnArc primitive (its arc
+            // rules only pin the arc's own start/end), so the circumcircle is
+            // expressed as P2PDistance(point, center, radius) with the radius
+            // pinned first — the same D-008 pinning as point_on_circle, so the
+            // solve moves the POINT rather than resizing the arc. The sweep
+            // (which half of the circumcircle the arc covers) is enforced
+            // deterministically by enforce_point_on_arc_constraints after the
+            // solve.
+            auto pit = point_id_to_index_.find(sc.target_ids[0]);
+            auto ait = arc_id_to_index_.find(sc.target_ids[1]);
+            if (pit != point_id_to_index_.end() &&
+                ait != arc_id_to_index_.end()) {
+                param_storage_.push_back(*gcs_arcs_[ait->second].rad);
+                system_->addConstraintCircleRadius(
+                    gcs_arcs_[ait->second],
+                    &param_storage_[param_storage_.size() - 1]);
+                system_->addConstraintP2PDistance(
+                    gcs_points_[pit->second],
+                    gcs_arcs_[ait->second].center,
+                    gcs_arcs_[ait->second].rad);
+            }
         } else if (sc.kind == "symmetric" && sc.target_ids.size() >= 3) {
             // NOT solver-mapped: planegcs has no native mirror-symmetry
             // primitive (PointOnPerpBisector constrains equidistance

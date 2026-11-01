@@ -322,6 +322,38 @@ bool test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint() {
                 "quadrant id: the endpoint is bound by a point_on_circle constraint");
 }
 
+// A line drawn onto an ARC's body (not an endpoint or a quadrant) is bound by
+// point_on_arc, mirroring the circle's point_on_circle. planegcs has no native
+// PointOnArc, so the solver pins the circumcircle radius and
+// enforce_point_on_arc_constraints keeps the point on the swept span after each
+// solve.
+bool test_a_line_drawn_on_an_arc_body_is_bound_by_point_on_arc() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  // Quarter arc centred at the origin: (10,0) → (0,10) through (7.07,7.07).
+  manager.add_sketch_arc(10.0, 0.0, 0.0, 10.0, 7.0710678, 7.0710678,
+                         "three_point");
+  // Start exactly on the arc body (45°) — not an endpoint or a quadrant.
+  const DocumentState document =
+      manager.add_sketch_line(7.0710678, 7.0710678, 20.0, 20.0, false, "", true);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "arc attach: the sketch exists")) return false;
+
+  const auto& line = parameters->lines.back();
+  const std::string arc_id = parameters->arcs.front().id;
+  const auto constraint_it = std::find_if(
+      parameters->constraints.begin(), parameters->constraints.end(),
+      [&](const auto& constraint) {
+        return constraint.kind == "point_on_arc" &&
+               constraint.target_ids.size() >= 2 &&
+               constraint.target_ids[0] == line.start_vertex_id &&
+               constraint.target_ids[1] == arc_id;
+      });
+  return expect(constraint_it != parameters->constraints.end(),
+                "arc attach: the endpoint is bound by a point_on_arc constraint");
+}
+
 // A line drawn FROM a circle keeps its endpoint on the boundary. It used to reuse
 // the derived quadrant vertex id, so `vertex_is_derived` skipped attaching it and
 // the endpoint was tied to the circle by that shared name alone — which the circle
@@ -666,6 +698,7 @@ int main() {
   if (!test_a_line_drawn_from_a_quadrant_follows_the_circle()) return 1;
   if (!test_a_line_drawn_from_a_quadrant_follows_a_resize()) return 1;
   if (!test_a_line_drawn_on_a_quadrant_is_bound_by_a_constraint()) return 1;
+  if (!test_a_line_drawn_on_an_arc_body_is_bound_by_point_on_arc()) return 1;
   if (!test_resizing_a_circle_keeps_the_centre_fixed()) return 1;
   if (!test_resizing_a_circle_updates_its_profile()) return 1;
   if (!test_resizing_a_circle_keeps_the_attached_point_at_its_angle()) return 1;

@@ -8,6 +8,7 @@ constexpr double kCoincidentTolerance = 0.01;
 // the enforcement automatically.
 void enforce_midpoint_anchors(SketchFeatureParameters& parameters);
 void enforce_point_line_anchors(SketchFeatureParameters& parameters);
+void enforce_point_on_arc_constraints(SketchFeatureParameters& parameters);
 void enforce_line_HV_constraints(SketchFeatureParameters& parameters);
 void enforce_all_equal_length_relations(SketchFeatureParameters& parameters);
 void enforce_all_perpendicular_relations(SketchFeatureParameters& parameters);

@@ -520,6 +520,7 @@ export const viewportStateSchema = z.object({
         "coincident",
         "concentric",
         "point_on_circle",
+        "point_on_arc",
         "quadrant",
         "mirror",
       ]),

@@ -121,6 +121,22 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
     }
   }
 
+  // Nearest arc boundary. An arc's boundary is its swept perimeter; the same
+  // radial test as a circle locates the circumcircle, and
+  // enforce_point_on_arc_constraints keeps the point on the actual sweep after
+  // the solve (planegcs has no native PointOnArc).
+  const SketchArc* arc_host = nullptr;
+  double arc_distance = tolerance_mm;
+  for (const auto& arc : parameters.arcs) {
+    const double radial = std::abs(std::hypot(x - arc.center_x,
+                                              y - arc.center_y) -
+                                   arc.radius);
+    if (radial <= arc_distance) {
+      arc_distance = radial;
+      arc_host = &arc;
+    }
+  }
+
   // Attach to whichever is nearer: the line body or the circle boundary. A shared
   // endpoint on a circle is already tied to it (endpoint sharing), so this only fires
   // for a fresh vertex drawn onto the perimeter.
@@ -157,6 +173,35 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
     log_info("sketch", "attached " + vertex_id + " to the boundary of " +
                            circle_host->id +
                            " (point_on_circle)");
+    return;
+  }
+
+  // Arc boundary attachment. A circle wins the tie above (checked first), but an
+  // arc still beats a line body: a fresh vertex aimed at the arc's edge gets a
+  // `point_on_arc` constraint — the sweep is enforced deterministically after the
+  // solve, because planegcs has no native PointOnArc primitive.
+  if (arc_host != nullptr && (host == nullptr || arc_distance <= host_distance)) {
+    const bool added = add_sketch_constraint(
+        parameters, SketchConstraint{
+                        .constraint_id = next_constraint_id(
+                            parameters, "constraint-point-on-arc-"),
+                        .kind = "point_on_arc",
+                        .target_ids = {vertex_id, arc_host->id},
+                    });
+    if (added) {
+      const double dx = x - arc_host->center_x;
+      const double dy = y - arc_host->center_y;
+      const double radial_dist = std::hypot(dx, dy);
+      if (radial_dist > 1e-9) {
+        const double snap_x = arc_host->center_x +
+                              arc_host->radius * (dx / radial_dist);
+        const double snap_y = arc_host->center_y +
+                              arc_host->radius * (dy / radial_dist);
+        propagate_connected_point_move(parameters, vertex_id, snap_x, snap_y);
+      }
+      log_info("sketch", "attached " + vertex_id + " to the boundary of " +
+                             arc_host->id + " (point_on_arc)");
+    }
     return;
   }
 
