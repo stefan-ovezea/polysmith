@@ -225,6 +225,12 @@
       polysmith::core::SketchVertex vtx{};
       vtx.id = read_string(vtx_payload, "vertex_id");
       vtx.kind = read_string(vtx_payload, "kind");
+      // Obsolete derived records: files written before 2026-11-01 carry
+      // "quadrant" vertices. They are derived from their curve and the UI's
+      // schema no longer accepts the kind, so an old file is read without them
+      // rather than rejected (there is no migration and no version bump — no
+      // document is expected to need one).
+      if (vtx.kind == "quadrant") continue;
       vtx.x = read_number(vtx_payload, "x");
       vtx.y = read_number(vtx_payload, "y");
       vtx.is_fixed = read_bool(vtx_payload, "is_fixed");

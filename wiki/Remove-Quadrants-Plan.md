@@ -1,7 +1,16 @@
 # Remove quadrant vertices — design and plan
 
 **Branch:** `feature/remove-quadrants` (from `dev` @ 24e2a7a)
-**Status:** planned, not implemented. Three decisions in §4 need a call before P1.
+**Status:** implemented 2026-11-01 — P0–P7 landed on the branch. Gates: `pnpm
+test:core` 89/89, `tsc --noEmit` clean, `pnpm lint:architecture` 6/6. In-app
+verification of the trim hover and the snap matrix is still outstanding (the app
+must be restarted against the new core).
+**Decisions taken (2026-11-01):** D1 remove the quadrant snap entirely; D2 **no
+migration and no format-version bump** — there are no documents in the wild that
+need to stay compatible, so old files are simply read without their quadrant
+records (the vertex parser skips the kind; the curve rebuilds what it needs); D3
+drop the persisted `snap_quadrant` flag (an old file's key is ignored, not
+migrated).
 **Owner:** Stefan. Written 2026-11-01.
 
 ---
@@ -111,14 +120,13 @@ cardinal magnet on circles. Alternative: keep it as a *snap-only* candidate mapp
 `point_on_circle` at commit (work, and duplicates `On circle`).
 
 **D2 — Old documents.**
-*(recommended: strip at load, no remap)*
-Vertices are rebuilt on every recompute, and the survey above found zero references.
-Migration `1 → 2` deletes `vertices[]` entries with `kind == "quadrant"`. If a
-hand-edited or older file *does* reference such an id (line endpoint, constraint,
-dimension, anchor, selection), drop the reference and log a warning naming the entity —
-`Data-Safety-Design.md` policy: degrade with a warning, never crash. No geometry is
-lost because the referenced point is always on the curve it came from; if the reference
-was a constraint, the constraint goes and the sketch shows one more DOF.
+*(decided 2026-11-01: nothing to keep compatible — no migration)*
+There are no documents in the wild that must keep loading, so the format version
+stays at 1 and no migration step is written. The vertex parser simply skips
+records whose `kind == "quadrant"` (`feature_parameter_sketch_geometry_parser.inc`),
+which is what keeps a stray old file from failing the UI's schema while adding no
+versioning machinery. Nothing references those ids in the four sample projects, and
+the point is always re-derivable from its curve.
 
 **D3 — Keep the persisted `snap_quadrant` flag readable for one release?**
 *(recommended: yes, parse-and-ignore)*
@@ -199,18 +207,10 @@ Order matters: **core emission first**, then schemas — a reply carrying `kind:
 - [ ] In-app: hover a circle with the trim tool and confirm the red highlight is
       reachable all the way round the outline (currently needs the entity-first branch).
 
-### P5 — migration + corpus (1 d)
-- [ ] `format/format_version.h`: `kCurrentFormatVersion = 2`.
-- [ ] `format/migrations.cpp`: `migrate_1_to_2` — drop `vertices[]` entries with
-      `kind == "quadrant"`; scan `lines`, `arcs`, `circles`, `constraints`, `dimensions`,
-      `anchors`, `projections`, `fillets`, `chamfers`, `slots`, `splines` for references
-      to dropped ids; detach each and append a warning (`Data-Safety-Design.md` §A.2 —
-      one step per version, never edited after ship).
-- [ ] Corpus fixture `quadrant_v1.polysmith`: a v1 document containing quadrant vertices
-      and one line endpoint that adopted a quadrant id (hand-authored, since the current
-      code can no longer produce one). Assert: loads, no quadrant vertices survive, the
-      line keeps its geometry and gets a fresh vertex, one warning is logged.
-- [ ] `cad_core_format_version_test` gains the v2 case.
+### P5 — old files (dropped)
+- [x] No migration, no format bump: `format_version` stays 1.
+- [x] The vertex parser skips `kind == "quadrant"` records, so a pre-2026-11-01 file
+      loads without them and without a schema failure.
 
 ### P6 — tests + UI suites (1 d)
 - [ ] C++: update `committed_attach_test.cpp` (23 refs — the "line from a quadrant" test
