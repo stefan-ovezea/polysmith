@@ -180,6 +180,16 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
   // `point_on_arc` constraint — the sweep is enforced deterministically after the
   // solve, because planegcs has no native PointOnArc primitive.
   if (arc_host != nullptr && (host == nullptr || arc_distance <= host_distance)) {
+    // The arc's own endpoints are on it by definition; a vertex shared with
+    // one of them IS the attachment, so a point_on_arc here is redundant.
+    // Worse, the centre-drag translation moves point_on_arc points on top
+    // of the arc's own endpoint translation, so an own-endpoint would drift
+    // a second (dx,dy) off the radius each commit (the "lines detach on
+    // every centre drag" bug). Refuse it.
+    if (vertex_id == arc_host->start_vertex_id ||
+        vertex_id == arc_host->end_vertex_id) {
+      return;
+    }
     const bool added = add_sketch_constraint(
         parameters, SketchConstraint{
                         .constraint_id = next_constraint_id(

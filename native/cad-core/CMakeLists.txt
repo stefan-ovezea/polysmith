@@ -630,6 +630,11 @@ polysmith_add_core_test(cad_core_constraint_completion_test tests/constraint_com
 # complete profile sets for mixed line+arc loops.
 polysmith_add_core_test(cad_core_parametric_arc_test tests/parametric_arc_test.cpp)
 
+# Arc ↔ line shared-endpoint regression suite — real vs trimmed arcs with
+# shared-end lines: centre-drag rigid-arc invariant (radius/sweep/on-circle
+# preserved), commit convergence, and the is_fixed/ccw/vertex-id field diff.
+polysmith_add_core_test(cad_core_sketch_arc_lines_test tests/sketch_arc_lines_test.cpp)
+
 # Sketch tool whitelist regression suite — the two sketch-tool whitelists
 # (validate_tool / is_supported_sketch_tool) must accept identical ids,
 # and commands.schema.json must match the real command vocabulary.

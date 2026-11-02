@@ -8,6 +8,34 @@ import {
   updateSketchLineObject,
 } from "./sceneIncrementalUpdate";
 
+// Right-handed axes of the sketch plane. The drag preview must sample the
+// arc against THESE axes — the geometry-derived basis inside
+// updateSketchArcObject takes its normal from `start × end`, which is
+// negative for any arc wider than 180° and flips the sampled direction
+// (the "negative arc" seen while dragging, which recovers on commit
+// because the committed render uses these same plane axes).
+function sketchPlaneAxes(
+  planeId: string,
+  planeFrame: SketchPlaneFrame | null,
+): {
+  xAxis: [number, number, number];
+  yAxis: [number, number, number];
+} {
+  if (planeFrame) {
+    return {
+      xAxis: [planeFrame.x_axis.x, planeFrame.x_axis.y, planeFrame.x_axis.z],
+      yAxis: [planeFrame.y_axis.x, planeFrame.y_axis.y, planeFrame.y_axis.z],
+    };
+  }
+  if (planeId === "ref-plane-yz") {
+    return { xAxis: [0, 1, 0], yAxis: [0, 0, 1] };
+  }
+  if (planeId === "ref-plane-xz") {
+    return { xAxis: [1, 0, 0], yAxis: [0, 0, 1] };
+  }
+  return { xAxis: [1, 0, 0], yAxis: [0, 1, 0] };
+}
+
 // Shared live-preview mutation for sketch drag interactions.
 //
 // Endpoint drag and the Move tool both solve a preview sketch locally
@@ -91,6 +119,7 @@ export function applySolvedPointsToSketchScene({
   }
 
   if (sketch.arcs) {
+    const { xAxis, yAxis } = sketchPlaneAxes(planeId, planeFrame);
     for (const arc of sketch.arcs) {
       const centerId =
         arc.center_vertex_id ?? `point-arc-${arc.arc_id}-center`;
@@ -102,8 +131,10 @@ export function applySolvedPointsToSketchScene({
       }
       const centerWorld = toWorld(center);
       const startWorld = toWorld(start);
-      // Radius follows the dragged endpoint so the preview matches the
-      // commit (the core recomputes the circumradius from center+endpoints).
+      // Sample against the sketch plane's axes (see sketchPlaneAxes below):
+      // the geometry-derived basis used without them takes its normal from
+      // start x end, which is negative for arcs wider than 180° and flips
+      // the sampled direction (the "negative arc during drag" report).
       const radius = Math.hypot(
         startWorld[0] - centerWorld[0],
         startWorld[1] - centerWorld[1],
@@ -116,8 +147,8 @@ export function applySolvedPointsToSketchScene({
         end: toWorld(end),
         radius,
         ccw: arc.ccw,
-        // No plane axes: the updater derives the sampling basis from the
-        // arc's own center/start/end geometry.
+        xAxis,
+        yAxis,
       });
     }
   }

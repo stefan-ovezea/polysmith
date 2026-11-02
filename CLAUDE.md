@@ -40,6 +40,14 @@ implementation status, completed phases, key files changed, and the next-session
 checklist. This is the living task tracker — read it before starting any code
 work to avoid redoing or breaking completed features.
 
+## Session Memory (binding)
+
+- **The user always rebuilds and relaunches before testing:**
+  `pnpm core:rebuild && pnpm dev`. Never suggest the app is stale, not
+  rebuilt, or not reloaded — that is a false excuse and has been explicitly
+  rejected. Treat any "still broken" report as a real defect against the
+  current code and investigate the cause.
+
 ## Build & Development Commands
 
 ```bash

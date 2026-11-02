@@ -41,6 +41,53 @@
       const double proj_y = line.start_y + t * dy;
       if (!points_match(proj_x, proj_y, px, py)) continue;
 
+      // A line that is TANGENT to the circle here only TOUCHES it. Splitting
+      // such a line leaves a collinear stub past the tangent point — the
+      // "trim adds 2 small segments" report: a snapped tangent line usually
+      // overshoots the true tangent point by a fraction of a mm to a few mm,
+      // which is enough for the split to fire. Truncate the overshooting end
+      // to the tangent point instead: the line stays a single piece, still
+      // shares the arc's endpoint vertex, and the stub never appears.
+      {
+        const double len = std::sqrt(len_sq);
+        const double ldx = dx / len;
+        const double ldy = dy / len;
+        const auto& new_arc = params.arcs.back();
+        const double centre_dist =
+            std::abs((new_arc.center_x - line.start_x) * ldy -
+                     (new_arc.center_y - line.start_y) * ldx);
+        // The relation is the authoritative "this line is tangent" signal;
+        // the geometric test catches one that merely snaps close (its
+        // point_on_circle pin keeps the endpoint on the boundary but does
+        // not guarantee exact tangency).
+        bool tangent = std::abs(centre_dist - new_arc.radius) < 0.5;
+        if (!tangent) {
+          for (const auto& rel : params.line_relations) {
+            if (rel.kind == "tangent_line_circle" &&
+                rel.first_line_id == line.id &&
+                rel.second_line_id == entity_id) {
+              tangent = true;
+              break;
+            }
+          }
+        }
+        if (tangent) {
+          if (t <= 0.5) {
+            // Overshoot is on the start side — keep the long end.
+            line.start_x = px;
+            line.start_y = py;
+            line.start_vertex_id = split_pt_id;
+          } else {
+            // Overshoot is on the end side — keep the long start.
+            line.end_x = px;
+            line.end_y = py;
+            line.end_vertex_id = split_pt_id;
+          }
+          line.constraint = std::nullopt;
+          return true;
+        }
+      }
+
       // Split: original line shortens to split point, new line
       // continues from split point to old end.
       const double old_end_x = line.end_x;

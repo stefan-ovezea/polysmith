@@ -381,7 +381,11 @@ export function resolveEndpointDragFrame({
     // Dragging an ARC CENTRE: mirror the circle path — translate the
     // point_on_arc-attached points by the centre's delta so they ride the arc
     // at the same relative spot instead of sliding around it.
-    const draggedArc = sketch?.arcs.find(
+    // `arcs` is optional on the parameters; a circle-only sketch has no
+    // `arcs` key at all. Guard it — an unguarded `.find` here threw and
+    // aborted the whole preview solve, so a line attached to a CIRCLE never
+    // followed the circle during the drag (it only moved on commit).
+    const draggedArc = (sketch?.arcs ?? []).find(
       (a) => a.center_vertex_id === next.vertexId,
     );
     if (draggedArc && sketch) {

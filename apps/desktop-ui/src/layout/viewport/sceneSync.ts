@@ -90,6 +90,10 @@ interface ViewportSceneSyncRefs {
   dragCursor: MutableRef<{ x: number; y: number } | null>;
   lastGeometryKey: MutableRef<string>;
   lastSceneBuildKey: MutableRef<string>;
+  /** Geometry key of the viewport the live preview was drawn against. Latched
+   *  on a commit and held until a viewport with a NEW key arrives, so the
+   *  intermediate session-state syncs cannot repaint the pre-drag position. */
+  pendingPreviewKey: MutableRef<string | null>;
   /** Dedicated drawing overlay groups (registered by
    *  addDrawingSheetObjects, repainted in place by
    *  syncDrawingOverlays) — preview replies never rebuild the sheet. */
@@ -220,8 +224,20 @@ interface SyncViewportSceneParams {
   paintDofStatusColors: () => void;
 }
 
-export function syncViewportScene(params: SyncViewportSceneParams) {
-  const groups = readyViewportSceneGroups(params.groups);
+// Cheap hash of the SKETCH geometry. The scene's `geometryKey` only hashes the
+// solid primitives, so for a sketch-only document it is constant (e.g.
+// "plane:ref-plane-xy") and cannot tell whether the viewport has caught up
+// with a committed drag. The sketch points do move on a commit.
+function sketchGeometryKey(sceneData: ViewportScene | null): string {
+  const json = JSON.stringify(sceneData?.sketchPoints ?? []);
+  let h = 5381;
+  for (let i = 0; i < json.length; i += 1) {
+    h = ((h * 33) ^ json.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16);
+}
+
+export function syncViewportScene(params: SyncViewportSceneParams) {  const groups = readyViewportSceneGroups(params.groups);
   if (!groups) {
     return;
   }
@@ -245,6 +261,32 @@ export function syncViewportScene(params: SyncViewportSceneParams) {
     })
   ) {
     return;
+  }
+
+  // A commit is in flight: the preview has already mutated the real scene
+  // objects to the committed position, but the viewport state describing it
+  // has not arrived. The document update changes the build key first, so a
+  // rebuild here would paint the PRE-drag position for a frame (the "old
+  // position flashes on commit"). Latch the viewport key and keep the
+  // mutated preview until a viewport with a NEW key arrives.
+  if (hadPendingCommit) {
+    params.refs.pendingPreviewKey.current = sketchGeometryKey(params.sceneData);
+    releaseEndpointDragPreview({
+      refs: params.refs,
+      hadPendingCommit,
+      clearDragPreviewLines: params.clearDragPreviewLines,
+      setConstraintPreview: params.setConstraintPreview,
+    });
+    return;
+  }
+  // Subsequent session-state syncs still carry the pre-commit viewport;
+  // hold the preview until the SKETCH geometry actually changes.
+  if (params.refs.pendingPreviewKey.current !== null) {
+    if (sketchGeometryKey(params.sceneData) ===
+        params.refs.pendingPreviewKey.current) {
+      return;
+    }
+    params.refs.pendingPreviewKey.current = null;
   }
 
   rebuildViewportScene(params, groups);

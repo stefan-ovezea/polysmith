@@ -179,11 +179,34 @@ void update_sketch_vertex(FeatureEntry& feature,
           a.start_y += dy;
           a.end_x += dx;
           a.end_y += dy;
+          // A trimmed arc's endpoints are frozen by the trim command to
+          // protect the loop it welded against the solver. A deliberate
+          // centre drag must still move them — and the lines welded to
+          // them — or the centre moves alone, the radius drifts off the
+          // endpoints and the attached lines detach ("extra geometry on
+          // centre drag"). Lift the flag for the translate + propagate,
+          // then restore it so the loop stays protected.
+          auto set_vertex_fixed = [&](const std::string& id, bool fixed) {
+            for (auto& v : parameters.vertices) {
+              if (v.id == id) {
+                v.is_fixed = fixed;
+                return;
+              }
+            }
+          };
+          const bool start_was_fixed =
+              vertex_is_fixed(parameters, a.start_vertex_id);
+          const bool end_was_fixed =
+              vertex_is_fixed(parameters, a.end_vertex_id);
+          set_vertex_fixed(a.start_vertex_id, false);
+          set_vertex_fixed(a.end_vertex_id, false);
           // Move connected lines that share the arc's endpoints.
           propagate_connected_point_move(parameters, a.start_vertex_id,
                                          a.start_x, a.start_y);
           propagate_connected_point_move(parameters, a.end_vertex_id,
                                          a.end_x, a.end_y);
+          set_vertex_fixed(a.start_vertex_id, start_was_fixed);
+          set_vertex_fixed(a.end_vertex_id, end_was_fixed);
           // Translate the point_on_arc-attached points by the centre's delta
           // so they ride the arc at their same relative spot — the same
           // contract the circle path above applies to point_on_circle.
@@ -191,6 +214,17 @@ void update_sketch_vertex(FeatureEntry& feature,
             if (constraint.kind != "point_on_arc") continue;
             if (constraint.target_ids.size() < 2) continue;
             if (constraint.target_ids[1] != a.id) continue;
+            // The arc's own endpoints already translated with the arc
+            // (a.start_x/y, a.end_x/y) above. A point_on_arc naming one of
+            // them is redundant, and translating it here would shift it a
+            // SECOND (dx,dy) — the endpoint then rides at 2·delta while the
+            // centre moved 1·delta, so |endpoint − centre| drifts off the
+            // radius and the drawn arc no longer reaches the welded lines
+            // ("lines detach a bit more on every centre-drag commit").
+            if (constraint.target_ids[0] == a.start_vertex_id ||
+                constraint.target_ids[0] == a.end_vertex_id) {
+              continue;
+            }
             const auto pos =
                 point_position_of(parameters, constraint.target_ids[0]);
             if (!pos.has_value()) continue;
