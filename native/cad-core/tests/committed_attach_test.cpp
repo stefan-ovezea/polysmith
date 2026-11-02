@@ -353,6 +353,35 @@ bool test_a_line_drawn_on_an_arc_body_is_bound_by_point_on_arc() {
                 "arc attach: the endpoint is bound by a point_on_arc constraint");
 }
 
+// A line drawn onto an arc rides it when the arc's centre moves — the same
+// contract a circle gives point_on_circle. Plain arcs are not in the solver,
+// so the centre-drag translation of point_on_arc points plus the enforcement
+// pass are what keep the point on the arc.
+bool test_a_line_drawn_on_an_arc_follows_the_arc() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_arc(10.0, 0.0, 0.0, 10.0, 7.0710678, 7.0710678,
+                         "three_point");
+  DocumentState document =
+      manager.add_sketch_line(7.0710678, 7.0710678, 20.0, 20.0, false, "", true);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "arc follow: the sketch exists")) return false;
+  const std::string center_vertex = before->arcs.front().center_vertex_id;
+
+  // Move the arc's centre by (+5, 0); the line start rides to (12.07, 7.07).
+  document = manager.update_sketch_vertex(center_vertex, 5.0, 0.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "arc follow: the sketch survives")) return false;
+  const auto& line = after->lines.back();
+  return expect(
+      std::abs(line.start_x - 12.0710678) < 1e-2 &&
+          std::abs(line.start_y - 7.0710678) < 1e-2,
+      ("arc follow: the line start rides the arc to (12.07,7.07) - got (" +
+       std::to_string(line.start_x) + ", " + std::to_string(line.start_y) + ")")
+          .c_str());
+}
+
 // A line drawn FROM a circle keeps its endpoint on the boundary. The endpoint
 // owns a real vertex and carries a point_on_circle, so it rides the circle like
 // any other attached point. Regression: "line from circle does not stay attached
@@ -694,6 +723,7 @@ int main() {
   if (!test_a_line_drawn_from_a_circle_follows_a_resize()) return 1;
   if (!test_a_line_drawn_on_a_circle_cardinal_point_is_bound_by_a_constraint()) return 1;
   if (!test_a_line_drawn_on_an_arc_body_is_bound_by_point_on_arc()) return 1;
+  if (!test_a_line_drawn_on_an_arc_follows_the_arc()) return 1;
   if (!test_resizing_a_circle_keeps_the_centre_fixed()) return 1;
   if (!test_resizing_a_circle_updates_its_profile()) return 1;
   if (!test_resizing_a_circle_keeps_the_attached_point_at_its_angle()) return 1;

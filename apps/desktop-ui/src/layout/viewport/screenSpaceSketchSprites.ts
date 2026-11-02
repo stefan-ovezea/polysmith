@@ -183,10 +183,14 @@ function updateSpriteScale({
     sprite.position.addScaledVector(cameraDir, -worldUnitsPerPixel * 3);
   }
 
-  // point_on_circle badges sit on a bound vertex; nudge them up-right by a
-  // constant SCREEN-space offset (worldUnitsPerPixel converts pixels to world
-  // units), so they clear the vertex at any zoom instead of a fixed mm offset.
-  if (sprite.userData.sketchConstraintKind === "point_on_circle") {
+  // point_on_circle/point_on_arc badges sit on a bound vertex; nudge them
+  // up-right by a constant SCREEN-space offset (worldUnitsPerPixel converts
+  // pixels to world units), so they clear the vertex at any zoom instead of a
+  // fixed mm offset.
+  if (
+    sprite.userData.sketchConstraintKind === "point_on_circle" ||
+    sprite.userData.sketchConstraintKind === "point_on_arc"
+  ) {
     const nudgePx = 12;
     sprite.position.addScaledVector(cameraRight, worldUnitsPerPixel * nudgePx);
     sprite.position.addScaledVector(cameraUp, worldUnitsPerPixel * nudgePx);

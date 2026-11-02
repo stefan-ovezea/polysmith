@@ -47,6 +47,10 @@ struct TrimConstraintTransfer {
   // Coincident constraints touching the trimmed entity / its points,
   // re-applied only when all targets survive AND still coincide.
   std::vector<SketchConstraint> coincident_snapshot;
+  // Vertices that rode the trimmed circle/arc via point_on_circle /
+  // point_on_arc. The shared cleanup erases those constraints with the
+  // entity; apply re-binds the survivors onto the arc as point_on_arc.
+  std::vector<std::string> point_on_curve_vertices;
 };
 
 TrimConstraintTransfer capture_trim_constraint_transfer(
@@ -112,6 +116,16 @@ TrimConstraintTransfer capture_trim_constraint_transfer(
       }
     }
     if (any_touch) plan.coincident_snapshot.push_back(c);
+  }
+
+  // Points that rode the trimmed circle/arc (target_ids = [vertex, entity]).
+  for (const auto& c : params.constraints) {
+    if ((c.kind != "point_on_circle" && c.kind != "point_on_arc") ||
+        c.target_ids.size() < 2) {
+      continue;
+    }
+    if (c.target_ids[1] != entity_id) continue;
+    plan.point_on_curve_vertices.push_back(c.target_ids[0]);
   }
 
   return plan;
@@ -366,6 +380,36 @@ void sweep_orphan_coincident_constraints(SketchFeatureParameters& params) {
       params.constraints.end());
 }
 
+// True when (x, y) sits on the arc's boundary (within the coincidence
+// tolerance) AND inside its angular sweep. Used by the trim re-bind to
+// decide which former circle-bound points belong to the surviving arc.
+bool point_lies_on_arc_sweep(const SketchArc& arc, double x, double y) {
+  const double radial = std::abs(std::hypot(x - arc.center_x, y - arc.center_y) -
+                                 arc.radius);
+  if (radial > kTrimCoincidentTolerance) return false;
+  const double a = std::atan2(y - arc.center_y, x - arc.center_x);
+  const double as = std::atan2(arc.start_y - arc.center_y,
+                               arc.start_x - arc.center_x);
+  const double ae =
+      std::atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+  double sweep = ae - as;
+  if (arc.ccw && sweep < 0.0) sweep += 2.0 * kTransferPi;
+  if (!arc.ccw && sweep > 0.0) sweep -= 2.0 * kTransferPi;
+  // Normalise the delta INTO the sweep's direction ([0, 2pi) ccw, (-2pi, 0]
+  // cw). Folding to [-pi, pi) is wrong for arcs sweeping more than pi: a
+  // point past the halfway mark folds negative and is wrongly judged outside
+  // the sweep, so the trim re-bind drops it (the missing badge).
+  double da = a - as;
+  da = std::fmod(da, 2.0 * kTransferPi);
+  if (arc.ccw) {
+    if (da < 0.0) da += 2.0 * kTransferPi;
+  } else {
+    if (da > 0.0) da -= 2.0 * kTransferPi;
+  }
+  const double tol = 1e-9;
+  return arc.ccw ? (da <= sweep + tol) : (da >= sweep - tol);
+}
+
 void apply_trim_constraint_transfer(
     SketchFeatureParameters& params, const TrimConstraintTransfer& plan,
     const std::vector<std::string>& survivors,
@@ -503,5 +547,42 @@ void apply_trim_constraint_transfer(
   for (const auto& c : plan.coincident_snapshot) {
     if (!coincident_record_alive(params, c, positions)) continue;
     add_sketch_constraint(params, c);
+  }
+
+  // 7. Re-bind points that rode the trimmed circle/arc onto the surviving
+  // arc. Trimming a circle to an arc used to erase every point_on_circle
+  // and leave the points free; the survivors now carry point_on_arc — the
+  // same attachment a point drawn onto an arc gets (see
+  // attach_committed_vertex.inc). Only points whose angle falls inside the
+  // survivor's sweep are re-bound; points on the trimmed-away part stay
+  // free, which is correct.
+  if (!plan.point_on_curve_vertices.empty()) {
+    const auto live = live_sketch_point_positions(params);
+    for (const auto& vertex_id : plan.point_on_curve_vertices) {
+      const auto pos = live.find(vertex_id);
+      if (pos == live.end()) continue;
+      for (const auto& id : survivors) {
+        const auto arc_it = std::find_if(
+            params.arcs.begin(), params.arcs.end(),
+            [&](const SketchArc& a) { return a.id == id; });
+        if (arc_it == params.arcs.end()) continue;
+        // The arc's own endpoints are on it by definition; binding one with
+        // point_on_arc is redundant and can fight the start/end.
+        if (vertex_id == arc_it->start_vertex_id ||
+            vertex_id == arc_it->end_vertex_id) {
+          continue;
+        }
+        if (!point_lies_on_arc_sweep(*arc_it, pos->second.first,
+                                     pos->second.second)) {
+          continue;
+        }
+        add_sketch_constraint(params, SketchConstraint{
+            .constraint_id =
+                next_constraint_id(params, "constraint-point-on-arc-"),
+            .kind = "point_on_arc",
+            .target_ids = {vertex_id, id},
+        });
+      }
+    }
   }
 }

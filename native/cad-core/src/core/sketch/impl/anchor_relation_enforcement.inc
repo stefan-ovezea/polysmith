@@ -40,12 +40,14 @@ void enforce_point_line_anchors(SketchFeatureParameters& parameters) {
   }
 }
 
-// Pull every point_on_arc-attached point onto the arc's SWEEP. The solver only
-// pins the circumcircle radius (P2PDistance), so it can legally satisfy the
-// constraint anywhere on the circle; this pass projects the point onto the
-// angular span the arc actually covers, snapping it to the nearest arc endpoint
-// when the solve left it on the far half. Runs after the solver, before the
-// constraint/relation enforcement, exactly like the anchor passes above.
+// Pull every point_on_arc-attached point onto the arc's BOUNDARY and inside its
+// SWEEP. A plain arc does NOT participate in the solver (see
+// arc_participates_in_solver: only tangent arcs register), so nothing else holds
+// the point at the radius — this deterministic pass is the authority, exactly
+// like the anchor passes above. It projects the point radially onto the arc at
+// its current angle, clamped into the swept span (snapping to the nearest arc
+// endpoint when the angle falls outside). Runs after the solver, before the
+// constraint/relation enforcement.
 void enforce_point_on_arc_constraints(SketchFeatureParameters& parameters) {
   constexpr double kPi = 3.14159265358979323846;
   for (const auto& constraint : parameters.constraints) {
@@ -65,6 +67,13 @@ void enforce_point_on_arc_constraints(SketchFeatureParameters& parameters) {
         });
     if (vertex_it == parameters.vertices.end()) continue;
 
+    // The arc's own endpoints are on it by definition; a point_on_arc that
+    // targets one is redundant and would let this pass fight the start/end.
+    if (constraint.target_ids[0] == arc_it->start_vertex_id ||
+        constraint.target_ids[0] == arc_it->end_vertex_id) {
+      continue;
+    }
+
     const double a = std::atan2(vertex_it->y - arc_it->center_y,
                                 vertex_it->x - arc_it->center_x);
     const double as = std::atan2(arc_it->start_y - arc_it->center_y,
@@ -77,21 +86,30 @@ void enforce_point_on_arc_constraints(SketchFeatureParameters& parameters) {
     if (arc_it->ccw && sweep < 0.0) sweep += 2.0 * kPi;
     if (!arc_it->ccw && sweep > 0.0) sweep -= 2.0 * kPi;
 
-    // Delta of the point from the start angle, normalised to [-pi, pi).
+    // Delta of the point from the start angle. Normalise INTO the sweep's
+    // direction — [0, 2pi) for ccw, (-2pi, 0] for cw — NOT to [-pi, pi).
+    // Folding to [-pi, pi) is wrong for arcs whose sweep exceeds pi: a point
+    // more than half a turn along the arc becomes a negative delta and gets
+    // clamped back to the START, so it snapped away from where it rode.
     double da = a - as;
     da = std::fmod(da, 2.0 * kPi);
-    if (da > kPi) da -= 2.0 * kPi;
-    if (da < -kPi) da += 2.0 * kPi;
+    if (arc_it->ccw) {
+      if (da < 0.0) da += 2.0 * kPi;
+    } else {
+      if (da > 0.0) da -= 2.0 * kPi;
+    }
 
-    // Within the sweep when `da` sits between 0 and `sweep` (inclusive).
-    const bool within = arc_it->ccw ? (da >= 0.0 && da <= sweep)
-                                    : (da <= 0.0 && da >= sweep);
-    if (within) continue;
-
-    // Outside the sweep: snap to the nearer arc endpoint (the one `da` passed).
-    const double target = (arc_it->ccw ? (da < 0.0) : (da > 0.0)) ? as : as + sweep;
+    // Clamp the angular delta into the swept span (ccw: [0, sweep], cw:
+    // [sweep, 0]) and project the point onto the boundary at that angle.
+    // ALWAYS — not only when outside the sweep — because a plain arc does not
+    // participate in the solver, so nothing else holds the point at the radius.
+    const double clamped_da =
+        std::clamp(da, std::min(0.0, sweep), std::max(0.0, sweep));
+    const double target = as + clamped_da;
     const double px = arc_it->center_x + arc_it->radius * std::cos(target);
     const double py = arc_it->center_y + arc_it->radius * std::sin(target);
-    propagate_connected_point_move(parameters, constraint.target_ids[0], px, py);
+    if (std::hypot(vertex_it->x - px, vertex_it->y - py) > 1e-9) {
+      propagate_connected_point_move(parameters, constraint.target_ids[0], px, py);
+    }
   }
 }

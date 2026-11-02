@@ -309,6 +309,20 @@ export class PlanegcsBridge {
             distance: circle.radius,
           } as any);
         }
+      } else if (c.kind === "point_on_arc" && c.target_ids.length >= 2) {
+        // target_ids = [vertex_id, arc_id]. Same circumcircle distance as
+        // point_on_circle; the core's enforcement keeps the point inside the
+        // arc's sweep, so the WASM preview only needs the fixed radius.
+        const arc = params.arcs.find((a) => a.arc_id === c.target_ids[1]);
+        if (arc && arc.center_vertex_id) {
+          w.push_primitive({
+            id: c.constraint_id,
+            type: "p2p_distance",
+            p1_id: c.target_ids[0],
+            p2_id: arc.center_vertex_id,
+            distance: arc.radius,
+          } as any);
+        }
       }
     }
 

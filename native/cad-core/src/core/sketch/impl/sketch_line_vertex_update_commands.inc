@@ -184,6 +184,19 @@ void update_sketch_vertex(FeatureEntry& feature,
                                          a.start_x, a.start_y);
           propagate_connected_point_move(parameters, a.end_vertex_id,
                                          a.end_x, a.end_y);
+          // Translate the point_on_arc-attached points by the centre's delta
+          // so they ride the arc at their same relative spot — the same
+          // contract the circle path above applies to point_on_circle.
+          for (const auto& constraint : parameters.constraints) {
+            if (constraint.kind != "point_on_arc") continue;
+            if (constraint.target_ids.size() < 2) continue;
+            if (constraint.target_ids[1] != a.id) continue;
+            const auto pos =
+                point_position_of(parameters, constraint.target_ids[0]);
+            if (!pos.has_value()) continue;
+            propagate_connected_point_move(parameters, constraint.target_ids[0],
+                                           pos->first + dx, pos->second + dy);
+          }
           sync_all_line_dimensions(parameters);
           refresh_sketch_derived_state(feature);
           return;
