@@ -1,4 +1,46 @@
-# Active task: PCB / GERBER WORKSPACE — branch `gerber`
+# Active task: SKETCH ARC/LINE — merged to `dev` 2026-11-02
+
+Shipped in PR #94 (squash `5bf3653`). Verified at merge: `pnpm test:core`
+92/92, `tsc --noEmit` clean, plus five geometric regressions in
+`native/cad-core/tests/sketch_arc_lines_test.cpp`.
+
+## Next up — the two known gaps from this branch
+
+1. **Arc radius resize.** After a circle is trimmed there is no way to change
+   the arc's radius. The resize gesture is gated to `entityKind === "circle"`
+   (`beginCircleResizePointerDown` in `circleResizeDrag.ts`), and the core has
+   **no** `update_sketch_arc_radius` command (`grep update_sketch_arc` →
+   nothing). Needed: a core command (set the radius, re-derive the endpoints
+   from the stored span, reconcile the shared lines), its handler + schema + TS
+   client, the gesture extended to `entityKind === "arc"`, and a regression
+   test.
+2. **The commit-flash hold is a UI workaround.** `sceneSync.ts` keeps the
+   preview-mutated scene until the viewport's SKETCH geometry changes (a hash
+   of `sceneData.sketchPoints`). The proper fix is protocol-level: return the
+   viewport state in the same response as the document revision bump, so there
+   is never a stale frame to hold against. Do this next time the IPC contract
+   is touched.
+
+## Bug-fix log from that branch (context for the next session)
+
+- `resolveEndpointDragFrame` must guard `sketch.arcs` before `.find`: a
+  circle-only sketch has no `arcs` key, and the unguarded call threw inside the
+  preview solve, so lines attached to a circle only moved on commit.
+- `sceneData.geometryKey` hashes only SOLID primitives — it is constant for a
+  sketch-only document. Any "has the viewport caught up?" check must hash the
+  sketch (`sketchGeometryKey` in `sceneSync.ts` is the pattern).
+- A tangent line that overshoots its tangent point must be **truncated** at the
+  tangent point in `trim_circle_split_crossing_lines.inc`, not split (splitting
+  left the two small stubs).
+- A trimmed arc's endpoints are frozen by the trim to protect the loop; a
+  deliberate centre drag must lift that freeze for the translate and restore it
+  (`sketch_line_vertex_update_commands.inc`).
+- A plain arc does not participate in the solver; `point_on_arc` is held by the
+  deterministic `enforce_point_on_arc_constraints` pass.
+
+---
+
+# Archived task: PCB / GERBER WORKSPACE — branch `gerber`
 
 Design + plan: **[wiki/PCB-Workspace.md](wiki/PCB-Workspace.md)**. Coming from
 `dev` @ `44a8101` (GRBL test-fire `$X` fix); `dev` is untouched by this work.
