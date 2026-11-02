@@ -281,6 +281,47 @@ export function computeRippleActivePoints(
   return computeRippleActivePointsForVertices(sketch, [draggedPointId]);
 }
 
+/**
+ * Add the points ANCHORED to a line this drag reshapes to the solve's active
+ * set, so they ride the moving line instead of staying frozen.
+ *
+ * `computeRippleActivePoints` un-freezes only the dragged point and its 1-hop
+ * neighbours, so a point anchored somewhere along the host line was locked: it
+ * held its position while the line moved under it and only snapped back on at
+ * commit — "the point on the line does not stay". This is the line-anchor
+ * counterpart of the circle's `point_on_circle` ride in the live drag preview.
+ *
+ * Pure: the caller keeps passing the result as `activePointIds`.
+ */
+export function rideAnchoredPoints(
+  sketch: SketchFeatureParameters | null,
+  draggedVertexId: string,
+  activePointIds: readonly string[],
+): string[] {
+  const reshapedLineIds = (sketch?.lines ?? [])
+    .filter(
+      (line) =>
+        line.start_vertex_id === draggedVertexId ||
+        line.end_vertex_id === draggedVertexId,
+    )
+    .map((line) => line.line_id);
+  if (reshapedLineIds.length === 0) {
+    return [...activePointIds];
+  }
+  const riding = new Set(activePointIds);
+  for (const anchor of sketch?.point_line_anchors ?? []) {
+    if (reshapedLineIds.includes(anchor.line_id)) {
+      riding.add(anchor.vertex_id);
+    }
+  }
+  for (const anchor of sketch?.midpoint_anchors ?? []) {
+    if (reshapedLineIds.includes(anchor.line_id)) {
+      riding.add(anchor.vertex_id);
+    }
+  }
+  return [...riding];
+}
+
 export function resolveEndpointDragFrame({
   next,
   sketch,
@@ -345,6 +386,8 @@ export function resolveEndpointDragFrame({
       ),
     };
     let activePointIds = computeRippleActivePoints(sketch, next.vertexId);
+
+    activePointIds = rideAnchoredPoints(sketch, next.vertexId, activePointIds);
 
     // Dragging a circle CENTRE: the centre is the dragged (fixed) party and the
     // point_on_circle-attached points must ride it. The raw WASM solve would
