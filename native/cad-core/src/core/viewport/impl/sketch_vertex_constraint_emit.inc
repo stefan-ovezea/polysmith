@@ -270,11 +270,12 @@
               }
             }
           }
-          if (c.kind == "point_on_circle") {
-            // A point riding a circle's boundary: target_ids is {vertex_id,
-            // circle_id}. Badge at the point; the WASM drag solve also reads this
-            // entry to keep the point on the circle during a live drag. The lateral
-            // (screen-space) nudge is applied in the UI, where the zoom is known.
+          if (c.kind == "point_on_circle" || c.kind == "point_on_arc") {
+            // A point riding a circle's or arc's boundary: target_ids is
+            // {vertex_id, curve_id}. Badge at the point; the WASM drag solve
+            // also reads this entry to keep the point on the curve during a
+            // live drag. The lateral (screen-space) nudge is applied in the UI,
+            // where the zoom is known.
             if (c.target_ids.size() == 2) {
               const auto pt_pos = find_point_position(
                   *feature.sketch_parameters, c.target_ids[0]);
@@ -291,7 +292,7 @@
                     ViewportSketchConstraintPrimitive{
                         .constraint_id = c.constraint_id,
                         .plane_id = feature.sketch_parameters->plane_id,
-                        .kind = "point_on_circle",
+                        .kind = c.kind,
                         .entity_id = c.target_ids[0],
                         .related_entity_id = c.target_ids[1],
                         .label = "O",

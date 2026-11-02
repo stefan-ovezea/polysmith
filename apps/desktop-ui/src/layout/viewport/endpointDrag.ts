@@ -378,6 +378,46 @@ export function resolveEndpointDragFrame({
       activePointIds = rideIds;
     }
 
+    // Dragging an ARC CENTRE: mirror the circle path — translate the
+    // point_on_arc-attached points by the centre's delta so they ride the arc
+    // at the same relative spot instead of sliding around it.
+    // `arcs` is optional on the parameters; a circle-only sketch has no
+    // `arcs` key at all. Guard it — an unguarded `.find` here threw and
+    // aborted the whole preview solve, so a line attached to a CIRCLE never
+    // followed the circle during the drag (it only moved on commit).
+    const draggedArc = (sketch?.arcs ?? []).find(
+      (a) => a.center_vertex_id === next.vertexId,
+    );
+    if (draggedArc && sketch) {
+      const base = sketch.vertices.find((v) => v.vertex_id === next.vertexId);
+      const dx = sketchPoint.local[0] - (base?.x ?? sketchPoint.local[0]);
+      const dy = sketchPoint.local[1] - (base?.y ?? sketchPoint.local[1]);
+      const attachedIds = (constraints ?? [])
+        .filter(
+          (c) =>
+            c.kind === "point_on_arc" &&
+            c.target_ids.length >= 2 &&
+            c.target_ids[1] === draggedArc.arc_id,
+        )
+        .map((c) => c.target_ids[0]);
+      // Both arc endpoints must translate with the centre — otherwise the
+      // start rides but the end stays put and the preview's sweep flips to the
+      // complementary (deleted) segment mid-drag.
+      const rideIds = [
+        ...new Set([
+          ...attachedIds,
+          draggedArc.start_vertex_id,
+          draggedArc.end_vertex_id,
+        ]),
+      ];
+      paramsCopy.vertices = paramsCopy.vertices.map((p) =>
+        rideIds.includes(p.vertex_id)
+          ? { ...p, x: p.x + dx, y: p.y + dy }
+          : p,
+      );
+      activePointIds = rideIds;
+    }
+
     const result = gcsBridge.solve(paramsCopy, constraints ?? [], {
       activePointIds,
     });

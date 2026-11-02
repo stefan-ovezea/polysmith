@@ -1,6 +1,7 @@
 # Sketch snapping — the matrix, and why it keeps breaking
 
-Measured 2026-10-26 on `dev` @ `5ad6007`. The measurement lives in
+Measured 2026-10-26 on `dev` @ `5ad6007`, re-measured 2026-11-01 after the quadrant
+snap was removed. The measurement lives in
 `apps/desktop-ui/src/layout/viewport/snapMatrix.test.ts` — run it and it prints the
 table; `contract` cells are asserted, `knownGaps` cells are printed only.
 
@@ -48,15 +49,19 @@ on the line and nothing holds it — which is the reported T-junction behaviour.
 
 ## The matrix, as measured
 
+Re-measured 2026-11-01 after the quadrant snap type and the quadrant vertices were
+removed: the `arc quadrant` row is gone, and `circle perimeter` now falls through to
+the axis-lock label instead of a "Quadrant" candidate (still no binding — see
+findings).
+
 | target | snap label | placed at | binding |
 |---|---|---|---|
 | line endpoint | Endpoint | 100.00, 0.00 | `endpoint:line-1` ✓ |
 | line midpoint | Midpoint | 50.00, 0.00 | `midpoint:line-1` ✓ |
 | circle centre | **Vertical** | 140.00, 0.00 | — |
-| arc quadrant | Quadrant | 20.00, 100.00 | — |
 | line × line intersection | **Vertical** | 20.00, 40.00 | — |
 | line body (t ≠ 0.5) | **Horizontal** | 30.50, 0.00 | — |
-| circle perimeter | **Quadrant** | 160.00, 0.00 | — |
+| circle perimeter | **Horizontal** | 160.60, 0.00 | — |
 | arc perimeter | On circle | 14.14, 114.14 | `circleBody:arc-1` ✓ |
 | vertical stem body | **Vertical** | 50.00, −40.50 | — |
 | horizontal alignment | Horizontal | 70.50, 0.00 | — |
@@ -68,8 +73,8 @@ empty binding is the failure mode: nothing to attach, so nothing holds.
 
 ## Findings
 
-1. **Centre and quadrant snaps carry no host id at all**, so a line started at a
-   circle centre or a quadrant can never be attached. (Bold label above = the label
+1. **The centre snap carries no host id at all**, so a line started at a
+   circle centre can never be attached. (Bold label above = the label
    came from the axis lock / alignment, while the position came from the candidate —
    so the label is not trustworthy either.)
 2. **The core-emitted `intersection` candidate is not mapped** in

@@ -30,7 +30,6 @@
               {"snap_center", sf.snap_center},
               {"snap_intersection", sf.snap_intersection},
               {"snap_nearest", sf.snap_nearest},
-              {"snap_quadrant", sf.snap_quadrant},
               {"snap_perpendicular", sf.snap_perpendicular},
               {"snap_parallel", sf.snap_parallel},
               {"snap_tangent", sf.snap_tangent},

@@ -268,6 +268,7 @@ export function finishCircleResizePointerUp({
   activeSketchPlaneIdRef,
   activeSketchPlaneFrameRef,
   dragPreviewMutatingRef,
+  pendingEndpointCommitRef,
   updateSketchCircle,
   restorePreviewScene,
   setSketchSnapLabel,
@@ -283,6 +284,9 @@ export function finishCircleResizePointerUp({
   activeSketchPlaneIdRef: MutableRef<string | null>;
   activeSketchPlaneFrameRef: MutableRef<SketchPlaneFrame | null>;
   dragPreviewMutatingRef: MutableRef<boolean>;
+  /** Set when the resize commits: keeps the mutated preview on-screen across
+   *  the async core round-trip, exactly like the endpoint-drag commit. */
+  pendingEndpointCommitRef: MutableRef<boolean>;
   updateSketchCircle: (
     circleId: string,
     centerX: number,
@@ -326,6 +330,10 @@ export function finishCircleResizePointerUp({
         drag.centerX,
         drag.centerY,
       );
+      // The commit is fire-and-forget; keep the preview on-screen until the
+      // core's viewport state lands, or the next sync repaints the pre-drag
+      // circle from the stale viewport (the "old position flashes on commit").
+      pendingEndpointCommitRef.current = true;
       void updateSketchCircle(drag.circleId, drag.centerX, drag.centerY, radius);
     }
   } else {

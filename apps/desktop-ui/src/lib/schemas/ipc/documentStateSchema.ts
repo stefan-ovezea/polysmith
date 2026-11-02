@@ -824,7 +824,6 @@ export const documentStateSchema = z.object({
                 "endpoint",
                 "center",
                 "projected",
-                "quadrant",
                 "fillet_corner",
                 "point",
               ]),

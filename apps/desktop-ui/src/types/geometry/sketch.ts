@@ -63,9 +63,9 @@ export interface SketchCircleEntry {
 export interface SketchVertexEntry {
   /** vertex-N ID from Phase 4 vertex unification (canonical). */
   vertex_id: string;
-  // "endpoint" / "center" / "projected" / "quadrant" / "fillet_corner" — see `SketchVertexScene`
+  // "endpoint" / "center" / "projected" / "fillet_corner" — see `SketchVertexScene`
   // for the renderer-side meaning of each value.
-  kind: "endpoint" | "center" | "projected" | "quadrant" | "fillet_corner";
+  kind: "endpoint" | "center" | "projected" | "fillet_corner";
   x: number;
   y: number;
   is_fixed: boolean;

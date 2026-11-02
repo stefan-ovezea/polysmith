@@ -259,8 +259,7 @@ export interface ViewportSketchVertex {
   // "endpoint" — line / arc endpoint (default).
   // "center" — circle center.
   // "projected" — Project-tool result; locked, drawn distinctly.
-  // "quadrant" — derived cardinal point on a circle perimeter.
-  kind: "endpoint" | "center" | "projected" | "quadrant" | "fillet_corner";
+  kind: "endpoint" | "center" | "projected" | "fillet_corner";
   position: Vector3;
   is_fixed: boolean;
   is_selected: boolean;

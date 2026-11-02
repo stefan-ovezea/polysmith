@@ -182,7 +182,7 @@ documented in `Sketch-Selection-Controls.md`.
 ### Snap
 A cursor-gravity behavior that pulls the drawing cursor to key geometric
 points on existing entities. Snap types include: grid, endpoint, midpoint,
-center, quadrant, intersection, nearest, perpendicular, parallel, tangent,
+center, intersection, nearest, perpendicular, parallel, tangent,
 polar. To enable live snaps, the entity type must be enabled in the
 selection filter.
 
@@ -212,9 +212,6 @@ cross (line-line, line-arc).
 
 **Nearest Snap** — pulls cursor to the closest point on a sketch line
 segment (projection clamped to the segment interior).
-
-**Quadrant Snap** — pulls cursor to the 0, 90, 180, and 270 degree
-cardinal points on a circle.
 
 **Perpendicular Snap** — projects the cursor onto the perpendicular
 foot from an existing line.

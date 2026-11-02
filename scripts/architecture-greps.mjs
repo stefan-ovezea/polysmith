@@ -190,12 +190,46 @@ function checkSketchCoreLogging() {
   return violations;
 }
 
+// ── Check 6: quadrant vertices stay removed ──────────────────────────────
+// Quadrant vertices (four cardinal points per circle, cardinals inside each arc
+// sweep) were deleted on 2026-11-01: they duplicated what the curve already
+// owned, forced a legacy id format into trim bookkeeping, and stole picking
+// priority from the curve. A reintroduced emitter would silently recreate the
+// old attachment traps, so the deletion is a tripwire.
+const QUADRANT_EMITTERS = [
+  /snap_quadrant/,
+  /"-quadrant-"/,
+  /kind\s*=\s*"quadrant"/,
+  /"kind"\s*:\s*"quadrant"/,
+  /==\s*"quadrant"/,
+];
+// The document loader has to recognise the old kind in order to skip it, so the
+// vertex parser is the one file allowed to mention it.
+const QUADRANT_ALLOWED = new Set([
+  "native/cad-core/src/protocol/impl/feature_parameter_sketch_geometry_parser.inc",
+]);
+function checkNoQuadrantVertices() {
+  const dir = join(ROOT, "native", "cad-core", "src");
+  const violations = [];
+  for (const file of walk(dir)) {
+    if (!/\.(cpp|h|inc)$/.test(file)) continue;
+    if (QUADRANT_ALLOWED.has(rel(file))) continue;
+    read(file).split("\n").forEach((line, i) => {
+      if (QUADRANT_EMITTERS.some((re) => re.test(line))) {
+        violations.push(`${rel(file)}:${i + 1}: ${line.trim()}`);
+      }
+    });
+  }
+  return violations;
+}
+
 const checks = [
   ["OCCT headers in protocol/ or core/document/", checkOcctHeaders],
   ["make_document_state_event from a read-only handler", checkReadOnlyEmitter],
   ["command dispatch matches commands.schema.json", checkCommandSchema],
   ["layout option rows are wrap-safe (i18n overflow)", checkWrappingOptionRows],
   ["no raw stdio in the sketch core (Logs panel only)", checkSketchCoreLogging],
+  ["quadrant vertices stay removed", checkNoQuadrantVertices],
 ];
 
 let failed = false;

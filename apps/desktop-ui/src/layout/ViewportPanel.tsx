@@ -1045,6 +1045,10 @@ export function ViewportPanel({
   const dragPreviewMutatingRef = useRef(false);
   const moveDragPreviewActiveRef = useRef(false);
   const forceSceneRebuildRef = useRef(false);
+  // Viewport geometry key the live preview was drawn against. Latched on a
+  // commit and held until a viewport with a NEW key arrives, so intermediate
+  // syncs cannot repaint the pre-drag position (commit flash).
+  const pendingPreviewKeyRef = useRef<string | null>(null);
   // Scene constraint data for badge-follow deltas during live previews.
   const sceneConstraintsRef = useRef<readonly SketchConstraintScene[]>([]);
 
@@ -4801,6 +4805,7 @@ export function ViewportPanel({
         activeSketchPlaneIdRef,
         activeSketchPlaneFrameRef,
         dragPreviewMutatingRef,
+        pendingEndpointCommitRef,
         updateSketchCircle: updateSketchCircleRef.current,
         restorePreviewScene,
         setSketchSnapLabel,
@@ -5978,6 +5983,8 @@ export function ViewportPanel({
     circleResizeDragRef.current = null;
     dragPreviewMutatingRef.current = false;
     moveDragPreviewActiveRef.current = false;
+    // Drop the commit latch so the forced rebuild below actually runs.
+    pendingPreviewKeyRef.current = null;
     forceSceneRebuildRef.current = true;
     runSceneSync();
     updatePersistentMoveRing();
@@ -6005,6 +6012,7 @@ export function ViewportPanel({
         dragPreviewMutating: dragPreviewMutatingRef,
         moveDragPreviewActive: moveDragPreviewActiveRef,
         forceSceneRebuild: forceSceneRebuildRef,
+        pendingPreviewKey: pendingPreviewKeyRef,
         activeSketchPlaneFrame: activeSketchPlaneFrameRef,
         sketchEntityObjectById: sketchEntityObjectByIdRef,
         sketchPointObjectById: sketchPointObjectByIdRef,

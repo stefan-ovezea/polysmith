@@ -212,10 +212,12 @@ bool test_circle_creates_center_point_and_profile() {
   FeatureEntry feature = create_sketch_feature(4, "ref-plane-xy");
   add_sketch_circle(feature, 1, 12.0, 8.0, 5.0);
 
-  // Each circle creates 1 center point + 4 quadrant points = 5 total.
+  // A circle contributes exactly one vertex: its centre. Quadrant vertices
+  // were removed (2026-11-01) — a cardinal point is derived from the curve,
+  // not stored in the model.
   bool points_ok =
-      expect(feature.sketch_parameters->vertices.size() == 5,
-             "expected circle sketch to store 5 points (1 center + 4 quadrants)");
+      expect(feature.sketch_parameters->vertices.size() == 1,
+             "expected circle sketch to store 1 point (the center)");
   // The center point is the first one pushed by rebuild_sketch_points.
   bool center_ok =
       expect(!feature.sketch_parameters->vertices.empty() &&

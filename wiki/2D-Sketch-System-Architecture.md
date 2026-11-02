@@ -80,7 +80,6 @@ Snapping is **not an independent system**. A point becomes "snappable" only if:
 | **Endpoint Snap** | Cursor near endpoint of any line, arc, or curve | ✅ On | ✅ Yes |
 | **Midpoint Snap** | Cursor near exact middle of line or arc chord | ✅ On | ✅ Yes |
 | **Center Snap** | Cursor near center point of circle, arc, or ellipse | ✅ On | ✅ Yes |
-| **Quadrant Snap** | Cursor near 0°, 90°, 180°, 270° points on circle/arc | ⬜ Off | ✅ Yes |
 | **Intersection Snap** | Cursor where two or more entities cross | ✅ On | ✅ Yes |
 | **Nearest Snap** | Cursor anywhere on line/curve (not just key points) | ✅ On | ✅ Yes |
 | **Perpendicular Snap** | Cursor indicates 90° offset from existing line | ⬜ Off | ✅ Yes |

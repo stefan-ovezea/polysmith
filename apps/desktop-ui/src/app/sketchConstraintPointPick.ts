@@ -1,6 +1,6 @@
 import type { ArmedSketchConstraint } from "../types";
 
-export type SketchConstraintVertexKind = "endpoint" | "center" | "quadrant";
+export type SketchConstraintVertexKind = "endpoint" | "center";
 
 export interface SketchConstraintVertexPickContext {
   vertexId: string;

@@ -57,7 +57,7 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
           candidate.end_vertex_id, candidate.end_x, candidate.end_y};
     // Arc centres don't have dedicated vertex IDs yet, but the
     // vertices scan below will catch any existing vertex (e.g. a
-    // circle centre or quadrant) at the same position.
+    // circle centre) at the same position.
   }
 
   // Circle centres are reusable vertices — a line endpoint placed at
@@ -79,19 +79,18 @@ std::optional<std::tuple<std::string, double, double>> find_coincident_endpoint(
   }
 
   // The vertices list aggregates all sketch vertices — line/arc
-  // endpoints, circle centres, circle quadrants, and projected
-  // points.  Checking it last catches any future vertex kinds without
-  // needing individual geometry loops.
+  // endpoints, centres, fillet corners, projected points.  Checking it
+  // last catches any future vertex kinds without needing individual
+  // geometry loops.
   //
-  // QUADRANT points are EXCLUDED (circle AND arc): they are derived from their
-  // owning circle/arc, so an endpoint that adopts one is tied to the curve by a
-  // shared ID rather than by a constraint — and `vertex_is_derived` then refuses
-  // to attach it at all, leaving the endpoint behind whenever the curve moves or
-  // is resized. Keeping the endpoint on a fresh vertex puts it on the ordinary
-  // path: it sits on the boundary and `attach_committed_vertex_to_geometry`
-  // binds it with point_on_circle / point_on_arc, exactly like any other point.
+  // Quadrant vertices used to live here (four per circle, cardinals
+  // inside each arc's sweep). They are gone: a cardinal point is a
+  // derived duplicate of information the curve already owns, and an
+  // endpoint that adopted one was tied to the curve by a shared id
+  // rather than by a constraint — which `vertex_is_derived` then
+  // refused to attach, leaving the endpoint behind when the curve
+  // moved.
   for (const auto& vertex : parameters.vertices) {
-    if (vertex.kind == "quadrant") continue;
     if (points_match(vertex.x, vertex.y, x, y))
       return std::tuple<std::string, double, double>{
           vertex.id, vertex.x, vertex.y};
@@ -337,33 +336,6 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
                  slot.center_y);
   }
 
-  // Emit a quadrant vertex unless a vertex with the same id already
-  // exists (a line endpoint drawn onto a quadrant point carries the
-  // legacy "vertex-<entity>-quadrant-N" id) — pushing a second record
-  // with the same id corrupts the vertex model.  Ownership is recorded
-  // here so sweep-external arc quadrants never claim their arc.
-  auto emit_quadrant = [&](const std::string& quadrant_id,
-                           const std::string& owner_id,
-                           double qx,
-                           double qy) {
-    const auto existing_it = std::find_if(
-        parameters.vertices.begin(),
-        parameters.vertices.end(),
-        [&](const SketchVertex& v) { return v.id == quadrant_id; });
-    if (existing_it != parameters.vertices.end()) {
-      existing_it->geometry_owner_ids.push_back(owner_id);
-      return;
-    }
-    parameters.vertices.push_back(SketchVertex{
-        .id = quadrant_id,
-        .kind = "quadrant",
-        .x = qx,
-        .y = qy,
-        .is_fixed = false,
-        .geometry_owner_ids = {owner_id},
-    });
-  };
-
   // ── Phase 6: centers use stable vertex-N IDs ──────────────────
   for (auto& circle : parameters.circles) {
     // Generate or reuse a stable vertex-N ID for the center.
@@ -373,19 +345,6 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     }
     append_point(circle.center_vertex_id, "center",
                  circle.center_x, circle.center_y);
-
-    // Derived quadrant points (cardinal directions on the circle).
-    // Quadrants keep the legacy point-circle-*-quadrant-N format for
-    // now — they are regenerated on every rebuild and need stable
-    // predictable IDs for trim live-point tracking.
-    // TODO(phase-6-followup): give quadrants stable vertex-N IDs.
-    const double cx = circle.center_x;
-    const double cy = circle.center_y;
-    const double r = circle.radius;
-    emit_quadrant("vertex-" + circle.id + "-quadrant-0", circle.id, cx + r, cy);
-    emit_quadrant("vertex-" + circle.id + "-quadrant-1", circle.id, cx, cy + r);
-    emit_quadrant("vertex-" + circle.id + "-quadrant-2", circle.id, cx - r, cy);
-    emit_quadrant("vertex-" + circle.id + "-quadrant-3", circle.id, cx, cy - r);
   }
 
   // Re-emit arc center points with stable vertex-N IDs.
@@ -396,35 +355,6 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
     }
     append_point(arc.center_vertex_id, "center",
                  arc.center_x, arc.center_y);
-
-    // Emit quadrant points for cardinal angles that lie within the
-    // arc's sweep, so they get a visible "Q" badge in the viewport.
-    auto norm = [](double a) {
-      a = std::fmod(a, 2.0 * M_PI);
-      if (a < 0.0) a += 2.0 * M_PI;
-      return a;
-    };
-    const double ns = norm(std::atan2(arc.start_y - arc.center_y,
-                                      arc.start_x - arc.center_x));
-    const double ne = norm(std::atan2(arc.end_y - arc.center_y,
-                                      arc.end_x - arc.center_x));
-    const double cardinals[4] = {0.0, M_PI_2, M_PI, M_PI + M_PI_2};
-    for (int q = 0; q < 4; ++q) {
-      const double a = norm(cardinals[q]);
-      bool on_arc = false;
-      if (arc.ccw) {
-        if (ns <= ne) { on_arc = a >= ns && a <= ne; }
-        else          { on_arc = a >= ns || a <= ne; }
-      } else {
-        if (ns >= ne) { on_arc = a <= ns && a >= ne; }
-        else          { on_arc = a <= ns || a >= ne; }
-      }
-      if (!on_arc) continue;
-      emit_quadrant("vertex-" + arc.id + "-quadrant-" + std::to_string(q),
-                    arc.id,
-                    arc.center_x + arc.radius * std::cos(cardinals[q]),
-                    arc.center_y + arc.radius * std::sin(cardinals[q]));
-    }
   }
 
   // Re-emit the original corner point of every fillet. After
@@ -495,10 +425,7 @@ void rebuild_sketch_vertices(SketchFeatureParameters& parameters) {
         sp->geometry_owner_ids.push_back(arc.id);
   }
 
-  // Circle centers (quadrants were attributed at emission time — see
-  // emit_quadrant above — so sweep-external arc quadrants never claim
-  // their arc, e.g. a line endpoint that keeps a legacy quadrant id
-  // after the arc piece through that point was trimmed away).
+  // Circle centers.
   for (const auto& circle : parameters.circles) {
     // Phase 6: center ID is now center_vertex_id (vertex-N)
     if (!circle.center_vertex_id.empty())

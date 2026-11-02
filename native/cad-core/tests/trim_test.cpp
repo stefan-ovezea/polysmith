@@ -1301,6 +1301,98 @@ bool test_partial_ellipse_with_endpoint_only_intersections_deletes_cleanly() {
                 "endpoint-only ellipse: survivor keeps the ellipse geometry");
 }
 
+// Regression (2026-11-02): trimming a circle into an arc dropped the
+// point_on_circle constraints of the points that rode the circle and left
+// them free. The survivors are now re-bound as point_on_arc on the arc.
+bool test_circle_trim_rebinds_attached_points_as_point_on_arc() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  // Cutters at the left/right extremes give two cut points.
+  manager.add_sketch_line(10.0, 0.0, 20.0, 0.0, false, "", true);
+  manager.add_sketch_line(-10.0, 0.0, -20.0, 0.0, false, "", true);
+  // A third point on the bottom of the circle — inside the kept arc, not one
+  // of its endpoints — is the point that must be re-bound.
+  DocumentState document =
+      manager.add_sketch_line(0.0, -5.0, 0.0, -10.0, false, "", true);
+  const SketchFeatureParameters* before =
+      &document.feature_history.back().sketch_parameters.value();
+  const std::string bottom_vertex = before->lines.back().end_vertex_id;
+
+  // Trim the top arc segment (click at the top of the circle). The kept arc
+  // is the bottom half, which contains the bottom line's endpoint.
+  document = manager.trim_sketch_entity("circle-1", 0.0, 10.0);
+  const SketchFeatureParameters& params =
+      document.feature_history.back().sketch_parameters.value();
+
+  if (!expect(params.circles.empty() && params.arcs.size() == 1,
+              "circle trim: circle becomes one arc")) {
+    return false;
+  }
+  const std::string arc_id = params.arcs.front().id;
+  const auto constraint_it = std::find_if(
+      params.constraints.begin(), params.constraints.end(),
+      [&](const auto& c) {
+        return c.kind == "point_on_arc" && c.target_ids.size() >= 2 &&
+               c.target_ids[0] == bottom_vertex && c.target_ids[1] == arc_id;
+      });
+  return expect(constraint_it != params.constraints.end(),
+                "circle trim: surviving point is re-bound as point_on_arc");
+}
+
+// Regression (2026-11-02): trimming a circle to a LARGE arc (> 180°) dropped
+// the badge/binding on points more than half a turn along the arc. The sweep
+// check folded their angle to a negative delta ([-pi, pi) normalisation) and
+// judged them outside the sweep, so the trim re-bind skipped them.
+bool test_circle_trim_large_arc_keeps_far_side_point() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  const double kPi = 3.14159265358979323846;
+  const double r = 10.0;
+  const auto at = [&](double deg) {
+    const double a = deg * kPi / 180.0;
+    return std::pair<double, double>{r * std::cos(a), r * std::sin(a)};
+  };
+  // Cutters at 30° and 60° make a small segment; the kept arc is the large one.
+  const auto p30 = at(30.0);
+  const auto p60 = at(60.0);
+  manager.add_sketch_line(p30.first, p30.second, p30.first * 2.0,
+                          p30.second * 2.0, false, "", true);
+  manager.add_sketch_line(p60.first, p60.second, p60.first * 2.0,
+                          p60.second * 2.0, false, "", true);
+  // A point far around the large arc (300°), more than 180° from the 60° start.
+  const auto p300 = at(300.0);
+  DocumentState document =
+      manager.add_sketch_line(p300.first, p300.second, p300.first * 1.5,
+                              p300.second * 1.5, false, "", true);
+  const SketchFeatureParameters* before =
+      &document.feature_history.back().sketch_parameters.value();
+  const std::string far_vertex = before->lines.back().start_vertex_id;
+
+  // Trim the SMALL arc (click at 45°), keeping the large arc.
+  const auto p45 = at(45.0);
+  document = manager.trim_sketch_entity("circle-1", p45.first, p45.second);
+  const SketchFeatureParameters& params =
+      document.feature_history.back().sketch_parameters.value();
+
+  if (!expect(params.circles.empty() && params.arcs.size() == 1,
+              "large-arc trim: circle becomes one arc")) {
+    return false;
+  }
+  const std::string arc_id = params.arcs.front().id;
+  const auto constraint_it = std::find_if(
+      params.constraints.begin(), params.constraints.end(),
+      [&](const auto& c) {
+        return c.kind == "point_on_arc" && c.target_ids.size() >= 2 &&
+               c.target_ids[0] == far_vertex && c.target_ids[1] == arc_id;
+      });
+  return expect(constraint_it != params.constraints.end(),
+                "large-arc trim: far-side point keeps its binding");
+}
+
 }  // namespace
 
 int main() {
@@ -1331,6 +1423,8 @@ int main() {
     if (!test_arc_with_endpoint_only_intersections_deletes_cleanly()) return 1;
     if (!test_partial_ellipse_with_endpoint_only_intersections_deletes_cleanly())
       return 1;
+    if (!test_circle_trim_rebinds_attached_points_as_point_on_arc()) return 1;
+    if (!test_circle_trim_large_arc_keeps_far_side_point()) return 1;
     std::cout << "trim_test passed\n";
     return 0;
   } catch (const std::exception& e) {

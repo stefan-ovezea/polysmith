@@ -18,7 +18,7 @@ void refresh_sketch_with_append_focus(FeatureEntry& feature,
 void set_sketch_tool(FeatureEntry& feature, const std::string& tool);
 // Look up the current world-space position of a sketch point by
 // searching lines first (authoritative for endpoints), then the
-// points list (centers, quadrants, fillet corners, projected points).
+// points list (centers, fillet corners, projected points).
 std::optional<std::tuple<double, double>> find_point_position(
     const SketchFeatureParameters& parameters,
     const std::string& point_id);

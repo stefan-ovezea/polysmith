@@ -38,12 +38,11 @@ constexpr double kCommittedAttachToleranceMm = 0.25;
 constexpr double kCommittedAttachMidpointFraction = 0.02;
 constexpr double kCommittedAttachMidpointLimitMm = 2.0;
 
-// Vertices owned by an entity and pinned by it. The circle/arc quadrant and centre
-// points matter most: a line started exactly on a quadrant REUSES that vertex (endpoint
-// sharing), so it is already tied to the circle - adding point_on_circle on top
-// constrains a FIXED point, which is unsatisfiable and made the verifier reject every
-// solve of that sketch ("point_on_circle vertex-circle-1-quadrant-0/circle-1 off by
-// 38.97 mm", after which the whole geometry froze).
+// Vertices owned by an entity and pinned by it (text vertices, slot
+// corners, anything minted with an entity prefix). Adding point_on_circle
+// to one of those constrains a FIXED point, which is unsatisfiable and
+// made the verifier reject every solve of that sketch, after which the
+// whole geometry froze.
 bool vertex_is_derived(const std::string& vertex_id) {
   static constexpr const char* kPrefixes[] = {
       "vertex-text-", "vertex-slot-", "vertex-circle-", "vertex-arc-",
@@ -181,6 +180,16 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
   // `point_on_arc` constraint — the sweep is enforced deterministically after the
   // solve, because planegcs has no native PointOnArc primitive.
   if (arc_host != nullptr && (host == nullptr || arc_distance <= host_distance)) {
+    // The arc's own endpoints are on it by definition; a vertex shared with
+    // one of them IS the attachment, so a point_on_arc here is redundant.
+    // Worse, the centre-drag translation moves point_on_arc points on top
+    // of the arc's own endpoint translation, so an own-endpoint would drift
+    // a second (dx,dy) off the radius each commit (the "lines detach on
+    // every centre drag" bug). Refuse it.
+    if (vertex_id == arc_host->start_vertex_id ||
+        vertex_id == arc_host->end_vertex_id) {
+      return;
+    }
     const bool added = add_sketch_constraint(
         parameters, SketchConstraint{
                         .constraint_id = next_constraint_id(
