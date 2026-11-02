@@ -415,7 +415,23 @@ export function resolveEndpointDragFrame({
           ? { ...p, x: p.x + dx, y: p.y + dy }
           : p,
       );
-      activePointIds = rideIds;
+      // Freeze the whole junction for the solve — do NOT un-freeze it.
+      //
+      // The translate above already puts the arc and the lines welded to it
+      // where the drag wants them. Un-freezing those points let the solver pull
+      // the shared endpoints back: the preview pushes the sketch's driving
+      // dimensions unchanged (planegcsBridge step 4f), and a line-length
+      // dimension is measured against the PRE-drag geometry, so after the
+      // shared end moved the dimension is violated and the solver "repairs" it
+      // by dragging the endpoint back. That rotates the arc's endpoints, and
+      // since the render derives the sweep from their angles, the preview's
+      // sweep shrinks until it passes 180° and the arc flips to its
+      // complement ("sweep shrinks, then renders in reverse"). The core
+      // freezes the centre and every riding point exactly this way
+      // (sketch_line_vertex_update_commands.inc), so freezing here is also
+      // what makes the preview match the commit.
+      const rideSet = new Set(rideIds);
+      activePointIds = activePointIds.filter((id) => !rideSet.has(id));
     }
 
     const result = gcsBridge.solve(paramsCopy, constraints ?? [], {

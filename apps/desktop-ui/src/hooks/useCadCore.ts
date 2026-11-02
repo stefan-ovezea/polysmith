@@ -235,6 +235,7 @@ import {
   makeStartSketchOnPlaneCommand,
   makeStartSketchOnFaceCommand,
   makeUndoCommand,
+  makeUpdateSketchArcRadiusCommand,
   makeUpdateSketchCircleCommand,
   makeUpdateSketchDimensionCommand,
   makeUpdateSketchLineCommand,
@@ -1012,6 +1013,10 @@ export function useCadCore() {
       await sendCoreCommand(
         makeUpdateSketchCircleCommand(circleId, centerX, centerY, radius),
       );
+      await sendCoreCommand(makeGetViewportStateCommand());
+    },
+    updateSketchArcRadius: async (arcId: string, radius: number) => {
+      await sendCoreCommand(makeUpdateSketchArcRadiusCommand(arcId, radius));
       await sendCoreCommand(makeGetViewportStateCommand());
     },
     updateSketchDimension: async (dimensionId: string, value: number | string) => {

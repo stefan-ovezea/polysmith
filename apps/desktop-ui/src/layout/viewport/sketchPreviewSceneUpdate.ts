@@ -14,7 +14,7 @@ import {
 // negative for any arc wider than 180° and flips the sampled direction
 // (the "negative arc" seen while dragging, which recovers on commit
 // because the committed render uses these same plane axes).
-function sketchPlaneAxes(
+export function sketchPlaneAxes(
   planeId: string,
   planeFrame: SketchPlaneFrame | null,
 ): {
@@ -147,6 +147,10 @@ export function applySolvedPointsToSketchScene({
         end: toWorld(end),
         radius,
         ccw: arc.ccw,
+        // The span this arc has in the document: the preview recomputes the
+        // endpoints live, and without the reference the normalized sweep
+        // flips to the complement the moment the moving endpoints swap order.
+        previousSweep: arc.sweep_angle,
         xAxis,
         yAxis,
       });

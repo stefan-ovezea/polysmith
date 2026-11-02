@@ -633,6 +633,13 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   // ── Phase 5: entity cached coords now mirror canonical vertices ──
   sync_entity_coords_from_vertices(*feature.sketch_parameters);
 
+  // A shared endpoint can move without the arc's parametric radius/centre
+  // following (line-welded drags, legacy documents). Rebuild them from the
+  // endpoints so the drawn arc always passes through the geometry it is
+  // welded to — otherwise the radius is a stale cache and the arc renders
+  // detached from its own lines.
+  reconcile_arc_geometry_from_endpoints(*feature.sketch_parameters);
+
   // Derived points (projected, arc endpoints, slot corners) are derived
   // geometry — lock them by default so new derived points start as fixed.
   // Must run before sync_fixed_point_flags so the user's explicit

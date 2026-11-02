@@ -264,6 +264,7 @@
         "update_selection_filter",
         "update_shell_thickness",
         "update_sketch_chamfer",
+        "update_sketch_arc_radius",
         "update_sketch_circle",
         "update_sketch_dimension",
         "update_sketch_dimension_display",

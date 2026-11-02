@@ -2,6 +2,9 @@
                                      double center_x,
                                      double center_y,
                                      double radius);
+  // Perimeter-resize for an arc: the centre does not move, only the radius.
+  DocumentState update_sketch_arc_radius(const std::string& arc_id,
+                                         double radius);
   // `line_type` is "" for an ordinary line; "centerline" / "infinite" mark
   // a reference line (they also force the construction flag, so profiles
   // and auto dimensions ignore them).

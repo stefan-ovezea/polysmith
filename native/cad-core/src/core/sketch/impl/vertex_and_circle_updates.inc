@@ -302,3 +302,69 @@ void update_sketch_circle(FeatureEntry& feature,
   refresh_sketch_derived_state(feature);
   for (const auto& [id, was_fixed] : saved_fixed) set_fixed(id, was_fixed);
 }
+
+// Perimeter-resize for an ARC — the circle gesture's counterpart.
+//
+// The centre stays exactly where it is and only the radius changes: both
+// endpoints slide outward/inward along the rays they already sit on, so the
+// arc keeps its shape instead of deforming. The endpoints are shared with the
+// lines welded to them, so they are propagated (the trim's internal freeze is
+// lifted for the move and restored afterwards, exactly like a centre drag).
+void update_sketch_arc_radius(FeatureEntry& feature,
+                              const std::string& arc_id,
+                              double radius) {
+  if (feature.kind != "sketch" || !feature.sketch_parameters.has_value()) {
+    throw std::runtime_error("Only sketch features can update sketch arcs");
+  }
+  if (radius <= kMinimumSketchDimensionValue) {
+    throw std::runtime_error("Sketch arcs must have non-zero radius");
+  }
+
+  auto& parameters = feature.sketch_parameters.value();
+  SketchArc* arc = nullptr;
+  for (auto& candidate : parameters.arcs) {
+    if (candidate.id == arc_id) {
+      arc = &candidate;
+      break;
+    }
+  }
+  if (arc == nullptr) {
+    throw std::runtime_error("Sketch arc not found: " + arc_id);
+  }
+
+  const double start_angle = std::atan2(arc->start_y - arc->center_y,
+                                        arc->start_x - arc->center_x);
+  const double end_angle = std::atan2(arc->end_y - arc->center_y,
+                                      arc->end_x - arc->center_x);
+  arc->radius = radius;
+  arc->start_x = arc->center_x + radius * std::cos(start_angle);
+  arc->start_y = arc->center_y + radius * std::sin(start_angle);
+  arc->end_x = arc->center_x + radius * std::cos(end_angle);
+  arc->end_y = arc->center_y + radius * std::sin(end_angle);
+
+  auto set_vertex_fixed = [&](const std::string& id, bool fixed) {
+    for (auto& vertex : parameters.vertices) {
+      if (vertex.id == id) {
+        vertex.is_fixed = fixed;
+        return;
+      }
+    }
+  };
+  const bool start_was_fixed = vertex_is_fixed(parameters, arc->start_vertex_id);
+  const bool end_was_fixed = vertex_is_fixed(parameters, arc->end_vertex_id);
+  set_vertex_fixed(arc->start_vertex_id, false);
+  set_vertex_fixed(arc->end_vertex_id, false);
+  propagate_connected_point_move(parameters, arc->start_vertex_id,
+                                 arc->start_x, arc->start_y);
+  propagate_connected_point_move(parameters, arc->end_vertex_id,
+                                 arc->end_x, arc->end_y);
+  set_vertex_fixed(arc->start_vertex_id, start_was_fixed);
+  set_vertex_fixed(arc->end_vertex_id, end_was_fixed);
+
+  // Dragging OVERRIDES the dimensions — the rule every other drag follows.
+  // Re-measure now, while the far ends of the welded lines are still put, or a
+  // driving length dimension pulls the endpoints straight back.
+  sync_all_line_dimensions(parameters);
+  sync_arc_dimension(parameters, *arc);
+  refresh_sketch_derived_state(feature);
+}

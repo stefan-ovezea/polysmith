@@ -511,6 +511,12 @@ export function buildSketchArcObject(
   } else {
     while (sweep >= 0) sweep -= Math.PI * 2;
   }
+  if (arc.sweepAngle !== undefined) {
+    // The core's span says WHICH of the two arcs this is; the endpoints alone
+    // cannot. Keep the sign the local plane basis produced and take only the
+    // magnitude, so a mirrored plane frame cannot flip the drawn side.
+    sweep = Math.sign(sweep) * Math.abs(arc.sweepAngle);
+  }
 
   // 64 segments matches buildSketchCircleObject's resolution. Smaller
   // arcs naturally end up with fewer "visible" segments because the

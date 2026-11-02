@@ -470,6 +470,16 @@ bool handle_sketch_edit_command(
     return true;
   }
 
+  if (command.type == "update_sketch_arc_radius") {
+    const auto document = manager.update_sketch_arc_radius(
+        read_string(command.payload, "arc_id"),
+        read_dimension(command.payload, "radius"));
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command.id, polysmith::protocol::to_payload(document)));
+    return true;
+  }
+
   if (command.type == "update_sketch_dimension") {
     double resolved_value = 0.0;
     std::optional<std::string> expression;

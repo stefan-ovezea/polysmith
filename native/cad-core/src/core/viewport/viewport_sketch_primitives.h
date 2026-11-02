@@ -136,6 +136,13 @@ struct ViewportSketchArcPrimitive {
   double end_y;
   double end_z;
   bool ccw;
+  // Angular span from the centre — the arc's intended shape. `sweep_angle`
+  // is signed in the arc's own direction (positive CCW, negative CW), so
+  // sampling `start_angle .. start_angle + sweep_angle` reproduces this arc
+  // and not its complement. The endpoints alone are ambiguous; see
+  // `arc_start_angle` / `arc_sweep_angle` in sketch_geometry_types.h.
+  double start_angle = 0.0;
+  double sweep_angle = 0.0;
   bool is_selected;
   bool is_construction = false;
   // See `ViewportSketchLinePrimitive::is_preview`.

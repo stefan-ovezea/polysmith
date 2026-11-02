@@ -281,6 +281,13 @@ export interface SketchArcScene {
   start: [number, number, number];
   end: [number, number, number];
   ccw: boolean;
+  // The arc's intended angular span, from the core. Two endpoints admit two
+  // arcs, so a renderer that re-derives the branch from `ccw` + the endpoint
+  // angles guesses — and the guess flips when a drag swaps their angular
+  // order (the trimmed-arc "complementary arc" report). Optional only for
+  // payloads predating the field; when present it wins.
+  startAngle?: number;
+  sweepAngle?: number;
   isSelected: boolean;
   isConstruction: boolean;
   isProjected: boolean;

@@ -3,6 +3,10 @@ void update_sketch_circle(FeatureEntry& feature,
                           double center_x,
                           double center_y,
                           double radius);
+// Perimeter-resize for an arc: centre fixed, radius only.
+void update_sketch_arc_radius(FeatureEntry& feature,
+                              const std::string& arc_id,
+                              double radius);
 void add_sketch_line(FeatureEntry& feature,
                      int line_index,
                      double start_x,

@@ -2469,6 +2469,7 @@ function App() {
     setSketchPointFixed,
     updateSketchPoint,
     updateSketchCircle,
+    updateSketchArcRadius,
     moveSketchEntities,
     updateSketchDimension,
     updateSketchDimensionLabelPosition,
@@ -6377,6 +6378,11 @@ function App() {
               onUpdateSketchCircle={async (circleId, centerX, centerY, radius) => {
                 await runAction(async () => {
                   await updateSketchCircle(circleId, centerX, centerY, radius);
+                });
+              }}
+              onUpdateSketchArcRadius={async (arcId, radius) => {
+                await runAction(async () => {
+                  await updateSketchArcRadius(arcId, radius);
                 });
               }}
               onMoveSketchEntities={async (params) => {

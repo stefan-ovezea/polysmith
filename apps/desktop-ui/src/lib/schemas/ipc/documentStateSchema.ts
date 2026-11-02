@@ -666,6 +666,9 @@ export const documentStateSchema = z.object({
                 end_x: z.number(),
                 end_y: z.number(),
                 ccw: z.boolean(),
+                // The arc's intended span (see `ViewportSketchArc`).
+                start_angle: z.number().optional(),
+                sweep_angle: z.number().optional(),
                 is_construction: z.boolean().default(false),
                 // See `lines.generated_by` (reserved — the v1 text
                 // expansion only emits lines).
