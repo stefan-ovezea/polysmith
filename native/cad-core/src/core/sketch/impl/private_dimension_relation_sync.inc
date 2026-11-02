@@ -259,6 +259,26 @@ void enforce_arc_dimensions(SketchFeatureParameters& parameters) {
     }
     auto& arc = *arc_it;
 
+    // A point is "locked" only when the user locked it: the Fix tool stores
+    // an explicit `fixed` constraint record, while internal freezes (the trim
+    // freezing an arc's endpoints to protect the loop, slot/ellipse derived
+    // vertices) carry `is_fixed` alone. The difference matters here — a
+    // frozen-by-trim endpoint must NOT demote a radius dimension to
+    // reference-only, or the dimension silently stops driving and can never
+    // be edited again (update_sketch_dimension returns early on a driven
+    // dimension). A user-locked point really is over-constrained.
+    auto has_explicit_fix = [&](const std::string& vertex_id) {
+      for (const auto& constraint : parameters.constraints) {
+        if (constraint.kind != "fixed") continue;
+        if (std::find(constraint.target_ids.begin(),
+                      constraint.target_ids.end(),
+                      vertex_id) != constraint.target_ids.end()) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     // Slide a candidate endpoint along an H/V-constrained line that
     // shares the endpoint's vertex to the circle intersection nearest
     // the candidate.  Returns nullopt when the circle cannot reach the
@@ -315,7 +335,8 @@ void enforce_arc_dimensions(SketchFeatureParameters& parameters) {
     }
 
     if (dim.kind == "arc_radius") {
-      if (start_v->is_fixed || end_v->is_fixed) {
+      if ((start_v->is_fixed && has_explicit_fix(arc.start_vertex_id)) ||
+          (end_v->is_fixed && has_explicit_fix(arc.end_vertex_id))) {
         dim.driven = true;
         continue;
       }
@@ -348,11 +369,28 @@ void enforce_arc_dimensions(SketchFeatureParameters& parameters) {
       arc.end_x = resolved_end->first;
       arc.end_y = resolved_end->second;
       // Write the recomputed endpoint positions back to the shared
-      // vertices so connected geometry (lines) follows.
+      // vertices so connected geometry (lines) follows. The trim's internal
+      // freeze would make the propagation drop the move and leave the drawn
+      // arc off its own endpoints, so lift it for these two moves and restore
+      // it afterwards — the same pattern the arc centre drag uses.
+      auto set_vertex_fixed = [&](const std::string& id, bool fixed) {
+        for (auto& vertex : parameters.vertices) {
+          if (vertex.id == id) {
+            vertex.is_fixed = fixed;
+            return;
+          }
+        }
+      };
+      const bool start_was_fixed = start_v->is_fixed;
+      const bool end_was_fixed = end_v->is_fixed;
+      set_vertex_fixed(arc.start_vertex_id, false);
+      set_vertex_fixed(arc.end_vertex_id, false);
       propagate_connected_point_move(parameters, arc.start_vertex_id,
                                      arc.start_x, arc.start_y);
       propagate_connected_point_move(parameters, arc.end_vertex_id,
                                      arc.end_x, arc.end_y);
+      set_vertex_fixed(arc.start_vertex_id, start_was_fixed);
+      set_vertex_fixed(arc.end_vertex_id, end_was_fixed);
     } else {  // arc_angle / arc_length
       if (end_v->is_fixed) {
         dim.driven = true;

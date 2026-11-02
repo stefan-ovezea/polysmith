@@ -542,10 +542,35 @@ void update_sketch_dimension(FeatureEntry& feature,
     arc_it->end_x = cx + value * std::cos(end_angle);
     arc_it->end_y = cy + value * std::sin(end_angle);
 
+    // A trimmed arc's endpoints are frozen by the trim command to protect the
+    // loop it welded against the solver — and propagate_connected_point_move
+    // refuses to move a fixed vertex. Editing the radius is a deliberate user
+    // action that overrides that freeze: without lifting it the arc cache took
+    // the new radius while the vertex table (and the lines welded to it) kept
+    // the old positions, so the drawn arc grew off its own endpoints — "it
+    // enlarges but disconnects the line", the same class of bug as the circle
+    // resize. Lift for the propagation, then restore so the loop stays
+    // protected; this is the pattern the arc centre drag already uses.
+    auto set_vertex_fixed = [&](const std::string& id, bool fixed) {
+      for (auto& vertex : parameters.vertices) {
+        if (vertex.id == id) {
+          vertex.is_fixed = fixed;
+          return;
+        }
+      }
+    };
+    const bool start_was_fixed =
+        vertex_is_fixed(parameters, arc_it->start_vertex_id);
+    const bool end_was_fixed =
+        vertex_is_fixed(parameters, arc_it->end_vertex_id);
+    set_vertex_fixed(arc_it->start_vertex_id, false);
+    set_vertex_fixed(arc_it->end_vertex_id, false);
     propagate_connected_point_move(parameters, arc_it->start_vertex_id,
                                    arc_it->start_x, arc_it->start_y);
     propagate_connected_point_move(parameters, arc_it->end_vertex_id,
                                    arc_it->end_x, arc_it->end_y);
+    set_vertex_fixed(arc_it->start_vertex_id, start_was_fixed);
+    set_vertex_fixed(arc_it->end_vertex_id, end_was_fixed);
 
     dimension.value = value;
     dimension.driven = false;  // reset — may be set below

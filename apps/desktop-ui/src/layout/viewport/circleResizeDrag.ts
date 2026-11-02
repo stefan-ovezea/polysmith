@@ -11,8 +11,15 @@ import { getBridge } from "@/lib/planegcsSolver";
 import type { SketchConstraintData } from "@/lib/planegcsBridge";
 import { useCadCoreStore } from "@/state";
 import type { ViewportPickHit } from "./contextMenuState";
-import { updateSketchCircleObject } from "./sceneIncrementalUpdate";
-import { applySolvedPointsToSketchScene } from "./sketchPreviewSceneUpdate";
+import {
+  updateSketchArcObject,
+  updateSketchCircleObject,
+  updateSketchLineObject,
+} from "./sceneIncrementalUpdate";
+import {
+  applySolvedPointsToSketchScene,
+  sketchPlaneAxes,
+} from "./sketchPreviewSceneUpdate";
 
 /**
  * Perimeter-resize drag: grabbing a circle's edge resizes it — the centre
@@ -22,7 +29,10 @@ import { applySolvedPointsToSketchScene } from "./sketchPreviewSceneUpdate";
  */
 
 export interface CircleResizeDrag {
-  circleId: string;
+  /** Which curve the gesture grabbed — a circle and an arc share this drag. */
+  kind: "circle" | "arc";
+  /** `circle_id` or `arc_id`, matching `kind`. */
+  entityId: string;
   centerX: number;
   centerY: number;
   startClientX: number;
@@ -81,20 +91,46 @@ export function beginCircleResizePointerDown({
   armedSketchConstraint: ArmedSketchConstraint;
 }): boolean {
   if (armedSketchConstraint) return false;
-  if (!hit || hit.kind !== "sketch_entity" || hit.entityKind !== "circle") {
+  if (
+    !hit ||
+    hit.kind !== "sketch_entity" ||
+    (hit.entityKind !== "circle" && hit.entityKind !== "arc")
+  ) {
     return false;
   }
   if (!sketch) return false;
-  const circle = sketch.circles.find((c) => c.circle_id === hit.id);
-  if (!circle) return false;
+
+  // Circles and arcs share this gesture: the centre stays put and only the
+  // radius follows the cursor. An arc additionally keeps its angular span, so
+  // it grows/shrinks as a shape instead of deforming.
+  let kind: "circle" | "arc";
+  let centerX: number;
+  let centerY: number;
+  let startRadius: number;
+  if (hit.entityKind === "arc") {
+    const arc = (sketch.arcs ?? []).find((a) => a.arc_id === hit.id);
+    if (!arc) return false;
+    kind = "arc";
+    centerX = arc.center_x;
+    centerY = arc.center_y;
+    startRadius = arc.radius;
+  } else {
+    const circle = sketch.circles.find((c) => c.circle_id === hit.id);
+    if (!circle) return false;
+    kind = "circle";
+    centerX = circle.center_x;
+    centerY = circle.center_y;
+    startRadius = circle.radius;
+  }
 
   circleResizeDragRef.current = {
-    circleId: circle.circle_id,
-    centerX: circle.center_x,
-    centerY: circle.center_y,
+    kind,
+    entityId: hit.id,
+    centerX,
+    centerY,
     startClientX: event.clientX,
     startClientY: event.clientY,
-    startRadius: circle.radius,
+    startRadius,
     hasMoved: false,
     inFlight: false,
     startRevision: useCadCoreStore.getState().document?.revision ?? 0,
@@ -166,6 +202,73 @@ export function handleCircleResizePointerMove({
   );
   const sketch = sketchLinesRef.current;
 
+  // ARC: same gesture, shape preserved. The centre is fixed and both endpoints
+  // slide along the rays they already sit on, so the arc grows as an arc
+  // instead of deforming. Everything welded to those endpoints (the lines the
+  // trim left attached) is scaled radially with them, so the preview shows the
+  // junction the commit will produce.
+  if (drag.kind === "arc") {
+    const arc = (sketch?.arcs ?? []).find((a) => a.arc_id === drag.entityId);
+    if (!sketch || !arc) return true;
+    const scale = radius / Math.max(drag.startRadius, 1e-9);
+    const frame = activeSketchPlaneFrameRef.current;
+    const radial = (x: number, y: number): [number, number] => [
+      drag.centerX + (x - drag.centerX) * scale,
+      drag.centerY + (y - drag.centerY) * scale,
+    ];
+    const moved = new Map<string, [number, number]>();
+    moved.set(arc.start_vertex_id, radial(arc.start_x, arc.start_y));
+    moved.set(arc.end_vertex_id, radial(arc.end_x, arc.end_y));
+    const startLocal = moved.get(arc.start_vertex_id) as [number, number];
+    const endLocal = moved.get(arc.end_vertex_id) as [number, number];
+    const { xAxis, yAxis } = sketchPlaneAxes(activeSketchPlaneId, frame);
+
+    dragPreviewMutatingRef.current = true;
+    updateSketchArcObject({
+      arcObject: sketchEntityObjectByIdRef.current.get(arc.arc_id),
+      center: toWorldPoint(
+        activeSketchPlaneId,
+        [drag.centerX, drag.centerY],
+        frame,
+      ),
+      start: toWorldPoint(activeSketchPlaneId, startLocal, frame),
+      end: toWorldPoint(activeSketchPlaneId, endLocal, frame),
+      radius,
+      ccw: arc.ccw,
+      previousSweep: arc.sweep_angle,
+      xAxis,
+      yAxis,
+    });
+    for (const [vertexId, position] of moved) {
+      const sphere = sketchPointObjectByIdRef.current.get(vertexId);
+      if (!sphere) continue;
+      const world = toWorldPoint(activeSketchPlaneId, position, frame);
+      sphere.position.set(world[0], world[1], world[2]);
+    }
+    for (const line of sketch.lines) {
+      const nextStart = moved.get(line.start_vertex_id);
+      const nextEnd = moved.get(line.end_vertex_id);
+      if (!nextStart && !nextEnd) continue;
+      updateSketchLineObject(
+        sketchEntityObjectByIdRef.current.get(line.line_id),
+        toWorldPoint(
+          activeSketchPlaneId,
+          nextStart ?? ([line.start_x, line.start_y] as [number, number]),
+          frame,
+        ),
+        toWorldPoint(
+          activeSketchPlaneId,
+          nextEnd ?? ([line.end_x, line.end_y] as [number, number]),
+          frame,
+        ),
+      );
+    }
+    setSketchSnapLabel(null);
+    dragFollowDimensionsRef.current?.();
+    requestRender();
+    return true;
+  }
+
   // Solve the attached points against the new radius (centre frozen) so they
   // ride the circle live, exactly as the core commit will.
   const solvedPoints = new Map<string, [number, number]>();
@@ -174,7 +277,7 @@ export function handleCircleResizePointerMove({
     const paramsCopy: SketchFeatureParameters = {
       ...sketch,
       circles: sketch.circles.map((c) =>
-        c.circle_id === drag.circleId ? { ...c, radius } : c,
+        c.circle_id === drag.entityId ? { ...c, radius } : c,
       ),
     };
     const attachedIds = (sketchConstraintsRef.current ?? [])
@@ -182,7 +285,7 @@ export function handleCircleResizePointerMove({
         (c) =>
           c.kind === "point_on_circle" &&
           c.target_ids.length >= 2 &&
-          c.target_ids[1] === drag.circleId,
+          c.target_ids[1] === drag.entityId,
       )
       .map((c) => c.target_ids[0]);
     const result = gcsBridge.solve(
@@ -207,7 +310,7 @@ export function handleCircleResizePointerMove({
     for (const constraint of sceneConstraints) {
       if (
         constraint.kind !== "point_on_circle" ||
-        constraint.relatedEntityId !== drag.circleId
+        constraint.relatedEntityId !== drag.entityId
       ) {
         continue;
       }
@@ -249,7 +352,7 @@ export function handleCircleResizePointerMove({
     activeSketchPlaneFrameRef.current,
   );
   updateSketchCircleObject({
-    circleObject: sketchEntityObjectByIdRef.current.get(drag.circleId),
+    circleObject: sketchEntityObjectByIdRef.current.get(drag.entityId),
     center: centerWorld,
     radius,
   });
@@ -270,6 +373,7 @@ export function finishCircleResizePointerUp({
   dragPreviewMutatingRef,
   pendingEndpointCommitRef,
   updateSketchCircle,
+  updateSketchArcRadius,
   restorePreviewScene,
   setSketchSnapLabel,
   setHoveredSketchEntity,
@@ -291,6 +395,11 @@ export function finishCircleResizePointerUp({
     circleId: string,
     centerX: number,
     centerY: number,
+    radius: number,
+  ) => Promise<void> | void;
+  /** ARC counterpart: the centre is fixed, only the radius changes. */
+  updateSketchArcRadius: (
+    arcId: string,
     radius: number,
   ) => Promise<void> | void;
   restorePreviewScene: () => void;
@@ -334,7 +443,16 @@ export function finishCircleResizePointerUp({
       // core's viewport state lands, or the next sync repaints the pre-drag
       // circle from the stale viewport (the "old position flashes on commit").
       pendingEndpointCommitRef.current = true;
-      void updateSketchCircle(drag.circleId, drag.centerX, drag.centerY, radius);
+      if (drag.kind === "arc") {
+        void updateSketchArcRadius(drag.entityId, radius);
+      } else {
+        void updateSketchCircle(
+          drag.entityId,
+          drag.centerX,
+          drag.centerY,
+          radius,
+        );
+      }
     }
   } else {
     restorePreviewScene();

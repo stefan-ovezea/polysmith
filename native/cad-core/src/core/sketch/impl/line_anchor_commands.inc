@@ -21,18 +21,21 @@ void set_sketch_midpoint_anchor(FeatureEntry &feature,
     return;
   }
 
-  // Generated glyph segments can't host anchors — edit the text entity.
-  require_user_line(parameters, host_line_id);
-
   const auto host_it = std::find_if(
       parameters.lines.begin(), parameters.lines.end(),
       [&](const SketchLine &line) { return line.id == host_line_id; });
   if (host_it == parameters.lines.end()) {
-    // The host line was deleted between snap-time and commit-time.
-    // Silently skip — there is nothing to anchor to.
+    // Nothing to anchor to. Either the host line was deleted between
+    // snap-time and commit-time, or the UI snapped onto a circle/arc
+    // perimeter and sent that curve's id as the host — a curve attaches
+    // through its own point_on_circle / point_on_arc constraint, which the
+    // attach pass has already created. Skip silently rather than throwing
+    // "Sketch line not found" and failing the draw command.
     return;
   }
 
+  // Generated glyph segments can't host anchors — edit the text entity.
+  require_user_line(parameters, host_line_id);
   // Use a stable id derived from the bound point so the relation
   // round-trips through serialization without churning.
   parameters.midpoint_anchors.push_back(SketchMidpointAnchor{
@@ -57,12 +60,6 @@ void set_sketch_vertex_line_anchor(FeatureEntry &feature,
         "Only sketch features can hold point-line anchors");
   }
   auto &parameters = *feature.sketch_parameters;
-
-  if (!host_line_id.empty()) {
-    // Generated glyph segments can't host anchors — edit the text
-    // entity. (Empty host = clear path, nothing to guard.)
-    require_user_line(parameters, host_line_id);
-  }
 
   // Drop any pre-existing anchor for the same point. Also clear any
   // midpoint anchor on the same point so the two relations don't
@@ -92,10 +89,18 @@ void set_sketch_vertex_line_anchor(FeatureEntry &feature,
       parameters.lines.begin(), parameters.lines.end(),
       [&](const SketchLine &line) { return line.id == host_line_id; });
   if (host_it == parameters.lines.end()) {
-    // The host line was deleted between snap-time and commit-time.
-    // Silently skip — there is nothing to anchor to.
+    // Nothing to anchor to. Either the host line was deleted between
+    // snap-time and commit-time, or — the case behind
+    // "Sketch line not found: arc-1" — the UI snapped onto a circle/arc
+    // perimeter and sent that curve's id as the host. A curve attaches
+    // through its own point_on_circle / point_on_arc constraint, which the
+    // attach pass has already created, and a line anchor cannot express it.
+    // Skip silently instead of failing the command that drew the line.
     return;
   }
+
+  // Generated glyph segments can't host anchors — edit the text entity.
+  require_user_line(parameters, host_line_id);
 
   // Clamp `t` so out-of-range UI input can never produce an anchor
   // that re-projects past the segment's endpoints.

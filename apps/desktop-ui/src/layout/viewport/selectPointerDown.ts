@@ -68,12 +68,12 @@ export function beginSelectPointerDown({
     return { handled: true, clearPointerDown: true };
   }
 
-  // Grabbing a circle's perimeter resizes it (centre fixed, radius follows the
-  // cursor) instead of starting a marquee. The centre is still draggable as a
-  // point (handled above); the edge is the resize affordance.
+  // Grabbing a circle's or an arc's perimeter resizes it (centre fixed, radius
+  // follows the cursor) instead of starting a marquee. The centre is still
+  // draggable as a point (handled above); the edge is the resize affordance.
   if (
     hit?.kind === "sketch_entity" &&
-    hit.entityKind === "circle" &&
+    (hit.entityKind === "circle" || hit.entityKind === "arc") &&
     beginCircleResizePointerDown({
       event,
       renderer,

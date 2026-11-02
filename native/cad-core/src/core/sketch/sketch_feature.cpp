@@ -41,6 +41,7 @@ namespace {
 #include "core/sketch/impl/private_chamfer_refresh.inc"
 #include "core/sketch/impl/private_point_propagation.inc"
 #include "core/sketch/impl/private_dimension_relation_sync.inc"
+#include "core/sketch/impl/arc_geometry_reconcile.inc"
 #include "core/sketch/impl/private_relation_enforcement.inc"
 #include "core/sketch/impl/constraint_completion_helpers.inc"
 #include "core/sketch/impl/constraint_completion_enforcement.inc"

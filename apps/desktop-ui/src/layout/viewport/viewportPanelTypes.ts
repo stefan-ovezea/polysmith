@@ -541,6 +541,8 @@ export interface ViewportPanelProps {
     centerY: number,
     radius: number,
   ) => Promise<void>;
+  /** Perimeter-resize for an arc: the centre is fixed, only the radius changes. */
+  onUpdateSketchArcRadius: (arcId: string, radius: number) => Promise<void>;
   onMoveSketchEntities: (params: {
     entityIds: string[];
     dx: number;

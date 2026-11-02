@@ -391,6 +391,9 @@ export const viewportStateSchema = z.object({
           z: z.number(),
         }),
         ccw: z.boolean(),
+        // The arc's intended span (see ViewportSketchArc.start_angle).
+        start_angle: z.number().optional(),
+        sweep_angle: z.number().optional(),
         is_selected: z.boolean(),
         is_construction: z.boolean().default(false),
         is_preview: z.boolean().default(false),

@@ -345,6 +345,8 @@ function makeSketchArc(
     start: [arc.start.x, arc.start.y, arc.start.z],
     end: [arc.end.x, arc.end.y, arc.end.z],
     ccw: arc.ccw,
+    startAngle: arc.start_angle,
+    sweepAngle: arc.sweep_angle,
     isSelected: arc.is_selected,
     isConstruction: arc.is_construction,
     isProjected: projectedArcIds.has(arc.arc_id),

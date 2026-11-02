@@ -205,6 +205,10 @@ ViewportSketchArcPrimitive make_sketch_arc_primitive(
       .end_y = end.y,
       .end_z = end.z,
       .ccw = arc.ccw,
+      // The intended span, so the renderer never has to pick one of the two
+      // arcs that share these endpoints (the "complementary arc" report).
+      .start_angle = arc_start_angle(arc),
+      .sweep_angle = arc_sweep_angle(arc),
       .is_selected = is_selected,
       .is_construction = arc.is_construction,
       .generated_by = arc.generated_by,

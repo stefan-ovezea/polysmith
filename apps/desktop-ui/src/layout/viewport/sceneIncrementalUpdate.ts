@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import type { ViewportScene } from "@/types";
 import type { ActiveSketchGridPlaneFrame } from "./grid";
+import { chooseArcSweep } from "./arcSweep";
 
 function sketchCirclePlaneAxes(
   frame: ActiveSketchGridPlaneFrame | null,
@@ -144,6 +145,7 @@ export function updateSketchArcObject({
   end,
   radius,
   ccw,
+  previousSweep,
   xAxis,
   yAxis,
 }: {
@@ -153,6 +155,9 @@ export function updateSketchArcObject({
   end: readonly [number, number, number];
   radius: number;
   ccw: boolean;
+  /** The span this arc was last drawn with, so a transient endpoint move
+   *  cannot flip the drawing to the arc's complement. */
+  previousSweep?: number;
   xAxis?: readonly [number, number, number];
   yAxis?: readonly [number, number, number];
 }) {
@@ -240,12 +245,7 @@ export function updateSketchArcObject({
     basisY = basis.e2;
   }
 
-  let sweep = endAngle - startAngle;
-  if (ccw) {
-    while (sweep <= 0) sweep += Math.PI * 2;
-  } else {
-    while (sweep >= 0) sweep -= Math.PI * 2;
-  }
+  const sweep = chooseArcSweep({ startAngle, endAngle, ccw, previousSweep });
 
   for (let index = 0; index <= segments; index++) {
     const t = index / segments;
@@ -360,6 +360,7 @@ export function updateEndpointDragSceneObjects({
       end: arcData.end,
       radius: arcData.radius,
       ccw: arcData.ccw,
+      previousSweep: arcData.sweepAngle,
       xAxis,
       yAxis,
     });

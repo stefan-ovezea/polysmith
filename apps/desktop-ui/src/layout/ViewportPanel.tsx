@@ -399,6 +399,7 @@ export function ViewportPanel({
   onArrayCenterPicked,
   onUpdateSketchPoint,
   onUpdateSketchCircle,
+  onUpdateSketchArcRadius,
   onMoveSketchEntities,
   onFinishSketch,
   onClearSelection,
@@ -1143,6 +1144,7 @@ export function ViewportPanel({
   const pickSketchPointRef = useRef(onPickSketchPoint);
   const updateSketchPointRef = useRef(onUpdateSketchPoint);
   const updateSketchCircleRef = useRef(onUpdateSketchCircle);
+  const updateSketchArcRadiusRef = useRef(onUpdateSketchArcRadius);
   const moveSketchEntitiesRef = useRef(onMoveSketchEntities);
   const selectSketchDimensionRef = useRef(onSelectSketchDimension);
   const updateSketchDimensionRef = useRef(onUpdateSketchDimension);
@@ -4807,6 +4809,7 @@ export function ViewportPanel({
         dragPreviewMutatingRef,
         pendingEndpointCommitRef,
         updateSketchCircle: updateSketchCircleRef.current,
+        updateSketchArcRadius: updateSketchArcRadiusRef.current,
         restorePreviewScene,
         setSketchSnapLabel,
         setHoveredSketchEntity,

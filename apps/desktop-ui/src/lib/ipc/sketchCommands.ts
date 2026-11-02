@@ -309,6 +309,20 @@ export function makeUpdateSketchCircleCommand(
 }
 
 
+export function makeUpdateSketchArcRadiusCommand(
+  arcId: string,
+  radius: number,
+): CoreCommand {
+  return {
+    id: crypto.randomUUID(),
+    type: "update_sketch_arc_radius",
+    payload: {
+      arc_id: arcId,
+      radius,
+    },
+  };
+}
+
 export function makeUpdateSketchDimensionCommand(
   dimensionId: string,
   value: number | string,

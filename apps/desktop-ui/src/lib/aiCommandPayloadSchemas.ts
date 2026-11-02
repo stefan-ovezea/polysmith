@@ -560,6 +560,9 @@ export const commandPayloadSchemas = {
   set_sketch_vertex_fixed: z
     .object({ vertex_id: stringField, is_fixed: booleanField })
     .strict(),
+  update_sketch_arc_radius: z
+    .object({ arc_id: stringField, radius: numberField })
+    .strict(),
   update_sketch_circle: z
     .object({
       circle_id: stringField,

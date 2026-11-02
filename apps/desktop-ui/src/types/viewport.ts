@@ -244,6 +244,11 @@ export interface ViewportSketchArc {
   start: Vector3;
   end: Vector3;
   ccw: boolean;
+  // Intended angular span from the core (signed; positive CCW). Optional so
+  // payloads from before this field keep parsing; when present the renderer
+  // samples it instead of guessing a branch from the endpoint angles.
+  start_angle?: number;
+  sweep_angle?: number;
   is_selected: boolean;
   is_construction: boolean;
   is_preview: boolean;

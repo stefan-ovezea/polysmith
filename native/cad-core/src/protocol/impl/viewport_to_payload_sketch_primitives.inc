@@ -168,6 +168,8 @@ json to_payload(const polysmith::core::ViewportSketchArcPrimitive& primitive) {
            {"z", primitive.end_z},
        }},
       {"ccw", primitive.ccw},
+      {"start_angle", primitive.start_angle},
+      {"sweep_angle", primitive.sweep_angle},
       {"is_selected", primitive.is_selected},
       {"is_construction", primitive.is_construction},
       {"is_preview", primitive.is_preview},

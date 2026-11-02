@@ -136,6 +136,7 @@ const activeSketchRequiredCommands = new Set<string>([
   "update_sketch_line",
   "update_sketch_vertex",
   "update_sketch_circle",
+  "update_sketch_arc_radius",
   "move_sketch_entities",
   "trim_sketch_entity",
   "extend_sketch_entity",

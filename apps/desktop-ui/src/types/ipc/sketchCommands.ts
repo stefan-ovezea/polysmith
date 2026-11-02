@@ -808,6 +808,16 @@ export interface UpdateSketchCircleCommand {
   };
 }
 
+export interface UpdateSketchArcRadiusCommand {
+  id: string;
+  type: "update_sketch_arc_radius";
+  payload: {
+    arc_id: string;
+    // The centre does not move; only the radius changes.
+    radius: number;
+  };
+}
+
 export interface UpdateSketchDimensionCommand {
   id: string;
   type: "update_sketch_dimension";

@@ -196,6 +196,11 @@ export interface SketchArcEntry {
   end_x: number;
   end_y: number;
   ccw: boolean;
+  // Intended angular span from the core (signed; positive CCW). Optional for
+  // older payloads. The drag preview keeps this branch — with only the live
+  // endpoints, an endpoint-order swap paints the arc's complement.
+  start_angle?: number;
+  sweep_angle?: number;
   is_construction: boolean;
   // See `SketchLineEntry.generated_by` (reserved — the v1 text
   // expansion only emits lines).

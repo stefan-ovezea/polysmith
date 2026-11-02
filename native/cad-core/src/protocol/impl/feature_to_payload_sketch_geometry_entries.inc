@@ -60,6 +60,11 @@
                           {"end_x", arc.end_x},
                           {"end_y", arc.end_y},
                           {"ccw", arc.ccw},
+                          // Intended span (signed, positive CCW) — the drag
+                          // preview keeps its branch instead of re-deriving
+                          // one from the moving endpoints.
+                          {"start_angle", arc_start_angle(arc)},
+                          {"sweep_angle", arc_sweep_angle(arc)},
                           {"is_construction", arc.is_construction},
                           {"generated_by",
                            arc.generated_by.has_value()

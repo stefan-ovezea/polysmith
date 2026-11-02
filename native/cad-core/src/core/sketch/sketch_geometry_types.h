@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <optional>
 #include <string>
 #include <vector>
@@ -79,13 +80,13 @@ struct SketchPolygon {
 
 // 2D arc on the sketch plane. Stored as start/end endpoint ids (so it
 // participates in the shared point graph just like a SketchLine) plus
-// a fully-cached (center, radius, ccw) triple. v1 freezes the arc's
-// shape at creation: the endpoint points are flagged is_fixed=true so
-// the user can't drag them off the cached arc, and there is no
-// constraint / dimension support on arcs yet. Editing flows on arcs
-// (drag-to-reshape, radius dimension, etc.) are deliberately left
-// for a follow-up so the loop / extrude integration here doesn't have
-// to worry about the cached params drifting from the endpoints.
+// a fully-cached (center, radius, ccw) triple. The endpoints are
+// ordinary shared vertices — NOT frozen — so a trim-created arc can
+// stay welded to the lines it shares them with; a centre drag moves
+// the whole junction. The arc's intended span is therefore not
+// implicit in the pair of endpoints (two points always admit two
+// arcs): see `arc_start_angle` / `arc_sweep_angle` below, which are
+// what consumers must use instead of re-deriving a branch.
 struct SketchArc {
   std::string id;
   // ── Vertex unification ──────────────────────────────────────
@@ -114,6 +115,40 @@ struct SketchArc {
   // emits lines).
   std::optional<std::string> generated_by;
 };
+
+// ── Angular span: the arc's intended shape ──────────────────────────
+// Two endpoints do NOT determine an arc — between the same two points
+// there are always two, and `ccw` alone cannot say which one an entity
+// means when the endpoints' angular order is only implicit. A consumer
+// that re-derives the span from the endpoints has to guess, and the
+// guess flips whenever the endpoints' angular order swaps; that is what
+// made a trimmed arc render its *complement* mid-drag.
+//
+// These two values replace the guess:
+//
+//   arc = start_angle .. start_angle + sweep_angle
+//
+// `sweep_angle` is SIGNED in the arc's own direction — positive for a
+// CCW arc in (0, 2π], negative for a CW arc in [-2π, 0) — so drawing
+// (start_angle, sweep_angle) reproduces the intended arc exactly,
+// whichever of the two candidates it is. Both are serialized to the UI
+// (viewport primitive + sketch feature arc entries) and every renderer,
+// committed or preview, samples them.
+inline double arc_start_angle(const SketchArc& arc) {
+  return std::atan2(arc.start_y - arc.center_y, arc.start_x - arc.center_x);
+}
+
+inline double arc_sweep_angle(const SketchArc& arc) {
+  constexpr double kTwoPi = 2.0 * 3.14159265358979323846;
+  const double start = arc_start_angle(arc);
+  const double end =
+      std::atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+  // Normalize the gap into (0, 2π] so a sweep is never zero or negative
+  // when measured in the arc's own direction.
+  double sweep = std::fmod(arc.ccw ? end - start : start - end, kTwoPi);
+  if (sweep <= 0.0) sweep += kTwoPi;
+  return arc.ccw ? sweep : -sweep;
+}
 
 // Full ellipse entity (feature/sketch milestone).  v1 creates it
 // center + major-axis point + minor-axis point; the axis points are

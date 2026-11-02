@@ -88,6 +88,7 @@ import type {
   SetSketchCoincidentConstraintCommand,
   DeleteSketchCoincidentConstraintCommand,
   SetSketchVertexFixedCommand,
+  UpdateSketchArcRadiusCommand,
   UpdateSketchCircleCommand,
   UpdateSketchDimensionCommand,
   UpdateSketchDimensionLabelPositionCommand,
@@ -1456,6 +1457,7 @@ export type CoreCommand =
   | SetSketchCoincidentConstraintCommand
   | DeleteSketchCoincidentConstraintCommand
   | SetSketchVertexFixedCommand
+  | UpdateSketchArcRadiusCommand
   | UpdateSketchCircleCommand
   | UpdateSketchDimensionCommand
   | UpdateSketchDimensionLabelPositionCommand

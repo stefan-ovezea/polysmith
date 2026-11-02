@@ -65,6 +65,22 @@ const SketchVertex* find_vertex(const SketchFeatureParameters& params,
   return nullptr;
 }
 
+// First object in the payload that names an arc. The document layout is not
+// this test's subject, so search rather than hard-code the path.
+const nlohmann::json* find_arc_payload(const nlohmann::json& node) {
+  if (node.is_object()) {
+    if (node.contains("arc_id")) return &node;
+    for (auto it = node.begin(); it != node.end(); ++it) {
+      if (const auto* found = find_arc_payload(it.value())) return found;
+    }
+  } else if (node.is_array()) {
+    for (const auto& item : node) {
+      if (const auto* found = find_arc_payload(item)) return found;
+    }
+  }
+  return nullptr;
+}
+
 // How far either cached endpoint sits off the arc's own radius. Zero means
 // the drawn arc (centre + radius) reaches both endpoints — the invariant a
 // rigid drag must preserve.
@@ -153,6 +169,7 @@ bool test_trimmed_arc_centre_drag_stays_rigid() {
   }
   const SketchArc* arc0 = &before.arcs[0];
   const double gap0 = radial_gap(*arc0);
+  const double span0 = arc_sweep_angle(*arc0);
   const std::string centre = arc0->center_vertex_id;
 
   document = manager.update_sketch_vertex(centre, arc0->center_x + 10.0,
@@ -168,6 +185,8 @@ bool test_trimmed_arc_centre_drag_stays_rigid() {
                "trimmed: radius offset unchanged by the centre drag");
   ok &= expect(weld_gap(after, *arc1) < 1e-6,
                "trimmed: endpoints stay welded to the lines");
+  ok &= expect(near(arc_sweep_angle(*arc1), span0, 1e-9),
+               "trimmed: the arc's span survives the centre drag");
   return ok;
 }
 
@@ -266,6 +285,250 @@ bool test_arc_endpoints_start_unfixed() {
          expect(cv != nullptr && !cv->is_fixed, "arc centre is NOT fixed");
 }
 
+// ── Test 6: the arc's span is part of the payload ─────────────────────
+// Two endpoints admit two arcs. A renderer that re-derives which one from
+// `ccw` and the endpoint angles guesses, and the guess flips when the
+// endpoints' order swaps — the trimmed-arc "complementary arc" report. The
+// payload must therefore carry the intended span outright.
+bool test_arc_span_is_serialized() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, -40.0);
+  DocumentState document = manager.trim_sketch_entity("circle-1", -40.0, 0.0);
+  const auto params = sketch_params(document);
+  if (!expect(params.arcs.size() == 1, "span: trimmed arc produced")) {
+    return false;
+  }
+  const SketchArc& arc = params.arcs[0];
+
+  const auto payload = polysmith::protocol::to_payload(document);
+  const auto* arc_payload = find_arc_payload(payload);
+  if (!expect(arc_payload != nullptr, "span: an arc entry exists")) {
+    return false;
+  }
+  if (!expect(arc_payload->contains("start_angle") &&
+                  arc_payload->contains("sweep_angle"),
+              "span: the arc entry carries start_angle + sweep_angle")) {
+    return false;
+  }
+
+  const double start_angle = (*arc_payload)["start_angle"].get<double>();
+  const double sweep_angle = (*arc_payload)["sweep_angle"].get<double>();
+  bool ok = true;
+  ok &= expect(near(start_angle, arc_start_angle(arc), 1e-9),
+               "span: start_angle is the start endpoint's angle");
+  ok &= expect(near(sweep_angle, arc_sweep_angle(arc), 1e-9),
+               "span: sweep_angle is the arc's signed span");
+  // The whole point of the field: this survivor is a MAJOR arc, so its span
+  // must exceed π. Endpoint-derived guessing would pick the minor complement.
+  ok &= expect(std::abs(sweep_angle) > 3.14159265358979323846,
+               "span: the major arc's span exceeds pi, not its complement");
+  // start + sweep must land on the end angle (mod 2π) — the identity that
+  // makes the pair sufficient.
+  const double two_pi = 2.0 * 3.14159265358979323846;
+  const double end_angle =
+      std::atan2(arc.end_y - arc.center_y, arc.end_x - arc.center_x);
+  double landed = start_angle + sweep_angle;
+  while (landed - end_angle > two_pi / 2) landed -= two_pi;
+  while (end_angle - landed > two_pi / 2) landed += two_pi;
+  ok &= expect(std::abs(landed - end_angle) < 1e-9,
+               "span: start_angle + sweep_angle lands on the end angle");
+  return ok;
+}
+
+// ── Test 7: enlarging a trimmed arc's radius drags its welded lines ───
+// User report: typing a bigger radius enlarged the arc but left the lines
+// behind ("it enlarges but disconnects the line", the circle-resize class).
+// Cause: the trim freezes the arc's endpoints, and the move propagation
+// refuses to move a fixed vertex, so the radius changed while the vertex
+// table — and the lines welded to it — stayed put.
+bool test_arc_radius_dimension_drag_keeps_lines_welded() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, -40.0);
+
+  DocumentState document = manager.trim_sketch_entity("circle-1", -40.0, 0.0);
+  auto params = sketch_params(document);
+  if (!expect(params.arcs.size() == 1, "arc radius: trimmed arc produced")) {
+    return false;
+  }
+  const std::string arc_id = params.arcs[0].id;
+  const double r0 = params.arcs[0].radius;
+  // PREMISE: the reproduction depends on the trim freezing the arc's
+  // endpoints — that freeze is what made the move propagation drop the radius
+  // change instead of carrying it to the welded lines. If this ever stops
+  // being true the scenario no longer reproduces the reported bug.
+  const SketchVertex* sv = find_vertex(params, params.arcs[0].start_vertex_id);
+  const SketchVertex* ev = find_vertex(params, params.arcs[0].end_vertex_id);
+  bool premise = expect(sv != nullptr && ev != nullptr,
+                        "arc radius: endpoints exist") &&
+                 expect(sv->is_fixed && ev->is_fixed,
+                        "arc radius: PREMISE — the trim froze the endpoints");
+
+  document = manager.add_sketch_arc_radius_dimension(arc_id);
+  document = manager.update_sketch_dimension("dim-arc-" + arc_id, r0 * 2.0);
+
+  const auto after = sketch_params(document);
+  const SketchArc* arc = find_arc(after, arc_id);
+  if (!expect(arc != nullptr, "arc radius: arc survives the edit")) {
+    return false;
+  }
+  bool ok = true;
+  ok &= expect(near(arc->radius, r0 * 2.0, 1e-6),
+               "arc radius: the new radius is applied");
+  ok &= expect(radial_gap(*arc) < 1e-6,
+               "arc radius: the drawn arc still reaches its own endpoints");
+  ok &= expect(weld_gap(after, *arc) < 1e-6,
+               "arc radius: the welded lines follow the enlarged endpoints");
+  // The trim's internal freeze used to demote the dimension to reference-only
+  // on creation, and a driven dimension silently ignores every later edit —
+  // so this is the difference between "it works" and "it never moves again".
+  const auto dimension_it = std::find_if(
+      after.dimensions.begin(), after.dimensions.end(),
+      [&](const polysmith::core::SketchDimension& dimension) {
+        return dimension.id == "dim-arc-" + arc_id;
+      });
+  ok &= expect(dimension_it != after.dimensions.end() && !dimension_it->driven,
+               "arc radius: the dimension stays driving (not demoted)");
+  return ok && premise;
+}
+
+// ── Test 8: a stale radius is rebuilt from the welded endpoints ───────
+// The reported document carried radius 80 with its endpoints 103.65 and
+// 219.79 from the centre — a 307 mm chord, so no r=80 circle spans them and
+// the renderer drew the arc detached from both lines. The endpoints are the
+// real, shared geometry; the radius is the cache that went stale.
+bool test_arc_radius_reconciles_from_endpoints() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, -40.0);
+  DocumentState document = manager.trim_sketch_entity("circle-1", -40.0, 0.0);
+  const auto params = sketch_params(document);
+  if (!expect(params.arcs.size() == 1, "reconcile: arc produced")) return false;
+  const SketchArc before = params.arcs[0];
+  const double span = std::abs(arc_sweep_angle(before));
+  const double chord = std::hypot(before.end_x - before.start_x,
+                                  before.end_y - before.start_y);
+  const double expected_radius = chord / (2.0 * std::sin(span * 0.5));
+
+  // Corrupt the radius the way the reported document had it: a value no circle
+  // through both welded endpoints could have.
+  document.feature_history.back().sketch_parameters->arcs[0].radius = 5.0;
+
+  // Any refresh reconciles it.
+  document = manager.set_sketch_vertex_fixed(before.center_vertex_id, false);
+  const auto after = sketch_params(document);
+  const SketchArc* arc = find_arc(after, before.id);
+  if (!expect(arc != nullptr, "reconcile: arc survives the refresh")) {
+    return false;
+  }
+
+  bool ok = true;
+  ok &= expect(radial_gap(*arc) < 1e-6,
+               "reconcile: the drawn arc passes through both endpoints");
+  ok &= expect(near(arc->radius, expected_radius, 1e-6),
+               "reconcile: the radius is rebuilt from the chord and span");
+  ok &= expect(near(arc->start_x, before.start_x, 1e-9) &&
+                   near(arc->end_x, before.end_x, 1e-9),
+               "reconcile: the welded endpoints are not moved");
+  ok &= expect(weld_gap(after, *arc) < 1e-6,
+               "reconcile: the lines stay welded to the arc");
+  return ok;
+}
+
+// ── Test 9: a curve host is not a line ────────────────────────────────
+// Drawing a line whose endpoint snapped onto an ARC's perimeter sent the arc
+// id as the line-anchor host, and require_user_line threw
+// "Sketch line not found: arc-1", failing the draw command even though the
+// point_on_arc attachment had already been created. A curve attaches through
+// its own constraint, so the anchor commands must skip it silently.
+bool test_curve_host_anchor_does_not_throw() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, -40.0);
+  DocumentState document = manager.trim_sketch_entity("circle-1", -40.0, 0.0);
+  const auto params = sketch_params(document);
+  if (!expect(params.arcs.size() == 1, "curve host: arc produced")) return false;
+  const std::string arc_id = params.arcs[0].id;
+  const std::string point_id = params.arcs[0].start_vertex_id;
+
+  bool ok = true;
+  try {
+    document = manager.set_sketch_midpoint_anchor(point_id, arc_id);
+  } catch (const std::exception& error) {
+    std::cerr << "  midpoint anchor on a curve threw: " << error.what() << "\n";
+    ok = false;
+  }
+  try {
+    document = manager.set_sketch_vertex_line_anchor(point_id, arc_id, 0.5);
+  } catch (const std::exception& error) {
+    std::cerr << "  line anchor on a curve threw: " << error.what() << "\n";
+    ok = false;
+  }
+
+  const auto after = sketch_params(document);
+  ok &= expect(after.point_line_anchors.empty() && after.midpoint_anchors.empty(),
+               "curve host: no line anchor is recorded for a curve");
+  return ok;
+}
+
+// ── Test 10: dragging the arc's perimeter changes only the radius ─────
+// The circle gesture applied to an arc: the centre is locked, both endpoints
+// slide along the rays they already sit on, and the welded lines follow.
+bool test_arc_perimeter_resize_keeps_centre() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, 40.0);
+  manager.add_sketch_line(-150.0, 0.0, 100.0, -40.0);
+  DocumentState document = manager.trim_sketch_entity("circle-1", -40.0, 0.0);
+  const auto params = sketch_params(document);
+  if (!expect(params.arcs.size() == 1, "resize: arc produced")) return false;
+  const SketchArc before = params.arcs[0];
+  const double start_angle = std::atan2(before.start_y - before.center_y,
+                                        before.start_x - before.center_x);
+  const double end_angle = std::atan2(before.end_y - before.center_y,
+                                      before.end_x - before.center_x);
+  const double new_radius = before.radius * 1.5;
+
+  document = manager.update_sketch_arc_radius(before.id, new_radius);
+  const auto after = sketch_params(document);
+  const SketchArc* arc = find_arc(after, before.id);
+  if (!expect(arc != nullptr, "resize: arc survives the resize")) return false;
+
+  bool ok = true;
+  ok &= expect(near(arc->center_x, before.center_x, 1e-9) &&
+                   near(arc->center_y, before.center_y, 1e-9),
+               "resize: the centre does not move");
+  ok &= expect(near(arc->radius, new_radius, 1e-9),
+               "resize: the radius is applied");
+  ok &= expect(near(std::atan2(arc->start_y - arc->center_y,
+                              arc->start_x - arc->center_x),
+                    start_angle, 1e-9) &&
+                   near(std::atan2(arc->end_y - arc->center_y,
+                                   arc->end_x - arc->center_x),
+                        end_angle, 1e-9),
+               "resize: both endpoints stay on their own rays (shape kept)");
+  ok &= expect(radial_gap(*arc) < 1e-6,
+               "resize: the arc reaches its endpoints at the new radius");
+  ok &= expect(weld_gap(after, *arc) < 1e-6,
+               "resize: the welded lines follow the endpoints");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -275,6 +538,11 @@ int main() {
   ok = test_legacy_redundant_constraints_centre_drag() && ok;
   ok = test_tangent_overshoot_trim_does_not_split() && ok;
   ok = test_arc_endpoints_start_unfixed() && ok;
+  ok = test_arc_span_is_serialized() && ok;
+  ok = test_arc_radius_dimension_drag_keeps_lines_welded() && ok;
+  ok = test_arc_radius_reconciles_from_endpoints() && ok;
+  ok = test_curve_host_anchor_does_not_throw() && ok;
+  ok = test_arc_perimeter_resize_keeps_centre() && ok;
 
   if (!ok) {
     std::cout << "sketch_arc_lines_test FAILED\n";
