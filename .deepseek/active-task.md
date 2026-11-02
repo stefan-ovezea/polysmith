@@ -4,22 +4,37 @@ Shipped in PR #94 (squash `5bf3653`). Verified at merge: `pnpm test:core`
 92/92, `tsc --noEmit` clean, plus five geometric regressions in
 `native/cad-core/tests/sketch_arc_lines_test.cpp`.
 
-## Next up — the two known gaps from this branch
+## Session 2026-11-02 (evening) — PR #95 + #96 merged, `dev` @ `8217c46`
 
-1. **Arc radius resize.** After a circle is trimmed there is no way to change
-   the arc's radius. The resize gesture is gated to `entityKind === "circle"`
-   (`beginCircleResizePointerDown` in `circleResizeDrag.ts`), and the core has
-   **no** `update_sketch_arc_radius` command (`grep update_sketch_arc` →
-   nothing). Needed: a core command (set the radius, re-derive the endpoints
-   from the stored span, reconcile the shared lines), its handler + schema + TS
-   client, the gesture extended to `entityKind === "arc"`, and a regression
-   test.
-2. **The commit-flash hold is a UI workaround.** `sceneSync.ts` keeps the
-   preview-mutated scene until the viewport's SKETCH geometry changes (a hash
-   of `sceneData.sketchPoints`). The proper fix is protocol-level: return the
-   viewport state in the same response as the document revision bump, so there
-   is never a stale frame to hold against. Do this next time the IPC contract
-   is touched.
+- **Arc span on the wire (PR #95).** `start_angle` + signed `sweep_angle` on the
+  viewport primitive *and* the sketch arc entries; `chooseArcSweep` keeps the
+  branch instead of re-deriving one from moving endpoints; the arc-centre drag
+  preview freezes the junction instead of un-freezing it.
+- **Arc geometry reconciled from its endpoints.** `reconcile_arc_geometry_from_endpoints`
+  rebuilds centre + radius when the radius disagrees with the endpoint distances
+  (the reported document had radius 80 with endpoints 103.65 / 219.79 — a 307 mm
+  chord). Runs after `sync_entity_coords_from_vertices`, so it repairs on load.
+- **Radius dimensions stay driving on trimmed arcs.** The trim's internal freeze
+  is no longer mistaken for a user lock (a driven dimension silently ignores
+  every later edit); `enforce_arc_dimensions` lifts the freeze for the move and
+  restores it.
+- **A curve host is not a line.** The point/midpoint anchor commands resolve the
+  host first and skip a circle/arc instead of throwing `Sketch line not found`.
+- **Arc radius resize shipped (old gap #1).** `update_sketch_arc_radius` command,
+  handler, schema, TS client and the perimeter gesture — whose *call site* also
+  had to admit `entityKind === "arc"`; extending the handler alone was
+  unreachable.
+- **Line anchors ride the line during a drag (PR #96).** `rideAnchoredPoints`
+  adds the vertices anchored to a reshaped line to the preview solve's active
+  set (the circle had this; the line never did).
+
+## Next up — the one remaining gap from this branch
+
+**The commit-flash hold is a UI workaround.** `sceneSync.ts` keeps the
+preview-mutated scene until the viewport's SKETCH geometry changes (a hash of
+`sceneData.sketchPoints`). The proper fix is protocol-level: return the viewport
+state in the same response as the document revision bump, so there is never a
+stale frame to hold against. Do this next time the IPC contract is touched.
 
 ## Bug-fix log from that branch (context for the next session)
 

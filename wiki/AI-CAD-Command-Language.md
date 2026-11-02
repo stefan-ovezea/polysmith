@@ -2405,6 +2405,21 @@ Payload:
 }
 ```
 
+#### `update_sketch_arc_radius`
+
+Resizes a sketch arc from its perimeter: the centre does not move and the
+angular span is kept, so only the radius changes. Both endpoints (and the lines
+welded to them) are re-placed along the rays they already sit on.
+
+Payload:
+
+```ts
+{
+  arc_id: string;
+  radius: number;
+}
+```
+
 #### `set_sketch_line_construction`
 
 Toggles whether a sketch line is construction geometry.

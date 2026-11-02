@@ -100,7 +100,7 @@ if (isWindows) {
   const vcpkg = findVcpkgRoot();
   if (!vcpkg) {
     fail("vcpkg not found — the core needs Boost + Eigen3 on Windows.\n" +
-      "         Install vcpkg (see CLAUDE.md Build Troubleshooting) or set VCPKG_ROOT.");
+      "         Install vcpkg (see AGENTS.md Build Troubleshooting) or set VCPKG_ROOT.");
   } else {
     console.log(`vcpkg    : ${vcpkg}`);
   }

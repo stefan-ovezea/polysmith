@@ -47,7 +47,7 @@ if (isWindows) {
       "      C:/vcpkg/bootstrap-vcpkg.bat\n" +
       "      C:/vcpkg/vcpkg.exe install boost eigen3 --triplet x64-windows\n" +
       "    (or set VCPKG_ROOT to an existing vcpkg checkout).\n" +
-      "    See CLAUDE.md Build Troubleshooting."
+      "    See AGENTS.md Build Troubleshooting."
     );
     process.exit(1);
   }

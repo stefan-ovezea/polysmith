@@ -257,6 +257,7 @@
 | `update_revolve_profile` | feature_id (string), profile_id (string) |
 | `update_selection_filter` |  |
 | `update_shell_thickness` | feature_id (string), thickness (dimension) |
+| `update_sketch_arc_radius` | arc_id (string), radius (dimension) |
 | `update_sketch_chamfer` | mode (optional_string), angle_degrees (optional_dimension), chamfer_id (string), distance_a (dimension), distance_b (optional_dimension) |
 | `update_sketch_circle` | circle_id (string), center_x (dimension), center_y (dimension), radius (dimension) |
 | `update_sketch_dimension` | dimension_id (string) |
