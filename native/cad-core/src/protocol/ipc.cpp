@@ -28,6 +28,7 @@ CommandMessage parse_command(const std::string& line) {
       .id = message.value("id", ""),
       .type = message.at("type").get<std::string>(),
       .payload = message.value("payload", json::object()),
+      .include_viewport = message.value("include_viewport", false),
   };
 
   if (command.id.empty() && command.type != "shutdown") {

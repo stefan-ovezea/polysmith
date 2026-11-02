@@ -1,3 +1,57 @@
+# IN PROGRESS: atomic commit + viewport — workstation handoff (2026-11-03)
+
+Branch `feat/atomic-commit-viewport`. **Do not merge yet** — the core hook is
+in and compiles; the UI half is not written.
+
+## What is already done (committed on the branch)
+
+- `CommandMessage.include_viewport` — an opt-in, top-level field on the command
+  envelope (not in the payload), parsed in `protocol/ipc.cpp`.
+- ONE emit in the dispatch loop (`app.cpp`, right after `handle_command_line`
+  returns true): when the flag is set the core writes a `viewport_state` with
+  the **same id** as the reply. Doing it there instead of per handler covers
+  every reply shape — including the incremental `sketch_entities_changed` path
+  that `update_sketch_vertex` actually uses. Nothing sets the flag yet.
+
+## Why the remaining half is not optional
+
+Two events with the same id still arrive as two React updates, so the document
+lands before its geometry and the hold merely gets shorter. To remove the
+workaround the store must buffer the document for that id and apply it when the
+matching viewport arrives, and `sceneSync` must skip its latch for that atomic
+pair.
+
+**The trap:** `sceneSync` (`layout/viewport/sceneSync.ts`) latches
+`pendingPreviewKey = sketchGeometryKey(sceneData)` when a commit is pending and
+then waits for the key to CHANGE. With an atomic pair the first sync already
+carries the NEW viewport, so it latches the new key and waits for a change that
+never comes — the preview freezes and nothing rebuilds. The atomic path must
+bypass the latch and go straight to `rebuildViewportScene` +
+`releaseEndpointDragPreview`.
+
+**Second finding:** the viewport payload has NO `revision` (`geometryKey` is
+derived UI-side), which is why the hold hashes sketch points. Adding `revision`
+to the viewport payload would let the fallback hold become
+`viewport.revision < document.revision` — a real invariant instead of a hash —
+and would retire the workaround rather than shorten it.
+
+## Remaining steps
+
+1. `state/cadCoreStore.ts` → `handleCoreMessage`: buffer by `message.id`
+   (`document_state` and `sketch_entities_changed`) and apply both in one
+   `set()` when the `viewport_state` with that id arrives.
+2. `layout/viewport/sceneSync.ts`: atomic pair bypasses the latch (see trap).
+3. Set `include_viewport` on the four drag commits: `update_sketch_vertex`,
+   `update_sketch_circle`, `update_sketch_arc_radius`, `move_sketch_entities`
+   (command factories + `useCadCore`).
+4. Add `revision` to the viewport payload (core serialization + zod schema +
+   `types/viewport.ts`) and use it for the fallback hold.
+5. vitest on the sync decision, `tsc --noEmit`, `pnpm core:build`,
+   `pnpm test:core`. Then in-app: commit an endpoint drag and watch for a
+   one-frame flash of the pre-drag position.
+
+---
+
 # Active task: SKETCH ARC/LINE — merged to `dev` 2026-11-02
 
 Shipped in PR #94 (squash `5bf3653`). Verified at merge: `pnpm test:core`

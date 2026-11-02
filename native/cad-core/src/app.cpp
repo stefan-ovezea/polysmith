@@ -245,6 +245,20 @@ void CadCoreApp::run() {
                 command.id, "UNKNOWN_COMMAND", message));
         continue;
       }
+      // Opt-in atomic commit: the handler has already written its reply (a
+      // document_state, or an incremental sketch patch), and the client asked
+      // for the matching geometry in the same breath. Emitting it here — not
+      // in each handler — keeps every reply shape covered.
+      if (command.include_viewport) {
+        const auto document = document_manager().get_document();
+        if (document.has_value()) {
+          polysmith::protocol::write_message(
+              polysmith::protocol::make_viewport_state_event(
+                  command.id,
+                  polysmith::protocol::to_payload(
+                      polysmith::core::build_viewport_state(document))));
+        }
+      }
       if (should_journal(command.type)) {
         const auto document = document_manager().get_document();
         if (document.has_value()) {
