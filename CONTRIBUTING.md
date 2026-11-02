@@ -17,8 +17,7 @@ This project is intentionally built with strong architectural boundaries so that
 Please read:
 
 - `README.md`
-- `CLAUDE.md` — the single authoritative agent instruction file
-- `AGENTS.md` — quick reference for AI-assisted development
+- `AGENTS.md` — the single authoritative instruction file (agents and humans)
 - `wiki/Architecture-Overview.md`
 - `wiki/Contextual-Modeling-Workflow.md`
 - `wiki/IPC-Protocol.md`

@@ -1,8 +1,17 @@
-# PolySmith — Agent Onboarding
+# PolySmith — DeepSeek/DSH agent onboarding
 
-**This file is superseded.** All agent instructions have been consolidated
-into [CLAUDE.md](../CLAUDE.md) at the repository root. Read that file at
-the start of every session — it is the single authoritative instruction set
-for all AI coding agents.
+**The authoritative instruction set lives in [`AGENTS.md`](../AGENTS.md) at the
+repository root.** DSH loads it automatically at the start of every session.
 
-For the active task tracker, see [`.deepseek/active-task.md`](active-task.md).
+`CLAUDE.md` was retired: its rules (architecture, diagnostics, UI copy/layout/
+theme, testing and regression prevention, branch workflow, philosophy) were
+merged verbatim into `AGENTS.md`, which is now the only rule book.
+
+What lives in this folder:
+
+- **[`active-task.md`](active-task.md)** — the living task tracker. Read it
+  before starting code work; update it when a piece of work lands.
+- **[`notes.md`](notes.md)** — the never-commit-untested-code reminder
+  (also in AGENTS.md).
+- **[`todos.md`](todos.md)**, **`planegcs-*.md`**, **`session-fixes-*.md`**,
+  **`pastes/`** — historical working notes, kept for context.
