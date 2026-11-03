@@ -1,4 +1,4 @@
-# DONE: atomic commit + viewport — MERGED as PR #98 (`dd651f4`), 2026-11-03
+# DONE: atomic commit + viewport — merged #98 (`dd651f4`) and #100 (`b1490bc`), 2026-11-03
 
 Both halves are in and the user verified it in the app: a drag commit no longer
 paints the pre-drag position for a frame, and the letter badges track correctly.
