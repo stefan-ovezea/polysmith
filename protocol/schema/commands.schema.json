@@ -279,7 +279,11 @@
         "update_thread_parameters"
       ]
     },
-    "payload": { "type": "object" }
+    "payload": { "type": "object" },
+    "include_viewport": {
+      "type": "boolean",
+      "description": "Opt-in. Ask the core to follow this command's reply with a `viewport_state` carrying the same id, so the UI can apply the document and its geometry in one update instead of painting a frame from the stale viewport."
+    }
   },
   "additionalProperties": false
 }

@@ -21,6 +21,21 @@ import {
 import { useToastStore } from "./toastStore";
 import { appendLogWithinWindow } from "../lib/logWindow";
 
+// ── Atomic commit pairing ─────────────────────────────────────────────
+// A commit can carry `include_viewport` (protocol/schema/commands.schema.json):
+// the core then follows its reply with a `viewport_state` bearing the SAME id.
+// We hold the document message and apply it together with that viewport in ONE
+// set(), so React never renders a document update against the stale viewport —
+// which is the "old position flashes on commit" bug. The geometry arrives in
+// the same update as the document.
+const atomicCommandIds = new Set<string>();
+const bufferedAtomicDocuments = new Map<string, CoreMessage>();
+
+/** Register a command id whose reply should be applied atomically. */
+export function markAtomicCommand(id: string): void {
+  atomicCommandIds.add(id);
+}
+
 interface CadCoreStoreState {
   status: "idle" | "starting" | "connected" | "error" | "stopped";
   messages: string[];
@@ -199,6 +214,26 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
   setSketchDiagnostics: (sketchDiagnostics) => set({ sketchDiagnostics }),
   handleCoreMessage: (message) =>
     set((state) => {
+      // Atomic commit pairing: hold the document until its viewport arrives.
+      const atomicId =
+        message.id !== undefined && atomicCommandIds.has(message.id)
+          ? message.id
+          : null;
+      if (
+        atomicId !== null &&
+        (message.type === "document_state" ||
+          message.type === "sketch_entities_changed" ||
+          message.type === "feature_changed")
+      ) {
+        bufferedAtomicDocuments.set(atomicId, message);
+        return {
+          ...state,
+          lastEvent: message,
+          status: getStatusFromMessage(message, state.status),
+          messages: [...state.messages, `event: ${message.type}`].slice(-500),
+        } as CadCoreStoreState;
+      }
+
       const nextState: Partial<CadCoreStoreState> = {
         lastEvent: message,
         status: getStatusFromMessage(message, state.status),
@@ -278,6 +313,31 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       const viewport = getViewportFromMessage(message);
       if (viewport) {
         nextState.viewport = viewport;
+        // Atomic commit pairing: merge the document we held for this id into
+        // this same set(), so the document and its geometry land together.
+        if (atomicId !== null) {
+          const buffered = bufferedAtomicDocuments.get(atomicId);
+          bufferedAtomicDocuments.delete(atomicId);
+          atomicCommandIds.delete(atomicId);
+          if (buffered) {
+            if (buffered.type === "sketch_entities_changed" && state.document) {
+              nextState.document = applySketchEntitiesChanged(
+                state.document,
+                buffered.payload,
+              );
+            } else if (buffered.type === "feature_changed" && state.document) {
+              nextState.document = applyFeatureChanged(
+                state.document,
+                buffered.payload,
+              );
+            } else {
+              const doc = getDocumentFromMessage(buffered);
+              if (doc) {
+                nextState.document = keepKnownProfiles(doc, state.document);
+              }
+            }
+          }
+        }
       }
 
       const documentExport = getDocumentExportFromMessage(message);

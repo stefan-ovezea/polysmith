@@ -131,6 +131,11 @@ function objectListKey(objects: readonly THREE.Object3D[]) {
       [
         object.uuid,
         object.visible ? "v" : "h",
+        // The live drag delta drives a sprite's position, and the drag preview
+        // only records it (it must not write the position, or an update that
+        // lands after this pass draws the sprite without its nudge). Hash it so
+        // the pass still re-runs when the delta changes.
+        (object.userData.dragDelta as number[] | undefined)?.join(",") ?? "",
         object.position.x,
         object.position.y,
         object.position.z,
@@ -172,8 +177,18 @@ function updateSpriteScale({
     | [number, number, number]
     | null
     | undefined;
-  if (basePosition && !sprite.userData.dragMutated) {
-    sprite.position.set(...basePosition);
+  if (basePosition) {
+    // Always re-derive from base + the live drag delta. Skipping the reset
+    // while a drag had mutated the sprite let the nudge below be stripped and
+    // re-added every frame, so the badge jumped by one nudge back and forth.
+    const dragDelta = sprite.userData.dragDelta as
+      | [number, number, number]
+      | undefined;
+    sprite.position.set(
+      basePosition[0] + (dragDelta?.[0] ?? 0),
+      basePosition[1] + (dragDelta?.[1] ?? 0),
+      basePosition[2] + (dragDelta?.[2] ?? 0),
+    );
     // Offset the label slightly toward the camera so raycasting
     // always hits the label before overlapping arc/line geometry
     // that sits at the same world-space position (e.g. the angle

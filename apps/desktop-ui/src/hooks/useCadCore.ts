@@ -861,11 +861,11 @@ export function useCadCore() {
       y: number,
       bindToVertexId?: string,
     ) => {
-      await sendCoreCommand(
-        makeUpdateSketchVertexCommand(vertexId, x, y, bindToVertexId),
-      );
+      await sendCoreCommand({
+        ...makeUpdateSketchVertexCommand(vertexId, x, y, bindToVertexId),
+        include_viewport: true,
+      });
       await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     moveSketchEntities: async (params: {
       entityIds: string[];
@@ -875,9 +875,11 @@ export function useCadCore() {
       centerY: number;
       angleDeg: number;
     }) => {
-      await sendCoreCommand(makeMoveSketchEntitiesCommand(params));
+      await sendCoreCommand({
+        ...makeMoveSketchEntitiesCommand(params),
+        include_viewport: true,
+      });
       await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
     },
     setSketchLineConstraint: async (
       lineId: string,
@@ -1010,14 +1012,16 @@ export function useCadCore() {
       centerY: number,
       radius: number,
     ) => {
-      await sendCoreCommand(
-        makeUpdateSketchCircleCommand(circleId, centerX, centerY, radius),
-      );
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendCoreCommand({
+        ...makeUpdateSketchCircleCommand(circleId, centerX, centerY, radius),
+        include_viewport: true,
+      });
     },
     updateSketchArcRadius: async (arcId: string, radius: number) => {
-      await sendCoreCommand(makeUpdateSketchArcRadiusCommand(arcId, radius));
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await sendCoreCommand({
+        ...makeUpdateSketchArcRadiusCommand(arcId, radius),
+        include_viewport: true,
+      });
     },
     updateSketchDimension: async (dimensionId: string, value: number | string) => {
       await sendCoreCommand(

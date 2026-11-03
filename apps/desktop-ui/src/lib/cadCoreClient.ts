@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { CoreCommand, CoreMessage } from "@/types";
+import { markAtomicCommand } from "../state/cadCoreStore";
 
 enum CadCoreCommandType {
   SendCoreCommand = "send_core_command",
@@ -15,7 +16,15 @@ export async function startCadCore(): Promise<string> {
   return invoke(CadCoreCommandType.StartCadCore);
 }
 
-export async function sendCoreCommand(command: CoreCommand): Promise<void> {
+export async function sendCoreCommand(
+  command: CoreCommand & { include_viewport?: boolean; id?: string },
+): Promise<void> {
+  // Atomic commit: ask the core to follow this reply with a viewport_state
+  // bearing the same id, then remember the id so the store can apply the
+  // document and its geometry in one update (no stale-viewport frame).
+  if (command.include_viewport && command.id) {
+    markAtomicCommand(command.id);
+  }
   return invoke(CadCoreCommandType.SendCoreCommand, {
     command: JSON.stringify(command),
   });

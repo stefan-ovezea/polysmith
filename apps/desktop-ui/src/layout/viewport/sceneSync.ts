@@ -237,7 +237,8 @@ function sketchGeometryKey(sceneData: ViewportScene | null): string {
   return h.toString(16);
 }
 
-export function syncViewportScene(params: SyncViewportSceneParams) {  const groups = readyViewportSceneGroups(params.groups);
+export function syncViewportScene(params: SyncViewportSceneParams) {
+  const groups = readyViewportSceneGroups(params.groups);
   if (!groups) {
     return;
   }
@@ -263,21 +264,27 @@ export function syncViewportScene(params: SyncViewportSceneParams) {  const grou
     return;
   }
 
-  // A commit is in flight: the preview has already mutated the real scene
-  // objects to the committed position, but the viewport state describing it
-  // has not arrived. The document update changes the build key first, so a
-  // rebuild here would paint the PRE-drag position for a frame (the "old
-  // position flashes on commit"). Latch the viewport key and keep the
-  // mutated preview until a viewport with a NEW key arrives.
   if (hadPendingCommit) {
-    params.refs.pendingPreviewKey.current = sketchGeometryKey(params.sceneData);
     releaseEndpointDragPreview({
       refs: params.refs,
       hadPendingCommit,
       clearDragPreviewLines: params.clearDragPreviewLines,
       setConstraintPreview: params.setConstraintPreview,
     });
-    return;
+    // An ATOMIC reply already carries the viewport this commit produced
+    // (`include_viewport`), so there is nothing to hold for — rebuild straight
+    // away. Latching here would store the NEW sketch key and then wait for a
+    // change that never comes, freezing the preview on stale geometry.
+    const viewportRevision = params.sceneData?.revision ?? -1;
+    const documentRevision = params.document?.geometry_revision ?? -1;
+    if (viewportRevision >= 0 && viewportRevision >= documentRevision) {
+      params.refs.pendingPreviewKey.current = null;
+    } else {
+      // Non-atomic reply: the viewport describing this commit has not
+      // arrived. Hold the mutated preview until the sketch geometry changes.
+      params.refs.pendingPreviewKey.current = sketchGeometryKey(params.sceneData);
+      return;
+    }
   }
   // Subsequent session-state syncs still carry the pre-commit viewport;
   // hold the preview until the SKETCH geometry actually changes.

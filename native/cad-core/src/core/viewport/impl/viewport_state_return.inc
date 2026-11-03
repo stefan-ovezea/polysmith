@@ -1,5 +1,9 @@
   return ViewportState{
       .has_active_document = true,
+      // The geometry revision this state describes. The UI compares it with
+      // the document's revision to decide whether the viewport has caught up
+      // with a committed change.
+      .revision = document->geometry_revision,
       .boxes = boxes,
       .cylinders = cylinders,
       .polygon_extrudes = polygon_extrudes,

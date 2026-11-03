@@ -1,54 +1,66 @@
-# IN PROGRESS: atomic commit + viewport — workstation handoff (2026-11-03)
+# DONE: atomic commit + viewport (2026-11-03)
 
-Branch `feat/atomic-commit-viewport`. **Do not merge yet** — the core hook is
-in and compiles; the UI half is not written.
+Branch `feat/atomic-commit-viewport`. **Ready to merge** — both halves are in and
+the user verified it in the app: a drag commit no longer paints the pre-drag
+position for a frame, and the letter badges track correctly.
 
-## What is already done (committed on the branch)
+## What shipped
 
-- `CommandMessage.include_viewport` — an opt-in, top-level field on the command
-  envelope (not in the payload), parsed in `protocol/ipc.cpp`.
-- ONE emit in the dispatch loop (`app.cpp`, right after `handle_command_line`
-  returns true): when the flag is set the core writes a `viewport_state` with
-  the **same id** as the reply. Doing it there instead of per handler covers
-  every reply shape — including the incremental `sketch_entities_changed` path
-  that `update_sketch_vertex` actually uses. Nothing sets the flag yet.
+**Protocol**
+- `CommandMessage.include_viewport` — opt-in top-level envelope field
+  (`protocol/ipc.h`, parsed in `ipc.cpp`). The dispatch loop emits ONE
+  `viewport_state` with the same id after the handler returns (`app.cpp`), so
+  every reply shape is covered, including `sketch_entities_changed`.
+- `commands.schema.json` — the envelope is `additionalProperties: false`, so the
+  flag had to be declared there.
+- `ViewportState.revision` (the document `geometry_revision` it was built from),
+  set in `viewport_state_return.inc`, emitted in
+  `viewport_to_payload_state_basic_entries.inc`, typed + zod-validated + mapped
+  into `ViewportScene`.
 
-## Why the remaining half is not optional
+**UI — atomic pairing**
+- `sendCoreCommand` takes `include_viewport` and registers the id
+  (`markAtomicCommand` in `cadCoreStore.ts`).
+- `handleCoreMessage` holds a `document_state` / `sketch_entities_changed` /
+  `feature_changed` whose id is atomic, and merges it into the SAME `set()` as
+  the matching `viewport_state`.
+- `sceneSync` treats `viewport.revision >= document.geometry_revision` as
+  "atomic, already current": it releases the preview and rebuilds immediately
+  instead of latching. The sketch-hash latch remains only as the non-atomic
+  fallback.
+- The four drag commits send the flag and drop the redundant
+  `get_viewport_state`: `update_sketch_vertex`, `update_sketch_circle`,
+  `update_sketch_arc_radius`, `move_sketch_entities`.
 
-Two events with the same id still arrive as two React updates, so the document
-lands before its geometry and the hold merely gets shorter. To remove the
-workaround the store must buffer the document for that id and apply it when the
-matching viewport arrives, and `sceneSync` must skip its latch for that atomic
-pair.
+## Badge fixes found while testing
 
-**The trap:** `sceneSync` (`layout/viewport/sceneSync.ts`) latches
-`pendingPreviewKey = sketchGeometryKey(sceneData)` when a commit is pending and
-then waits for the key to CHANGE. With an atomic pair the first sync already
-carries the NEW viewport, so it latches the new key and waits for a change that
-never comes — the preview freezes and nothing rebuilds. The atomic path must
-bypass the latch and go straight to `rebuildViewportScene` +
-`releaseEndpointDragPreview`.
+- **T did not follow a circle-centre drag.** `endpointDragConstraintDeltas`
+  handled `point_on_circle` but not `tangent_line_circle`. The T is mounted at
+  the LINE's midpoint, and the line's attached end rides the circle by the full
+  delta, so the midpoint moves by HALF. Added that case.
+- **O jumped onto the vertex on a snap.** `updateSpriteScale` is gated by
+  `screenSpaceSpriteUpdateKey`, which hashes sprite POSITIONS. The preview wrote
+  `position = base + delta` (no nudge); on a snap a second preview update landed
+  after the pass and stripped the 12 px nudge for that frame. Now the preview
+  records only `userData.dragDelta` (never the position) and the pass is the sole
+  writer (`base + dragDelta + nudge`); `objectListKey` hashes `dragDelta` so the
+  pass still re-runs when the delta changes.
 
-**Second finding:** the viewport payload has NO `revision` (`geometryKey` is
-derived UI-side), which is why the hold hashes sketch points. Adding `revision`
-to the viewport payload would let the fallback hold become
-`viewport.revision < document.revision` — a real invariant instead of a hash —
-and would retire the workaround rather than shorten it.
+## Verification
 
-## Remaining steps
+`pnpm --filter desktop-ui exec tsc --noEmit` clean · `pnpm test:ui` 20/20 ·
+`pnpm core:build` OK · `pnpm test:core` 92/92 · **user confirmed in-app**
+(no commit flash; T rides; O stays offset through grid and endpoint snaps).
 
-1. `state/cadCoreStore.ts` → `handleCoreMessage`: buffer by `message.id`
-   (`document_state` and `sketch_entities_changed`) and apply both in one
-   `set()` when the `viewport_state` with that id arrives.
-2. `layout/viewport/sceneSync.ts`: atomic pair bypasses the latch (see trap).
-3. Set `include_viewport` on the four drag commits: `update_sketch_vertex`,
-   `update_sketch_circle`, `update_sketch_arc_radius`, `move_sketch_entities`
-   (command factories + `useCadCore`).
-4. Add `revision` to the viewport payload (core serialization + zod schema +
-   `types/viewport.ts`) and use it for the fallback hold.
-5. vitest on the sync decision, `tsc --noEmit`, `pnpm core:build`,
-   `pnpm test:core`. Then in-app: commit an endpoint drag and watch for a
-   one-frame flash of the pre-drag position.
+## Not done / next
+
+- No vitest for the atomic decision (`viewport.revision >= document.revision`).
+  Extract it into a pure helper and test it — `syncViewportScene` takes ~40
+  params, so testing it as-is is not worth the harness.
+- `app.cpp` emits the viewport for ANY known command that sets the flag, even if
+  the handler wrote a domain-error reply. Harmless (the store finds no buffered
+  document and applies the viewport standalone), but a reply-type guard would be
+  tidier.
 
 ---
 

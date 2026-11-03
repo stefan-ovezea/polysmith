@@ -387,6 +387,9 @@ export interface ViewportSceneBounds {
 
 export interface ViewportScene {
   bounds: SceneBounds;
+  /** Document geometry revision this scene was built from. Compared with the
+   *  document's revision to detect a viewport that has not caught up. */
+  revision: number;
   primitives: ScenePrimitive[];
   solidFaces: SolidFaceScene[];
   edges: SceneEdge[];

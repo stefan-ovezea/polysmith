@@ -1,4 +1,5 @@
       {"has_active_document", viewport.has_active_document},
+      {"revision", viewport.revision},
       {"boxes", boxes},
       {"cylinders", cylinders},
       {"polygon_extrudes", polygon_extrudes},
