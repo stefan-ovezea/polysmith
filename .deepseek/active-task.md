@@ -1,3 +1,89 @@
+# IN PROGRESS: tangent drag + line-to-line T junction (2026-11-03)
+
+Branch `fix/tangent-drag-and-t-junction`. **Two tests are RED on purpose** —
+they are the reproduction, not a broken tree. `pnpm test:core` fails in
+`committed_attach_test` until plan item A (and B) are fixed.
+
+## Evidence (measured, not guessed)
+
+`committed_attach_test.cpp` gained three things while diagnosing this:
+
+- `test_dragging_a_circle_bound_endpoint_lands_where_released` — **RED**: a line
+  endpoint bound by `point_on_circle` only (no tangency), dragged from (10,0) to
+  (0,-10) on a r=10 circle, **lands at (0,0)** — the circle's CENTRE — and the
+  log prints `sketch solver failed - solver failed to converge (status=2,
+  dofs=5)`. So "the point moves after drag" is NOT a tangency problem: the plain
+  circle-bound drag is broken on its own (this is the behaviour that "was fixed
+  before").
+- `test_dragging_a_tangent_endpoint_lands_where_released` — **RED** as well:
+  `enforce_tangent_line_circle_relations` re-projects the line's END onto the
+  tangent point **on every refresh** (its header comment says so), so a dragged
+  tangent point is pulled back to the stale tangent point, and the relation — and
+  therefore the "T" badge — survives even though the geometry is no longer
+  tangent.
+
+## User's design (binding for this task)
+
+- **Constraints yield to the user's operation.** Trim and drag/move are offending
+  operations: the constraint should be **removed** so the operation can happen.
+  Moving a vertex to preserve tangency is wrong.
+- **The badge must reflect reality**: "T" disappears when the tangency is broken,
+  and may reappear during a preview when the geometry becomes tangent again
+  (within an epsilon).
+- **A line-to-line T junction must hold** (SolidCraft behaviour): the anchored
+  point stays on its host line, the non-dragged line's free end stays put, and
+  both lines may change length and orientation as the user drags. Fusion lets
+  them separate; we do not want that.
+
+## Plan
+
+**A. Fix the plain circle-bound drag first** (root cause, headless-testable).
+`update_sketch_vertex` takes the generic path for an `endpoint` vertex
+(`sketch_line_vertex_update_commands.inc:287`, `propagate_connected_point_move`
+then `refresh_sketch_derived_state`). The refresh's solver **fails** and the
+geometry comes back zeroed. Find why the solve conflicts (`PS_TRACE_SKETCH_SOLVE=1`
+dumps pre-solve / post-solve / end-of-refresh geometry) and make the outcome be
+"the vertex stays where it was released, on the circle". Whatever the fix, a
+*solver failure during a drag must never write back zeroed parameters*.
+
+**B. Then the tangency rule.** Dragging the tangent point drops
+`tangent_line_circle` instead of re-projecting the end
+(`enforce_tangent_line_circle_relations`). The badge is emitted from
+`line_relations`, so it disappears for free; bring it back only when a preview
+finds the line tangent again within epsilon. Trim already drops tangency — this
+makes drag/move consistent with it.
+
+**C. The line-to-line T junction regression.** Mechanism is
+`point_line_anchors` + `enforce_point_line_anchors`
+(`core/sketch/impl/anchor_relation_enforcement.inc`), which projects the
+anchored vertex onto the host line at its stored `t`. It is skipped when the
+vertex is frozen, because `propagate_connected_point_move` refuses to move a
+fixed vertex — the same trap the arc had. Write the equivalent headless test
+(anchor a line's endpoint on another line, drag the host and drag the anchored
+point) before changing anything.
+
+## Where to look
+
+- `native/cad-core/src/core/sketch/impl/sketch_line_vertex_update_commands.inc`
+  — the vertex drag path (generic branch at line 287, circle-centre branch at 107).
+- `native/cad-core/src/core/sketch/impl/tangent_relation_enforcement.inc`
+  — the per-refresh re-projection (item B).
+- `native/cad-core/src/core/sketch/impl/anchor_relation_enforcement.inc`
+  — `enforce_midpoint_anchors` / `enforce_point_line_anchors` (item C).
+- `native/cad-core/src/core/sketch/impl/solver_touch_guard.inc` — what restores
+  geometry after a failed solve; check it does not restore zeros.
+- `native/cad-core/tests/committed_attach_test.cpp` — the two red tests.
+
+## Verify
+
+`pnpm core:build` then
+`native/cad-core/build/Release/cad_core_committed_attach_test.exe`; the two red
+tests must go green, then `pnpm test:core` in full (90 suites).
+
+Nothing is committed on this branch yet.
+
+---
+
 # DONE: atomic commit + viewport — merged #98 (`dd651f4`) and #100 (`b1490bc`), 2026-11-03
 
 Both halves are in and the user verified it in the app: a drag commit no longer

@@ -705,6 +705,82 @@ bool test_attaching_the_same_circle_point_twice_registers_one_constraint() {
                     .c_str());
 }
 
+// ── Drag diagnostics (2026-11-03) ──────────────────────────────────────
+// Reported: dragging a point that sits on a circle leaves it displaced, and a
+// tangent line's point jumps after the drag. These isolate the two mechanisms.
+//
+// BOTH TESTS BELOW ARE RED ON PURPOSE. They are the reproduction for plan
+// items A and B in .deepseek/active-task.md; the suite is expected to fail
+// until those are fixed. Do not "fix" them by relaxing the assertion.
+
+// (a) point_on_circle ALONE, no tangent relation: the dragged endpoint must
+// land where the user released it (this was fixed before and is the control).
+// RED TODAY: it lands on the circle CENTRE (0,0) and the log reports
+// "sketch solver failed - solver failed to converge (status=2, dofs=5)".
+bool test_dragging_a_circle_bound_endpoint_lands_where_released() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_line(10.0, 0.0, 30.0, 0.0, false, "", true);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "circle drag: the sketch exists")) {
+    return false;
+  }
+  const std::string vertex_id = parameters->lines.back().start_vertex_id;
+
+  // A quarter turn around the boundary, still exactly on the circle.
+  document = manager.update_sketch_vertex(vertex_id, 0.0, -10.0);
+  parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "circle drag: the sketch survives")) {
+    return false;
+  }
+  const auto& line = parameters->lines.back();
+  const std::string detail = " (landed at " + std::to_string(line.start_x) +
+                             ", " + std::to_string(line.start_y) + ")";
+  return expect(std::abs(line.start_x) < 1e-6 &&
+                    std::abs(line.start_y + 10.0) < 1e-6,
+                ("circle drag: the endpoint lands where it was released" + detail)
+                    .c_str());
+}
+
+// (b) tangent_line_circle: dragging the tangent point must NOT be pulled back
+// onto the old tangent point. The user's rule is that a drag breaks the
+// tangency (and its badge) instead of moving the vertex to preserve it.
+// RED TODAY: enforce_tangent_line_circle_relations re-projects the line's end
+// onto the tangent point on every refresh, and the relation — with its badge —
+// survives a drag that broke the tangency.
+bool test_dragging_a_tangent_endpoint_lands_where_released() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  // From (20,0) — outside the circle — to its tangent point (5, -8.660254).
+  DocumentState document =
+      manager.add_sketch_line(20.0, 0.0, 5.0, -8.660254, false, "", false);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "tangent drag: the sketch exists")) {
+    return false;
+  }
+  const std::string line_id = parameters->lines.back().id;
+  const std::string circle_id = parameters->circles.front().id;
+  const std::string end_vertex_id = parameters->lines.back().end_vertex_id;
+
+  document = manager.set_sketch_tangent_constraint(line_id, circle_id);
+  // Drag the tangent point a quarter turn along the circle.
+  document = manager.update_sketch_vertex(end_vertex_id, 0.0, -10.0);
+  parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "tangent drag: the sketch survives")) {
+    return false;
+  }
+  const auto& line = parameters->lines.back();
+  return expect(std::abs(line.end_x) < 1e-6 &&
+                    std::abs(line.end_y + 10.0) < 1e-6,
+                "tangent drag: the dragged endpoint is not pulled back to the "
+                "stale tangent point");
+}
+
 }  // namespace
 
 int main() {
@@ -731,6 +807,8 @@ int main() {
   if (!test_moving_a_circle_centre_does_not_push_the_dimensioned_free_end()) return 1;
   if (!test_attaching_the_same_circle_point_twice_registers_one_constraint()) return 1;
   if (!test_resizing_a_circle_does_not_push_the_dimensioned_free_end()) return 1;
+  if (!test_dragging_a_circle_bound_endpoint_lands_where_released()) return 1;
+  if (!test_dragging_a_tangent_endpoint_lands_where_released()) return 1;
 
   std::cout << "committed_attach_test passed\n";
   return 0;
