@@ -87,6 +87,32 @@ The full command → payload-keys reference is generated from the app handlers �
 see [Command-Reference.generated.md](./Command-Reference.generated.md)
 (regenerate with `pnpm registry:write`).
 
+### `include_viewport` — atomic commit replies
+
+A command may carry a top-level `include_viewport: true` (beside `id`, `type`
+and `payload` — **not** inside the payload). The core then follows the command's
+normal reply with a `viewport_state` carrying the **same id**:
+
+```json
+{ "id": "abc", "type": "update_sketch_vertex", "payload": { }, "include_viewport": true }
+```
+
+The dispatch loop emits it once, after the handler returns, so every reply shape
+is covered — including the incremental `sketch_entities_changed` path.
+
+It exists for drag commits (`update_sketch_vertex`, `update_sketch_circle`,
+`update_sketch_arc_radius`, `move_sketch_entities`): the store buffers the
+document message and applies it together with the matching viewport in one
+update, so the UI never renders a document update against the stale viewport
+(which shows the pre-drag position for a frame). The viewport payload is large,
+so only the commands that commit a drag set the flag.
+
+Commands that do **not** set it keep the two-step `get_viewport_state` refresh.
+
+Every `viewport_state` also carries `revision` — the document `geometry_revision`
+it was built from. The UI compares that with the document's `geometry_revision`
+to decide whether a viewport has caught up with a committed change.
+
 ## Events and Responses (Core -> UI)
 
 The core replies with structured protocol messages.

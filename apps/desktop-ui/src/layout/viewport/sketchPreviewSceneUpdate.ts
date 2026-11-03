@@ -188,15 +188,30 @@ export function applySolvedPointsToSketchScene({
       // resets sprites to basePosition every frame, so an incremental += would be
       // wiped before the next frame; setting base+delta and marking the sprite as
       // drag-mutated lets it survive that reset.
+      // Set the position ABSOLUTELY (base + delta) and record the delta. The
+      // screen-space sprite pass re-derives base + dragDelta every frame, so
+      // the nudge it adds is applied exactly once per frame. Mutating the
+      // position here alone made each preview update strip that nudge and each
+      // render re-add it — the badge jittered by one nudge every frame.
       const base = object.userData.basePosition as
         | [number, number, number]
         | undefined;
       if (base) {
-        object.position.set(
-          base[0] + delta[0],
-          base[1] + delta[1],
-          base[2] + delta[2],
-        );
+        // Record the delta only — do NOT write the position. The screen-space
+        // sprite pass is the single authority that writes a badge's position
+        // (base + delta + its label nudge) on every render. Writing it here as
+        // well let an extra preview update land after that pass and draw the
+        // badge without its nudge for one frame: the "O jumps onto the vertex
+        // when the drag snaps" report. Non-sprites have no such pass, so they
+        // still need the position applied directly.
+        object.userData.dragDelta = delta;
+        if (!(object as { isSprite?: boolean }).isSprite) {
+          object.position.set(
+            base[0] + delta[0],
+            base[1] + delta[1],
+            base[2] + delta[2],
+          );
+        }
       } else {
         object.position.x += delta[0];
         object.position.y += delta[1];

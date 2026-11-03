@@ -387,6 +387,8 @@ export interface ViewportToolpathPrimitive {
 
 export interface ViewportState {
   has_active_document: boolean;
+  /** Document geometry revision this state was built from. */
+  revision: number;
   boxes: ViewportBoxPrimitive[];
   cylinders: ViewportCylinderPrimitive[];
   polygon_extrudes: ViewportPolygonExtrudePrimitive[];

@@ -1,3 +1,69 @@
+# DONE: atomic commit + viewport (2026-11-03)
+
+Branch `feat/atomic-commit-viewport`. **Ready to merge** — both halves are in and
+the user verified it in the app: a drag commit no longer paints the pre-drag
+position for a frame, and the letter badges track correctly.
+
+## What shipped
+
+**Protocol**
+- `CommandMessage.include_viewport` — opt-in top-level envelope field
+  (`protocol/ipc.h`, parsed in `ipc.cpp`). The dispatch loop emits ONE
+  `viewport_state` with the same id after the handler returns (`app.cpp`), so
+  every reply shape is covered, including `sketch_entities_changed`.
+- `commands.schema.json` — the envelope is `additionalProperties: false`, so the
+  flag had to be declared there.
+- `ViewportState.revision` (the document `geometry_revision` it was built from),
+  set in `viewport_state_return.inc`, emitted in
+  `viewport_to_payload_state_basic_entries.inc`, typed + zod-validated + mapped
+  into `ViewportScene`.
+
+**UI — atomic pairing**
+- `sendCoreCommand` takes `include_viewport` and registers the id
+  (`markAtomicCommand` in `cadCoreStore.ts`).
+- `handleCoreMessage` holds a `document_state` / `sketch_entities_changed` /
+  `feature_changed` whose id is atomic, and merges it into the SAME `set()` as
+  the matching `viewport_state`.
+- `sceneSync` treats `viewport.revision >= document.geometry_revision` as
+  "atomic, already current": it releases the preview and rebuilds immediately
+  instead of latching. The sketch-hash latch remains only as the non-atomic
+  fallback.
+- The four drag commits send the flag and drop the redundant
+  `get_viewport_state`: `update_sketch_vertex`, `update_sketch_circle`,
+  `update_sketch_arc_radius`, `move_sketch_entities`.
+
+## Badge fixes found while testing
+
+- **T did not follow a circle-centre drag.** `endpointDragConstraintDeltas`
+  handled `point_on_circle` but not `tangent_line_circle`. The T is mounted at
+  the LINE's midpoint, and the line's attached end rides the circle by the full
+  delta, so the midpoint moves by HALF. Added that case.
+- **O jumped onto the vertex on a snap.** `updateSpriteScale` is gated by
+  `screenSpaceSpriteUpdateKey`, which hashes sprite POSITIONS. The preview wrote
+  `position = base + delta` (no nudge); on a snap a second preview update landed
+  after the pass and stripped the 12 px nudge for that frame. Now the preview
+  records only `userData.dragDelta` (never the position) and the pass is the sole
+  writer (`base + dragDelta + nudge`); `objectListKey` hashes `dragDelta` so the
+  pass still re-runs when the delta changes.
+
+## Verification
+
+`pnpm --filter desktop-ui exec tsc --noEmit` clean · `pnpm test:ui` 20/20 ·
+`pnpm core:build` OK · `pnpm test:core` 92/92 · **user confirmed in-app**
+(no commit flash; T rides; O stays offset through grid and endpoint snaps).
+
+## Not done / next
+
+- No vitest for the atomic decision (`viewport.revision >= document.revision`).
+  Extract it into a pure helper and test it — `syncViewportScene` takes ~40
+  params, so testing it as-is is not worth the harness.
+- `app.cpp` emits the viewport for ANY known command that sets the flag, even if
+  the handler wrote a domain-error reply. Harmless (the store finds no buffered
+  document and applies the viewport standalone), but a reply-type guard would be
+  tidier.
+
+---
+
 # Active task: SKETCH ARC/LINE — merged to `dev` 2026-11-02
 
 Shipped in PR #94 (squash `5bf3653`). Verified at merge: `pnpm test:core`

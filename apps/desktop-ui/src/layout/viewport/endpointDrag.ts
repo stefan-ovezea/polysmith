@@ -131,6 +131,17 @@ export function endpointDragConstraintDeltas(
       ) {
         deltas.set(constraint.constraintId, fullDelta);
       }
+      // The "T" tangent badge is mounted at the LINE's midpoint, not on a
+      // vertex. The line's attached end rides the circle by the full delta, so
+      // its midpoint moves by half — without this the badge stayed behind
+      // while the geometry moved. (`kind` is a line-relation here, which the
+      // scene's ConstraintType union does not enumerate.)
+      if (
+        (constraint.kind as string) === "tangent_line_circle" &&
+        constraint.relatedEntityId === draggedCircle.circle_id
+      ) {
+        deltas.set(constraint.constraintId, halfDelta);
+      }
     }
   }
 

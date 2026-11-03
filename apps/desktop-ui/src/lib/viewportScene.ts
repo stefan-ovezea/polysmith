@@ -1426,6 +1426,9 @@ export function createViewportScene(
       maxDimension: clampDimension(viewport.scene_bounds.max_dimension),
     },
     primitives,
+    // Document geometry revision this scene was built from; compared with the
+    // document's revision to detect a stale viewport.
+    revision: viewport.revision ?? 0,
     references,
     solidFaces,
     edges,

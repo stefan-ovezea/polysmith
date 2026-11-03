@@ -12,6 +12,13 @@ struct CommandMessage {
   std::string id;
   std::string type;
   json payload;
+  // Opt-in, top level (not in the payload): ask the core to follow this
+  // command's reply with a `viewport_state` carrying the SAME id. A commit
+  // then arrives as one document + its geometry, so the UI can apply both in
+  // a single update instead of painting a frame from the stale viewport
+  // ("the old position flashes on commit"). Only the commands that commit a
+  // drag set it — the viewport payload is large.
+  bool include_viewport = false;
 };
 
 void write_message(const json& message);

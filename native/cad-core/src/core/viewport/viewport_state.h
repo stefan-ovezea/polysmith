@@ -15,6 +15,10 @@ namespace polysmith::core {
 
 struct ViewportState {
   bool has_active_document;
+  // Document geometry revision this state was built from (0 when there is no
+  // document). Lets the UI tell whether a viewport has caught up with a
+  // committed document change, instead of hashing geometry client-side.
+  int revision = 0;
   std::vector<ViewportBoxPrimitive> boxes;
   std::vector<ViewportCylinderPrimitive> cylinders;
   std::vector<ViewportPolygonExtrudePrimitive> polygon_extrudes;

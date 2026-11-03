@@ -36,6 +36,9 @@ export const viewportDrawingTextShape = z.object({
 
 export const viewportStateSchema = z.object({
   has_active_document: z.boolean(),
+  // Document geometry revision this state describes. Used to tell whether a
+  // viewport has caught up with a committed change.
+  revision: z.number().int().default(0),
   boxes: z.array(
     z.object({
       primitive_id: z.string(),
