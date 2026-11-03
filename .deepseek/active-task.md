@@ -58,15 +58,19 @@ count of whatever binaries happen to be on disk.
 `pnpm core:build` OK · `pnpm test:core` 92/92 · **user confirmed in-app**
 (no commit flash; T rides; O stays offset through grid and endpoint snaps).
 
-## Not done / next
+## Follow-ups closed (branch `fix/atomic-commit-followups`)
 
-- No vitest for the atomic decision (`viewport.revision >= document.revision`).
-  Extract it into a pure helper and test it — `syncViewportScene` takes ~40
-  params, so testing it as-is is not worth the harness.
-- `app.cpp` emits the viewport for ANY known command that sets the flag, even if
-  the handler wrote a domain-error reply. Harmless (the store finds no buffered
-  document and applies the viewport standalone), but a reply-type guard would be
-  tidier.
+- The atomic decision is a pure helper now — `viewportDescribesCommit` in
+  `layout/viewport/atomicCommitSync.ts` — with five vitest cases, instead of an
+  inline comparison buried in the ~40-parameter `syncViewportScene`.
+- `app.cpp` pairs a viewport with a reply only when the command actually CHANGED
+  the document (revision compared before/after). A domain-error reply mutates
+  nothing, so it no longer drags a viewport along — and the revision test needs
+  no knowledge of the reply type. The before-document is captured only when the
+  flag is set, so the hot path pays nothing.
+
+Verified: `tsc --noEmit` clean · `pnpm test:ui` 25/25 · `pnpm core:build` ·
+`pnpm test:core` 90/90.
 
 ---
 

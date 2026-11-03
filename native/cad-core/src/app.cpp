@@ -232,6 +232,12 @@ void CadCoreApp::run() {
     polysmith::protocol::CommandMessage command;
     try {
       command = polysmith::protocol::parse_command(line);
+      // Captured only for the commits that asked for their viewport (four
+      // commands), so the document copy costs nothing on the hot path.
+      std::optional<polysmith::core::DocumentState> document_before;
+      if (command.include_viewport) {
+        document_before = document_manager().get_document();
+      }
       // An unhandled command used to fall through silently: no reply, no
       // log, and the UI's awaited promise never settled. Answer it instead,
       // carrying the real id so the caller can fail fast. The dispatch table
@@ -249,9 +255,18 @@ void CadCoreApp::run() {
       // document_state, or an incremental sketch patch), and the client asked
       // for the matching geometry in the same breath. Emitting it here — not
       // in each handler — keeps every reply shape covered.
+      //
+      // Only when the command actually CHANGED the document: a domain-error
+      // reply (feature not found, a refused drive) mutates nothing, and pairing
+      // a viewport with it would answer a commit that never happened. The
+      // revision is the test, so this needs no knowledge of the reply type.
       if (command.include_viewport) {
         const auto document = document_manager().get_document();
-        if (document.has_value()) {
+        const bool changed =
+            document.has_value() &&
+            (!document_before.has_value() ||
+             document_before->revision != document->revision);
+        if (changed) {
           polysmith::protocol::write_message(
               polysmith::protocol::make_viewport_state_event(
                   command.id,

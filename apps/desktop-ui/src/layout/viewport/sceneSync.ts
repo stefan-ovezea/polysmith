@@ -38,6 +38,7 @@ import {
 import { addSketchSceneObjects } from "./sketchSceneObjects";
 import { buildMoveGizmoObject, type MoveGizmoDescriptor } from "./moveGizmo";
 import type { SelectedConstraintState } from "./contextMenuState";
+import { viewportDescribesCommit } from "./atomicCommitSync";
 import type { EndpointDrag } from "./endpointDrag";
 import type { CircleResizeDrag } from "./circleResizeDrag";
 
@@ -275,9 +276,12 @@ export function syncViewportScene(params: SyncViewportSceneParams) {
     // (`include_viewport`), so there is nothing to hold for — rebuild straight
     // away. Latching here would store the NEW sketch key and then wait for a
     // change that never comes, freezing the preview on stale geometry.
-    const viewportRevision = params.sceneData?.revision ?? -1;
-    const documentRevision = params.document?.geometry_revision ?? -1;
-    if (viewportRevision >= 0 && viewportRevision >= documentRevision) {
+    if (
+      viewportDescribesCommit({
+        viewportRevision: params.sceneData?.revision,
+        documentRevision: params.document?.geometry_revision,
+      })
+    ) {
       params.refs.pendingPreviewKey.current = null;
     } else {
       // Non-atomic reply: the viewport describing this commit has not
