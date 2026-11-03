@@ -1,8 +1,14 @@
-# DONE: atomic commit + viewport (2026-11-03)
+# DONE: atomic commit + viewport — MERGED as PR #98 (`dd651f4`), 2026-11-03
 
-Branch `feat/atomic-commit-viewport`. **Ready to merge** — both halves are in and
-the user verified it in the app: a drag commit no longer paints the pre-drag
-position for a frame, and the letter badges track correctly.
+Both halves are in and the user verified it in the app: a drag commit no longer
+paints the pre-drag position for a frame, and the letter badges track correctly.
+
+**Suite count, resolved:** the trackers used to say `pnpm test:core` is 92/92
+while a fresh checkout reported 90/90. `native/cad-core/CMakeLists.txt` declares
+exactly **90** test targets, so 90 is the truth; the 92 came from two stale test
+executables left in the other workstation's `build/Release` by an older branch.
+Trust the number of `add_executable(... _test ...)` targets, not the runner's
+count of whatever binaries happen to be on disk.
 
 ## What shipped
 
