@@ -57,6 +57,35 @@ of work lands.
   closure, snap interaction, constraint interference). Wait for the user's
   confirmation, then commit.
 
+## Git: permission first (hard rule, no exceptions)
+
+**Never run a git command that changes state without the user's explicit
+permission for that exact operation.** Ask, then wait. The user is the only
+developer on this repository, the remote is theirs, and its history is theirs to
+shape.
+
+- Permission is **per operation**. Approval to commit is not approval to push;
+  approval to push is not approval to open a PR; approval to open a PR is not
+  approval to merge it. Approval earlier in the session does not carry over to
+  the next command.
+- "Do the task", "finish this", "look at the bug" are **not** permission to
+  commit, push, open a PR or merge. The user decides when work becomes a commit
+  and when a branch becomes a PR. Work can sit uncommitted for as long as they
+  like.
+- **Never touch the remote unasked**: `push`, `push --force`, `gh pr create`,
+  `gh pr merge`, `gh pr close`, editing a PR, deleting a remote branch.
+- Also gated: `add`, `commit`, `checkout`, `switch`, `branch`, `merge`,
+  `rebase`, `reset`, `restore`, `clean`, `rm`, `stash`, `revert`,
+  `cherry-pick`, `tag`, `submodule update`, `fetch`, `pull`.
+- Exempt (read-only): `status`, `log`, `diff`, `show`, `branch -vv`,
+  `rev-parse`, `remote -v`.
+- Ask in one line and stop: *"May I commit this to `fix/…` and push it?"* — not a
+  summary written after the fact.
+
+Precedent: a WIP branch was PR'd and squash-merged into `dev` because an earlier
+approval in the same session was treated as standing permission. It was not, and
+the merge had to be walked back. Do not repeat it.
+
 ## Build & Development Commands
 
 ```bash
