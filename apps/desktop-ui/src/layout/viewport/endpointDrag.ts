@@ -387,9 +387,28 @@ export function resolveEndpointDragFrame({
       ...l,
       constraint: null as "horizontal" | "vertical" | null,
     }));
+    // A tangent contact point being dragged is the same offending operation
+    // the core treats on commit (it drops the tangent_line_circle relation
+    // rather than re-project the end onto the stale tangent point). Do the
+    // same in the preview or the WASM solve pulls the dragged point straight
+    // back onto the tangent point — "it still moves" — and the preview then
+    // disagrees with the commit. Only the line's END is the contact point
+    // (its START is the external anchor), mirroring
+    // drop_tangent_relations_for_dragged_tangent_point in the core.
+    const draggedContactLineIds = new Set(
+      sketch.lines
+        .filter((line) => line.end_vertex_id === next.vertexId)
+        .map((line) => line.line_id),
+    );
+    const lineRelations = (sketch.line_relations ?? []).filter(
+      (relation) =>
+        relation.kind !== "tangent_line_circle" ||
+        !draggedContactLineIds.has(relation.first_line_id),
+    );
     const paramsCopy: SketchFeatureParameters = {
       ...sketch,
       lines: unconstrainedLines,
+      line_relations: lineRelations,
       vertices: sketch.vertices.map((p) =>
         p.vertex_id === next.vertexId
           ? { ...p, x: sketchPoint.local[0], y: sketchPoint.local[1] }

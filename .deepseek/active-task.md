@@ -1,25 +1,31 @@
 # IN PROGRESS: tangent drag + line-to-line T junction (2026-11-03)
 
-Branch `fix/tangent-drag-and-t-junction`. **Two tests are RED on purpose** —
-they are the reproduction, not a broken tree. `pnpm test:core` fails in
-`committed_attach_test` until plan item A (and B) are fixed.
+Branch `fix/tangent-drag-and-t-junction`. **A, B and C are implemented in the
+core.** The two tests that were red on purpose are green,
+`pnpm test:core` is 90/90 and `tsc --noEmit` is clean. Nothing is committed,
+and the fix has NOT been verified in the app yet.
 
 ## Evidence (measured, not guessed)
 
-`committed_attach_test.cpp` gained three things while diagnosing this:
+`committed_attach_test.cpp` gained things while diagnosing this; the first two
+were the reproduction for A/B and are green now:
 
-- `test_dragging_a_circle_bound_endpoint_lands_where_released` — **RED**: a line
+- `test_dragging_a_circle_bound_endpoint_lands_where_released` — was RED: a line
   endpoint bound by `point_on_circle` only (no tangency), dragged from (10,0) to
-  (0,-10) on a r=10 circle, **lands at (0,0)** — the circle's CENTRE — and the
-  log prints `sketch solver failed - solver failed to converge (status=2,
-  dofs=5)`. So "the point moves after drag" is NOT a tangency problem: the plain
-  circle-bound drag is broken on its own (this is the behaviour that "was fixed
-  before").
-- `test_dragging_a_tangent_endpoint_lands_where_released` — **RED** as well:
+  (0,-10) on a r=10 circle, **landed at (0,0)** — the circle's CENTRE — and the
+  log printed `sketch solver failed - solver failed to converge (status=2,
+  dofs=5)`. So "the point moves after drag" was NOT a tangency problem. **Cause
+  found with `PS_TRACE_SKETCH_SOLVE=1`:** the trace's *before solve* line already
+  read `line-1 (0,0)->(30,0)`, i.e. the drag input was corrupted before the
+  solver ran. The line carries an inferred `horizontal` constraint and
+  `propagate_connected_point_move` clamped the released y onto the line's other
+  end — the circle's centre. `point_on_circle` has no gradient at the centre, so
+  the solve failed and the clamped geometry stayed.
+- `test_dragging_a_tangent_endpoint_lands_where_released` — was RED as well:
   `enforce_tangent_line_circle_relations` re-projects the line's END onto the
   tangent point **on every refresh** (its header comment says so), so a dragged
-  tangent point is pulled back to the stale tangent point, and the relation — and
-  therefore the "T" badge — survives even though the geometry is no longer
+  tangent point was pulled back to the stale tangent point, and the relation — and
+  therefore the "T" badge — survived even though the geometry was no longer
   tangent.
 
 ## User's design (binding for this task)
@@ -35,52 +41,88 @@ they are the reproduction, not a broken tree. `pnpm test:core` fails in
   both lines may change length and orientation as the user drags. Fusion lets
   them separate; we do not want that.
 
-## Plan
+## Fixes landed (code — uncommitted, not yet verified in-app)
 
-**A. Fix the plain circle-bound drag first** (root cause, headless-testable).
-`update_sketch_vertex` takes the generic path for an `endpoint` vertex
-(`sketch_line_vertex_update_commands.inc:287`, `propagate_connected_point_move`
-then `refresh_sketch_derived_state`). The refresh's solver **fails** and the
-geometry comes back zeroed. Find why the solve conflicts (`PS_TRACE_SKETCH_SOLVE=1`
-dumps pre-solve / post-solve / end-of-refresh geometry) and make the outcome be
-"the vertex stays where it was released, on the circle". Whatever the fix, a
-*solver failure during a drag must never write back zeroed parameters*.
+**A — the plain circle-bound drag** (`sketch_line_vertex_update_commands.inc`).
+New drag policy at the top of the file: a vertex the user dragged is
+authoritative over an AXIS constraint that would put it back somewhere else.
+`release_axis_constraints_for_bound_vertex` drops the H/V constraint of a line
+whose dragged endpoint carries `point_on_circle` / `point_on_arc` when the
+release point is off that axis (an on-axis drag keeps the badge). The line then
+rotates to the release point and its bound end stays on the curve. The comment
+records the measured failure and why the preview already strips H/V.
 
-**B. Then the tangency rule.** Dragging the tangent point drops
-`tangent_line_circle` instead of re-projecting the end
-(`enforce_tangent_line_circle_relations`). The badge is emitted from
-`line_relations`, so it disappears for free; bring it back only when a preview
-finds the line tangent again within epsilon. Trim already drops tangency — this
-makes drag/move consistent with it.
+**B — tangency yields to drag/move** (`sketch_line_vertex_update_commands.inc`).
+`drop_tangent_relations_for_dragged_tangent_point` removes a
+`tangent_line_circle` relation when the dragged vertex is the relation's contact
+point (the line's END — `set_sketch_tangent_constraint` guarantees the START is
+the external anchor). `transform_sketch_entities` (the move tool) drops the
+relation for every moved line for the same reason. The badge is emitted from
+`line_relations`, so it disappears with the relation; moving the CIRCLE still
+re-projects the end (that is what the re-projection exists for).
+**Preview fix too** (`layout/viewport/endpointDrag.ts`): the WASM drag preview
+was still feeding `tangent_line_circle` into the solver, so it pulled the
+dragged contact point straight back onto the stale tangent point — the first
+in-app report ("it still moves"). The preview now strips the relation for the
+dragged contact point the same way it strips H/V, and the commit drops it, so
+the point slides on the circle (its `point_on_circle` is still honoured) and the
+"T" badge is gone after release.
 
-**C. The line-to-line T junction regression.** Mechanism is
-`point_line_anchors` + `enforce_point_line_anchors`
-(`core/sketch/impl/anchor_relation_enforcement.inc`), which projects the
-anchored vertex onto the host line at its stored `t`. It is skipped when the
-vertex is frozen, because `propagate_connected_point_move` refuses to move a
-fixed vertex — the same trap the arc had. Write the equivalent headless test
-(anchor a line's endpoint on another line, drag the host and drag the anchored
-point) before changing anything.
+**C — the line-to-line T junction** (`private_connected_point_move.inc`).
+`propagate_connected_point_move` used to treat an anchored endpoint like a
+shared rectangle corner: it CARRIED the line's other endpoint across the axis,
+so stretching the host dragged the stem's free end along (measured: host
+(0,0)-(100,0) → (0,0)-(160,0), stem anchored at t=0.3, free end (30,40) →
+(48,40)). An anchored point belongs to its HOST: the far end now stays put and
+the line pivots on the anchored point; if that takes it off its H/V axis the
+axis constraint is dropped instead of clamping the point back off its host.
+
+**New tests** in `committed_attach_test.cpp`:
+`test_a_t_junction_rides_the_host_without_moving_the_free_end`,
+`test_dragging_the_anchored_point_keeps_the_free_end`,
+`test_moving_a_tangent_line_does_not_reproject_its_end`.
+
+## Still open
+
+- **User verifies in-app** (drag a circle-bound endpoint, drag a tangent point,
+  drag a host and the stem of a T, move a tangent line) before anything is
+  committed. Per AGENTS.md nothing is committed until the user has confirmed it.
+- Item B's "bring the T back when a preview finds the line tangent again within
+  epsilon" is UI-side polish and is NOT implemented: the relation is dropped, so
+  the badge only comes back through the tangent tool.
+- Dragging an anchored T point ALONG its host snaps it back to the stored `t`
+  (the anchor is parametric). Sliding the junction along the host was not asked
+  for and is not implemented.
 
 ## Where to look
 
 - `native/cad-core/src/core/sketch/impl/sketch_line_vertex_update_commands.inc`
-  — the vertex drag path (generic branch at line 287, circle-centre branch at 107).
+  — the vertex drag path (drag-policy helpers at the top; generic branch after
+  the centre/point branches; tangent-relation drop in `move_sketch_entities`).
 - `native/cad-core/src/core/sketch/impl/tangent_relation_enforcement.inc`
-  — the per-refresh re-projection (item B).
+  — the per-refresh re-projection (item B; still correct for a CIRCLE move).
 - `native/cad-core/src/core/sketch/impl/anchor_relation_enforcement.inc`
   — `enforce_midpoint_anchors` / `enforce_point_line_anchors` (item C).
-- `native/cad-core/src/core/sketch/impl/solver_touch_guard.inc` — what restores
-  geometry after a failed solve; check it does not restore zeros.
-- `native/cad-core/tests/committed_attach_test.cpp` — the two red tests.
+- `native/cad-core/src/core/sketch/impl/private_connected_point_move.inc`
+  — where the anchored far end used to be carried (item C).
+- `native/cad-core/tests/committed_attach_test.cpp` — the A/B/C regression tests.
 
-## Verify
+## Verify (done 2026-11-03)
 
-`pnpm core:build` then
-`native/cad-core/build/Release/cad_core_committed_attach_test.exe`; the two red
-tests must go green, then `pnpm test:core` in full (90 suites).
+`pnpm core:build` (built with the VS-bundled cmake — the sandbox blocked the pnpm
+wrapper's cmake probe, see below) →
+`native/cad-core/build/Release/cad_core_committed_attach_test.exe` passes
+(28 tests, including the three new ones) → `pnpm test:core` **90/90** →
+`pnpm --filter desktop-ui exec tsc --noEmit` clean.
 
 Nothing is committed on this branch yet.
+
+> **Environment note for the next session:** `pnpm core:build` / `pnpm test:core`
+> failed at first because the repo folder had no write grant for the sandbox
+> token while `C:\SRC` did. `scripts/find-cmake.mjs` also probes cmake with piped
+> stdio (EPERM under the sandbox), which looks like "No CMake found". The repair
+> script/rollback records live in `C:\SRC\acl-recovery`; only run builds after
+> the session's file policy is `danger-full-access`.
 
 ---
 

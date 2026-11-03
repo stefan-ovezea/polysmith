@@ -75,6 +75,95 @@ void update_sketch_line(FeatureEntry& feature,
   refresh_sketch_derived_state(feature);
 }
 
+// ── Drag policy: the release position of the dragged vertex wins ──────────
+//
+// `update_sketch_vertex` is the drag/move path for a single vertex. Two rules
+// follow from the user's model (see .deepseek/active-task.md, "Constraints
+// yield to the user's operation" — the drag preview in
+// layout/viewport/endpointDrag.ts already strips H/V for the same reason):
+//
+//   1. A vertex bound to a CURVE (`point_on_circle` / `point_on_arc`) can only
+//      exist ON that curve, so an axis clamp that moves it anywhere else makes
+//      the sketch unsatisfiable. Measured: dragging a r=10 circle's bound
+//      endpoint from (10,0) to (0,-10) had its y clamped onto the line's other
+//      end, landing the point on the circle's CENTRE — where point_on_circle
+//      has no gradient — and the solve then failed (status=2, dofs=5), leaving
+//      the vertex at the centre. The axis constraint yields, and is DROPPED:
+//      the line is no longer axis-aligned, and a badge must never outlive the
+//      geometry it claims.
+//   2. Dragging the TANGENT point of a `tangent_line_circle` relation breaks the
+//      tangency by definition. Re-projecting the end onto the stale tangent
+//      point (`enforce_tangent_line_circle_relations`, whose whole job is to
+//      keep the end tangent) silently undid the drag and kept the "T" badge on
+//      geometry that was no longer tangent. The relation is dropped instead —
+//      trim already drops tangency, and the badge is emitted from the relation,
+//      so it disappears with it.
+//
+// Both helpers are no-ops unless the vertex actually is curve-bound / a tangent
+// point, so every other vertex drag keeps its current behaviour.
+
+// True when the vertex carries an attachment to a curve. `target_ids` is
+// {vertex, circle-or-arc} for both kinds.
+bool vertex_is_bound_to_curve(const SketchFeatureParameters& parameters,
+                              const std::string& vertex_id) {
+  for (const auto& constraint : parameters.constraints) {
+    if (constraint.kind != "point_on_circle" &&
+        constraint.kind != "point_on_arc") {
+      continue;
+    }
+    if (!constraint.target_ids.empty() && constraint.target_ids[0] == vertex_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Drop the H/V constraint of a line whose dragged endpoint is curve-bound when
+// the release position is off that axis. On-axis drags keep the constraint:
+// the clamp is a no-op there and nothing is gained by losing the badge.
+void release_axis_constraints_for_bound_vertex(
+    SketchFeatureParameters& parameters, const std::string& vertex_id, double x,
+    double y) {
+  if (!vertex_is_bound_to_curve(parameters, vertex_id)) return;
+  for (auto& line : parameters.lines) {
+    if (!line.constraint.has_value()) continue;
+    const bool moved_start = line.start_vertex_id == vertex_id;
+    const bool moved_end = line.end_vertex_id == vertex_id;
+    if (!moved_start && !moved_end) continue;
+    const bool horizontal = line.constraint.value() == "horizontal";
+    const bool vertical = line.constraint.value() == "vertical";
+    if (!horizontal && !vertical) continue;
+    const double other_x = moved_start ? line.end_x : line.start_x;
+    const double other_y = moved_start ? line.end_y : line.start_y;
+    const bool off_axis =
+        horizontal
+            ? std::abs(y - other_y) > kMinimumSketchDimensionValue
+            : std::abs(x - other_x) > kMinimumSketchDimensionValue;
+    if (!off_axis) continue;
+    line.constraint = std::nullopt;
+  }
+}
+
+// Drop `tangent_line_circle` relations whose tangent point is the dragged
+// vertex. The relation's contract (see set_sketch_tangent_constraint) is that
+// the line's START is the external anchor and its END is the contact point, so
+// only an END drag breaks it — dragging the start is the case the per-refresh
+// re-projection exists for.
+void drop_tangent_relations_for_dragged_tangent_point(
+    SketchFeatureParameters& parameters, const std::string& vertex_id) {
+  for (auto& line : parameters.lines) {
+    if (line.end_vertex_id != vertex_id) continue;
+    parameters.line_relations.erase(
+        std::remove_if(parameters.line_relations.begin(),
+                       parameters.line_relations.end(),
+                       [&](const SketchLineRelation& relation) {
+                         return relation.kind == "tangent_line_circle" &&
+                                relation.first_line_id == line.id;
+                       }),
+        parameters.line_relations.end());
+  }
+}
+
 void update_sketch_vertex(FeatureEntry& feature,
                          const std::string& point_id,
                          double x,
@@ -283,6 +372,12 @@ void update_sketch_vertex(FeatureEntry& feature,
       return;
     }
   }
+
+  // A dragged vertex that is bound to a curve, or that IS a tangent contact
+  // point, must not be put back where it came from: the constraints it carries
+  // yield to the drag (see the drag-policy comment at the top of this file).
+  release_axis_constraints_for_bound_vertex(parameters, point_id, x, y);
+  drop_tangent_relations_for_dragged_tangent_point(parameters, point_id);
 
   propagate_connected_point_move(parameters, point_id, x, y);
   sync_all_line_dimensions(parameters);
@@ -697,6 +792,25 @@ void transform_sketch_entities(FeatureEntry& feature,
       propagate_connected_point_move(parameters, vertex_id, target.first,
                                      target.second);
     }
+  }
+
+  // A moved line is no longer the line the tangency was measured on: the
+  // relation's contract pins the line's END at the tangent point, so moving the
+  // line only lets the next refresh project that end back onto the stale
+  // tangent point — the line deforms instead of moving. Moving is an offending
+  // operation, exactly like the endpoint drag (see the drag-policy comment at
+  // the top of this file): tangency yields, the relation is dropped and the "T"
+  // badge goes with it. Moving the CIRCLE is not affected — the line riding a
+  // moved circle is the case the re-projection exists for.
+  for (const auto& line_id : moved_line_ids) {
+    parameters.line_relations.erase(
+        std::remove_if(parameters.line_relations.begin(),
+                       parameters.line_relations.end(),
+                       [&](const SketchLineRelation& relation) {
+                         return relation.kind == "tangent_line_circle" &&
+                                relation.first_line_id == line_id;
+                       }),
+        parameters.line_relations.end());
   }
 
   // Scale the moved entities' size parameters (a similarity transform

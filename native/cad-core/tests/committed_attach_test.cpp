@@ -44,6 +44,17 @@ const SketchFeatureParameters* sketch_of(const DocumentState& document) {
   return nullptr;
 }
 
+bool vertex_xy(const SketchFeatureParameters& parameters, const std::string& id,
+               double& x, double& y) {
+  for (const auto& vertex : parameters.vertices) {
+    if (vertex.id != id) continue;
+    x = vertex.x;
+    y = vertex.y;
+    return true;
+  }
+  return false;
+}
+
 // A horizontal host from (0,0) to (100,0), then a stem from (stem_x, stem_y).
 DocumentState host_then_stem(DocumentManager& manager, double stem_x, double stem_y,
                              bool attach) {
@@ -781,6 +792,160 @@ bool test_dragging_a_tangent_endpoint_lands_where_released() {
                 "stale tangent point");
 }
 
+// ── Line-to-line T junction (plan item C) ─────────────────────────────
+// A stem committed onto a host line's BODY gets a `point_line` anchor
+// (attach_committed_vertex_to_geometry). The contract for that junction is
+// SolidCraft's, not Fusion's: the anchored point stays on its host while the
+// host is edited, the stem's own FREE end is not dragged along with it, and
+// both lines may change length and orientation. The two tests below are the
+// two drags the user performs on a T; they are the reproduction for plan item C.
+//
+// RED TODAY (2026-11-03): the first one moves the stem's free end, because the
+// anchored point is treated as an authoritative corner by
+// propagate_connected_point_move (it carries the line's other endpoint across
+// the axis) and the stem's own axis constraint then keeps it there.
+
+bool test_a_t_junction_rides_the_host_without_moving_the_free_end() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_line(0.0, 0.0, 100.0, 0.0, false, "", true);
+  DocumentState document =
+      manager.add_sketch_line(30.0, 0.0, 30.0, 40.0, false, "", true);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "T host: the sketch exists")) return false;
+  if (!expect(before->point_line_anchors.size() == 1,
+              "T host: the stem is anchored to the host line")) {
+    return false;
+  }
+  const std::string anchored_id = before->point_line_anchors.front().vertex_id;
+  const std::string free_end_id =
+      before->lines.back().start_vertex_id == anchored_id
+          ? before->lines.back().end_vertex_id
+          : before->lines.back().start_vertex_id;
+
+  // Stretch the host from (0,0)-(100,0) to (0,0)-(160,0). The anchored point
+  // sits at t = 0.3 of the host, which is now (48,0) — it must ride there.
+  document = manager.update_sketch_vertex("vertex-2", 160.0, 0.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "T host: the sketch survives")) return false;
+
+  double anchored_x = 0.0;
+  double anchored_y = 0.0;
+  double free_x = 0.0;
+  double free_y = 0.0;
+  if (!expect(vertex_xy(*after, anchored_id, anchored_x, anchored_y) &&
+                  vertex_xy(*after, free_end_id, free_x, free_y),
+              "T host: both stem vertices still exist")) {
+    return false;
+  }
+  if (!expect(
+          std::abs(anchored_x - 48.0) < 1e-3 && std::abs(anchored_y) < 1e-3,
+          ("T host: the anchored point rides the stretched host to (48,0) - got (" +
+           std::to_string(anchored_x) + ", " + std::to_string(anchored_y) + ")")
+              .c_str())) {
+    return false;
+  }
+  return expect(
+      std::abs(free_x - 30.0) < 1e-3 && std::abs(free_y - 40.0) < 1e-3,
+      ("T host: the stem's free end stays at (30,40) - got (" +
+       std::to_string(free_x) + ", " + std::to_string(free_y) + ")")
+          .c_str());
+}
+
+bool test_dragging_the_anchored_point_keeps_the_free_end() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_line(0.0, 0.0, 100.0, 0.0, false, "", true);
+  DocumentState document =
+      manager.add_sketch_line(30.0, 0.0, 30.0, 40.0, false, "", true);
+  const SketchFeatureParameters* before = sketch_of(document);
+  if (!expect(before != nullptr, "T drag: the sketch exists")) return false;
+  if (!expect(before->point_line_anchors.size() == 1,
+              "T drag: the stem is anchored to the host line")) {
+    return false;
+  }
+  const std::string anchored_id = before->point_line_anchors.front().vertex_id;
+  const std::string free_end_id =
+      before->lines.back().start_vertex_id == anchored_id
+          ? before->lines.back().end_vertex_id
+          : before->lines.back().start_vertex_id;
+
+  // Drag the junction perpendicular to the host. The anchor holds it ON the
+  // host at its stored position; the stem's free end is not the dragged
+  // geometry, so it must not move.
+  document = manager.update_sketch_vertex(anchored_id, 30.0, 10.0);
+  const SketchFeatureParameters* after = sketch_of(document);
+  if (!expect(after != nullptr, "T drag: the sketch survives")) return false;
+
+  double anchored_x = 0.0;
+  double anchored_y = 0.0;
+  double free_x = 0.0;
+  double free_y = 0.0;
+  if (!expect(vertex_xy(*after, anchored_id, anchored_x, anchored_y) &&
+                  vertex_xy(*after, free_end_id, free_x, free_y),
+              "T drag: both stem vertices still exist")) {
+    return false;
+  }
+  if (!expect(std::abs(anchored_y) < 1e-3 && std::abs(anchored_x - 30.0) < 1e-3,
+              ("T drag: the anchored point is held on its host at (30,0) - got (" +
+               std::to_string(anchored_x) + ", " + std::to_string(anchored_y) + ")")
+                  .c_str())) {
+    return false;
+  }
+  return expect(
+      std::abs(free_x - 30.0) < 1e-3 && std::abs(free_y - 40.0) < 1e-3,
+      ("T drag: the stem's free end stays at (30,40) - got (" +
+       std::to_string(free_x) + ", " + std::to_string(free_y) + ")")
+          .c_str());
+}
+
+// (c) The MOVE tool is the same offending operation as the drag (the user's
+// rule names "drag/move"): a moved tangent line keeps its new position instead
+// of having its end re-projected onto the stale tangent point, and the relation
+// — and therefore the "T" badge — is dropped because the line is no longer
+// tangent. Moving the CIRCLE stays covered by the re-projection (the line
+// riding a moved circle is what it is for).
+bool test_moving_a_tangent_line_does_not_reproject_its_end() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_line(20.0, 0.0, 5.0, -8.660254, false, "", false);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "tangent move: the sketch exists")) {
+    return false;
+  }
+  const std::string line_id = parameters->lines.back().id;
+  const std::string circle_id = parameters->circles.front().id;
+  document = manager.set_sketch_tangent_constraint(line_id, circle_id);
+
+  // Translate the line 20 mm up. Its end is no longer tangent to the circle.
+  document = manager.move_sketch_entities({line_id}, 0.0, 20.0, 0.0, 0.0, 0.0);
+  parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "tangent move: the sketch survives")) {
+    return false;
+  }
+  const auto& line = parameters->lines.back();
+  if (!expect(
+          std::abs(line.end_x - 5.0) < 1e-6 &&
+              std::abs(line.end_y - 11.339746) < 1e-3,
+          ("tangent move: the end keeps the moved position (5,11.339746) - got (" +
+           std::to_string(line.end_x) + ", " + std::to_string(line.end_y) + ")")
+              .c_str())) {
+    return false;
+  }
+  for (const auto& relation : parameters->line_relations) {
+    if (relation.kind == "tangent_line_circle" &&
+        relation.first_line_id == line_id) {
+      return expect(false, "tangent move: the broken relation is dropped");
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -809,6 +974,9 @@ int main() {
   if (!test_resizing_a_circle_does_not_push_the_dimensioned_free_end()) return 1;
   if (!test_dragging_a_circle_bound_endpoint_lands_where_released()) return 1;
   if (!test_dragging_a_tangent_endpoint_lands_where_released()) return 1;
+  if (!test_a_t_junction_rides_the_host_without_moving_the_free_end()) return 1;
+  if (!test_dragging_the_anchored_point_keeps_the_free_end()) return 1;
+  if (!test_moving_a_tangent_line_does_not_reproject_its_end()) return 1;
 
   std::cout << "committed_attach_test passed\n";
   return 0;
