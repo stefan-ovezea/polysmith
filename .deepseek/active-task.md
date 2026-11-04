@@ -1,9 +1,80 @@
+# IN PROGRESS: a circle drag must not break its tangent lines (2026-11-04)
+
+Same branch. Found while verifying A/B/C in the app: the user's saved
+`projects/test.polysmith` showed **two "T" badges on geometry that is not
+tangent**. Both T lines cut *inside* the circle — d − r = −0.4807 mm and
+−2.2958 mm on an r = 32.0156 circle — while their contact points sat exactly on
+the boundary (radial − r = 0.0000). The badges are emitted from `line_relations`,
+so the document claimed two tangencies it did not have.
+
+## Root cause (measured over IPC on the user's file, not guessed)
+
+`enforce_tangent_line_circle_relations` projects the contact point through
+`propagate_connected_point_move`, and that refuses any `is_fixed` vertex
+(`private_connected_point_move.inc`, the `vertex_is_fixed` guard). A
+circle-centre drag marks **every riding `point_on_circle` point `is_fixed`**
+around `refresh_sketch_derived_state` — explicitly "freeze ... for the solve,
+then restore" — so the projection, which runs *after* the solve, silently
+no-opped. Every centre drag therefore left the contact points at their old
+relative angle and the error accumulated.
+
+Proof the enforcement itself was fine: loading the same file (a refresh with no
+freeze) projects both ends to d − r = 0.0000 exactly. Reproduced from scratch:
+tangent tool → d − r = −0.0000; one centre drag → −0.0549 / −0.2244; a second →
+−0.1752 / −0.7710, badges still up.
+
+**The freeze is a solve-time guard, not the attachment.** The attachment is the
+`point_on_circle` constraint, and the tangent point lies ON the circle by
+construction — so leaving the contact point out of the freeze cannot detach the
+line. *(The user asked exactly this before the change landed: "fixed vertex is
+how the lines stay connected to the circle. removing that will detach the
+lines." The assertions below are the answer.)*
+
+## Fix
+
+`sketch_line_vertex_update_commands.inc`, circle-centre branch: collect the
+contact points of this circle's `tangent_line_circle` relations and exclude them
+from `ride_ids`, so they are ridden (translated) but not frozen. They then ride,
+the solver places them, and the projection lands on the true tangent point in
+the same single refresh — no extra refresh, no new flag, and a genuine user FIX
+is still honoured everywhere else (it blocks the projection exactly as before).
+
+## Test
+
+`test_dragging_a_circle_keeps_its_tangent_lines_tangent` in
+`committed_attach_test.cpp`, failing first (`d-r=-0.054911`) and green after.
+It asserts the whole contract, attachment included: the anchored start stays at
+(−100,0), the contact point stays ON the circle, the relation survives, and
+d − r = 0 after the drag.
+
+## Verified
+
+Incrementally rebuilt · `committed_attach_test` passes · `pnpm test:core`
+**92/92** (90 declared targets + the 2 stale `cad_core_scratch_*` exes) ·
+re-probed over IPC: two centre drags → d − r = 0.0000 both lines; the user's own
+file, centre dragged → still exactly tangent, apex unmoved.
+
+**Confirmed in-app by the user 2026-11-04**: "looks working very well now. I like
+that the tangent constraint is kept and points are moving to solve it."
+
+**Build note:** `pnpm core:build` could not copy the fresh core over
+`build/cad_core.exe` while the app was running (the lock makes the post-build
+copy fail); closing the app first is required.
+
+**Not done:** if a contact point carries an explicit user FIX, the projection is
+blocked (unchanged behaviour) and the T badge would still lie. Pinning that down
+needs a way to tell the transient freeze from a user FIX; deliberately left out
+of this diff.
+
+---
+
 # IN PROGRESS: tangent drag + line-to-line T junction (2026-11-03)
 
 Branch `fix/tangent-drag-and-t-junction`. **A, B and C are implemented in the
 core.** The two tests that were red on purpose are green,
-`pnpm test:core` is 90/90 and `tsc --noEmit` is clean. Nothing is committed,
-and the fix has NOT been verified in the app yet.
+`pnpm test:core` is 90/90 and `tsc --noEmit` is clean. Landed as `491ca00c`
+(the reproduction) and `9efb1938` (the fix), pushed to the branch from the other
+workstation; **in-app verification still pending.**
 
 ## Evidence (measured, not guessed)
 
@@ -29,6 +100,15 @@ were the reproduction for A/B and are green now:
   tangent.
 
 ## User's design (binding for this task)
+
+> **SUPERSEDED 2026-11-04 — read this first.** The user has reversed the first
+> bullet: "I decide not to remove constraints automatically … I think only trim
+> should be allowed to remove them if the geometry becomes impossible to solve."
+> The code on this branch still implements the old rule (a drag drops H/V;
+> a tangent drag and the move tool drop `tangent_line_circle`; the preview strips
+> both). It stays as-is deliberately — the user does not want a rework now —
+> and the reversal is planned for the phase that makes the H/V drag preview hold
+> the constraint too. Do not extend the dropping behaviour in the meantime.
 
 - **Constraints yield to the user's operation.** Trim and drag/move are offending
   operations: the constraint should be **removed** so the operation can happen.

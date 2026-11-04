@@ -212,6 +212,33 @@ void update_sketch_vertex(FeatureEntry& feature,
           // A line drawn onto the circle is covered by this loop like any other
           // point: its endpoint carries a real point_on_circle, never an id
           // adopted from the curve (see find_coincident_endpoint).
+          // A tangency OWNS its contact point's position: once the centre has
+          // moved, the new tangent point is the only correct spot on the
+          // circle. Freezing the contact point along with the other riders
+          // (below) pins it at its old relative angle, where the line is no
+          // longer tangent — and `enforce_tangent_line_circle_relations` runs
+          // AFTER the solve, so a frozen contact point makes that pass silently
+          // no-op (`propagate_connected_point_move` refuses a fixed vertex) and
+          // the "T" badge survives a broken tangency. Measured 2026-11-04 on a
+          // saved document: d − r reached −0.48 mm and −2.30 mm on an r = 32
+          // circle, the error accumulating on every further drag, with both
+          // badges still up.
+          //
+          // The freeze is only a solve-time guard ("freeze ... for the solve,
+          // then restore" below); the attachment is the `point_on_circle`
+          // constraint, and the tangent point lies ON the circle by
+          // construction, so leaving the contact point out of the freeze cannot
+          // detach the line — the apex is untouched and the endpoint stays on
+          // the boundary.
+          std::vector<std::string> tangent_contact_ids;
+          for (const auto& relation : parameters.line_relations) {
+            if (relation.kind != "tangent_line_circle") continue;
+            if (relation.second_line_id != c.id) continue;
+            for (const auto& line : parameters.lines) {
+              if (line.id != relation.first_line_id) continue;
+              tangent_contact_ids.push_back(line.end_vertex_id);
+            }
+          }
           std::vector<std::string> ride_ids;
           for (const auto& constraint : parameters.constraints) {
             if (constraint.kind != "point_on_circle") continue;
@@ -222,7 +249,13 @@ void update_sketch_vertex(FeatureEntry& feature,
             propagate_connected_point_move(parameters, constraint.target_ids[0],
                                            pos->first + (x - old_x),
                                            pos->second + (y - old_y));
-            ride_ids.push_back(constraint.target_ids[0]);
+            // A tangent contact point is driven by its relation, not by the
+            // ride, so it is deliberately NOT frozen below.
+            if (std::find(tangent_contact_ids.begin(), tangent_contact_ids.end(),
+                          constraint.target_ids[0]) ==
+                tangent_contact_ids.end()) {
+              ride_ids.push_back(constraint.target_ids[0]);
+            }
           }
           // Dragging OVERRIDES the dimensions, exactly as it does when the
           // user drags a line's free end (update_line_vertex re-measures after

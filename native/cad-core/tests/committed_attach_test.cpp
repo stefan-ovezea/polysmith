@@ -946,6 +946,109 @@ bool test_moving_a_tangent_line_does_not_reproject_its_end() {
   return true;
 }
 
+// ── A circle drag keeps its tangent lines tangent (2026-11-04) ────────
+// Measured on the user's document (`test.polysmith`, saved from the running
+// app): applying tangency to lines that end on a circle is exact (d − r =
+// 0.0000), but dragging the CIRCLE then translated the contact points rigidly
+// with the centre — they stayed on the circle yet were no longer tangent
+// points — while the "T" badge stayed up. The error grew on every further drag:
+// d − r reached −0.48 mm and −2.30 mm on an r = 32 circle, i.e. the lines cut
+// through the circle while both advertised tangency.
+//
+// Cause: the centre drag freezes every riding point (`is_fixed`) around
+// refresh_sketch_derived_state so the SOLVE cannot pull it off-angle around the
+// circle. That freeze is a solve-time guard — the attachment itself is the
+// `point_on_circle` constraint — but `enforce_tangent_line_circle_relations`
+// runs AFTER the solve and moves the contact point through
+// `propagate_connected_point_move`, which refuses a fixed vertex. It silently
+// no-opped.
+//
+// A tangency owns its contact point's position: after the centre moves, the new
+// tangent point is the only correct spot on the circle, so the contact point
+// must stay out of the freeze. The attachments are asserted too — the apex
+// (the line's anchored start) must not move and the contact point must remain
+// ON the circle: satisfying the relation may never detach the line.
+bool test_dragging_a_circle_keeps_its_tangent_lines_tangent() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_circle(0.0, 0.0, 30.0);
+  DocumentState document =
+      manager.add_sketch_line(-100.0, 0.0, 0.0, 30.0, false, "", true);
+  const SketchFeatureParameters* parameters = sketch_of(document);
+  if (!expect(parameters != nullptr, "circle tangent drag: the sketch exists")) {
+    return false;
+  }
+  const std::string line_id = parameters->lines.back().id;
+  const std::string circle_id = parameters->circles.front().id;
+  const std::string center_vertex_id =
+      parameters->circles.front().center_vertex_id;
+  document = manager.set_sketch_tangent_constraint(line_id, circle_id);
+  parameters = sketch_of(document);
+  if (!expect(parameters != nullptr,
+              "circle tangent drag: the sketch survives the tangency")) {
+    return false;
+  }
+
+  // Distance from the circle centre to the line's support (|d − r| == 0 means
+  // tangent, d < r means the line cuts into the circle).
+  const auto perpendicular_distance = [](const SketchFeatureParameters& p) {
+    const auto& circle = p.circles.front();
+    const auto& line = p.lines.back();
+    const double dx = line.end_x - line.start_x;
+    const double dy = line.end_y - line.start_y;
+    const double length = std::hypot(dx, dy);
+    if (length <= 0.0) return 0.0;
+    return std::abs(dx * (circle.center_y - line.start_y) -
+                    dy * (circle.center_x - line.start_x)) /
+           length;
+  };
+  if (!expect(std::abs(perpendicular_distance(*parameters) -
+                       parameters->circles.front().radius) < 1e-6,
+              "circle tangent drag: the tangent tool leaves the line exactly "
+              "tangent")) {
+    return false;
+  }
+
+  document = manager.update_sketch_vertex(center_vertex_id, 10.0, 10.0);
+  parameters = sketch_of(document);
+  if (!expect(parameters != nullptr,
+              "circle tangent drag: the sketch survives the drag")) {
+    return false;
+  }
+  const auto& circle = parameters->circles.front();
+  const auto& line = parameters->lines.back();
+  bool relation_kept = false;
+  for (const auto& relation : parameters->line_relations) {
+    if (relation.kind == "tangent_line_circle" &&
+        relation.first_line_id == line_id) {
+      relation_kept = true;
+    }
+  }
+  const double end_radial =
+      std::hypot(line.end_x - circle.center_x, line.end_y - circle.center_y);
+  const double after = perpendicular_distance(*parameters);
+  return expect(std::abs(line.start_x + 100.0) < 1e-6 &&
+                    std::abs(line.start_y) < 1e-6,
+                ("circle tangent drag: the anchored start stays at (-100,0) - "
+                 "got (" +
+                 std::to_string(line.start_x) + ", " +
+                 std::to_string(line.start_y) + ")")
+                    .c_str()) &&
+         expect(std::abs(end_radial - circle.radius) < 1e-6,
+                ("circle tangent drag: the contact point stays ON the circle - "
+                 "off by " +
+                 std::to_string(end_radial - circle.radius))
+                    .c_str()) &&
+         expect(relation_kept,
+                "circle tangent drag: the tangency survives the move") &&
+         expect(std::abs(after - circle.radius) < 1e-6,
+                ("circle tangent drag: the line is still tangent after the "
+                 "move - d-r=" +
+                 std::to_string(after - circle.radius))
+                    .c_str());
+}
+
 }  // namespace
 
 int main() {
@@ -977,6 +1080,7 @@ int main() {
   if (!test_a_t_junction_rides_the_host_without_moving_the_free_end()) return 1;
   if (!test_dragging_the_anchored_point_keeps_the_free_end()) return 1;
   if (!test_moving_a_tangent_line_does_not_reproject_its_end()) return 1;
+  if (!test_dragging_a_circle_keeps_its_tangent_lines_tangent()) return 1;
 
   std::cout << "committed_attach_test passed\n";
   return 0;
