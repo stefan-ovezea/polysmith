@@ -9,6 +9,12 @@ constexpr double kCoincidentTolerance = 0.01;
 void enforce_midpoint_anchors(SketchFeatureParameters& parameters);
 void enforce_point_line_anchors(SketchFeatureParameters& parameters);
 void enforce_point_on_arc_constraints(SketchFeatureParameters& parameters);
+// Authority for `point_on_circle` bindings, next to the arc pass: projects an
+// off-rim point radially back onto the circle. Normally a no-op (the solver owns
+// the constraint), but it is the only way out of the degenerate state where the
+// point sits on the circle's CENTRE and the binding has no gradient — see the
+// comment on the definition in anchor_relation_enforcement.inc.
+void enforce_point_on_circle_constraints(SketchFeatureParameters& parameters);
 void enforce_line_HV_constraints(SketchFeatureParameters& parameters);
 void enforce_all_equal_length_relations(SketchFeatureParameters& parameters);
 void enforce_all_perpendicular_relations(SketchFeatureParameters& parameters);

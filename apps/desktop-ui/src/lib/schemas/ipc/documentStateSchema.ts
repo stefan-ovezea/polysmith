@@ -863,6 +863,12 @@ export const documentStateSchema = z.object({
               secondary_entity_id: z.string().default(""),
               value: z.number(),
               expression: z.string().default(""),
+              // Auto dimensions are bookkeeping the core writes on every line and
+              // circle; only a dimension the user created or edited is a real
+              // constraint. The solvers need this flag — they used to guess from an
+              // empty `expression`, which is ALSO empty on tool-created dimensions,
+              // so every preview silently ignored the user's dimensions.
+              is_auto: z.boolean().default(false),
               driven: z.boolean().default(false),
               display_as: z.string().default(""),
               label_x: z.number().nullable().optional(),

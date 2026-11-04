@@ -252,10 +252,11 @@ function pushSketchGeometryAndConstraints(
     });
   }
 
-  // Driving dimensions.
+  // Driving dimensions. Auto ones are bookkeeping, not constraints — see the
+  // same rule (and why an empty `expression` is the wrong test) in planegcsBridge.
   for (const dim of params.dimensions) {
     if (dim.driven) continue;
-    if (dim.expression.length === 0) continue;
+    if (dim.is_auto) continue;
 
     switch (dim.kind) {
       case "line_length": {

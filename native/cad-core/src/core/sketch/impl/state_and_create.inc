@@ -550,6 +550,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   enforce_midpoint_anchors(*feature.sketch_parameters);
   enforce_point_line_anchors(*feature.sketch_parameters);
   enforce_point_on_arc_constraints(*feature.sketch_parameters);
+  enforce_point_on_circle_constraints(*feature.sketch_parameters);
   enforce_tangent_line_circle_relations(*feature.sketch_parameters);
   enforce_tangent_circle_line_relations(*feature.sketch_parameters);
   enforce_constraint_completion(*feature.sketch_parameters);

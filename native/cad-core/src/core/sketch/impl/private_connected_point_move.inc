@@ -1,3 +1,22 @@
+// True when the vertex carries an attachment to a curve (`point_on_circle` /
+// `point_on_arc`), so it can only exist ON that curve. `target_ids` is
+// {vertex, circle-or-arc} for both kinds. Kept here rather than with the other
+// drag-policy helpers because this file sits inside the sketch's anonymous
+// namespace, where the only caller (`propagate_connected_point_move`) lives.
+bool vertex_is_bound_to_curve(const SketchFeatureParameters& parameters,
+                              const std::string& vertex_id) {
+  for (const auto& constraint : parameters.constraints) {
+    if (constraint.kind != "point_on_circle" &&
+        constraint.kind != "point_on_arc") {
+      continue;
+    }
+    if (!constraint.target_ids.empty() && constraint.target_ids[0] == vertex_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void propagate_connected_point_move(SketchFeatureParameters& parameters,
                                     const std::string& point_id,
                                     double target_x,
@@ -121,7 +140,26 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
           } else if (moved_end) {
             line.start_y = line.end_y;
           }
+        } else if (!other_endpoint_fixed && !other_endpoint_anchored) {
+          // The axis is an INVARIANT, so it is honoured by moving the whole line
+          // rather than by clamping the dragged point: the far end takes the
+          // moved point's y, which keeps the line horizontal AND lets the drag
+          // work in both directions at once — down (the line travels) and along
+          // (it stretches). Fusion behaves this way, which the user compared
+          // directly to dragging a dimensioned line (2026-11-04).
+          //
+          // The old code clamped the DRAGGED point onto the far end's y instead,
+          // so a diagonal drag silently lost its vertical part; and for a point
+          // bound to a circle the clamp pushed it off the curve, which made the
+          // sketch unsatisfiable (that is the status=2 failure measured on a
+          // horizontal line on a circle).
+          if (moved_start) {
+            line.end_y = move.to_y;
+          } else if (moved_end) {
+            line.start_y = move.to_y;
+          }
         } else if (!other_endpoint_anchored && moved_start) {
+          // The far end cannot move (fixed): fall back to clamping.
           line.start_y = line.end_y;
         } else if (!other_endpoint_anchored && moved_end) {
           line.end_y = line.start_y;
@@ -137,6 +175,14 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
             line.end_x = line.start_x;
           } else if (moved_end) {
             line.start_x = line.end_x;
+          }
+        } else if (!other_endpoint_fixed && !other_endpoint_anchored) {
+          // See the horizontal branch: the line travels along the constrained
+          // axis instead of the dragged point being clamped.
+          if (moved_start) {
+            line.end_x = move.to_x;
+          } else if (moved_end) {
+            line.start_x = move.to_x;
           }
         } else if (!other_endpoint_anchored && moved_start) {
           line.start_x = line.end_x;

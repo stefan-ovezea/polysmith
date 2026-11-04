@@ -77,91 +77,51 @@ void update_sketch_line(FeatureEntry& feature,
 
 // ── Drag policy: the release position of the dragged vertex wins ──────────
 //
-// `update_sketch_vertex` is the drag/move path for a single vertex. Two rules
-// follow from the user's model (see .deepseek/active-task.md, "Constraints
-// yield to the user's operation" — the drag preview in
-// layout/viewport/endpointDrag.ts already strips H/V for the same reason):
+// `update_sketch_vertex` is the drag/move path for a single vertex.
 //
 //   1. A vertex bound to a CURVE (`point_on_circle` / `point_on_arc`) can only
-//      exist ON that curve, so an axis clamp that moves it anywhere else makes
-//      the sketch unsatisfiable. Measured: dragging a r=10 circle's bound
-//      endpoint from (10,0) to (0,-10) had its y clamped onto the line's other
-//      end, landing the point on the circle's CENTRE — where point_on_circle
-//      has no gradient — and the solve then failed (status=2, dofs=5), leaving
-//      the vertex at the centre. The axis constraint yields, and is DROPPED:
-//      the line is no longer axis-aligned, and a badge must never outlive the
-//      geometry it claims.
-//   2. Dragging the TANGENT point of a `tangent_line_circle` relation breaks the
-//      tangency by definition. Re-projecting the end onto the stale tangent
-//      point (`enforce_tangent_line_circle_relations`, whose whole job is to
-//      keep the end tangent) silently undid the drag and kept the "T" badge on
-//      geometry that was no longer tangent. The relation is dropped instead —
-//      trim already drops tangency, and the badge is emitted from the relation,
-//      so it disappears with it.
+//      exist ON that curve, so clamping it onto a line's H/V axis makes the
+//      sketch unsatisfiable: measured, dragging an r=10 circle's bound endpoint
+//      from (10,0) to (0,-10) had its y clamped onto the line's other end,
+//      landing the point on the circle's CENTRE — where point_on_circle has no
+//      gradient — and the solve then failed (status=2, dofs=5). The axis is now
+//      enforced on the line's FREE end instead (moved_point_bound_to_curve in
+//      private_connected_point_move.inc), which keeps the badge AND keeps the
+//      point on its curve: the line follows the dragged point. Fusion does the
+//      same — a horizontal line bound to a circle rides up with it and keeps
+//      its "H", and only stretches when the circle moves along the line.
+//   2. Dragging the CONTACT point of a `tangent_line_circle` relation is
+//      REFUSED, and the relation is kept (Fusion's behaviour, chosen by the user
+//      2026-11-04). With the line's far end fixed there is exactly one place on
+//      the circle where the line can be tangent, so the drag has nowhere to go.
+//      This file used to drop the relation instead, which let the point follow
+//      the cursor — the user's verdict on that: the sketch would "behave poorly,
+//      moving the circle, the point on the circle and the line end all together
+//      in unpredictable ways". Removing the tangency is the USER's decision; once
+//      it is gone the guard no longer applies and the drag is ordinary.
 //
-// Both helpers are no-ops unless the vertex actually is curve-bound / a tangent
-// point, so every other vertex drag keeps its current behaviour.
+// Rule 1's helper (`vertex_is_bound_to_curve`) lives in
+// private_connected_point_move.inc, where the axis is enforced: that file is
+// included inside the sketch's anonymous namespace, so the definition is
+// deliberately kept next to its only caller.
 
-// True when the vertex carries an attachment to a curve. `target_ids` is
-// {vertex, circle-or-arc} for both kinds.
-bool vertex_is_bound_to_curve(const SketchFeatureParameters& parameters,
-                              const std::string& vertex_id) {
-  for (const auto& constraint : parameters.constraints) {
-    if (constraint.kind != "point_on_circle" &&
-        constraint.kind != "point_on_arc") {
-      continue;
-    }
-    if (!constraint.target_ids.empty() && constraint.target_ids[0] == vertex_id) {
-      return true;
+// True when the vertex is the CONTACT point of a live `tangent_line_circle`
+// relation. The relation's contract (see set_sketch_tangent_constraint) is that
+// the line's START is the external anchor and its END is the contact point, so
+// only an END drag is affected — dragging the start is the case the per-refresh
+// re-projection exists for.
+bool vertex_is_tangent_contact_point(const SketchFeatureParameters& parameters,
+                                     const std::string& vertex_id) {
+  for (const auto& line : parameters.lines) {
+    if (line.end_vertex_id != vertex_id) continue;
+    for (const auto& relation : parameters.line_relations) {
+      if (relation.kind == "tangent_line_circle" &&
+          relation.first_line_id == line.id) {
+        return true;
+      }
     }
   }
   return false;
-}
-
-// Drop the H/V constraint of a line whose dragged endpoint is curve-bound when
-// the release position is off that axis. On-axis drags keep the constraint:
-// the clamp is a no-op there and nothing is gained by losing the badge.
-void release_axis_constraints_for_bound_vertex(
-    SketchFeatureParameters& parameters, const std::string& vertex_id, double x,
-    double y) {
-  if (!vertex_is_bound_to_curve(parameters, vertex_id)) return;
-  for (auto& line : parameters.lines) {
-    if (!line.constraint.has_value()) continue;
-    const bool moved_start = line.start_vertex_id == vertex_id;
-    const bool moved_end = line.end_vertex_id == vertex_id;
-    if (!moved_start && !moved_end) continue;
-    const bool horizontal = line.constraint.value() == "horizontal";
-    const bool vertical = line.constraint.value() == "vertical";
-    if (!horizontal && !vertical) continue;
-    const double other_x = moved_start ? line.end_x : line.start_x;
-    const double other_y = moved_start ? line.end_y : line.start_y;
-    const bool off_axis =
-        horizontal
-            ? std::abs(y - other_y) > kMinimumSketchDimensionValue
-            : std::abs(x - other_x) > kMinimumSketchDimensionValue;
-    if (!off_axis) continue;
-    line.constraint = std::nullopt;
-  }
-}
-
-// Drop `tangent_line_circle` relations whose tangent point is the dragged
-// vertex. The relation's contract (see set_sketch_tangent_constraint) is that
-// the line's START is the external anchor and its END is the contact point, so
-// only an END drag breaks it — dragging the start is the case the per-refresh
-// re-projection exists for.
-void drop_tangent_relations_for_dragged_tangent_point(
-    SketchFeatureParameters& parameters, const std::string& vertex_id) {
-  for (auto& line : parameters.lines) {
-    if (line.end_vertex_id != vertex_id) continue;
-    parameters.line_relations.erase(
-        std::remove_if(parameters.line_relations.begin(),
-                       parameters.line_relations.end(),
-                       [&](const SketchLineRelation& relation) {
-                         return relation.kind == "tangent_line_circle" &&
-                                relation.first_line_id == line.id;
-                       }),
-        parameters.line_relations.end());
-  }
 }
 
 void update_sketch_vertex(FeatureEntry& feature,
@@ -186,12 +146,45 @@ void update_sketch_vertex(FeatureEntry& feature,
     throw std::runtime_error("Sketch point not found: " + point_id);
   }
 
+  // Dragging the CONTACT point of a tangency is refused, and the relation is
+  // kept — Fusion's behaviour, which the user asked for (2026-11-04): with the
+  // far end fixed there is only one place on the circle where this line can be
+  // tangent, so the drag has nowhere to go. The alternative — dropping the
+  // relation so the point can follow the cursor — is what this branch used to
+  // do, and the user's verdict on the resulting free geometry was "behaves
+  // poorly, moving the circle, the point on the circle and the line end all
+  // together in unpredictable ways". A user who wants the point to move removes
+  // the tangency themselves; then this guard is gone and the drag is ordinary
+  // and predictable.
+  if (!points_match(point->x, point->y, x, y) &&
+      vertex_is_tangent_contact_point(parameters, point_id)) {
+    polysmith::core::log_info(
+        "sketch",
+        "drag refused: the point is the contact point of a tangency (remove the "
+        "tangent constraint to move it)");
+    return;
+  }
+
   if (point->is_fixed && !points_match(point->x, point->y, x, y)) {
     throw std::runtime_error("Cannot move a fixed sketch point");
   }
 
   const std::vector<std::string> affected_line_ids =
       collect_line_ids_for_vertex(parameters, point_id);
+
+  // Remember where the affected lines' midpoints were, so the dimension labels
+  // measuring them can be carried along with the geometry (see the shift below).
+  std::vector<std::pair<std::string, std::pair<double, double>>>
+      line_midpoints_before;
+  for (const auto& line_id : affected_line_ids) {
+    for (const auto& line : parameters.lines) {
+      if (line.id != line_id) continue;
+      line_midpoints_before.push_back(
+          {line_id,
+           {(line.start_x + line.end_x) / 2.0, (line.start_y + line.end_y) / 2.0}});
+      break;
+    }
+  }
 
   if (point->kind == "center") {
     // Circle center: use geometry_owner_ids lookup (Phase 4.2)
@@ -406,14 +399,185 @@ void update_sketch_vertex(FeatureEntry& feature,
     }
   }
 
-  // A dragged vertex that is bound to a curve, or that IS a tangent contact
-  // point, must not be put back where it came from: the constraints it carries
-  // yield to the drag (see the drag-policy comment at the top of this file).
-  release_axis_constraints_for_bound_vertex(parameters, point_id, x, y);
-  drop_tangent_relations_for_dragged_tangent_point(parameters, point_id);
+  // A tangent contact point never reaches here: the guard at the top of this
+  // function refuses that drag and keeps the relation (see its comment). A
+  // curve-bound vertex needs no help either — the axis is enforced on the line's
+  // free end instead of clamping the point (see
+  // private_connected_point_move.inc), so the H/V badge survives the drag.
+
+  // A curve-bound point can only exist ON its curve, so project the release
+  // position onto it BEFORE the solve. Without this, a drag onto the circle's
+  // CENTRE leaves point_on_circle with no gradient to follow and the solve fails
+  // (measured 2026-11-04: `status=2`, and the point stayed on the centre — the
+  // sketch was then poisoned for every later refresh). Dragging toward the centre
+  // now slides the point along the rim instead.
+  for (const auto& constraint : parameters.constraints) {
+    if (constraint.kind != "point_on_circle" ||
+        constraint.target_ids.size() < 2 ||
+        constraint.target_ids[0] != point_id) {
+      continue;
+    }
+    const auto circle_it = std::find_if(
+        parameters.circles.begin(), parameters.circles.end(),
+        [&](const SketchCircle& circle) {
+          return circle.id == constraint.target_ids[1];
+        });
+    if (circle_it == parameters.circles.end()) continue;
+    if (circle_it->radius <= kMinimumSketchDimensionValue) continue;
+    double dx = x - circle_it->center_x;
+    double dy = y - circle_it->center_y;
+    if (std::hypot(dx, dy) <= kMinimumSketchDimensionValue) {
+      // Degenerate target: keep the direction the point already has.
+      dx = point->x - circle_it->center_x;
+      dy = point->y - circle_it->center_y;
+      if (std::hypot(dx, dy) <= kMinimumSketchDimensionValue) {
+        dx = 1.0;
+        dy = 0.0;
+      }
+    }
+    const double length = std::hypot(dx, dy);
+    x = circle_it->center_x + circle_it->radius * (dx / length);
+    y = circle_it->center_y + circle_it->radius * (dy / length);
+    break;
+  }
+
+  // A line that carries a DRIVING dimension between its own two endpoints behaves
+  // rigidly under a drag: checked against Fusion at the user's request
+  // (2026-11-04) — "I draw a line, make dimension and drag one end, [it] just
+  // moves the whole line". Carrying the far endpoint by the same delta is what
+  // keeps the length (and therefore the dimension) unchanged. Without it the drag
+  // stretched the line and the solver pulled it straight back; on a line bound to a
+  // circle that pull-back also walked the circle centre around.
+  //
+  // Anything attached to the far end rides the translation (the refresh's
+  // point_on_circle pass moves the circle with its point), which is why a
+  // circle-bound line's drag moves the circle instead of resizing it.
+  for (const auto& line : parameters.lines) {
+    const bool is_start = line.start_vertex_id == point_id;
+    const bool is_end = line.end_vertex_id == point_id;
+    if (!is_start && !is_end) continue;
+    bool dimensioned = false;
+    for (const auto& dimension : parameters.dimensions) {
+      if (dimension.driven) continue;
+      // AUTO dimensions are bookkeeping the sketch writes back on every refresh
+      // (every line gets one), not a constraint the user placed — a drag must keep
+      // stretching those lines. Only an explicit dimension (is_auto == false, the
+      // state set when the user creates or edits one) makes the line rigid.
+      if (dimension.is_auto) continue;
+      if (dimension.kind == "line_length" && dimension.entity_id == line.id) {
+        dimensioned = true;
+        break;
+      }
+      const bool owns_endpoints =
+          (dimension.entity_id == line.start_vertex_id &&
+           dimension.secondary_entity_id == line.end_vertex_id) ||
+          (dimension.entity_id == line.end_vertex_id &&
+           dimension.secondary_entity_id == line.start_vertex_id);
+      if (dimension.kind == "point_distance" && owns_endpoints) {
+        dimensioned = true;
+        break;
+      }
+    }
+    if (!dimensioned) continue;
+
+    const double current_x = is_start ? line.start_x : line.end_x;
+    const double current_y = is_start ? line.start_y : line.end_y;
+    const double delta_x = x - current_x;
+    const double delta_y = y - current_y;
+    if (std::abs(delta_x) <= kMinimumSketchDimensionValue &&
+        std::abs(delta_y) <= kMinimumSketchDimensionValue) {
+      break;
+    }
+    // Copy what the call needs: propagate_connected_point_move mutates the line.
+    const std::string far_id =
+        is_start ? line.end_vertex_id : line.start_vertex_id;
+    const double far_x = is_start ? line.end_x : line.start_x;
+    const double far_y = is_start ? line.end_y : line.start_y;
+    // The bound circle travels with the line. A point_on_circle endpoint that is
+    // translated must keep its place ON the rim, so the circle moves by the same
+    // delta — Fusion: "if the line with dimension started from the circle to canvas,
+    // on free-end drag [it] moves the circle". Without this the point_on_circle
+    // repair pulled the translated point back onto a stationary rim, which shortened
+    // the line and made the free end lag behind the cursor (measured: 67.75 instead
+    // of 70).
+    for (const auto& constraint : parameters.constraints) {
+      if (constraint.kind != "point_on_circle" ||
+          constraint.target_ids.size() < 2) {
+        continue;
+      }
+      if (constraint.target_ids[0] != line.start_vertex_id &&
+          constraint.target_ids[0] != line.end_vertex_id) {
+        continue;
+      }
+      for (auto& circle : parameters.circles) {
+        if (circle.id != constraint.target_ids[1]) continue;
+        circle.center_x += delta_x;
+        circle.center_y += delta_y;
+        // Every OTHER point bound to this circle rides it, exactly like a
+        // circle-centre drag: a sketch can have two lines on one circle (the
+        // user's does), and translating the circle away from the second one
+        // leaves it off the rim — the solver then redistributed everything and
+        // the dragged end lagged the cursor by 1.6 mm instead of following it.
+        for (const auto& rider : parameters.constraints) {
+          if (rider.kind != "point_on_circle" || rider.target_ids.size() < 2) {
+            continue;
+          }
+          if (rider.target_ids[1] != circle.id) continue;
+          if (rider.target_ids[0] == line.start_vertex_id ||
+              rider.target_ids[0] == line.end_vertex_id) {
+            continue;
+          }
+          const auto rider_position =
+              point_position_of(parameters, rider.target_ids[0]);
+          if (!rider_position.has_value()) continue;
+          propagate_connected_point_move(parameters, rider.target_ids[0],
+                                         rider_position->first + delta_x,
+                                         rider_position->second + delta_y);
+        }
+        break;
+      }
+    }
+    propagate_connected_point_move(parameters, far_id, far_x + delta_x,
+                                   far_y + delta_y);
+    break;
+  }
 
   propagate_connected_point_move(parameters, point_id, x, y);
   sync_all_line_dimensions(parameters);
+
+  // A dimension annotation must stay attached to the geometry it measures. Its
+  // label position is a sketch-space point (the UI stores one as soon as the
+  // label is placed), so moving the line without moving the label grows the gap —
+  // the user's "the dimension label does not move with the line and increases the
+  // distance to it" (2026-11-04). The label follows the measured span's midpoint
+  // displacement, which keeps the offset under a pure translation AND under a
+  // stretch.
+  for (const auto& [line_id, before_midpoint] : line_midpoints_before) {
+    const auto line_it = std::find_if(
+        parameters.lines.begin(), parameters.lines.end(),
+        [&](const SketchLine& line) { return line.id == line_id; });
+    if (line_it == parameters.lines.end()) continue;
+    const double shift_x =
+        (line_it->start_x + line_it->end_x) / 2.0 - before_midpoint.first;
+    const double shift_y =
+        (line_it->start_y + line_it->end_y) / 2.0 - before_midpoint.second;
+    if (std::abs(shift_x) < 1e-9 && std::abs(shift_y) < 1e-9) continue;
+    for (auto& dimension : parameters.dimensions) {
+      if (!dimension.label_x.has_value() || !dimension.label_y.has_value()) {
+        continue;
+      }
+      const bool measures_line =
+          (dimension.kind == "line_length" && dimension.entity_id == line_id) ||
+          (dimension.kind == "line_angle" && dimension.entity_id == line_id) ||
+          (dimension.entity_id == line_it->start_vertex_id &&
+           dimension.secondary_entity_id == line_it->end_vertex_id) ||
+          (dimension.entity_id == line_it->end_vertex_id &&
+           dimension.secondary_entity_id == line_it->start_vertex_id);
+      if (!measures_line) continue;
+      dimension.label_x = dimension.label_x.value() + shift_x;
+      dimension.label_y = dimension.label_y.value() + shift_y;
+    }
+  }
 
   for (const auto& line_id : affected_line_ids) {
     enforce_equal_length_relations(parameters, line_id);

@@ -1,3 +1,622 @@
+# IN PROGRESS: next phase — H/V preview, tangent drag, first-vertex rule (2026-11-04)
+
+User's instruction: *"log it and let's move to fix the T line and constraint line
+move and fusion rule for first vertex."* The dimension finding is logged in the
+target-policy section; this section tracks the three fixes.
+
+## Done, uncommitted: the preview keeps H/V on the dragged line
+
+`layout/viewport/endpointDrag.ts` — the preview used to strip `constraint` from
+**every** line, so the dragged line rotated freely and the commit snapped it
+back ("the line can be dragged out of horizontality but snaps back, and the
+length is changed with the projection to the horizontal of the point where it
+was committed"). Now the H/V constraint is kept on the line that owns the
+dragged vertex, and only the other lines are stripped — Fusion keeps the line H
+throughout the drag. `tsc --noEmit` clean, `pnpm test:ui` 25/25. **In-app
+verification pending.**
+
+## Done, uncommitted: Fusion rule 1 for dimension edits
+
+`dimension_update.inc` — the `point_distance` placement already moved only the
+SECONDARY point, but the solver's least-move then spread the change over every
+free variable. The primary vertex (`dimension.entity_id`, the point the user drew
+first) is now frozen for that refresh, so the edit lands on the other point and
+the circle.
+
+Measured on the user's `test2.polysmith`, dimension 80 → 90:
+
+| | before | after |
+|---|---|---|
+| free end (first vertex) | −120.5704 (moved −7.30) | **−113.2672 (unmoved)** |
+| bound end | −30.5704 (+2.70) | −23.2672 (**+10.00**) |
+| circle centre | 3.4676 (+2.70) | 10.7708 (**+10.00**) |
+| radius | 34.038 (fixed) | 34.038 (fixed) |
+
+90 → 70 moves the centre −20 and the bound point −20, free end unmoved — the
+circle translates by exactly the needed delta, radius untouched, and the drift no
+longer accumulates. The circle DOF is the one the user confirmed for a dimension
+edit ("160° observation is for changing the line dimension").
+
+New test: `test_a_dimension_edit_keeps_the_first_vertex` (the same geometry the
+IPC probe used; every assertion in it failed before the change — the free end
+moved to (−71.468, 9.849) there). `pnpm test:core` 92/92.
+
+**Still needs the core copy**: the running app locks `build/cad_core.exe`, so the
+post-build copy fails while it is open — close the app before rebuilding.
+
+## Done, uncommitted: the sketch can no longer be poisoned by a drag onto the centre
+
+The user: *"Very important I drag the point on the circle to the circle center and
+snapped. from that moment on the line can be stretched to a dimension and on
+commit stays on that final dimension as before was snapping back"* — plus a wall
+of `sketch solver failed … status=2` (dofs 3..8 and −3) in the Logs panel.
+
+Measured on their saved file: `vertex-16` sat **0.0000 from the centre of an
+r = 38.022 circle** — a 38 mm `point_on_circle` violation. `point_on_circle` has
+no gradient at the centre, so the solve could never recover: **every** refresh
+failed from then on, which also marked dimensions driven (`dim-…-vertex-19-vertex-20-x
+driven=true`) so they stopped driving — hence the "no more snap-back" the user saw.
+
+Two changes:
+
+1. **Drag projects the point onto the rim first** (`update_vertex` in
+   `sketch_line_vertex_update_commands.inc`): a curve-bound point is placed on its
+   circle before the solve, so a drag toward the centre slides along the rim and the
+   solver never sees the degenerate target (no failure line at all).
+2. **New authority pass** `enforce_point_on_circle_constraints`
+   (`anchor_relation_enforcement.inc`, declared next to the arc pass, called from
+   `refresh_sketch_derived_state`): projects an off-rim bound point back radially,
+   using the owning line's direction when the point sits exactly on the centre.
+   It reads the point position from the LINE caches, not the vertex table — during
+   a refresh the drag has already written the caches and the table is stale
+   (measured: the pass first saw (10,0) while the line had moved to (0,0), and did
+   nothing).
+
+Verified over IPC: a drag to the centre leaves the point at (10,0) on the rim with
+no solver failure · **the user's poisoned file heals on load** (violation 38.022 →
+0.000, `vertex-16` → (5.181, 0)) and a dimension edit on it now produces **zero**
+solver failures. A freshly loaded *broken* file still logs one failure, because the
+repair runs after the solve; saving it clears that.
+
+New test: `test_a_bound_point_dragged_to_the_circle_centre_is_repaired`.
+`pnpm test:core` 92/92.
+
+**Open:** the user also reported that a dimensioned line dragged by its free end
+"stretches and snaps back … moving free and a circle center unpredictable". A
+core-level drag currently REWRITES the dimension (measured earlier: 50 → 60 with
+`line_length=60`), so there is nothing left to snap back — that report may be
+collateral of the poisoned sketch above. **Re-test it after this fix** before
+changing the drag/dimension policy; if it still misbehaves, implement the Fusion
+rule (keep the dimension; the circle absorbs — translate or enlarge depending on
+the line's creation direction).
+
+## ROOT CAUSE FOUND: the "dimensions" that change are AUTO readouts (2026-11-04, end of session)
+
+The user's saved `test.polysmith` (two tangent lines, equal length, a 96.526 mm label
+on each) contains:
+
+```
+dim-line-line-1  line_length  96.526  driven=false  is_auto=TRUE
+dim-line-line-2  line_length  96.526  driven=false  is_auto=TRUE
+```
+
+**They are automatic dimensions** — the readouts the core maintains on every line —
+not constraints. So:
+
+- dragging the circle makes the tangency re-projection change each line's length
+  (geometry: for a tangent line L = √(d² − r²), so moving the circle changes it);
+- the auto dimensions then follow, exactly as designed;
+- nothing violated a constraint, which is why "it complies by changing the length".
+
+Replaying the same drag through the core on that file: both lines end **exactly
+tangent** (`d − r = 0.0000`), the circle moves by the drag delta, no solver failure
+— only the auto readouts change.
+
+The confusion is a UI one: **auto dimensions are drawn identically to real ones**
+(same label, same style), so a 96.526 label reads as a constraint when it is a
+measurement. That is the last thing to fix here, and it is a product decision:
+hide auto dimensions by default, or render them visibly differently (grey /
+parenthesised / dashed extension). **Not implemented — needs the user's call.**
+
+Tried and reverted: re-measuring only auto dimensions in `sync_line_dimension`
+(explicit ones never rewritten). Four suites broke (rectangle constraints, sketch
+profile, transform, …) because trim/transform/the rectangle tool rely on the
+dimension following the geometry they produce. Comment left in place.
+
+## Done, uncommitted: the tangent line previews its projection
+
+On a fully-constrained sketch the user saw *"one tangent disconnects"* during a
+drag, with the log showing `rigid=true` for a tangent line: the preview translated
+it, which breaks the tangency by definition, and the commit's
+`enforce_tangent_line_circle_relations` then re-projected the end — the visible
+"disconnects, then recovers".
+
+The preview now mirrors the core: when the dragged line carries a
+`tangent_line_circle` relation and the user drags its START (the far END is the
+contact point, per the relation's contract), the END is re-projected onto the
+tangent point using the same formula and the same nearest-branch choice as
+`enforce_tangent_line_circle_relations`, and the circle is left where it is.
+
+`tsc` clean · `pnpm test:ui` 28/28.
+
+## Open: fully-constrained sketches still fight the solver
+
+From the same log, two symptoms that are NOT preview-related:
+
+- `sketch solver failed - solver failed to converge (status=2, dofs=2)` right after
+  `auto-constrain: dofs 6 -> 3, added 1` — the auto-constrain result plus the
+  tangencies/dimensions leaves the core solver without a solution;
+- `solver moved unconstrained geometry by 201 / 99 / 80 / 57 / 50 mm; restored it`
+  repeatedly while dragging a free line — the solver is moving geometry it should
+  not touch, and the guard puts it back (so the user sees a jump that recovers).
+
+Both need their own pass in the core (solver + guard), not more preview work.
+
+## Done, uncommitted: preview = commit for rigid lines, labels and badges follow
+
+After the deterministic preview landed the user reported: *"it works now for circle
+and for line with dimension … the line keeps the angle as well. line to circle also
+works"* — two cosmetics left, both fixed:
+
+1. **Dimension label stayed behind** → `update_sketch_vertex` now shifts the stored
+   `label_x`/`label_y` of every dimension measuring the affected line by the
+   measured span's MIDPOINT displacement, so the annotation keeps its standoff
+   under a translation *and* a stretch. Measured: line (10,60) → (20,70) with the
+   label at (35,20) → label (45,20), value unchanged.
+2. **Constraint badges did not follow** → `endpointDragConstraintDeltas` now uses
+   the same rule as the preview/core: the far end's delta is the full delta for a
+   dimensioned line, the off-axis part for an H/V line, zero for a free line; a
+   line-mounted badge (H/V, tangency) moves by the midpoint average, and a
+   `point_on_circle` badge on the far end moves by the far end's delta.
+
+`pnpm test:core` 92/92 · `tsc` clean · `pnpm test:ui` 28/28. The temporary
+`ipc_cmd` command trace is removed again; the one-line-per-drag `endpoint_drag`
+log is kept until the drag work is signed off.
+
+**Still to do:** the dimension label is not *previewed* — it stays put during the
+drag and lands correctly on commit. Adding a label delta to the preview scene
+update is a separate, mechanical change.
+
+## Done, uncommitted: the preview lets the drag win over H/V too (2026-11-04)
+
+Reported after the axis-carry change landed: *"the line does not stretch anymore but
+allow me to rotate it and snaps back at the original angle … Horizontal constraint
+does not allow to drag (actually move) in Y still."*
+
+The core carries the far end, but the **preview** did not: with `horizontal_l`
+applied and the dragged point left active, the WASM solve clamped it back onto the
+axis (no visible Y motion — "does not allow to move in Y"), and for a line whose
+other end is bound to a circle the solve failed, which falls back to moving the
+dragged point alone ("rotates, then snaps back on commit").
+
+`endpointDrag.ts` now freezes the dragged point for any line that is axis-locked
+(H/V) or explicitly dimensioned, so the solver moves the FAR end — a translation,
+which is what the core commits.
+
+**Still open:** the dimension annotation's standoff from the line changes when the
+line rotates ("rotating the line clockwise increases the distance, decreases the
+other way") — reported as pre-existing. Needs to know whether it is visible in
+committed geometry (move tool) or only in the drag preview, and which operation
+reproduces it.
+
+## Done, uncommitted: an H/V constraint moves the LINE, not just the point (2026-11-04)
+
+The user: *"talking about H and V constrained lines in Fusion can also move x and y
+direction in the same time. same like a line with dimension in Fusion."*
+
+`propagate_connected_point_move` used to CLAMP the dragged point onto the line's
+axis (`line.start_y = line.end_y`), so the vertical part of a diagonal drag was
+silently discarded and the line never moved. The axis is an invariant, so it is now
+honoured the same way a dimension is: **the far end takes the dragged point's
+off-axis coordinate**, which translates the line along the constrained axis and
+lets the drag stretch it along the other one. (Same branch as the circle-bound
+case, so both now behave alike; a fixed far end still falls back to the clamp.)
+
+Measured over IPC: line (0,0)→(100,0) with H, drag the end to (110,10) →
+**(0,10)→(110,10)**: moved up 10 mm AND lengthened 10 mm, H kept, no solver
+failure. A bound point on a circle now also lands at the circle point at the new
+height instead of being pinned at the old one.
+
+One existing test encoded the old clamp: `parametric_arc_test.cpp`'s H case
+asserted the endpoint at (20,10) (the only circle point at the old height). It now
+asserts **(28.660254, 5)** — on the r=10 circle at the drag's height, radius and H
+both honoured, and 3.66 mm from the cursor instead of 7.07. The comment in the test
+records both behaviours and why it changed.
+
+`pnpm test:core` 92/92.
+
+## Done, uncommitted: the drag preview ignored EVERY dimension (2026-11-04)
+
+The user: *"the line does not translate but stretch and snaps to old direction
+same like before with the line to circle … Now also the normal lines not connected
+to circle are snapping"*, with a manually-created dimension.
+
+**Root cause (UI, not the core).** `planegcsBridge` and `speculativeSolve` skipped
+"auto" dimensions by testing `dim.expression.length === 0`, because "the TS type
+doesn't carry is_auto". But `is_auto` was being **stripped by the zod schema**
+(it was not declared), and a tool-created dimension also has an empty
+`expression` — so the preview solve ran with **no dimensions at all**. The preview
+stretched the line freely, the core then committed the rigid translation, and the
+pair reads as "stretch, then snap".
+
+Fixed:
+
+- `documentStateSchema.ts`: declare `is_auto` (it was silently dropped).
+- `types/geometry/sketch.ts`: `is_auto?: boolean` on `SketchDimensionEntry`.
+- `planegcsBridge.ts` + `speculativeSolve.ts`: skip `dim.is_auto` instead of the
+  empty-expression proxy.
+- `endpointDrag.ts`: when the dragged line carries an explicit dimension, freeze
+  the dragged point for the preview solve so the solver moves the far end (a
+  translation) instead of pulling the cursor back.
+
+Core verified separately, through the app's own binary (`build/cad_core.exe`),
+for both dimension kinds the UI can create:
+
+| dimension | drag the free end +10 | result |
+|---|---|---|
+| `line_length` (explicit) | (10,0)→(60,0) | → (20,0)→(70,0), circle (10,0), dim 50 |
+| `point_distance` (explicit, x) | same | → (20,0)→(70,0), circle (10,0), dim 50 |
+
+`tsc --noEmit` clean · `pnpm test:ui` 28/28 (7 files).
+
+## Done, uncommitted: only the dragged line's badge moves (2026-11-04)
+
+Reported: *"a totally unrelated line steals the H constraint during preview and
+jumps back to its own line during commit"*.
+
+Cause: `endpointDragConstraintDeltas` (`layout/viewport/endpointDrag.ts`) moved a
+line-mounted badge by half the delta whenever
+`lineContainsVertex && sketch.lines.some(line => line.line_id === constraint.entityId)`
+— and that second test is true for **every** line in the sketch, so dragging any
+vertex slid the H/V badge of every other line too. It now moves only the badges of
+the line(s) that actually contain the dragged vertex (`draggedLineIds`).
+
+Unit test added to `endpointDragConstraintDeltas.test.ts` ("moves only the dragged
+line's H badge, never another line's"). **That test file was not listed in the
+`test:ui` script at all**, so its two existing cases never ran — it is registered
+now (`pnpm test:ui` 28/28, 7 files).
+
+## Expected unreachable: the rigid-translation report (needs the document)
+
+The user reports a horizontal line on a circle *not* translating: "stretch and
+snaps to old direction". The app is running the 14:32 core (started 14:37), which
+**does** contain the rigid rule, so the line did not qualify under it — i.e. its
+dimension is `is_auto` or `driven`. Both are deliberately excluded: auto dimensions
+exist on every line and making them rigid broke
+`test_the_attached_end_follows_the_host`. **Ask for the saved sketch** to confirm
+which flag that 60.44 dimension carries.
+
+Note the UX tension this exposes: PolySmith *draws* auto dimensions, so a user
+reads 60.44 as a constraint even when the core treats it as bookkeeping. Deciding
+whether auto dimensions should be rigid (and if so, which drags stay free) is a
+product call, not a bug fix.
+
+## RESOLVED: the fork — Fusion's "the whole line moves" is implemented
+
+The user checked Fusion again: *"I draw a line, make dimension and drag one end
+[it] just moves the whole line"* — the dimension is parametric, so the drag cannot
+change the length; the line travels instead. **That is what is implemented now**
+(`update_sketch_vertex`):
+
+- A line carrying an **explicit** (non-auto) driving dimension between its own two
+  endpoints is translated as a whole: the far endpoint is carried by the same
+  delta, so the length — and the dimension — are unchanged.
+- **Auto dimensions do not count.** Every line gets an auto `line_length` at
+  creation; treating those as constraints made *every* drag rigid and broke
+  `test_the_attached_end_follows_the_host` ("got (110,0)" instead of (80,0)).
+  Only a dimension the user created or edited (`is_auto == false`) makes a line
+  rigid, so plain lines still stretch exactly as before.
+- **The bound circle travels with the line**, and every *other* point bound to
+  that circle rides it too (the user's sketch has two lines on one circle; without
+  the ride the second point was left off the rim and the solver redistributed the
+  drag — the free end lagged the cursor by 1.6 mm). This is the user's "moves the
+  circle" plus "enlarges" observation, with the radius fixed.
+
+Today's earlier `point_distance` sync (side A) is **reverted**;
+`sync_line_dimension` re-measures `line_length` only, with a comment saying why.
+
+Verified on a clean sketch over IPC: line (10,0)→(60,0) on an r=10 circle, driving
+x-dimension 50; drag the free end +10 → line (20,0)→(70,0), **circle (10,0)**,
+radius 10, **dimension still 50**. `pnpm test:core` 92/92. New tests:
+`test_a_dimensioned_line_moves_as_a_whole`,
+`test_a_dimensioned_line_on_a_circle_moves_the_circle`.
+
+**Caveat found in the user's saved `test.polysmith`:** its driving dimension says
+**57.72** while the geometry measures **74.82** — a leftover from the
+centre-poisoning episode. That inconsistency makes the solver pull the line on
+every drag (the free end lagged 17 mm in a probe), and no drag rule can fix a
+dimension that is already violated. The dimension needs to be deleted and
+re-created (or the sketch re-dimensioned) once.
+
+## OPEN POLICY FORK (2026-11-04, late): does a drag rewrite a driving dimension?
+
+The user: *"I am not sure I still want the line to stay at the new dimension. I
+think if I want to stay parametric I should follow more closely Fusion."*
+
+Everything else in this file now says **constraints are invariants** (a dimension
+edit translates the circle, the tangent drag is refused, only trim removes), but
+the drag path still says the opposite: a drag **rewrites** the dimension
+(`5dede4e0`, plus the `point_distance` sync added today). Both cannot hold.
+
+| | A — drag overrides the dimension (today) | B — Fusion: the dimension is invariant |
+|---|---|---|
+| drag a dimensioned line's free end | the line stretches and the dimension's value follows the drag | the line cannot stretch; the other geometry absorbs the drag (for a circle-bound line the circle translates or resizes, per the creation-direction rule) |
+| stability | simple, and the user originally chose it because it "avoids the solver exploding my sketch" | needs the drag projected onto the constraint manifold — the harder path |
+| consistency | differs from every other rule added today | matches them |
+
+**If B is chosen, today's `point_distance` sync must be reverted** (it is the
+opposite edit), and the free-end drag needs the DOF rule the user described:
+circle→canvas drag moves the circle, canvas→circle drag enlarges it.
+
+**State right now:** the `point_distance` sync (`sync_line_dimension`) is
+implemented and passing — it sits on side A. It is small and isolated, so
+reverting is cheap. **Waiting on the user's decision before touching it.**
+
+## Done, uncommitted: a point-to-point dimensioned line follows a drag
+
+A line drawn point-to-point carries a `point_distance` dimension instead of a
+`line_length` one, and `sync_line_dimension` only re-measured `line_length` — so
+on those lines a drag was undone by the solver (which dragged the circle centre
+with it). `sync_line_dimension` now also re-measures a driving `point_distance`
+whose two target vertices are that line's own endpoints (respecting `x` / `y` /
+euclidean display). Measured: drag the free end 60 → 80 keeps the line at 80, the
+dimension follows 50 → 70, the circle is untouched, no solver failures. New test
+`test_a_point_distance_dimension_follows_a_free_end_drag`; `pnpm test:core` 92/92.
+
+**This is side A of the fork above.**
+
+## Done, uncommitted: the tangent contact point's drag is REFUSED (option B)
+
+The user chose B: *"fusion refuse the drag and after removing the tangent
+constraint then it behaves poorly … so I think B and tangent removed goes to C
+that is very predictable."*
+
+- Core: `update_sketch_vertex` returns the document unchanged when the dragged
+  vertex is the contact point of a live `tangent_line_circle` relation, and logs
+  `drag refused: the point is the contact point of a tangency (remove the tangent
+  constraint to move it)` to the Logs panel. The relation is **kept** —
+  `drop_tangent_relations_for_dragged_tangent_point` and its call are deleted.
+  Once the user removes the tangency the guard no longer applies and the drag is
+  ordinary (their "C").
+- UI: the preview refuses the same drag (the dragged vertex stays where the
+  sketch has it), so the point cannot animate to the cursor and snap back on
+  commit.
+- Test: `test_dragging_a_tangent_endpoint_lands_where_released` is replaced by
+  `test_dragging_a_tangent_contact_point_is_refused` — the contact point does not
+  move, the relation survives, and the free end is untouched.
+- `pnpm test:core` 92/92 · `tsc --noEmit` clean · `pnpm test:ui` 25/25.
+
+## Decided: the tangent ("T") line drag — option 2 (refuse), implemented above
+
+The three options were: (1) keep the tangency by moving the line's start so the
+contact point follows the cursor, (2) refuse the drag, (3) keep the old
+"drop the relation" behaviour. **The user chose 2**, with the extra constraint
+that the relation stays (their "B"), because after a manual removal the drag
+falls back to their "C", which they called "very predictable".
+
+## Decided: which circle DOF absorbs a dimension edit — translate, radius fixed
+
+"160° observation is for changing the line dimension. the drag or enlarge is for
+dragging from the free end of a line with dimension and the action depends of the
+line direction when was created." So a **dimension edit translates the circle and
+keeps the radius** (implemented), while the free-end-drag case (translate or
+enlarge, depending on the line's creation direction) is still **not
+implemented** — it belongs to the #3 drag-vs-dimension item.
+
+## Order
+
+1. H/V preview — done above.
+2. Tangent drag (+ preview strip) — needs decision 1.
+3. First-vertex rule for dimension edits — needs decision 2; the biggest of the
+   three (it is the `test2.polysmith` drift).
+
+---
+
+# DONE (uncommitted): #5 — an H/V line onto a circle follows Fusion (2026-11-04)
+
+Same branch. The one case the user carved out of the "rabbit hole": *"the
+horizontal or vertical line to a circle though needs to be solved."* They then
+checked Fusion and gave the rule:
+
+> *"Fusion keeps the constraint and moves the line with the circle keeping the
+> \"H\" if the circle moves vertical and stretch the line keeping the free end of
+> the line fix if circle moves horizontal."*
+
+## Both Fusion behaviours are one change
+
+The clamp in `propagate_connected_point_move` forced a moved endpoint onto the
+line's H/V axis. For a point bound to a curve (`point_on_circle` /
+`point_on_arc`) that is unsatisfiable — the point may only exist ON the curve.
+Measured before: circle r = 10 with a horizontal line from its rim, circle moved
+up 5 mm → the point was left **1.18 mm off the circle** and the core logged
+`sketch solver failed - solver failed to converge (status=2, dofs=1)`; the
+document was left inconsistent with the "H" badge and the "O" badge both up.
+(That is also case #13: the solver-failure path leaves partial geometry.)
+
+Now a curve-bound moved point is not clamped; the axis is enforced on the
+line's FREE end instead. That yields both Fusion behaviours from one rule:
+
+- circle moved **perpendicular** to the line → the point rides, the free end's
+  y follows the point → the line **translates**, "H" kept;
+- circle moved **along** the line → the free end's off-axis coordinate does not
+  change → the line **stretches**, the free end stays put.
+
+## Verified (core, over IPC)
+
+| step | result |
+|---|---|
+| H line (10,0)→(30,0) on r=10 circle, circle up 5 | line (10,5)→(30,5), `constraint="horizontal"`, point on circle, **no solver failure** |
+| then circle right 5 | line (15,5)→(30,5): point rode, free end still x=30, "H" kept |
+| drag the bound endpoint to (0,−10) (item A's case) | point lands at (0,−10) on the circle, **H kept**, far end carried to (30,−10) |
+
+`pnpm test:core` **92/92** (90 real targets); two new tests in
+`committed_attach_test.cpp`:
+`test_moving_a_circle_vertically_carries_its_horizontal_line`,
+`test_moving_a_circle_horizontally_stretches_its_horizontal_line`.
+
+## What this changes vs item A
+
+`release_axis_constraints_for_bound_vertex` is **gone** — a curve-bound drag no
+longer drops the H/V badge at all; the line follows instead. The landing
+position the user approved earlier (the point stays where released) is
+unchanged and is still asserted by
+`test_dragging_a_circle_bound_endpoint_lands_where_released`. **In-app
+verification pending; nothing committed.**
+
+**Not touched** (still the old "drop" behaviour, deliberately): #6 tangent
+contact drag, #9 move tool, #3 drag-vs-dimension, #8 sliding a T.
+
+---
+
+# TARGET POLICY — **NOT ENFORCED** (2026-11-04, user's words)
+
+> **Nothing below is implemented.** No code in this repo enforces it; the table
+> records the user's target model so a later session does not have to re-derive
+> it. The user's instruction when it was written: *"I think this is a rabbit
+> hole I do not want to enter today. Leave the code where it is now from the
+> point of view of constraints."* The three paths that contradict it (#5, #6, #9)
+> still **drop** their constraint on purpose, and must not be extended.
+
+## The rule
+
+**An operation may only change what is free.** Length, angle, the position of a
+fixed / dimensioned / anchored point, an on-curve binding and a tangency are
+invariants; whatever remains free absorbs the delta. If nothing free can absorb
+it, the drag does nothing — a constraint is never removed. **Trim is the only
+operation allowed to remove one**, and only when the geometry becomes impossible
+to solve.
+
+The user's own phrasing of the same rule: *"if have constraints (like dimensions)
+follow and if has not constraints stretch. If the circle moves vertical the line
+should move and keep the point on circle."*
+
+## The combinations
+
+| # | dragging | under the rule | today | status |
+|---|---|---|---|---|
+| 1 | free endpoint | move it | moves | conforms |
+| 2 | endpoint of an H/V line, far end **free** | keep H/V, point slides along the axis → *stretch* | clamps onto the axis | conforms |
+| 3 | endpoint of an H/V line, **length dimensioned** | keep H/V **and** the length → the line *follows* (translates) | the drag **rewrites the dimension's value** | **decide** |
+| 4 | endpoint, far end user-**FIXed** | clamp to the axis, far end stays | clamps | conforms |
+| 5 | endpoint on a circle (O) **and** the line H/V | keep both → the axis is enforced on the free end, the point stays on the curve | **carries the far end: H kept** | **solved** (uncommitted) |
+| 6 | **tangent contact point** | the drag is refused, the relation kept | the drag is refused, the relation kept | **done** (uncommitted) |
+| 7 | T-junction point pulled off its host | the anchor wins, point holds on the host | holds | conforms |
+| 8 | T-junction point dragged *along* its host | should it slide? | snaps back to the stored `t` | **decide** |
+| 9 | whole tangent line (move tool) | translate, then re-project the contact point | **drops the T relation** | not now |
+| 10 | any user-FIXed point | refuse the drag | throws "Cannot move a fixed sketch point" | conforms |
+| 11 | circle centre (O / T bound points) | ride + keep tangency | ride + re-project | conforms (`176f6900`) |
+| 12 | circle radius | bound point stays at its angle | radial re-projection | conforms |
+| 13 | drag that cannot be satisfied at all | leave the geometry unchanged | solver may fail and leave it part-solved | open |
+| 14 | trim | the only removal path | removes | conforms |
+
+## Measured 2026-11-04 (user's `test2.polysmith`) — a dimension edit walks the circle
+
+Logged, **not fixed**: the user asked to park it ("log it").
+
+Setup in the file: circle centre (0.7708, 0) r = 34.038; line (−113.2672, 0) →
+(−33.2672, 0) (length 80); one driving `point_distance` = 80 between the two
+line vertices; the line's END carries `point_on_circle`. Note the centre is
+*already* 0.7708, not 0 — it had drifted before the save.
+
+Changing the dimension through the core:
+
+| dimension | free end | bound end | centre | radius |
+|---|---|---|---|---|
+| 80 (saved) | −113.2672 | −33.2672 | 0.7708 | 34.038 |
+| → 90 | −120.5704 (−7.30) | −30.5704 (+2.70) | 3.4676 (+2.70) | 34.038 |
+| → 70 | −108.3931 (+12.18) | −38.3931 (−7.82) | −4.3550 (−7.82) | 34.038 |
+
+- The **circle translates rigidly with its bound point** — the centre delta
+  equals the bound end's delta in every edit, and the radius never moves.
+- The delta is **split between the two points** (73/27 then 61/39) because
+  nothing pins either end: a point-distance between two free vertices leaves
+  "translate the circle and its point together" as a valid null direction, and
+  the least-move step uses it. The split varies with the geometry, and repeated
+  edits accumulate (centre walked 0 → 0.77 → 3.47 → −4.36).
+- Same family as the documented `test_resizing_a_circle_keeps_the_centre_fixed`
+  regression (DogLeg splitting a radius correction between the point and the
+  centre).
+
+**Fix direction (agreed in shape, not implemented):** the Fusion rule 1 —
+freeze the dimension's PRIMARY vertex (the line's first point) for the solve so
+only the second point moves and the circle absorbs the change. Open: whether the
+circle should **translate** (the 160° observation) or **resize** (the
+canvas→circle drag observation) when a dimension edit forces the bound point to
+move.
+
+## Fusion reference model — observed by the user 2026-11-04, **NOT implemented**Recorded because the user said *"we need to follow"* it. Nothing here is coded
+except where the last column says so.
+
+**Rules the user observed in Fusion**
+
+1. **Drawing order privileges the first vertex.** "Fusion gives 'fix' privilege
+   to the vertex from the beginning of the line … and changes the position of
+   the last vertex of the line if dimension changes."
+2. **A drag on the free end keeps the driving dimension** — the circle absorbs
+   the movement instead of the dimension's value changing.
+3. **Which circle DOF absorbs it depends on the drawing direction:**
+   "If the line with dimension [was] started from the circle to canvas, on
+   free-end drag [it] moves the circle; if the line starts from canvas to circle
+   [it] enlarges the circle."
+4. **A length-dimension change keeps H and keeps the free end fixed** — the bound
+   point slides along the circle, which translates ("pushing the circle down").
+5. **Fusion also has a "perpendicular to circle" constraint** (you can add it to
+   a circle), so a line can be held radial to it and a drag keeps it true to the
+   circle. PolySmith has no such constraint kind (tangent and point-on-circle
+   only).
+
+**Measured comparison against our core (IPC probes, 2026-11-04)**
+
+| case | Fusion | PolySmith today |
+|---|---|---|
+| length 60 → 70 on an H line on a circle, contact at 160° | H kept, free end fixed, bound point slides, **circle translates** | H kept, **bound point fixed, free end moves** to (51.206, 6.840), circle untouched — matches rule 1 *for the order we drew* (start on the circle) |
+| drag the free end with a driving length dimension (50 → 60) | dimension kept, **circle moves/enlarges** | **the drag rewrites the dimension** to 60 (`line_length=60`), circle untouched |
+| drag an H line's bound endpoint off-axis | (not observed) | point lands where released, **H kept**, far end carried — done today |
+
+So we already match rule 1 (for the draw order tested) and the H/axis behaviour;
+the gap is **rule 2/3 — a drag must not rewrite a driving dimension, and the
+circle must absorb the motion** (the two circle DOFs are the open question:
+translate vs resize).
+
+**Open question for the user:** in the app they also saw the length "snap back
+to the initial dimension after commit" (and that snap-back dragged the circle).
+A core-level drag rewrites the dimension instead, so that snap-back cannot come
+from the dimension pass — it may be the known H/V-preview gap (#15) changing the
+committed point. Resolving it needs the saved sketch: **ask for the file**, the
+way `test.polysmith` cracked the tangency bug.
+
+## Where the non-conforming paths live (do not "fix" these yet)
+
+- **#9** the `transform_sketch_entities` loop drops `tangent_line_circle` on a
+  move — `sketch_line_vertex_update_commands.inc` (the drag path no longer drops
+  anything: #6 is done)
+- **#13** the solver-failure path in `refresh_sketch_derived_state` (a bound
+  point clamped off its curve used to trigger it; that case is now fixed for
+  H/V, but the failure path itself is unchanged)
+
+## Open decisions
+
+- **#3 drag vs driving dimension.** Today a drag rewrites the dimension's value
+  (deliberate, `5dede4e0`: "a drag overrides a driving dimension instead of
+  fighting it"). The rule implies the opposite — the dimension is the invariant
+  and the geometry moves. Affects every dimensioned sketch, so settle it before
+  coding. **The Fusion reference model above is the spec to follow**, and the
+  circle DOF to use (translate vs resize) is still open.
+- **#8** sliding a T-junction along its host (anchor is parametric, stored `t`).
+
+## Next
+
+**#5 is done** (see the top section) — awaiting in-app verification. Everything
+else here stays parked: the user called the full policy flip a rabbit hole for
+now ("leave the code where it is now from the point of view of constraints").
+
+Related, deferred to the same later phase: the drag preview strips H/V and
+tangency (`endpointDrag.ts` solves with `constraint: null`), so a horizontal
+line changes angle while dragging and snaps back on commit. The user wants that
+aligned with Fusion together with the T-line work.
+
+---
+
 # IN PROGRESS: a circle drag must not break its tangent lines (2026-11-04)
 
 Same branch. Found while verifying A/B/C in the app: the user's saved
@@ -101,14 +720,14 @@ were the reproduction for A/B and are green now:
 
 ## User's design (binding for this task)
 
-> **SUPERSEDED 2026-11-04 — read this first.** The user has reversed the first
-> bullet: "I decide not to remove constraints automatically … I think only trim
-> should be allowed to remove them if the geometry becomes impossible to solve."
-> The code on this branch still implements the old rule (a drag drops H/V;
-> a tangent drag and the move tool drop `tangent_line_circle`; the preview strips
-> both). It stays as-is deliberately — the user does not want a rework now —
-> and the reversal is planned for the phase that makes the H/V drag preview hold
-> the constraint too. Do not extend the dropping behaviour in the meantime.
+> **SUPERSEDED 2026-11-04** — see the "TARGET POLICY — NOT ENFORCED" section at
+> the top of this file. The user reversed the first bullet below: *"I decide not
+> to remove constraints automatically … only trim should be allowed to remove
+> them if the geometry becomes impossible to solve."* The code on this branch
+> still implements the old rule (a drag drops H/V; a tangent drag and the move
+> tool drop `tangent_line_circle`; the preview strips both), and it was
+> deliberately left that way — the user does not want a rework now. Do not
+> extend the dropping behaviour in the meantime.
 
 - **Constraints yield to the user's operation.** Trim and drag/move are offending
   operations: the constraint should be **removed** so the operation can happen.
@@ -131,9 +750,18 @@ whose dragged endpoint carries `point_on_circle` / `point_on_arc` when the
 release point is off that axis (an on-axis drag keeps the badge). The line then
 rotates to the release point and its bound end stays on the curve. The comment
 records the measured failure and why the preview already strips H/V.
+**SUPERSEDED 2026-11-04:** that helper is deleted. The axis is now enforced on
+the line's free end (`moved_point_bound_to_curve` in
+`private_connected_point_move.inc`), so the badge survives and the point still
+lands where released — see the #5 section at the top of this file.
 
 **B — tangency yields to drag/move** (`sketch_line_vertex_update_commands.inc`).
 `drop_tangent_relations_for_dragged_tangent_point` removes a
+**SUPERSEDED 2026-11-04 (evening):** the user chose Fusion's behaviour instead —
+dragging a tangent CONTACT point is now **refused and the relation kept**
+(`vertex_is_tangent_contact_point` guard); the drop helper is deleted. See the
+"T line" section at the top. What remains of B's other half — the MOVE tool
+dropping the relation — is still in place (item #9, parked).
 `tangent_line_circle` relation when the dragged vertex is the relation's contact
 point (the line's END — `set_sketch_tangent_constraint` guarantees the START is
 the external anchor). `transform_sketch_entities` (the move tool) drops the

@@ -109,12 +109,6 @@ export function endpointDragConstraintDeltas(
     fullDelta[2] / 2,
   ];
 
-  const lineContainsVertex = sketch.lines.some(
-    (line) =>
-      line.start_vertex_id === draggedVertexId ||
-      line.end_vertex_id === draggedVertexId,
-  );
-
   // Dragging a circle centre: every point_on_circle badge on that circle sits on
   // an attached point that translates with the centre by the full delta, so the
   // "O" glyph must ride along instead of snapping only when the drag stops.
@@ -145,14 +139,78 @@ export function endpointDragConstraintDeltas(
     }
   }
 
+  // Badges mounted on a LINE (the "H" / "V" glyphs sit at a line's midpoint) move
+  // by half the vertex delta — but only on the line(s) that actually contain the
+  // dragged vertex. The old test was `lineContainsVertex && sketch.lines.some(...)`,
+  // which is true for EVERY line in the sketch, so dragging one vertex slid the
+  // "H" badge of every other horizontal line by half the delta: the user saw "a
+  // totally unrelated line steals the H constraint during preview and jumps back
+  // to its own line during commit".
+  const draggedLineIds = new Set(
+    sketch.lines
+      .filter(
+        (line) =>
+          line.start_vertex_id === draggedVertexId ||
+          line.end_vertex_id === draggedVertexId,
+      )
+      .map((line) => line.line_id),
+  );
+
+  // How far the FAR end moves, following the same rule the core commits and the
+  // preview applies: a dimensioned line translates (far end by the full delta), an
+  // H/V line carries only the off-axis part. A badge sits at its line's midpoint,
+  // so it moves by the average, and a point_on_circle badge on the far end moves
+  // by the far end's own delta. Using the old flat "half delta" left the "O" badge
+  // behind after a translation and put the "H" badge in the wrong place.
+  let farDelta: [number, number, number] = [0, 0, 0];
+  const draggedLine = sketch.lines.find((line) =>
+    draggedLineIds.has(line.line_id),
+  );
+  if (draggedLine) {
+    const isStart = draggedLine.start_vertex_id === draggedVertexId;
+    const farId = isStart
+      ? draggedLine.end_vertex_id
+      : draggedLine.start_vertex_id;
+    const dimensioned = (sketch.dimensions ?? []).some((dimension) => {
+      if (dimension.driven || dimension.is_auto) return false;
+      if (dimension.kind === "line_length") {
+        return dimension.entity_id === draggedLine.line_id;
+      }
+      if (dimension.kind !== "point_distance") return false;
+      return (
+        (dimension.entity_id === draggedLine.start_vertex_id &&
+          dimension.secondary_entity_id === draggedLine.end_vertex_id) ||
+        (dimension.entity_id === draggedLine.end_vertex_id &&
+          dimension.secondary_entity_id === draggedLine.start_vertex_id)
+      );
+    });
+    if (dimensioned) {
+      farDelta = fullDelta;
+    } else if (draggedLine.constraint === "horizontal") {
+      farDelta = [0, fullDelta[1], 0];
+    } else if (draggedLine.constraint === "vertical") {
+      farDelta = [fullDelta[0], 0, 0];
+    }
+    for (const constraint of constraints) {
+      if (
+        constraint.entityId === farId &&
+        (farDelta[0] !== 0 || farDelta[1] !== 0 || farDelta[2] !== 0)
+      ) {
+        deltas.set(constraint.constraintId, farDelta);
+      }
+    }
+  }
+  const lineMidDelta: [number, number, number] = [
+    (fullDelta[0] + farDelta[0]) / 2,
+    (fullDelta[1] + farDelta[1]) / 2,
+    (fullDelta[2] + farDelta[2]) / 2,
+  ];
+
   for (const constraint of constraints) {
     if (constraint.entityId === draggedVertexId) {
       deltas.set(constraint.constraintId, fullDelta);
-    } else if (
-      lineContainsVertex &&
-      sketch.lines.some((line) => line.line_id === constraint.entityId)
-    ) {
-      deltas.set(constraint.constraintId, halfDelta);
+    } else if (draggedLineIds.has(constraint.entityId)) {
+      deltas.set(constraint.constraintId, lineMidDelta);
     }
   }
   return deltas;
@@ -377,40 +435,52 @@ export function resolveEndpointDragFrame({
   // participate — all other geometry is frozen to prevent ghost movement.
   let finalLocal: [number, number] = [sketchPoint.local[0], sketchPoint.local[1]];
   const solvedPoints = new Map<string, [number, number]>();
+  let rigidPreviewApplied = false;
   const gcsBridge = getBridge();
   if (gcsBridge && sketch) {
-    // Strip H/V constraints from lines during drag preview so the
-    // solver allows free diagonal movement.  The H/V constraints are
-    // re-applied on commit by the C++ core (propagate_connected_point_move
-    // → refresh_sketch_derived_state).
+    // Keep the H/V constraint on the line the user is actually dragging, so the
+    // preview shows what the commit will produce. Stripping it let the line
+    // rotate away from horizontal during the drag and then snap back on commit
+    // — the user's "the line can be dragged out of horizontality but snaps
+    // back, and the length changes with the projection of the committed point",
+    // which is exactly the mismatch Fusion does not have: Fusion keeps the line
+    // H (or V) throughout the drag. The other lines are still stripped, so the
+    // ripple-freeze keeps everything else untouched.
+    const draggedLineIds = new Set(
+      sketch.lines
+        .filter(
+          (line) =>
+            line.start_vertex_id === next.vertexId ||
+            line.end_vertex_id === next.vertexId,
+        )
+        .map((line) => line.line_id),
+    );
     const unconstrainedLines = sketch.lines.map((l) => ({
       ...l,
-      constraint: null as "horizontal" | "vertical" | null,
+      constraint: draggedLineIds.has(l.line_id)
+        ? l.constraint
+        : (null as "horizontal" | "vertical" | null),
     }));
-    // A tangent contact point being dragged is the same offending operation
-    // the core treats on commit (it drops the tangent_line_circle relation
-    // rather than re-project the end onto the stale tangent point). Do the
-    // same in the preview or the WASM solve pulls the dragged point straight
-    // back onto the tangent point — "it still moves" — and the preview then
-    // disagrees with the commit. Only the line's END is the contact point
-    // (its START is the external anchor), mirroring
-    // drop_tangent_relations_for_dragged_tangent_point in the core.
+    // Dragging the CONTACT point of a tangency is REFUSED by the core (it keeps
+    // the relation: with the far end fixed there is one tangent point only), so
+    // the preview must refuse it too or the point would animate to the cursor and
+    // then snap back on commit. Keep the dragged vertex where the sketch has it.
     const draggedContactLineIds = new Set(
       sketch.lines
         .filter((line) => line.end_vertex_id === next.vertexId)
         .map((line) => line.line_id),
     );
-    const lineRelations = (sketch.line_relations ?? []).filter(
+    const refusesDrag = (sketch.line_relations ?? []).some(
       (relation) =>
-        relation.kind !== "tangent_line_circle" ||
-        !draggedContactLineIds.has(relation.first_line_id),
+        relation.kind === "tangent_line_circle" &&
+        draggedContactLineIds.has(relation.first_line_id),
     );
     const paramsCopy: SketchFeatureParameters = {
       ...sketch,
       lines: unconstrainedLines,
-      line_relations: lineRelations,
+      line_relations: sketch.line_relations,
       vertices: sketch.vertices.map((p) =>
-        p.vertex_id === next.vertexId
+        p.vertex_id === next.vertexId && !refusesDrag
           ? { ...p, x: sketchPoint.local[0], y: sketchPoint.local[1] }
           : p,
       ),
@@ -418,6 +488,172 @@ export function resolveEndpointDragFrame({
     let activePointIds = computeRippleActivePoints(sketch, next.vertexId);
 
     activePointIds = rideAnchoredPoints(sketch, next.vertexId, activePointIds);
+
+    // The drag always WINS over the line's own constraints, in the preview as in
+    // the core: dragging an endpoint of an H/V line or of a dimensioned line
+    // translates that line (the far end follows) instead of the dragged point
+    // being clamped back or the length being re-imposed. Freezing the dragged
+    // point at the cursor is what makes the solver move the FAR end; without it
+    // the preview clamped the point onto the axis (no motion in the other
+    // direction) or failed the solve and fell back to moving the point alone —
+    // the line appeared to rotate and then snapped back on commit.
+    const draggedLine = sketch.lines.find(
+      (line) =>
+        line.start_vertex_id === next.vertexId ||
+        line.end_vertex_id === next.vertexId,
+    );
+    const lineIsDimensioned =
+      draggedLine !== undefined &&
+      (sketch.dimensions ?? []).some((dimension) => {
+        if (dimension.driven || dimension.is_auto) return false;
+        if (dimension.kind === "line_length") {
+          return dimension.entity_id === draggedLine.line_id;
+        }
+        if (dimension.kind !== "point_distance") return false;
+        return (
+          (dimension.entity_id === draggedLine.start_vertex_id &&
+            dimension.secondary_entity_id === draggedLine.end_vertex_id) ||
+          (dimension.entity_id === draggedLine.end_vertex_id &&
+            dimension.secondary_entity_id === draggedLine.start_vertex_id)
+        );
+      });
+    const lineIsAxisLocked =
+      draggedLine !== undefined &&
+      (draggedLine.constraint === "horizontal" ||
+        draggedLine.constraint === "vertical");
+    if (lineIsDimensioned || lineIsAxisLocked) {
+      activePointIds = activePointIds.filter((id) => id !== next.vertexId);
+    }
+
+    // A rigid line is previewed DETERMINISTICALLY, exactly as the core commits it,
+    // instead of leaving it to the solver: `update_sketch_vertex` carries the far
+    // end by the drag delta (a translation) for a dimensioned line, or by the
+    // off-axis part only for an H/V line, and translates any circle bound to it.
+    //
+    // The generic solve could not reproduce that: with the centre frozen it
+    // compromised the length (42.715 → 40.197), and with the centre free the
+    // system is underdetermined and DogLeg eventually jumped to a degenerate
+    // solution — the user's "at some point it explodes during the drag, then jumps
+    // back on commit", seen as a 0.00 mm dimension.
+    if (draggedLine !== undefined && (lineIsDimensioned || lineIsAxisLocked)) {
+      const baseVertex = sketch.vertices.find(
+        (vertex) => vertex.vertex_id === next.vertexId,
+      );
+      const base = baseVertex
+        ? [baseVertex.x, baseVertex.y]
+        : [sketchPoint.local[0], sketchPoint.local[1]];
+      const delta: [number, number] = [
+        sketchPoint.local[0] - base[0],
+        sketchPoint.local[1] - base[1],
+      ];
+      const isStart = draggedLine.start_vertex_id === next.vertexId;
+      const farId = isStart
+        ? draggedLine.end_vertex_id
+        : draggedLine.start_vertex_id;
+      const farX = isStart ? draggedLine.end_x : draggedLine.start_x;
+      const farY = isStart ? draggedLine.end_y : draggedLine.start_y;
+
+      // A tangency OWNS the line's end: `enforce_tangent_line_circle_relations`
+      // re-projects the END onto the tangent point on every refresh, so dragging
+      // the free START has to preview that projection — translating the line
+      // would show the tangency breaking until the commit re-projected it (the
+      // user: "one tangent disconnects" during the preview). Same formula and the
+      // same branch choice (nearest to the current end) as the core.
+      const tangentRelation = (sketch.line_relations ?? []).find(
+        (relation) =>
+          relation.kind === "tangent_line_circle" &&
+          relation.first_line_id === draggedLine.line_id,
+      );
+      const tangentCircle = tangentRelation
+        ? sketch.circles?.find(
+            (circle) => circle.circle_id === tangentRelation.second_line_id,
+          )
+        : undefined;
+      let farTarget: [number, number];
+      let tangentProjected = false;
+      // The relation's contract: the line's END is the contact point, so only a
+      // drag on the START re-projects it.
+      if (tangentCircle && isStart) {
+        const startX = sketchPoint.local[0];
+        const startY = sketchPoint.local[1];
+        const toCenterX = tangentCircle.center_x - startX;
+        const toCenterY = tangentCircle.center_y - startY;
+        const distance = Math.hypot(toCenterX, toCenterY);
+        const radius = tangentCircle.radius;
+        if (distance > radius + 1e-6) {
+          const tangentLength = Math.sqrt(distance * distance - radius * radius);
+          const ux = toCenterX / distance;
+          const uy = toCenterY / distance;
+          const vx = -uy;
+          const vy = ux;
+          const along = (tangentLength * tangentLength) / distance;
+          const perp = (tangentLength * radius) / distance;
+          const candidateA: [number, number] = [
+            startX + along * ux + perp * vx,
+            startY + along * uy + perp * vy,
+          ];
+          const candidateB: [number, number] = [
+            startX + along * ux - perp * vx,
+            startY + along * uy - perp * vy,
+          ];
+          const distA = Math.hypot(candidateA[0] - farX, candidateA[1] - farY);
+          const distB = Math.hypot(candidateB[0] - farX, candidateB[1] - farY);
+          farTarget = distA <= distB ? candidateA : candidateB;
+          tangentProjected = true;
+        } else {
+          farTarget = [farX, farY];
+          tangentProjected = true;
+        }
+      } else {
+        farTarget = lineIsDimensioned
+          ? [farX + delta[0], farY + delta[1]]
+          : draggedLine.constraint === "horizontal"
+            ? [farX, sketchPoint.local[1]]
+            : [sketchPoint.local[0], farY];
+      }
+
+      paramsCopy.vertices = paramsCopy.vertices.map((vertex) => {
+        if (vertex.vertex_id === farId) {
+          return { ...vertex, x: farTarget[0], y: farTarget[1] };
+        }
+        return vertex;
+      });
+      // A circle bound to the far end travels with it, radius untouched (the
+      // core translates the centre; the radius has its own dimension).
+      const farDelta: [number, number] = [
+        farTarget[0] - farX,
+        farTarget[1] - farY,
+      ];
+      for (const constraint of constraints ?? []) {
+        // A tangency projection already decided where the end is; the circle must
+        // stay put (the core does not move it for a tangent relation), otherwise
+        // the preview would carry the circle along a line that is pivoting.
+        if (tangentProjected) break;
+        if (
+          constraint.kind !== "point_on_circle" ||
+          constraint.target_ids.length < 2 ||
+          constraint.target_ids[0] !== farId
+        ) {
+          continue;
+        }
+        const boundCircle = sketch.circles?.find(
+          (circle) => circle.circle_id === constraint.target_ids[1],
+        );
+        if (!boundCircle) continue;
+        paramsCopy.vertices = paramsCopy.vertices.map((vertex) =>
+          vertex.vertex_id === boundCircle.center_vertex_id
+            ? {
+                ...vertex,
+                x: vertex.x + farDelta[0],
+                y: vertex.y + farDelta[1],
+              }
+            : vertex,
+        );
+      }
+      // Nothing else may move: the preview is this translation.
+      activePointIds = [];
+      rigidPreviewApplied = true;
+    }
 
     // Dragging a circle CENTRE: the centre is the dragged (fixed) party and the
     // point_on_circle-attached points must ride it. The raw WASM solve would
@@ -449,6 +685,71 @@ export function resolveEndpointDragFrame({
       );
       // Freeze the centre, unfreeze the attached points.
       activePointIds = rideIds;
+
+      // A tangency on this circle OWNS its line's contact END: the core
+      // re-projects it onto the new tangent point on every refresh
+      // (`enforce_tangent_line_circle_relations`), so dragging the circle must do
+      // the same in the preview or the line visibly detaches until the commit
+      // snaps it back — the user's "dragging the circle disconnects from the
+      // tangent line" (2026-11-04). Same formula, same nearest-branch choice.
+      const centreX = sketchPoint.local[0];
+      const centreY = sketchPoint.local[1];
+      for (const relation of sketch.line_relations ?? []) {
+        if (
+          relation.kind !== "tangent_line_circle" ||
+          relation.second_line_id !== draggedCircle.circle_id
+        ) {
+          continue;
+        }
+        const tangentLine = sketch.lines.find(
+          (line) => line.line_id === relation.first_line_id,
+        );
+        if (!tangentLine) continue;
+        const startVertex = paramsCopy.vertices.find(
+          (vertex) => vertex.vertex_id === tangentLine.start_vertex_id,
+        );
+        if (!startVertex) continue;
+        const sx = startVertex.x;
+        const sy = startVertex.y;
+        const toCenterX = centreX - sx;
+        const toCenterY = centreY - sy;
+        const distance = Math.hypot(toCenterX, toCenterY);
+        const radius = draggedCircle.radius;
+        if (distance <= radius + 1e-6) continue;
+        const tangentLength = Math.sqrt(distance * distance - radius * radius);
+        const ux = toCenterX / distance;
+        const uy = toCenterY / distance;
+        const vx = -uy;
+        const vy = ux;
+        const along = (tangentLength * tangentLength) / distance;
+        const perp = (tangentLength * radius) / distance;
+        const candidateA: [number, number] = [
+          sx + along * ux + perp * vx,
+          sy + along * uy + perp * vy,
+        ];
+        const candidateB: [number, number] = [
+          sx + along * ux - perp * vx,
+          sy + along * uy - perp * vy,
+        ];
+        const currentEnd = paramsCopy.vertices.find(
+          (vertex) => vertex.vertex_id === tangentLine.end_vertex_id,
+        );
+        const endX = currentEnd?.x ?? tangentLine.end_x;
+        const endY = currentEnd?.y ?? tangentLine.end_y;
+        const projected =
+          Math.hypot(candidateA[0] - endX, candidateA[1] - endY) <=
+          Math.hypot(candidateB[0] - endX, candidateB[1] - endY)
+            ? candidateA
+            : candidateB;
+        paramsCopy.vertices = paramsCopy.vertices.map((vertex) =>
+          vertex.vertex_id === tangentLine.end_vertex_id
+            ? { ...vertex, x: projected[0], y: projected[1] }
+            : vertex,
+        );
+        if (!activePointIds.includes(tangentLine.end_vertex_id)) {
+          activePointIds = [...activePointIds, tangentLine.end_vertex_id];
+        }
+      }
     }
 
     // Dragging an ARC CENTRE: mirror the circle path — translate the
@@ -510,7 +811,17 @@ export function resolveEndpointDragFrame({
     const result = gcsBridge.solve(paramsCopy, constraints ?? [], {
       activePointIds,
     });
-    if (result.ok) {
+    if (rigidPreviewApplied) {
+      // The translation IS the preview: take it straight from the (already
+      // translated) parameters. Running the solver here is what produced the
+      // degenerate 0.00 mm jump — with everything frozen it has no freedom and
+      // any "repair" it invents is wrong.
+      for (const vertex of paramsCopy.vertices) {
+        solvedPoints.set(vertex.vertex_id, [vertex.x, vertex.y]);
+      }
+      const solved = solvedPoints.get(next.vertexId);
+      if (solved) finalLocal = solved;
+    } else if (result.ok) {
       for (const point of result.points) {
         solvedPoints.set(point.id, [point.x, point.y]);
       }

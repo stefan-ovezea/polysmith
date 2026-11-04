@@ -7,9 +7,24 @@ void sync_line_dimension(SketchFeatureParameters& parameters,
         return dimension.kind == "line_length" && dimension.entity_id == line.id;
       });
 
+  // NOTE (tried and reverted 2026-11-04): making this follow ONLY auto dimensions
+  // — so an explicit dimension is never rewritten — broke four suites (rectangle
+  // constraints, sketch profile, transform and one more): trim, transform and the
+  // rectangle tool all rely on the dimension following the geometry they produce.
+  // The user's "the length changed" report turned out to be AUTO dimensions
+  // (`dim-line-line-*`, is_auto = true), which are readouts by definition — so
+  // nothing here needed changing.
   if (dimension_it != parameters.dimensions.end()) {
     dimension_it->value = measure_line_length(line);
   }
+
+  // NOTE: a `point_distance` dimension between this line's own endpoints is
+  // deliberately NOT re-measured here. A drag on a dimensioned line moves the
+  // whole line (see update_sketch_vertex), so the distance never changes and
+  // there is nothing to follow; re-measuring would silently rewrite the user's
+  // dimension if anything ever moved one endpoint alone. Re-measuring is what a
+  // drag-overrides-the-dimension model would need — the user chose Fusion's
+  // parametric model instead (2026-11-04).
 }
 
 void sync_circle_dimension(SketchFeatureParameters& parameters,

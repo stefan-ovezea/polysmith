@@ -95,6 +95,12 @@ export interface SketchDimensionEntry {
   secondary_entity_id: string;
   value: number;
   expression: string;
+  /**
+   * True for the automatic dimensions the core maintains on every line/circle
+   * (display-only, NOT constraints). A dimension the user creates or edits has
+   * this false. The drag preview and the speculative solve skip auto ones.
+   */
+  is_auto?: boolean;
   /** When true, this is a reference-only (driven) dimension. */
   driven?: boolean;
   /** For circle_radius: "" = diameter display (default), "radius" = radius display. */
