@@ -1,3 +1,76 @@
+# DRAG DESIGN — write it down before writing it again (2026-11-06, end of day)
+
+## Decisions taken (user, 2026-11-06)
+
+1. **A refused drag says so ON THE CANVAS**, not only in the Logs panel. The core has to
+   report the refusal with a reason; the viewport shows it as a transient notice.
+2. **An end is an ordinary handle (option A).** A line's end is not special because the
+   line is tangent: dragging it is a normal drag, and if a constraint (typically a
+   length dimension) blocks it, the drag is refused with that reason on the canvas.
+   The guard must therefore test whether the end really IS the contact point — the foot
+   of the perpendicular from the circle's centre onto the line, within ~1e-3 — and not
+   merely "this vertex is an end of a tangent line". test3's line-1 overruns its contact
+   by 4.46 mm and was wrongly refused as "the contact point of a tangency".
+   ORDER MATTERS: relaxing that guard without the feasibility gate re-opens the hole
+   where the solver stretches the line and rewrites the dimension, so the gate comes
+   first and the guard relaxation rides on top of it.
+
+Today the drag path was patched live for hours and the result was churn: each fix made
+one gesture right and broke another (the suite caught two regressions, the user three).
+The user chose to **revert the whole day's uncommitted drag work**; the tree is now at
+`8895a98e` and clean. The next attempt MUST be written first, from the rules measured
+today, with one test per gesture.
+
+## The rules the user stated, and the measurements behind them
+
+1. **A constraint is applied; the other geometry complies.** "If line is constrained by
+   dimensions it should not stretch but move the circle."
+2. **A drag never writes a dimension.** Auto/readout dimensions may follow geometry;
+   a driving dimension may only change through an explicit edit. (Root cause found:
+   user dimensions were being demoted to `is_auto` on load — fixed in `6ce120fe`.)
+3. **A drag moves the point as far as the constraints allow, then stops.** It must
+   never hand the solver an unsatisfiable state: measured, six identical drags on one
+   sketch produced line lengths 88.255 / 88.255 / 88.255 / 93.221 / 93.221 / 95.646 —
+   the drag's own move was bit-identical, so the variance was entirely the solve.
+4. **Fusion keeps the tangency no matter how you drag** (user tested it).
+
+## Gestures that must each have a test
+
+| gesture | expected |
+|---|---|
+| free end of a dimensioned line, no relations | whole line translates, dimension unchanged |
+| free end of a dimensioned line bound to a circle | line translates, **circle translates with it**, dimension unchanged |
+| free end of a dimensioned line **tangent** to a circle | line translates, **circle translates with it**, tangency exact, dimension unchanged |
+| shared apex of TWO dimensioned tangent lines | both lines translate, circle moves once (each *vertex* once — double-apply moved the apex 2×delta), dimensions unchanged |
+| the contact point of a tangency | refused with a message that says so |
+| an end that OVERRUNS its contact (test3 line-1, 4.46 mm past) | ordinary drag — the guard must test the foot of the perpendicular, not "is an end of a tangent line" |
+| circle dragged by its centre, tangent lines attached | lines carried with the circle; an UNDIMENSIONED tangent line may instead pivot about its start (`test_circle_tangent_drag_keeps_the_anchored_start`) |
+| a drag that cannot move at all | refuse and say why — the user cannot see the Logs panel by default |
+
+## Implementation shape (what the measurements point to)
+
+- One entry point that computes the target delta, then **one** feasibility loop: try the
+  full move, then ½, ¼ …; accept the first that leaves every driving dimension, every
+  tangency and every point-on-curve binding satisfied; otherwise restore and report.
+  `update_sketch_vertex`'s circle/arc centre branches need the same loop — today they
+  have none, which is why "the circle drag stays behind and then stretches".
+- No path may write a driving dimension: `auto_only` must apply everywhere in the drag
+  path, including the refresh's post-solve sync for commands that only move geometry.
+- Hand-rolled translations must be **idempotent per vertex** (shared apexes) and per
+  circle (two tangent lines sharing one circle).
+- The UI preview must mirror exactly this, or it will keep "stretching then bouncing".
+
+## Known traps, measured
+
+- `solver_touch_guard.inc`: DogLeg moves geometry no constraint can reach; the restore
+  is a heuristic. Its closure does NOT seed a relation's circle (only the line) — fixed
+  in the reverted work, must come back.
+- planegcs holds a dimension to 1e-13 but a tangency only to ~0.08 mm on an
+  underdetermined system; a tolerance of 0.1 mm is the practical gate for relations.
+- Freezing the unreachable vertices before the solve made every drag infeasible (the
+  closure is incomplete) — do not retry without building the closure from the
+  constraints themselves.
+
 # IN PROGRESS: next phase — H/V preview, tangent drag, first-vertex rule (2026-11-04)
 
 User's instruction: *"log it and let's move to fix the T line and constraint line
