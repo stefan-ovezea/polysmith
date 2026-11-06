@@ -62,5 +62,34 @@ void set_sketch_tangent_constraint(FeatureEntry& feature,
       .second_line_id = circle_id,
   });
 
+  // A tangency already puts the line's END on the circle - the end IS the contact
+  // point - so a point_on_circle/point_on_arc binding for that same vertex is the
+  // same statement twice. At the solution the two gradients are parallel, the
+  // Jacobian is singular, and planegcs reports a conflicting system: measured as
+  // `sketch solver failed - status=2` on every edit of the user's tangent sketch,
+  // and the user's SolidCraft copy of the same shape was refused with "its
+  // constraints would conflict (k1, k2, k3, k4, k5, k6)" when a parameter changed.
+  // The tangency is the stronger statement (it fixes the direction too), so the
+  // duplicate binding goes, with a log line rather than silently.
+  const std::string contact_vertex_id = line.end_vertex_id;
+  const auto dropped = std::remove_if(
+      parameters.constraints.begin(), parameters.constraints.end(),
+      [&](const SketchConstraint& constraint) {
+        if (constraint.kind != "point_on_circle" &&
+            constraint.kind != "point_on_arc") {
+          return false;
+        }
+        if (constraint.target_ids.size() < 2) return false;
+        return constraint.target_ids[0] == contact_vertex_id &&
+               constraint.target_ids[1] == circle_id;
+      });
+  if (dropped != parameters.constraints.end()) {
+    parameters.constraints.erase(dropped, parameters.constraints.end());
+    polysmith::core::log_info(
+        "sketch",
+        "tangency on " + line_id + " replaces the point-on-curve binding at its "
+        "contact end (keeping both makes the sketch singular)");
+  }
+
   refresh_sketch_with_append_focus(feature, {line_id, circle_id});
 }

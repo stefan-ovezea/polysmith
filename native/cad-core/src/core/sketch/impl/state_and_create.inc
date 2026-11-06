@@ -29,6 +29,45 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
     return;
   }
 
+  // Heal a sketch saved with the SAME statement twice: a line whose contact end is
+  // both point-on-circle AND the tangency's contact point. The two gradients are
+  // parallel at the solution, so the Jacobian is singular and the solver reports a
+  // conflicting system (`status=2` on every edit). Files written before the guard
+  // in set_sketch_tangent_constraint exist in the field, so the repair runs here,
+  // before the solve, and logs what it dropped.
+  {
+    auto& params = *feature.sketch_parameters;
+    for (const auto& relation : params.line_relations) {
+      if (relation.kind != "tangent_line_circle") continue;
+      const auto tangent_line = std::find_if(
+          params.lines.begin(), params.lines.end(),
+          [&](const SketchLine& line) {
+            return line.id == relation.first_line_id;
+          });
+      if (tangent_line == params.lines.end()) continue;
+      const auto dropped = std::remove_if(
+          params.constraints.begin(), params.constraints.end(),
+          [&](const SketchConstraint& constraint) {
+            if (constraint.kind != "point_on_circle" &&
+                constraint.kind != "point_on_arc") {
+              return false;
+            }
+            if (constraint.target_ids.size() < 2) return false;
+            return constraint.target_ids[0] == tangent_line->end_vertex_id &&
+                   constraint.target_ids[1] == relation.second_line_id;
+          });
+      if (dropped != params.constraints.end()) {
+        params.constraints.erase(dropped, params.constraints.end());
+        polysmith::core::log_info(
+            "sketch",
+            "repaired " + tangent_line->id +
+                ": its contact end was bound to " + relation.second_line_id +
+                " as well as tangent to it (the pair is singular) - binding "
+                "dropped");
+      }
+    }
+  }
+
   // Drop anchors whose host line has been deleted.  Anchors whose
   // anchored point is no longer referenced by any live entity are
   // harmless (they are a no‑op during enforcement and the point is

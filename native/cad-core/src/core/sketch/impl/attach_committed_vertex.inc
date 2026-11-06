@@ -140,6 +140,27 @@ void attach_committed_vertex_to_geometry(SketchFeatureParameters& parameters,
   // endpoint on a circle is already tied to it (endpoint sharing), so this only fires
   // for a fresh vertex drawn onto the perimeter.
   if (circle_host != nullptr && (host == nullptr || circle_distance <= host_distance)) {
+    // A line already TANGENT to this circle has its contact end on the circle by
+    // definition, so binding that same vertex again would state it twice: the two
+    // gradients are parallel at the solution, the Jacobian is singular, and the
+    // solver reports a conflicting system on every later edit (the reverse order of
+    // the guard in set_sketch_tangent_constraint).
+    for (const auto& relation : parameters.line_relations) {
+      if (relation.kind != "tangent_line_circle" ||
+          relation.second_line_id != circle_host->id) {
+        continue;
+      }
+      for (const auto& tangent_line : parameters.lines) {
+        if (tangent_line.id != relation.first_line_id) continue;
+        if (tangent_line.end_vertex_id != vertex_id) continue;
+        polysmith::core::log_info(
+            "sketch",
+            "left " + vertex_id + " unbound: it is already the contact point of "
+            "the tangency between " + tangent_line.id + " and " +
+                circle_host->id);
+        return;
+      }
+    }
     // add_sketch_constraint keeps (kind, targets, value) unique, which covers this
     // case: two lines meeting at the same point on the perimeter share one vertex,
     // so the second line's commit routes the SAME vertex through here again. It used
