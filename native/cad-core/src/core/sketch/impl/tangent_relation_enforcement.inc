@@ -61,6 +61,34 @@ void enforce_tangent_line_circle_relations(
     }
     const double d = std::sqrt(d_squared);
     const double tangent_length = std::sqrt(d_squared - r * r);
+    // A line that is ALREADY tangent to the circle is left exactly as the solver
+    // left it. This pass means "keep the line touching the circle" — the solver
+    // expresses it as distance(centre, line) == r, which holds for any end point on
+    // the line — so re-projecting the END onto the contact point is a second,
+    // stronger rule that silently overrode whatever else pinned the line's length.
+    // Measured 2026-11-06 on the user's fully-constrained sketch (two tangent
+    // lines, equal length, both ends on one circle, two DRIVING 223.0223 mm length
+    // dimensions): every drag moved the apex, the solver satisfied all seven
+    // equations, and this pass then re-projected the ends and grew both lines to
+    // 233.159 mm — the dimensions were rewritten to match and the drag "changed the
+    // length" no matter what the user wanted.
+    {
+      const double line_dx = line_it->end_x - line_it->start_x;
+      const double line_dy = line_it->end_y - line_it->start_y;
+      const double line_length = std::hypot(line_dx, line_dy);
+      if (line_length > kMinimumSketchDimensionValue) {
+        const double perpendicular =
+            std::abs(line_dx * (cy - sy) - line_dy * (cx - sx)) / line_length;
+        // Tolerance is scale-aware: the solver satisfies the relation to its own
+        // numeric tolerance, and sketches run to hundreds of mm here, so an
+        // absolute 1e-6 rejected states that are tangent for every practical
+        // purpose and the pass then "repaired" a satisfied line.
+        const double tolerance = std::max(1e-4, std::abs(r) * 1e-7);
+        if (std::abs(perpendicular - r) <= tolerance) {
+          continue;
+        }
+      }
+    }
     // Unit vector from start toward center, plus its left-perp.
     const double ux = dx / d;
     const double uy = dy / d;

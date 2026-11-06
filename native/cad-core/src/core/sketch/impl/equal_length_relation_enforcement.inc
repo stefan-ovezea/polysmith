@@ -70,7 +70,13 @@ void enforce_equal_length_relations(SketchFeatureParameters& parameters,
                                        driven_line.end_y);
       }
 
-      sync_line_dimension(parameters, driven_line);
+      // AUTO dimensions only: this pass resized the driven line to the reference
+      // length, and re-measuring an EXPLICIT dimension here would renumber the
+      // user's value before the solver ever sees it. Measured 2026-11-06 on the
+      // user's fully-constrained sketch: an apex drag was turned into
+      // 223.0223 -> 234.8618 mm by this call, the solver then "enforced" the new
+      // number, and the user's dimension was gone without a single solver failure.
+      sync_line_dimension(parameters, driven_line, /*auto_only=*/true);
       frontier.push_back(other_line_id);
     }
   }

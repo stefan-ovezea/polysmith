@@ -257,6 +257,14 @@ void update_sketch_vertex(FeatureEntry& feature,
           // free end is still where it was, so a driving length dimension has
           // nothing left to enforce and cannot push the far end of the line
           // ("the line free end moves to keep the original length").
+          //
+          // NOTE: this stays "re-measure everything" on purpose. The circle/arc
+          // centre drag is documented by
+          // test_moving_a_circle_centre_does_not_push_the_dimensioned_free_end:
+          // the attached end rides the centre and the free end must NOT be pushed
+          // by the length dimension, so the dimension records the new distance.
+          // Only the LINE-endpoint drag path (below) refuses to renumber an
+          // explicit dimension.
           sync_all_line_dimensions(parameters);
           // Freeze the centre AND every riding point for the solve, then restore.
           std::vector<std::pair<std::string, bool>> saved_fixed;
@@ -346,6 +354,8 @@ void update_sketch_vertex(FeatureEntry& feature,
             propagate_connected_point_move(parameters, constraint.target_ids[0],
                                            pos->first + dx, pos->second + dy);
           }
+          // Same policy as the circle-centre drag above (an arc centre drag
+          // rides its attached points and the dimensions follow).
           sync_all_line_dimensions(parameters);
           refresh_sketch_derived_state(feature);
           return;
@@ -480,6 +490,35 @@ void update_sketch_vertex(FeatureEntry& feature,
     }
     if (!dimensioned) continue;
 
+    // ...but only when the dimension is the line's ONLY constraint. On a line
+    // that is also held by relations - tangent to a circle, equal-length,
+    // parallel, perpendicular, or anchored - translating it breaks all of them at
+    // once and the repair chain cannot recover: measured on the user's
+    // fully-constrained sketch (two tangent lines, equal length, both ends on one
+    // circle, two driving length dimensions) every drag ended in
+    // "sketch solver failed - status=2, dofs=2". Such a line must be SOLVED, not
+    // translated: its freedoms are what the solver balances.
+    bool line_has_binding_relations = false;
+    for (const auto& relation : parameters.line_relations) {
+      if (relation.first_line_id != line.id &&
+          relation.second_line_id != line.id) {
+        continue;
+      }
+      if (relation.kind == "tangent_line_circle" ||
+          relation.kind == "equal_length" ||
+          relation.kind == "parallel" ||
+          relation.kind == "perpendicular") {
+        line_has_binding_relations = true;
+        break;
+      }
+    }
+    if (!line_has_binding_relations &&
+        (vertex_is_anchored_to_line(parameters, line.start_vertex_id) ||
+         vertex_is_anchored_to_line(parameters, line.end_vertex_id))) {
+      line_has_binding_relations = true;
+    }
+    if (line_has_binding_relations) continue;
+
     const double current_x = is_start ? line.start_x : line.end_x;
     const double current_y = is_start ? line.start_y : line.end_y;
     const double delta_x = x - current_x;
@@ -543,7 +582,7 @@ void update_sketch_vertex(FeatureEntry& feature,
   }
 
   propagate_connected_point_move(parameters, point_id, x, y);
-  sync_all_line_dimensions(parameters);
+  sync_all_line_dimensions(parameters, /*auto_only=*/true);
 
   // A dimension annotation must stay attached to the geometry it measures. Its
   // label position is a sketch-space point (the UI stores one as soon as the
@@ -585,7 +624,7 @@ void update_sketch_vertex(FeatureEntry& feature,
     enforce_parallel_relations(parameters, line_id);
   }
 
-  sync_all_line_dimensions(parameters);
+  sync_all_line_dimensions(parameters, /*auto_only=*/true);
   refresh_sketch_derived_state(feature);
 }
 

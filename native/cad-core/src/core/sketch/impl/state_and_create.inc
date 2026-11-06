@@ -492,11 +492,44 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
             result.status == GCS::SuccessfulSolutionInvalid
                 ? "solution invalid (redundant/conflicting constraints)"
                 : "unknown error";
+        // Name what the sketch was made of when it failed. A failing solve is
+        // otherwise a bare "status=2" with no way to tell which constraint
+        // combination caused it, and the report usually arrives as a log line
+        // without the document (2026-11-06). One line, only on failure.
+        std::string inventory;
+        for (const auto& constraint : feature.sketch_parameters->constraints) {
+          inventory += " " + constraint.kind + "[";
+          for (size_t i = 0; i < constraint.target_ids.size(); ++i) {
+            if (i != 0) inventory += ",";
+            inventory += constraint.target_ids[i];
+          }
+          inventory += "]";
+        }
+        for (const auto& dimension : feature.sketch_parameters->dimensions) {
+          inventory += " " + dimension.kind +
+                       (dimension.driven      ? "(driven)"
+                        : dimension.is_auto   ? "(auto)"
+                                              : "(driving)") +
+                       "[" + dimension.entity_id + "]";
+        }
+        for (const auto& line : feature.sketch_parameters->lines) {
+          if (line.constraint.has_value()) {
+            inventory += " " + line.id + ":" + line.constraint.value();
+          }
+        }
+        for (const auto& relation : feature.sketch_parameters->line_relations) {
+          inventory += " relation:" + relation.kind + "[" +
+                       relation.first_line_id + "," + relation.second_line_id +
+                       "]";
+        }
         polysmith::core::log_error(
             "sketch",
             std::string("sketch solver failed - ") + reason + " (status=" +
                 std::to_string(static_cast<int>(result.status)) +
-                ", dofs=" + std::to_string(result.dofs) + ")");
+                ", dofs=" + std::to_string(result.dofs) +
+                ", conflicting=" + std::to_string(result.conflicting.size()) +
+                ", redundant=" + std::to_string(result.redundant.size()) +
+                ") with:" + inventory);
       }
 
       // Redundant constraint detection is handled by each dimension/

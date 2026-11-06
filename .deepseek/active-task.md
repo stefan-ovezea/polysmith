@@ -90,6 +90,57 @@ changing the drag/dimension policy; if it still misbehaves, implement the Fusion
 rule (keep the dimension; the circle absorbs — translate or enlarge depending on
 the line's creation direction).
 
+## FIXED TODAY (2026-11-06): three real defects behind "the dimensions change / the solver fails"
+
+Reproduced every step with the user's saved `projects/test.polysmith` (shared apex,
+two lines tangent to one circle, both ends bound to the rim, equal length, two
+DRIVING 223.0223 mm length dimensions; 7 equations, 2 freedoms = the apex).
+
+1. **The load path demoted user dimensions to auto — THE root cause.**
+   `feature_parameter_sketch_dimension_parser.inc` had a backward-compat fixup
+   ("dimensions from older saves lack `is_auto`, guess from the id") that ran
+   UNCONDITIONALLY: any id starting `dim-line-` was re-marked AUTO even when the
+   file said `"is_auto": false`. A dimension created with the Dimension tool is
+   exactly that (the auto one promoted in place, id kept), so every reload turned
+   the user's driving dimensions into display-only readouts — removed from the
+   solver, skipped by the drag path, free to be re-measured. Measured: the file
+   holds `is_auto:false, value:223.0223`; after `load_document` the same
+   dimensions read `is_auto:true`. The fallback now runs only when the payload
+   really lacks the field.
+2. **The equal-length pass renumbered the user's dimension before the solver ran.**
+   `equal_length_relation_enforcement.inc` resizes the driven line to the
+   reference length and then called `sync_line_dimension(parameters, line)` with
+   the "re-measure everything" default: an apex drag of 10 mm was turned into
+   223.0223 → 234.8618 mm of *dimension* while nothing had solved yet, and the
+   solver then "enforced" the new number. It now passes `auto_only`.
+3. **The rigid translation fired on relation-bound lines.**
+   `update_sketch_vertex` translated any explicitly-dimensioned line, which on
+   this sketch broke tangency + both rim bindings + both length dimensions at
+   once, leaving the repair chain unable to recover — the `status=2, dofs=2` storm
+   in the log. Such a line is now SOLVED, not translated: the translation is
+   skipped when the line carries a tangent/equal-length/parallel/perpendicular
+   relation or an anchored endpoint. Result: **0 solver failures** on every drag
+   of that sketch.
+
+Also: `enforce_tangent_line_circle_relations` now leaves a line that is ALREADY
+tangent alone (scale-aware tolerance), instead of re-projecting its end onto the
+contact point and overriding whatever pinned its length; and a failed solve logs
+the sketch's whole constraint/dimension/relation inventory, so a report without
+the document is diagnosable.
+
+`pnpm test:core` 92/92 (after narrowing the circle/arc-centre drag back to
+re-measuring, which `test_moving_a_circle_centre_does_not_push_the_dimensioned_free_end`
+documents as intended).
+
+**Remaining (measured, not yet fixed):** on that sketch the solve still leaves the
+lines 0.30 mm off exact tangency (trace: after solve `d − r = -0.3049`), the
+tangency pass then projects the ends, and the post-solve sync records the longer
+length (223.022 → 228.406, +2.4 %). So the dimension still drifts by ~2 % on that
+sketch, with no solver failure and no failure log. Next: why planegcs reports
+success with a 0.3 mm residual for `addConstraintTangent` here — the trace shows
+the radius written back unchanged (50.2283) while the tangent constraint implies
+49.925.
+
 ## ROOT CAUSE FOUND: the "dimensions" that change are AUTO readouts (2026-11-04, end of session)
 
 The user's saved `test.polysmith` (two tangent lines, equal length, a 96.526 mm label

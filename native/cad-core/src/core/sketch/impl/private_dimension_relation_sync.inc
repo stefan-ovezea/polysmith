@@ -52,9 +52,10 @@ void enforce_all_parallel_relations(SketchFeatureParameters& parameters) {
   }
 }
 
-void sync_all_line_dimensions(SketchFeatureParameters& parameters) {
+void sync_all_line_dimensions(SketchFeatureParameters& parameters,
+                              bool auto_only = false) {
   for (const auto& line : parameters.lines) {
-    sync_line_dimension(parameters, line);
+    sync_line_dimension(parameters, line, auto_only);
   }
 }
 

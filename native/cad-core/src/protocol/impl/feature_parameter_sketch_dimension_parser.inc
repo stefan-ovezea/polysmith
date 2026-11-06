@@ -24,9 +24,22 @@
       }
       // is_auto field — absent in older saves, default to false.
       // A post-load fixup (below) sets it to true for dimensions whose
-      // IDs match the auto-dimension naming pattern.
-      if (dim_payload.contains("is_auto") && dim_payload.at("is_auto").is_boolean()) {
+      // IDs match the auto-dimension naming pattern — but ONLY when the payload
+      // did not say, see `is_auto_was_present`.
+      const bool is_auto_was_present =
+          dim_payload.contains("is_auto") &&
+          dim_payload.at("is_auto").is_boolean();
+      if (is_auto_was_present) {
         dimension.is_auto = dim_payload.at("is_auto").get<bool>();
+      }
+      if (!is_auto_was_present) {
+        // Legacy save: guess from the AUTO-DIMENSION ID PATTERN.
+        if (dimension.id.rfind("dim-line-", 0) == 0 ||
+            dimension.id.rfind("dim-line-angle-", 0) == 0 ||
+            dimension.id.rfind("dim-circle-", 0) == 0 ||
+            dimension.id.rfind("dim-polygon-", 0) == 0) {
+          dimension.is_auto = true;
+        }
       }
       // Display_as field — absent in older saves, default to "" (diameter)
       if (dim_payload.contains("display_as") &&
@@ -62,17 +75,17 @@
       }
       params.dimensions.push_back(dimension);
     }
-    // Backward compat: dimensions from older saves lack the `is_auto`
-    // field. Detect auto-dimensions by their ID prefix pattern so they
-    // aren't mistakenly treated as manual driving constraints.
-    for (auto& dim : params.dimensions) {
-      if (!dim.is_auto) {
-        bool matches_auto = false;
-        if (dim.id.rfind("dim-line-", 0) == 0) matches_auto = true;
-        else if (dim.id.rfind("dim-line-angle-", 0) == 0) matches_auto = true;
-        else if (dim.id.rfind("dim-circle-", 0) == 0) matches_auto = true;
-        else if (dim.id.rfind("dim-polygon-", 0) == 0) matches_auto = true;
-        if (matches_auto) dim.is_auto = true;
-      }
-    }
+    // The `is_auto` fallback for legacy saves now runs per dimension, inside the
+    // loop, and only when the payload did not carry the field.
+    //
+    // It used to run unconditionally over every loaded dimension: any id starting
+    // with `dim-line-` was re-marked AUTO, even when the file said
+    // `"is_auto": false`. A dimension the user creates with the Dimension tool is
+    // exactly that — the auto one promoted in place, keeping its
+    // `dim-line-line-1` id — so every reload silently demoted the user's driving
+    // length dimensions to display-only readouts. Measured 2026-11-06 on the
+    // user's fully-constrained sketch: the file holds `is_auto: false` and
+    // `value: 223.0223`, and after `load_document` the same dimensions read
+    // `is_auto: true`, which removed them from the solver and let a drag change
+    // the length to 233.158 with the readouts following.
   }
