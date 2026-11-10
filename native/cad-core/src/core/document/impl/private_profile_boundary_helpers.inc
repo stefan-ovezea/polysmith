@@ -321,6 +321,37 @@ const SketchProfileRegion* resolve_sketch_profile(
   return tied ? nullptr : best;
 }
 
+// Which selected regions become ONE feature (and therefore one body).
+//
+// Both extrude entry points MUST use this: the creation path
+// (`extrude_profiles`) and the live re-bind path (`update_extrude_profiles`,
+// which runs when the user arms Extrude first and picks surfaces afterwards).
+// They used to disagree — creation split disconnected regions into one body per
+// group, while the live path put the whole selection into ONE feature, i.e. one
+// body holding two disconnected cylinders — so the same selection produced a
+// different model depending on the order of the clicks.
+//
+// cut/intersect/join-with-target stay one group: they are one boolean against
+// one target body, and splitting them would apply the boolean per group.
+std::vector<std::vector<SketchProfileRegion>> extrude_profile_groups(
+    const std::vector<SketchProfileRegion>& selected_profiles,
+    const std::string& mode,
+    const std::optional<std::string>& target_body_id) {
+  if (selected_profiles.size() == 1 || mode == "cut" || mode == "intersect" ||
+      (mode == "join" && target_body_id.has_value())) {
+    return {selected_profiles};
+  }
+  if (mode.empty() || mode == "join" || mode == "new_body") {
+    return group_touching_profiles(selected_profiles);
+  }
+  std::vector<std::vector<SketchProfileRegion>> per_profile;
+  per_profile.reserve(selected_profiles.size());
+  for (const auto& profile : selected_profiles) {
+    per_profile.push_back({profile});
+  }
+  return per_profile;
+}
+
 // Resolve a STORED profile id for the REFRESH paths, which re-derive a
 // feature's geometry after a sketch edit.
 //

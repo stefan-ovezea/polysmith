@@ -752,21 +752,28 @@ TopoDS_Shape make_wire_extrude_shape(
       } else {
         hole_wire = make_profile_wire(parameters, loop);
       }
-      // Orientation decision from the WALK DATA's chord shoelace —
-      // signed_wire_area samples through the OCCT adaptor, whose
-      // parameterization flips on reversed arc edges and misreports
-      // the sign (a CW hole reads CCW, the wire gets reversed into an
-      // island and the face turns invalid).  A full-circle hole has
-      // start==end and zero chord area — fall back to the sampler
-      // there (one analytic edge, no reversals).
+      // Orientation decision from the SAMPLED loop's shoelace.
+      //
+      // This used to sum the walk edges' chords. That is exact for a loop of
+      // lines and meaningless for a loop of ARCS: a hole formed by two
+      // overlapping circles is two arcs, i.e. two chords, whose shoelace is an
+      // arbitrary surrogate for the loop's winding — and when it came out the
+      // wrong way the wire was added as an ISLAND instead of a hole. The face
+      // then meshed as the hole alone: the committed body rendered as four bare
+      // walls plus two cylinders, exactly the reported "the rectangle is
+      // extruded only a thin wall" while the preview (drawn from the profile,
+      // not from the tessellation) looked right.
+      //
+      // `loop` is the same walk sampled along each curve, so its winding equals
+      // the wire's. `signed_wire_area` stays as the fallback for a loop with no
+      // usable samples.
       double hole_orientation_area = 0.0;
-      if (hole_index < parameters.inner_loop_edges.size() &&
-          !parameters.inner_loop_edges[hole_index].empty()) {
-        for (const auto& e : parameters.inner_loop_edges[hole_index]) {
-          hole_orientation_area += e.start_x * e.end_y - e.end_x * e.start_y;
-        }
-        hole_orientation_area *= 0.5;
+      for (size_t point_index = 0; point_index < loop.size(); ++point_index) {
+        const auto& a = loop[point_index];
+        const auto& b = loop[(point_index + 1) % loop.size()];
+        hole_orientation_area += a.x * b.y - b.x * a.y;
       }
+      hole_orientation_area *= 0.5;
       if (std::abs(hole_orientation_area) < 1e-12) {
         hole_orientation_area = signed_wire_area(hole_wire);
       }

@@ -11,4 +11,11 @@ export interface ExtrudeUpdateCallbacks {
     featureId: string,
     parameters: ExtrudeFeatureParameters,
   ) => Promise<void>;
+  // Cancel restores the SURFACES as well as the extent: the body is derived
+  // from the profile ids, so a restore that leaves the edited selection in place
+  // brings the old depth back onto the new surfaces.
+  updateExtrudeProfiles: (
+    featureId: string,
+    profileIds: readonly string[],
+  ) => Promise<void>;
 }

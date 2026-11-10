@@ -61,17 +61,10 @@ DocumentState DocumentManager::extrude_profiles(
   }
 
   const bool automatic_mode = mode.empty();
-  std::vector<std::vector<SketchProfileRegion>> profile_groups;
-  if (selected_profiles.size() == 1 || mode == "cut" || mode == "intersect" ||
-      (mode == "join" && target_body_id.has_value())) {
-    profile_groups.push_back(selected_profiles);
-  } else if (automatic_mode || mode == "join" || mode == "new_body") {
-    profile_groups = group_touching_profiles(selected_profiles);
-  } else {
-    for (const auto& profile : selected_profiles) {
-      profile_groups.push_back({profile});
-    }
-  }
+  // One shared rule with the live re-bind path, so picking surfaces before or
+  // after arming Extrude builds the same model (see extrude_profile_groups).
+  std::vector<std::vector<SketchProfileRegion>> profile_groups =
+      extrude_profile_groups(selected_profiles, mode, target_body_id);
 
   std::vector<ExtrudeFeatureParameters> extrude_parameter_groups;
   extrude_parameter_groups.reserve(profile_groups.size());

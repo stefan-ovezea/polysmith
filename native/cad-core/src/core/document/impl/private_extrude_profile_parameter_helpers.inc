@@ -8,6 +8,9 @@
 // old path).
 void validate_hole_separation(const ExtrudeFeatureParameters& params) {
   constexpr double kMinHoleSeparation = 0.05;  // mm
+  // Exact tangent curves share the sampled node exactly; 1e-9 mm only absorbs
+  // the float round-trip through the payload, not a drawing tolerance.
+  constexpr double kClosedEdgeTolerance = 1e-9;  // mm
   if (params.inner_loop_edges.empty() && params.inner_loops.empty()) {
     return;
   }
@@ -106,6 +109,33 @@ void validate_hole_separation(const ExtrudeFeatureParameters& params) {
     holes.push_back(params.inner_loops[h]);
   }
 
+  // A hole loop containing more than one CLOSED edge is not a simple loop: its
+  // edges meet at a single point and the face walk welded them into one
+  // boundary. Measured on two TANGENT circles inside a plate: the plate's one
+  // hole is the figure-8 of both circles (two closed circle edges sharing the
+  // tangent point). The sampled points still look sane and no pair is close, so
+  // the gap checks below pass — and OCCT then caps a face whose hole wire
+  // touches itself, which came back as a 100x60x5 plate inflated to
+  // 106x87x72 with no error at all. A simple loop carries at most ONE closed
+  // edge (itself), so this test needs no tolerance and cannot misfire on a
+  // hand-drawn near-tangency.
+  int self_touch_hits = 0;
+  for (size_t h = 0; h < params.inner_loop_edges.size(); ++h) {
+    int closed_edges = 0;
+    for (const auto& edge : params.inner_loop_edges[h]) {
+      if (std::abs(edge.end_x - edge.start_x) <= kClosedEdgeTolerance &&
+          std::abs(edge.end_y - edge.start_y) <= kClosedEdgeTolerance) {
+        ++closed_edges;
+      }
+    }
+    if (closed_edges > 1) {
+      ++self_touch_hits;
+      log_warn("extrude", "hole loop " + std::to_string(h) + " contains " +
+                              std::to_string(closed_edges) +
+                              " closed edges (a self-touching loop)");
+    }
+  }
+
   // A hole must not touch the outer outline — a dangling stub welded
   // to the boundary produces a degenerate lens hole exactly there.
   // Collect EVERY violation first (the user's flower had three
@@ -138,12 +168,14 @@ void validate_hole_separation(const ExtrudeFeatureParameters& params) {
       }
     }
   }
-  if (boundary_hits == 0 && pair_hits == 0) {
+  if (self_touch_hits == 0 && boundary_hits == 0 && pair_hits == 0) {
     return;
   }
 
   std::string problem;
-  if (boundary_hits > 0 && pair_hits == 0) {
+  if (self_touch_hits > 0) {
+    problem = "a hole touches itself at one point (two curves meet there)";
+  } else if (boundary_hits > 0 && pair_hits == 0) {
     problem = "a hole touches the profile outline";
   } else if (boundary_hits == 0 && pair_hits == 1) {
     problem = "two holes touch or overlap";
@@ -151,6 +183,15 @@ void validate_hole_separation(const ExtrudeFeatureParameters& params) {
     problem = std::to_string(pair_hits) + " pairs of holes touch or overlap";
   } else {
     problem = "holes touch the profile outline or each other";
+  }
+  // The self-touching case has no gap to quote (no pair or outline hit is
+  // counted), so it gets its own advice: separating two tangent circles by a
+  // non-zero gap, or trimming them, is what makes the hole a simple loop.
+  if (self_touch_hits > 0) {
+    throw std::runtime_error(
+        "Extrude refused: " + problem +
+        ". Give the tangent pieces a gap (or trim them) so each hole is a "
+        "simple loop, then extrude again.");
   }
   throw std::runtime_error(
       "Extrude refused: " + problem + " (smallest gap " +

@@ -153,6 +153,13 @@ export interface ActiveExtrudeAction {
     mode: ExtrudeMode;
     targetBodyId: string | null;
     parameters: ExtrudeFeatureParameters;
+    // The surfaces this extrude consumed when the edit session opened. The
+    // body is DERIVED from them, so restoring only the extent and operation
+    // left the edited binding in place: cancel re-issued the old depth onto the
+    // new selection and the body stayed as the edit left it ("cancel does not
+    // restore the original selection … the refresh creates a body from all
+    // selected surfaces"). Loft/revolve/sweep have always snapshotted theirs.
+    profileIds: string[];
   } | null;
 }
 

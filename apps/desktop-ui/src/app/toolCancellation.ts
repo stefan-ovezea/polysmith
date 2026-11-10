@@ -149,15 +149,29 @@ async function cancelExtrudeTool(context: CancelActiveToolContext) {
   if (!extrudeAction) {
     return false;
   }
+  // Close the session FIRST, restore second.
+  //
+  // The restore below issues several commands, and every document-state event
+  // it produces re-runs the panel's selection sync (extrudeProfileSync →
+  // syncActiveProfileExtrude) while `extrudeAction` is still set. That sync
+  // compares the live `selected_sketch_profile_ids` against the ref it last sent
+  // and, when they differ — which they do as soon as the restore re-binds the
+  // feature to the snapshot's profiles — it calls `updateExtrudeProfiles` with
+  // the CURRENT selection, putting the user's edit straight back. Reported as
+  // "cancel during editing does not restore the initial body and acts as
+  // commit". With the action cleared first, the sync's `if (!extrudeAction)
+  // return` guard covers the whole restore.
+  context.setters.setExtrudeAction(null);
   try {
     if (extrudeAction.phase === "active" && extrudeAction.featureId) {
       await restoreOrUndoExtrude(context, extrudeAction);
     }
-  } finally {
-    // The panel must close even when the undo/restore path failed —
-    // a failed undo already left the document untouched, so closing
-    // the panel is the complete cancel in that case.
-    context.setters.setExtrudeAction(null);
+  } catch (error) {
+    // The panel is already closed; surface why the body did not come back
+    // instead of leaving it silently modified.
+    useCadCoreStore
+      .getState()
+      .addMessage(`extrude cancel failed: ${String(error)}`);
   }
   await context.restoreTimelineCursorAfterEdit();
   return true;
@@ -177,6 +191,16 @@ async function restoreOrUndoExtrude(
     return;
   }
   await context.runAction(async () => {
+    // Surfaces FIRST: every later update re-derives the geometry from the
+    // profile ids, so restoring the extent onto the edited selection would put
+    // the old depth on the wrong surfaces — and the body would stay as the
+    // edit left it ("cancel does not restore the original selection").
+    if (snapshot.profileIds.length > 0) {
+      await context.updateExtrudeProfiles(
+        extrudeAction.featureId!,
+        snapshot.profileIds,
+      );
+    }
     await context.updateExtrudeDepth(extrudeAction.featureId!, snapshot.depth);
     await context.updateExtrudeMode(extrudeAction.featureId!, snapshot.mode);
     await context.updateExtrudeTargetBody(

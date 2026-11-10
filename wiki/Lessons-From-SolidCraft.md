@@ -246,3 +246,54 @@ guard.
 - The viewport snapshot is rebuilt per document change (11 ms build). Is it
   built on a worker thread today, and does a stale revision ever reach the
   renderer?
+---
+
+## STEP import — how SolidCraft models it (studied 2026-11-10, not adopted)
+
+Read from its docs (`C:\\SRC\\solidcraft\\docs\\step-import.md`), the document
+model (`crates/doc/src/document.rs`, `Feature::Import`) and the import planner
+(`crates/engine/src/cmd/file_import.rs`).
+
+**They do:** one `Import` *base feature* on the timeline that **holds the STEP
+text itself** as the design's B-rep (so the design reopens without the file),
+and that feature builds **one body per solid** in the file:
+
+- every import becomes a **component named after the file** (`bracket.step` →
+  `bracket`), and the feature belongs to it, so imported bodies never land
+  loose among the design's own;
+- a STEP **assembly keeps its structure**: each product under the file's root
+  becomes a nested component named after the product, at the file's placement;
+- a part the file places **more than once becomes one component with an
+  occurrence per placement** — the feature builds the part once and `skip`s the
+  file's later copies (format 22, issue #1386), so repeats are instances, not
+  duplicated geometry;
+- bodies are named after the solid / product / instance (`names` option) and
+  keep their body and face colours; `up` ("stand it up") turns the import;
+- imported contents are **rigid** by default (assembly joints), released one by
+  one with "Unlock Contents"; one import is **one undo step**.
+
+**We do:** one `step_import` feature → **one body holding a compound of every
+solid** (`core/geometry/import_commands.cpp`); `solid_count` is parsed and put
+in the summary but never used to split. No components, no product tree, and
+because a body's id IS its feature id, a single solid cannot be addressed
+(no fillet on "the second solid", and `feature-N:face:M` may pick either lump).
+
+**Two ways to match it here:**
+
+1. *SolidCraft-shaped, for imports only* — keep one `step_import` feature
+   holding the B-rep once and let the compiler emit one body per solid with ids
+   `feature-12:solid-0`, `feature-12:solid-1`, … The `:face:` / `:edge:` owner
+   parsers strip at the **last** known separator, and `body_feature_id()` maps
+   back to the feature, so fillet / CAM / sketch-on-face keep working. Extrudes
+   and fillets keep the plain `feature-N` contract, so the blast radius is the
+   import path plus the owner-id parsers. Needs a multi-solid STEP fixture.
+2. *Reuse operation grouping* — one feature per solid stamped with the same
+   `operation_id` (one timeline row, N bodies). No body-id surgery, but a
+   902-solid file becomes 902 `FeatureEntry`s each carrying a serialized shape
+   snapshot — exactly the memory model SolidCraft's single-feature design
+   avoids.
+
+**Status: not adopted.** The reporter imported a backend PCB and got a very big
+component tree plus a timeline full of the same "rigid group" feature; the
+decision is to leave imports as they are for now and revisit after the extrude
+work. Do not implement 1 or 2 without that decision.

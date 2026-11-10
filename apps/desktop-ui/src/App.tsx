@@ -3133,6 +3133,7 @@ function App() {
       updateExtrudeMode,
       updateExtrudeTargetBody,
       updateExtrudeParameters,
+      updateExtrudeProfiles,
       updateLoftProfiles,
       updateLoftRuled,
       updateRevolveProfile,

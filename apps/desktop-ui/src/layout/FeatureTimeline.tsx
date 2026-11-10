@@ -320,11 +320,13 @@ export function FeatureTimeline({
                   }
                   className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-red-300 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:text-on-surface-dim disabled:hover:bg-transparent"
                   onClick={() => {
-                    const { featureIds } = contextMenu;
+                    // The core deletes an operation atomically, so one call is
+                    // enough; calling it per member would throw on the second
+                    // ("feature not found") because the first already removed
+                    // the whole operation.
+                    const id = contextMenu.featureId;
                     setContextMenu(null);
-                    for (const id of featureIds) {
-                      onDeleteFeature(id);
-                    }
+                    onDeleteFeature(id);
                   }}
                 >
                   {t("common.delete")}
