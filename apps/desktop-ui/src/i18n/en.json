@@ -1991,7 +1991,8 @@
     "planeYZ": "YZ plane",
     "redefinePlane": "Redefine sketch plane",
     "redefinePlaneArmed": "Click a face to use as the new sketch plane (Esc to cancel)",
-    "suppressed": "suppressed"
+    "suppressed": "suppressed",
+    "operationFeatures": "one operation, {{count}} bodies"
   },
   "aiAssistant": {
     "autoRunActive": "Auto-run enabled",

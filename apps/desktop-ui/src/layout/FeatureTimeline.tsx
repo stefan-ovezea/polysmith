@@ -3,6 +3,11 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { DocumentState } from "@/types";
 import { ContextMenuShell } from "./ContextMenuShell";
+import {
+  blockEndingAtFeatureCount,
+  featureCountBeforeBlock,
+  featureTimelineBlocks,
+} from "./featureTimelineBlocks";
 import { FeatureKindIcon } from "./header/ToolBarIcons";
 import { useContextMenuDismiss } from "./hooks/useContextMenuDismiss";
 
@@ -27,6 +32,10 @@ interface ContextMenuState {
   x: number;
   y: number;
   featureId: string;
+  // Every feature of the operation the menu was opened on. Edit/suppress/delete
+  // act on the whole operation: its rows are one gesture, and deleting half of
+  // an extrude would silently leave the remaining bodies behind.
+  featureIds: string[];
   featureName: string;
   kind: string;
   suppressed: boolean;
@@ -98,6 +107,11 @@ export function FeatureTimeline({
   const features = document.feature_history.filter(
     (feature) => feature.kind !== "root_part",
   );
+  // One commit can create several features (one body per disconnected surface).
+  // They share `operation_id`, and the timeline shows them as ONE block — the
+  // Fusion model — while each body keeps its own feature id for fillets, CAM
+  // references and `feature-N:face:M` sketch planes.
+  const blocks = featureTimelineBlocks(features);
   const cursorPosition = Math.min(
     Math.max(document.timeline_cursor ?? features.length, 0),
     features.length,
@@ -122,22 +136,27 @@ export function FeatureTimeline({
       setCursor(position);
     }
   };
-  const renderCursorSlot = (position: number) => (
+  // A cursor slot sits at an operation boundary and carries the number of
+  // FEATURES it includes (the core's `timeline_cursor` counts features), so an
+  // operation is atomic: you can roll back before or after it, never inside it.
+  const renderCursorSlot = (includedFeatureCount: number) => (
     <button
-      key={`cursor-${position}`}
+      key={`cursor-${includedFeatureCount}`}
       type="button"
       className={
         "cad-tooltip-trigger cad-timeline-cursor-slot" +
-        (cursorPosition === position ? " cad-timeline-cursor-slot-active" : "")
+        (cursorPosition === includedFeatureCount
+          ? " cad-timeline-cursor-slot-active"
+          : "")
       }
       data-tooltip={t("timeline.cursor")}
       aria-label={t("timeline.cursor")}
-      onClick={() => setCursor(position)}
+      onClick={() => setCursor(includedFeatureCount)}
       onPointerDown={(event) => {
         event.preventDefault();
-        beginCursorDrag(position);
+        beginCursorDrag(includedFeatureCount);
       }}
-      onPointerEnter={() => maybeDragTo(position)}
+      onPointerEnter={() => maybeDragTo(includedFeatureCount)}
     >
       <span className="cad-timeline-cursor-bar" aria-hidden="true" />
     </button>
@@ -152,11 +171,20 @@ export function FeatureTimeline({
   return (
     <div className="cad-timeline pointer-events-auto px-4 py-2.5">
       <div className="cad-scrollbar flex items-center overflow-x-auto pb-1">
-        {features.map((feature, index) => {
-          const active = feature.feature_id === document.selected_feature_id;
-          const suppressed = feature.suppressed === true;
-          const dependencyBroken = feature.dependency_broken === true;
-          const dependencyAmbiguous = feature.dependency_ambiguous === true;
+        {blocks.map((block, index) => {
+          const feature = block.primary;
+          const active = block.members.some(
+            (member) => member.feature_id === document.selected_feature_id,
+          );
+          const suppressed = block.members.every(
+            (member) => member.suppressed === true,
+          );
+          const dependencyBroken = block.members.some(
+            (member) => member.dependency_broken === true,
+          );
+          const dependencyAmbiguous = block.members.some(
+            (member) => member.dependency_ambiguous === true,
+          );
           // Tooltip carries both the human-readable name (e.g. "Box 2")
           // and the kind, plus a (suppressed) suffix so the user knows
           // why the feature is missing from the viewport. When a
@@ -169,6 +197,11 @@ export function FeatureTimeline({
               ? `${feature.name} (${feature.kind})`
               : feature.kind;
           let tooltip = baseTooltip;
+          if (block.members.length > 1) {
+            tooltip = `${tooltip} · ${t("timeline.operationFeatures", {
+              count: block.members.length,
+            })}`;
+          }
           if (suppressed) {
             tooltip = `${tooltip} - ${t("timeline.suppressed")}`;
           }
@@ -180,14 +213,14 @@ export function FeatureTimeline({
           }
           return (
             <Fragment key={feature.feature_id}>
-              {renderCursorSlot(index)}
+              {renderCursorSlot(featureCountBeforeBlock(blocks, index))}
               <button
                 type="button"
                 onClick={() => {
                   void onSelectFeature(feature.feature_id);
                 }}
                 onDoubleClick={() => {
-                  setCursor(index + 1);
+                  setCursor(featureCountBeforeBlock(blocks, index + 1));
                   onEditFeature?.(feature.feature_id);
                 }}
                 onPointerMove={(event) => {
@@ -197,8 +230,8 @@ export function FeatureTimeline({
                   const rect = event.currentTarget.getBoundingClientRect();
                   maybeDragTo(
                     event.clientX < rect.left + rect.width / 2
-                      ? index
-                      : index + 1,
+                      ? featureCountBeforeBlock(blocks, index)
+                      : featureCountBeforeBlock(blocks, index + 1),
                   );
                 }}
                 onContextMenu={(event) => {
@@ -208,6 +241,9 @@ export function FeatureTimeline({
                     x: event.clientX,
                     y: event.clientY,
                     featureId: feature.feature_id,
+                    featureIds: block.members.map(
+                      (member) => member.feature_id,
+                    ),
                     featureName: feature.name,
                     kind: feature.kind,
                     suppressed,
@@ -234,8 +270,7 @@ export function FeatureTimeline({
           );
         })}
         {renderCursorSlot(features.length)}
-      </div>
-      {contextMenu
+      </div>      {contextMenu
         ? createPortal(
             <ContextMenuShell x={contextMenu.x} y={contextMenu.y}>
               <button
@@ -244,11 +279,11 @@ export function FeatureTimeline({
                 className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:text-on-surface-dim disabled:hover:bg-transparent"
                 onClick={() => {
                   const id = contextMenu.featureId;
-                  const index = features.findIndex(
-                    (feature) => feature.feature_id === id,
+                  const blockIndex = blocks.findIndex(
+                    (block) => block.primary.feature_id === id,
                   );
-                  if (index >= 0) {
-                    setCursor(index + 1);
+                  if (blockIndex >= 0) {
+                    setCursor(featureCountBeforeBlock(blocks, blockIndex + 1));
                   }
                   setContextMenu(null);
                   onEditFeature?.(id);
@@ -262,9 +297,11 @@ export function FeatureTimeline({
                   disabled={!canSuppress}
                   className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-on-surface transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:text-on-surface-dim disabled:hover:bg-transparent"
                   onClick={() => {
-                    const { featureId, suppressed } = contextMenu;
+                    const { featureIds, suppressed } = contextMenu;
                     setContextMenu(null);
-                    onSuppressFeature(featureId, !suppressed);
+                    for (const id of featureIds) {
+                      onSuppressFeature(id, !suppressed);
+                    }
                   }}
                 >
                   {contextMenu.suppressed
@@ -283,9 +320,11 @@ export function FeatureTimeline({
                   }
                   className="flex w-full items-center rounded-lg px-3 py-1.5 text-left text-sm text-red-300 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:text-on-surface-dim disabled:hover:bg-transparent"
                   onClick={() => {
-                    const id = contextMenu.featureId;
+                    const { featureIds } = contextMenu;
                     setContextMenu(null);
-                    onDeleteFeature(id);
+                    for (const id of featureIds) {
+                      onDeleteFeature(id);
+                    }
                   }}
                 >
                   {t("common.delete")}

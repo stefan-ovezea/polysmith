@@ -625,6 +625,10 @@ export interface FeatureEntry {
   // Human-readable explanation of the uncertain re-bind.
   dependency_ambiguous_warning?: string;
   parameters_summary: string;
+  // Groups the features one user action created: a multi-surface extrude makes
+  // one body per disconnected group, and the timeline shows all of them as ONE
+  // operation block. Empty/absent means "standalone feature" (older saves).
+  operation_id?: string;
   box_parameters: BoxFeatureParameters | null;
   cylinder_parameters: CylinderFeatureParameters | null;
   extrude_parameters: ExtrudeFeatureParameters | null;

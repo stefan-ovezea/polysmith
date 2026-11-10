@@ -62,6 +62,8 @@ export const documentStateSchema = z.object({
       dependency_ambiguous: z.boolean().default(false),
       dependency_ambiguous_warning: z.string().default(""),
       parameters_summary: z.string(),
+      // One user action == one timeline block. Older files predate the field.
+      operation_id: z.string().default(""),
       box_parameters: z
         .object({
           width: z.number(),

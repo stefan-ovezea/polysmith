@@ -5,6 +5,10 @@ polysmith::core::FeatureEntry feature_entry_from_payload(const json& payload) {
   feature.name = read_string(payload, "name");
   feature.status = read_string(payload, "status");
   feature.parameters_summary = read_string(payload, "parameters_summary");
+  // Older saves predate operation grouping — an absent id means "standalone".
+  if (payload.contains("operation_id") && payload.at("operation_id").is_string()) {
+    feature.operation_id = payload.at("operation_id").get<std::string>();
+  }
   // Older `.polysmith` files predate the `suppressed` flag — treat
   // missing/non-bool fields as false so loading them is non-fatal.
   if (payload.contains("suppressed") && payload.at("suppressed").is_boolean()) {

@@ -460,7 +460,7 @@ bool refresh_extrude_profile_geometry(const DocumentState& document,
   profiles.reserve(profile_ids.size());
   for (const auto& profile_id : profile_ids) {
     const SketchProfileRegion* profile =
-        find_equivalent_profile(sketch_feature->sketch_parameters->profiles,
+        resolve_stored_profile(sketch_feature->sketch_parameters->profiles,
                                 profile_id);
     if (profile == nullptr) {
       return false;

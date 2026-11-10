@@ -325,6 +325,63 @@ bool test_cut_adjacent_compound_from_existing_body() {
                 "expected auto mode intersecting to target cut");
 }
 
+// One extrude gesture must read as ONE timeline operation even when it makes
+// several bodies. Fusion shows "1 extrude, 2 bodies"; before this, two
+// disconnected surfaces produced two unrelated-looking timeline blocks, and a
+// user re-picking surfaces repeatedly accumulated them (reported as "selected
+// multiple surfaces in one operation but when I commit created 5 extrusion
+// operation").
+bool test_one_commit_shares_one_operation_id() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(0.0, 0.0, 10.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_rectangle(30.0, 0.0, 40.0, 10.0);
+
+  const std::vector<std::string> ids = profile_ids(document);
+  if (!expect(ids.size() == 2, "fixture: two profiles")) {
+    return false;
+  }
+
+  document = manager.extrude_profiles(ids, 5.0, "new_body");
+  const FeatureEntry* first = nullptr;
+  const FeatureEntry* second_feature = nullptr;
+  for (const auto& feature : document.feature_history) {
+    if (feature.kind != "extrude") {
+      continue;
+    }
+    if (first == nullptr) {
+      first = &feature;
+    } else {
+      second_feature = &feature;
+    }
+  }
+  if (!expect(first != nullptr && second_feature != nullptr,
+              "fixture: two extrude features")) {
+    return false;
+  }
+  if (!expect(!first->operation_id.empty() &&
+                  first->operation_id == second_feature->operation_id,
+              "one commit: both features share one operation id")) {
+    return false;
+  }
+  if (!expect(first->operation_id == first->id,
+              "one commit: the first member's id names the operation")) {
+    return false;
+  }
+
+  // A second, separate gesture must NOT join the first operation.
+  manager.start_sketch_on_plane("ref-plane-xy");
+  document = manager.add_sketch_rectangle(60.0, 0.0, 70.0, 10.0);
+  document = manager.extrude_profiles(profile_ids(document), 5.0, "new_body");
+  const FeatureEntry& latest = document.feature_history.back();
+  return expect(latest.kind == "extrude" &&
+                    latest.operation_id == latest.id &&
+                    latest.operation_id != first->operation_id,
+                "second commit: a new operation id");
+}
+
 }  // namespace
 
 #define RUN_TEST(name)                                  \
@@ -347,6 +404,7 @@ int main() {
   RUN_TEST(test_new_body_touching_profiles_produces_one_body);
   RUN_TEST(test_join_adjacent_compound_into_existing_body);
   RUN_TEST(test_cut_adjacent_compound_from_existing_body);
+  RUN_TEST(test_one_commit_shares_one_operation_id);
 
   std::cout << "multi_profile_extrude_test passed\n";
   return 0;

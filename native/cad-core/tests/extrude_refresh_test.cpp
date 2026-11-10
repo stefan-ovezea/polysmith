@@ -17,6 +17,7 @@
 // fields that were lost, and the geometry one proves the body keeps its depth
 // (volume would otherwise drop by half).
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -358,6 +359,102 @@ bool test_rebinding_profiles_heals_a_broken_extrude() {
                 "after re-bind: a body compiles again");
 }
 
+// A sketch edit that REWRITES a region's id must not delete the body.
+//
+// Reported: "I extruded the main surface and then I edited the sketch again.
+// The extrude block disappeared. I think still exist but cannot be show because
+// I added additional circles on the initial sketch." A circle that crosses the
+// plate outline adds an arc to the region's boundary, and a polygon profile id
+// embeds its boundary entity ids — so the stored id stopped naming the region.
+// The refresh resolved nothing, flagged the feature "Source profile unavailable"
+// and the body compiler skips a `dependency_broken` feature, so the solid
+// vanished. It never came back: nothing rewrites a stale stored id by itself, so
+// the loss survived every later edit and a save/load.
+//
+// The stored id is a reference, not the geometry. The refresh now falls back to
+// the overlap resolution the creation path already uses, re-binds, and heals the
+// id (so the next refresh matches exactly again).
+bool test_an_outline_crossing_circle_keeps_the_extrude_body() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(0.0, 0.0, 100.0, 60.0);
+  DocumentState document = manager.add_sketch_circle(30.0, 30.0, 8.0);
+  document = manager.finish_sketch();
+
+  const FeatureEntry* sketch = find_sketch(document);
+  if (!expect(sketch != nullptr, "fixture: sketch resolved")) {
+    return false;
+  }
+  const std::string sketch_id = sketch->id;
+
+  // The plate: the polygon region bounded by the rectangle's four lines.
+  std::string plate_id;
+  for (const auto& profile : sketch->sketch_parameters->profiles) {
+    if (profile.kind == "polygon" && profile.line_ids.size() == 4) {
+      plate_id = profile.id;
+    }
+  }
+  if (!expect(!plate_id.empty(), "fixture: the plate region was detected")) {
+    return false;
+  }
+  document = manager.extrude_profiles({plate_id}, 5.0, "new_body");
+
+  const auto compiled_before = compile_bodies(document);
+  if (!expect(compiled_before.bodies.size() == 1,
+              "before edit: the plate extrusion compiles")) {
+    return false;
+  }
+
+  // The reported edit: a circle that crosses the outline, cutting its corner.
+  document = manager.reenter_sketch(sketch_id);
+  document = manager.add_sketch_circle(100.0, 60.0, 10.0);
+
+  const FeatureEntry* extrude = find_feature_of_kind(document, "extrude");
+  if (!expect(extrude != nullptr && extrude->extrude_parameters.has_value(),
+              "after edit: the extrude feature still exists")) {
+    return false;
+  }
+  if (!expect(!extrude->dependency_broken,
+              "after edit: the extrude is not flagged broken (regression: "
+              "\"Source profile unavailable\", body suppressed for good)")) {
+    return false;
+  }
+  if (!expect(extrude->status != "warning",
+              "after edit: the extrude is not degraded to warning")) {
+    return false;
+  }
+
+  const auto compiled_after = compile_bodies(document);
+  if (!expect(compiled_after.bodies.size() == 1,
+              "after edit: the extruded body is still there (regression: it "
+              "disappeared from the viewport)")) {
+    return false;
+  }
+
+  Bnd_Box box;
+  BRepBndLib::Add(compiled_after.bodies.front().shape, box);
+  double xmin = 0.0, ymin = 0.0, zmin = 0.0, xmax = 0.0, ymax = 0.0, zmax = 0.0;
+  box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+  // 0.15 mm, not 0.05: the region now carries a trimmed arc and OCCT reports
+  // the shape's face tolerance in the bounding box (measured ±0.048 on every
+  // axis). A depth regression would be whole millimetres, not tenths.
+  if (!expect(std::abs((zmax - zmin) - 5.0) < 0.15,
+              "after edit: the body keeps its 5 mm depth")) {
+    std::cerr << "  bbox=" << xmin << "," << ymin << "," << zmin << " .. "
+              << xmax << "," << ymax << "," << zmax << "\n";
+    return false;
+  }
+
+  // The refresh must have re-bound the feature to the region's CURRENT id, so a
+  // second edit matches exactly instead of relying on the overlap fallback.
+  const std::vector<std::string> live_ids = profile_ids_of(document);
+  const std::string stored_id = extrude->extrude_parameters->profile_id;
+  return expect(std::find(live_ids.begin(), live_ids.end(), stored_id) !=
+                    live_ids.end(),
+                "after edit: the stored profile id was healed to the live one");
+}
+
 }  // namespace
 
 int main() {
@@ -365,6 +462,7 @@ int main() {
   if (!test_body_keeps_its_depth_after_a_sketch_edit()) return 1;
   if (!test_update_tolerates_stripped_profile_geometry()) return 1;
   if (!test_rebinding_profiles_heals_a_broken_extrude()) return 1;
+  if (!test_an_outline_crossing_circle_keeps_the_extrude_body()) return 1;
   std::cout << "extrude_refresh_test passed\n";
   return 0;
 }

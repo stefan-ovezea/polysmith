@@ -29,7 +29,7 @@ void refresh_linked_extrude_features(DocumentState &document,
     std::vector<std::string> missing_profile_ids;
     for (const auto &profile_id : source_profile_ids) {
       const SketchProfileRegion *profile =
-          find_equivalent_profile(sketch.profiles, profile_id);
+          resolve_stored_profile(sketch.profiles, profile_id);
       if (profile == nullptr) {
         missing_profile_ids.push_back(profile_id);
         continue;

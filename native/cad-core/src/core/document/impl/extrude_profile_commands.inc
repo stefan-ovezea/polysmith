@@ -109,9 +109,25 @@ DocumentState DocumentManager::extrude_profiles(
 
   push_undo_state();
   clear_redo_stack();
+  const size_t first_new_feature = document_->feature_history.size();
   for (const auto& extrude_parameters : extrude_parameter_groups) {
     document_->feature_history.push_back(
         create_extrude_feature(next_feature_id_++, extrude_parameters));
+  }
+  // One gesture, one timeline operation. A multi-surface extrude makes one
+  // feature (and therefore one body) per disconnected group, which used to
+  // read as N unrelated operations the user could not connect to the single
+  // Extrude they performed. Stamping them with a shared id lets the timeline
+  // show ONE block — "Extrude · ×4" — while each body keeps its own feature
+  // (and so its own fillet/CAM/face targets). The first member's id names the
+  // group: no extra counter, and deleting a member leaves the rest grouped.
+  if (document_->feature_history.size() > first_new_feature) {
+    const std::string operation_id =
+        document_->feature_history[first_new_feature].id;
+    for (size_t i = first_new_feature; i < document_->feature_history.size();
+         ++i) {
+      document_->feature_history[i].operation_id = operation_id;
+    }
   }
   document_->selected_feature_id = document_->feature_history.back().id;
   document_->selected_reference_id = std::nullopt;
