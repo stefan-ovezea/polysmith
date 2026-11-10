@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -627,6 +628,88 @@ bool test_a_two_arc_hole_is_cut_out_of_the_cap() {
   return true;
 }
 
+// A new feature must not land BEYOND a rolled-back timeline cursor: the
+// compiler stops at the cursor, so the feature shows in the timeline, reports
+// healthy, and produces no body — and the cursor never recovers, because every
+// later edit session records "the cursor is set" and leaves it alone. Measured
+// on the reporter's file: cursor 2, three features, the third body missing
+// ("the small circle body is not visible", "very erratic").
+bool test_a_new_feature_is_not_hidden_by_the_timeline_cursor() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(0.0, 0.0, 10.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_rectangle(30.0, 0.0, 40.0, 10.0);
+  document = manager.extrude_profiles(profile_ids(document), 5.0, "new_body");
+  if (!expect(compile_bodies(document).bodies.size() == 2,
+              "fixture: two bodies before the roll-back")) {
+    return false;
+  }
+
+  // Roll the history back to the sketch, as the timeline's edit-in-context does.
+  // `build_viewport_state` renders `document_at_timeline_cursor`, so everything
+  // beyond the cursor is not drawn — that is what made the new body invisible
+  // while its feature sat, healthy, in the timeline.
+  document = manager.set_timeline_cursor(1);
+  if (!expect(document.timeline_cursor.has_value(),
+              "fixture: the history is rolled back")) {
+    return false;
+  }
+
+  document = manager.extrude_profiles(profile_ids(document), 5.0, "new_body");
+  if (!expect(!document.timeline_cursor.has_value(),
+              "a created feature moves the marker to the end, so the viewport "
+              "draws it (regression: healthy feature, no body, nothing in the "
+              "Logs panel)")) {
+    return false;
+  }
+  // The UI asks for "the end of history" with a sentinel, because a count read
+  // from its store can lag the core by one feature right after an edit that
+  // created one. The clamp is the contract it relies on.
+  document = manager.set_timeline_cursor(1);
+  document = manager.set_timeline_cursor(2147483647);
+  if (!expect(!document.timeline_cursor.has_value(),
+              "a sentinel count means the end, whatever the history holds")) {
+    return false;
+  }
+  return expect(compile_bodies(document).bodies.size() == 4,
+                "every body compiles");
+}
+
+// The timeline cursor is a view state and must not survive a save: a file that
+// carries one opens with fewer bodies than the hierarchy lists, and the marker
+// looks stuck (reported: "loading the saved file shows 2 bodies in the hierarchy
+// but only one visible … clicking near the extrude makes the body show up").
+bool test_the_timeline_cursor_does_not_survive_a_save() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(0.0, 0.0, 10.0, 10.0);
+  DocumentState document =
+      manager.add_sketch_rectangle(30.0, 0.0, 40.0, 10.0);
+  document = manager.extrude_profiles(profile_ids(document), 5.0, "new_body");
+  document = manager.set_timeline_cursor(1);
+  if (!expect(document.timeline_cursor.has_value(),
+              "fixture: the history is rolled back")) {
+    return false;
+  }
+
+  const std::filesystem::path path =
+      std::filesystem::temp_directory_path() / "polysmith_cursor_save.polysmith";
+  manager.save_document_to_path(path.string());
+
+  DocumentManager reopened;
+  const DocumentState loaded = reopened.load_document_from_path(path.string());
+  std::filesystem::remove(path);
+  if (!expect(!loaded.timeline_cursor.has_value(),
+              "a loaded document is not left rolled back")) {
+    return false;
+  }
+  return expect(compile_bodies(loaded).bodies.size() == 2,
+                "both bodies are present after a reload");
+}
+
 }  // namespace
 
 #define RUN_TEST(name)                                  \
@@ -654,6 +737,8 @@ int main() {
   RUN_TEST(test_live_rebind_splits_like_creation);
   RUN_TEST(test_a_self_touching_hole_is_refused);
   RUN_TEST(test_a_two_arc_hole_is_cut_out_of_the_cap);
+  RUN_TEST(test_a_new_feature_is_not_hidden_by_the_timeline_cursor);
+  RUN_TEST(test_the_timeline_cursor_does_not_survive_a_save);
 
   std::cout << "multi_profile_extrude_test passed\n";
   return 0;

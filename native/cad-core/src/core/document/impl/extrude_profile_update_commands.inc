@@ -154,6 +154,11 @@ DocumentState DocumentManager::update_extrude_profiles(
         create_extrude_feature(next_feature_id_++, group_parameters[group_index]);
     created.operation_id = operation_id;
     document_->feature_history.push_back(std::move(created));
+    // The new body sits beyond a rolled-back cursor: compile_bodies stops
+    // there, so it would exist in the timeline and produce nothing. The panel
+    // that re-binds runs *inside* an edit session, which is exactly when the
+    // cursor is set (same defect as the creation path above).
+    document_->timeline_cursor = std::nullopt;
   }
 
   // Fewer groups than before: drop the members that no longer carry a group.

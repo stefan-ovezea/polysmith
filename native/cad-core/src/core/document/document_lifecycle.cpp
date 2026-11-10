@@ -1158,8 +1158,17 @@ void DocumentManager::save_document_to_path(const std::string& file_path) const 
   if (file_path.empty()) {
     throw std::runtime_error("Save path cannot be empty");
   }
-  const nlohmann::json document =
-      polysmith::protocol::to_payload(document_.value(), /*include_opaque=*/true);
+  // The timeline cursor is a VIEW state: it says how much of the history the
+  // viewport draws. Persisting it baked a rolled-back scrub into the file, and
+  // every load then showed fewer bodies than the hierarchy listed, with the
+  // timeline apparently stuck — nothing moves the marker unless the user drags
+  // it (reported: "loading the saved file shows 2 bodies in the hierarchy but
+  // only one visible … clicking near the extrude makes the body show up").
+  // A save stores the full history; the in-memory cursor is left alone.
+  DocumentState saved = document_.value();
+  saved.timeline_cursor = std::nullopt;
+  const nlohmann::json document = polysmith::protocol::to_payload(
+      saved, /*include_opaque=*/true, /*include_all_sketch_vertices=*/true);
   const nlohmann::json payload = {
       {"format", "polysmith/1"},
       {"document", document},
@@ -1212,6 +1221,11 @@ DocumentState DocumentManager::load_document_from_path(
   // churned) then still compiles its bodies instead of failing with an
   // empty-profile extrude. Regression: cad_core_spline_test's save/load leg
   // (S0) failed here for a spline-bounded profile.
+  // Files written before the timeline cursor stopped being persisted carry one,
+  // and it hid every feature past it: the hierarchy listed them, the viewport
+  // did not, and only dragging the marker revealed them. Treat it as what it is
+  // — a view state, not document content — so an old file opens whole.
+  loaded.timeline_cursor = std::nullopt;
   polysmith::core::refresh_linked_features_after_load(loaded);
   if (loaded.selected_sketch_profile_id.has_value() ||
       !loaded.selected_sketch_profile_ids.empty()) {

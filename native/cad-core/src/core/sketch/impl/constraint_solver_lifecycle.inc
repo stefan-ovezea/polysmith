@@ -92,8 +92,10 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
         }
     }
 
-    // Update circle center vertices, then sync cached coords.
-    size_t radius_base = params.vertices.size() * 2;
+    // Update circle center vertices, then sync cached coords.  The radius comes
+    // from the slot recorded when the circle was registered, never from
+    // arithmetic over the vertex block (that drifted whenever a circle fell back
+    // to an anonymous centre).
     for (size_t i = 0; i < params.circles.size(); ++i) {
         auto& sc = params.circles[i];
         std::string center_point_id = circle_center_vertex_id(sc);
@@ -104,7 +106,9 @@ void ConstraintSolver::apply(SketchFeatureParameters& params) const {
             sc.center_x = params.vertices[cit->second].x;
             sc.center_y = params.vertices[cit->second].y;
         }
-        sc.radius = param_storage_[radius_base + i];
+        if (i < circle_radius_idx_.size()) {
+            sc.radius = param_storage_[circle_radius_idx_[i]];
+        }
     }
 
     // Update user arcs: vertex coordinates (center/start/end), then the

@@ -702,6 +702,30 @@ double signed_wire_area(const TopoDS_Wire& wire) {
   return 0.5 * area;
 }
 
+// Shoelace area of a sampled profile loop (walk order). Magnitude is what the
+// hole-orientation decision uses; the sign is only meaningful for a loop of
+// lines.
+double loop_shoelace(const std::vector<SketchProfilePoint>& loop) {
+  double area = 0.0;
+  for (size_t index = 0; index < loop.size(); ++index) {
+    const auto& a = loop[index];
+    const auto& b = loop[(index + 1) % loop.size()];
+    area += a.x * b.y - b.x * a.y;
+  }
+  return 0.5 * area;
+}
+
+// Area of a planar face. Used only to compare the two candidate windings of a
+// hole, so the absolute value is all that matters.
+double face_area(const TopoDS_Face& face) {
+  if (face.IsNull()) {
+    return 0.0;
+  }
+  GProp_GProps properties;
+  BRepGProp::SurfaceProperties(face, properties);
+  return properties.Mass();
+}
+
 TopoDS_Shape make_wire_extrude_shape(
     const ExtrudeFeatureParameters& parameters) {
   const TopoDS_Wire wire = make_sketch_wire(parameters);
@@ -710,30 +734,22 @@ TopoDS_Shape make_wire_extrude_shape(
   if (!face_maker.IsDone()) {
     throw std::runtime_error("Failed to build face from sketch wire");
   }
+  TopoDS_Face current_face = face_maker.Face();
 
   // Inner loops (holes).  Use make_profile_wire which auto-detects
   // circular loops and builds a proper gp_Circ wire — avoiding the
-  // faceted look of a polygon-approximated hole.  A hole wire must be
-  // oriented OPPOSITE to the FACE's actual normal (a same-orientation
-  // wire becomes an island).  The face's normal depends on how the
-  // outer wire was built (a single gp_Circ edge produces +Z while the
-  // multi-edge line/arc wire produces -Z), so measure the face normal
-  // and compare the hole's world signed area against it.  Note that
-  // TopoDS_Shape::Reverse() mutates the shape in place in this OCCT
-  // build.
-  double face_normal_z = 0.0;
-  {
-    const TopoDS_Face diag_face = face_maker.Face();
-    if (!diag_face.IsNull()) {
-      const Handle(Geom_Surface) surf = BRep_Tool::Surface(diag_face);
-      if (!surf.IsNull() && surf->IsKind(STANDARD_TYPE(Geom_Plane))) {
-        const Handle(Geom_Plane) plane = Handle(Geom_Plane)::DownCast(surf);
-        gp_Dir n = plane->Axis().Direction();
-        if (diag_face.Orientation() == TopAbs_REVERSED) n.Reverse();
-        face_normal_z = n.Z();
-      }
-    }
-  }
+  // faceted look of a polygon-approximated hole.  A hole wire must wind
+  // OPPOSITE to the outer wire (a same-orientation wire becomes an island and
+  // the hole disappears).
+  //
+  // Decide it RELATIVELY: sample both wires with the SAME function and compare
+  // signs. Three earlier attempts each had a failure mode at a different
+  // profile — the walk's chord shoelace is meaningless for a loop of arcs, the
+  // sampled loop's shoelace disagreed with the wire for a full circle touching
+  // lines, and `signed_wire_area` alone can carry a sign convention of its own.
+  // Comparing outer against hole through one sampler cancels that convention
+  // out, which is all this decision needs. Note that TopoDS_Shape::Reverse()
+  // mutates the shape in place in this OCCT build.
   const PlaneFrame frame = resolve_sketch_plane_frame(parameters);
   for (size_t hole_index = 0; hole_index < parameters.inner_loops.size();
        ++hole_index) {
@@ -752,35 +768,38 @@ TopoDS_Shape make_wire_extrude_shape(
       } else {
         hole_wire = make_profile_wire(parameters, loop);
       }
-      // Orientation decision from the SAMPLED loop's shoelace.
+      // Which winding CUTS the hole? Build the face both ways and keep the one
+      // whose area drops by the hole's own area.
       //
-      // This used to sum the walk edges' chords. That is exact for a loop of
-      // lines and meaningless for a loop of ARCS: a hole formed by two
-      // overlapping circles is two arcs, i.e. two chords, whose shoelace is an
-      // arbitrary surrogate for the loop's winding — and when it came out the
-      // wrong way the wire was added as an ISLAND instead of a hole. The face
-      // then meshed as the hole alone: the committed body rendered as four bare
-      // walls plus two cylinders, exactly the reported "the rectangle is
-      // extruded only a thin wall" while the preview (drawn from the profile,
-      // not from the tessellation) looked right.
-      //
-      // `loop` is the same walk sampled along each curve, so its winding equals
-      // the wire's. `signed_wire_area` stays as the fallback for a loop with no
-      // usable samples.
-      double hole_orientation_area = 0.0;
-      for (size_t point_index = 0; point_index < loop.size(); ++point_index) {
-        const auto& a = loop[point_index];
-        const auto& b = loop[(point_index + 1) % loop.size()];
-        hole_orientation_area += a.x * b.y - b.x * a.y;
+      // Every sign-based rule is wrong for some profile: the walk's chord
+      // shoelace is meaningless for a loop of arcs (two chords), the sampled
+      // loop's shoelace disagrees with the wire for a full circle touching lines
+      // (a single gp_Circ edge ignores the walk's direction), and the adaptor's
+      // area carries a convention of its own. The AREA is a magnitude and cannot
+      // mislead: a correct hole takes the hole's area out of the face, an island
+      // leaves it (or adds it).
+      const double hole_area_est = std::max(
+          std::abs(loop_shoelace(loop)), std::abs(signed_wire_area(hole_wire)));
+      const double area_before = std::abs(face_area(current_face));
+      TopoDS_Face best_face;
+      double best_error = std::numeric_limits<double>::max();
+      for (int attempt = 0; attempt < 2; ++attempt) {
+        TopoDS_Wire candidate = hole_wire;
+        if (attempt == 1) candidate.Reverse();
+        BRepBuilderAPI_MakeFace trial(current_face);
+        trial.Add(candidate);
+        if (!trial.IsDone()) continue;
+        const double error =
+            std::abs(std::abs(face_area(trial.Face())) -
+                     (area_before - hole_area_est));
+        if (error < best_error) {
+          best_error = error;
+          best_face = trial.Face();
+        }
       }
-      hole_orientation_area *= 0.5;
-      if (std::abs(hole_orientation_area) < 1e-12) {
-        hole_orientation_area = signed_wire_area(hole_wire);
+      if (!best_face.IsNull()) {
+        current_face = best_face;
       }
-      if (hole_orientation_area * face_normal_z > 0.0) {
-        hole_wire.Reverse();
-      }
-      face_maker.Add(hole_wire);
     } catch (const std::exception&) {
       // Skip this hole — a bad inner loop shouldn't kill the whole face.
     }
@@ -788,7 +807,7 @@ TopoDS_Shape make_wire_extrude_shape(
   const gp_Vec direction =
       extrusion_vector(parameters, parameters.depth);
   const TopoDS_Shape prism = BRepPrimAPI_MakePrism(
-      face_maker.Face(), direction).Shape();
+      current_face, direction).Shape();
   if (prism.IsNull()) {
     throw std::runtime_error("Failed to extrude sketch wire face");
   }

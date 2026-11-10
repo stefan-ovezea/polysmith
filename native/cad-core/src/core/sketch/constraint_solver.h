@@ -101,7 +101,15 @@ private:
         size_t start_angle_idx;
         size_t end_angle_idx;
     };
-    std::vector<ArcParamMapping> arc_param_idx_;
+    // One entry per params.circles, in the same order: the param_storage_ slot
+  // holding that circle's radius. `apply()` used to compute it as
+  // `vertices.size() * 2 + index`, which assumed the radii are contiguous — but
+  // the build pushes an anonymous centre (two parameters) for a circle whose
+  // centre vertex is not in the point table, shifting every later radius by two
+  // so the last circle read a vertex coordinate as its radius.
+  std::vector<size_t> circle_radius_idx_;
+
+  std::vector<ArcParamMapping> arc_param_idx_;
 
     // Maps sketch entity IDs to GCS geometry indices.
     std::map<std::string, size_t> point_id_to_index_;

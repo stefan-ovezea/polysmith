@@ -121,6 +121,15 @@ DocumentState DocumentManager::extrude_profiles(
          ++i) {
       document_->feature_history[i].operation_id = operation_id;
     }
+    // New geometry must be visible. Creation appends at the END of the history,
+    // so with the timeline rolled back the new feature sits BEYOND
+    // `timeline_cursor`; compile_bodies stops at the cursor, so the feature
+    // shows in the timeline, reports healthy, and produces no body at all —
+    // and the cursor never recovers, because every later edit session records
+    // "the cursor is set" and leaves it alone. Measured on the reporter's file:
+    // cursor 2, three features, the third body missing. The marker moves to the
+    // end, as Fusion's does when a feature is created while rolled back.
+    document_->timeline_cursor = std::nullopt;
   }
   document_->selected_feature_id = document_->feature_history.back().id;
   document_->selected_reference_id = std::nullopt;

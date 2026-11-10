@@ -11,6 +11,8 @@
 
 #include "core/diagnostics/logger.h"
 
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>

@@ -468,6 +468,8 @@ target_link_libraries(cad_core_sketch_profile_test PRIVATE
 
 polysmith_add_core_test(cad_core_multi_profile_extrude_test tests/multi_profile_extrude_test.cpp)
 
+polysmith_add_core_test(cad_core_solver_radius_mapping_test tests/solver_radius_mapping_test.cpp)
+
 polysmith_add_core_test(cad_core_cam_face_reference_test tests/cam_face_reference_test.cpp)
 
 polysmith_add_core_test(cad_core_cam_save_load_test tests/cam_save_load_test.cpp)

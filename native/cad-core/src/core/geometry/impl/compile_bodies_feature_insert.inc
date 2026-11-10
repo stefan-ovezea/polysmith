@@ -1,13 +1,49 @@
     // A feature that cannot produce geometry must not abort the whole scene:
     // warned-but-invalid parameters (a sketch edit left a degenerate profile)
-    // throw out of the shape builders. Skipping keeps every other body alive.
+    // throw out of the shape builders. Skipping keeps every other body alive —
+    // but say so, and say WHY: a silently skipped feature is indistinguishable
+    // from a missing body, which is how "the extrude did nothing" used to
+    // present (a healthy feature in the timeline, no body, nothing in the Logs
+    // panel).
     TopoDS_Shape shape;
     try {
       shape = build_feature_shape(feature);
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
+      polysmith::core::log_warn(
+          "body_compile", "feature " + feature.id + " (" + feature.kind +
+                              ") produced no body: " + error.what());
       continue;
     }
     if (shape.IsNull()) {
+      // Only a feature that is SUPPOSED to produce a body is worth a line:
+      // sketches, the root and construction geometry are null by definition, and
+      // logging them made the panel print two lines per viewport rebuild.
+      const std::string& kind = feature.kind;
+      const bool expects_body =
+          kind == "extrude" || kind == "box" || kind == "cylinder" ||
+          kind == "polygon_extrude" || kind == "loft" || kind == "revolve" ||
+          kind == "sweep" || kind == "fastener" || kind == "body_copy" ||
+          kind == "mesh_import" || kind == "mesh_to_body" ||
+          kind == "step_import" || kind == "iges_import" ||
+          kind == "plugin";
+      if (!expects_body) {
+        continue;
+      }
+      // A boolean-mode extrude (cut / join / intersect) has no body of its own by
+      // design — it is consumed into its target — so producing nothing is only
+      // normal and needs no line at all. A feature that should have produced a
+      // standalone body and did not is a body the user silently loses, which is a
+      // warning with the mode and status attached.
+      const bool boolean_extrude =
+          kind == "extrude" && feature.extrude_parameters.has_value() &&
+          feature.extrude_parameters->mode != "new_body";
+      if (boolean_extrude) {
+        continue;
+      }
+      polysmith::core::log_warn(
+          "body_compile", "feature " + feature.id + " (" + kind +
+                              ", status " + feature.status +
+                              ") built no body: its shape is empty");
       continue;
     }
 
