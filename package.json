@@ -21,7 +21,7 @@
     "registry": "node scripts/command-registry.mjs",
     "registry:write": "node scripts/command-registry.mjs --write wiki/Command-Reference.generated.md",
     "test:ai": "pnpm --filter desktop-ui exec vitest run src/lib/ai/aiSketchGeneration.integration.test.ts src/lib/ai/cadCoreHarness.smoke.test.ts",
-    "test:ui": "pnpm --filter desktop-ui exec vitest run src/layout/viewport/dimensionValueDisplay.test.ts src/layout/viewport/dimensionEditorInput.test.ts src/layout/viewport/angleDimensionIpc.integration.test.ts src/layout/viewport/arcSweep.test.ts src/layout/viewport/endpointDragAnchors.test.ts src/layout/viewport/atomicCommitSync.test.ts src/layout/viewport/endpointDragConstraintDeltas.test.ts src/app/extrudeCreationState.test.ts src/layout/featureTimelineBlocks.test.ts src/app/toolCancellation.test.ts",
+    "test:ui": "pnpm --filter desktop-ui exec vitest run src/layout/viewport/dimensionValueDisplay.test.ts src/layout/viewport/dimensionEditorInput.test.ts src/layout/viewport/angleDimensionIpc.integration.test.ts src/layout/viewport/arcSweep.test.ts src/layout/viewport/endpointDragAnchors.test.ts src/layout/viewport/atomicCommitSync.test.ts src/layout/viewport/endpointDragConstraintDeltas.test.ts src/app/extrudeCreationState.test.ts src/layout/featureTimelineBlocks.test.ts src/app/toolCancellation.test.ts src/app/timelineCursorEnd.test.ts",
     "test": "pnpm test:core",
     "deps:sync": "node scripts/deps-sync.mjs",
     "occt:configure": "node scripts/configure-occt.mjs",
