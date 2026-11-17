@@ -116,6 +116,16 @@ both flat — theirs is simply lighter because it renders black bodies grey.
    but a cut extrude does not make a hole — reported on this file, and
    SolidCraft reportedly fails the same case. Needs its own investigation;
    it is a modelling bug, not a rendering one.
+6. **Face selection for sketch-on-face on imported bodies.** Reported: the main
+   board's faces can be picked, other geometries cannot. Measured from the
+   payload, every one of the 24,373 imported faces *does* ship pick triangles
+   (none empty), and 17,660 of them are `planar`, so this is not a missing-proxy
+   or a planarity problem. The next step is a click diagnostic: log which proxy
+   the ray hits (or the nearest one and its distance) when a pick resolves to
+   nothing, so the failing case names itself instead of being inferred. Likely
+   candidates, in order: the proxy being too small to hit at the current zoom,
+   the pick pass ordering a body mesh before its proxies, or the face being
+   rejected later by the sketch-on-face gate rather than at pick time.
 6. **Perspective camera.** SolidCraft's previews are perspective, ours
    orthographic; that is why text shears in a 3/4 view. Orbit, zoom-to-cursor
    and sketch framing all assume ortho, so this is real work and last.
