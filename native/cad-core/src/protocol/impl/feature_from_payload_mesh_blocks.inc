@@ -40,6 +40,21 @@
     if (mp.contains("face_count") && mp.at("face_count").is_number()) {
       params.face_count = mp.at("face_count").get<int>();
     }
+    // Display colours read from the file's presentation styles (packed
+    // 0xFFRRGGBB, one per face). Absent in saves written before they were
+    // captured — those bodies simply keep the default body colour.
+    if (mp.contains("face_colors") && mp.at("face_colors").is_array()) {
+      const json& colors = mp.at("face_colors");
+      params.face_colors.reserve(colors.size());
+      for (const json& entry : colors) {
+        if (!entry.is_number_unsigned() && !entry.is_number_integer()) {
+          params.face_colors.clear();
+          break;
+        }
+        params.face_colors.push_back(
+            static_cast<std::uint32_t>(entry.get<std::int64_t>()));
+      }
+    }
     feature.step_import_parameters = params;
   }
 

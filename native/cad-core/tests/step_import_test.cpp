@@ -37,8 +37,17 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <IFSelect_ReturnStatus.hxx>
+#include <Quantity_Color.hxx>
+#include <STEPCAFControl_Writer.hxx>
 #include <STEPControl_StepModelType.hxx>
 #include <STEPControl_Writer.hxx>
+#include <TDF_Label.hxx>
+#include <TDocStd_Document.hxx>
+#include <XCAFApp_Application.hxx>
+#include <XCAFDoc_ColorTool.hxx>
+#include <XCAFDoc_ColorType.hxx>
+#include <XCAFDoc_DocumentTool.hxx>
+#include <XCAFDoc_ShapeTool.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
@@ -50,6 +59,7 @@
 #include "core/export/export.h"
 #include "core/geometry/body_compiler.h"
 #include "core/geometry/import_runtime.h"
+#include "core/geometry/step_import_helpers.h"
 #include "core/viewport/viewport.h"
 #include "protocol/serialization.h"
 
@@ -391,6 +401,37 @@ std::string make_inch_box_step() {
   return os.str();
 }
 
+// A STEP file that carries a presentation style: a red box written through
+// the XCAF writer, which is how real exporters attach colours (a PCB's
+// soldermask, pad plating and white silkscreen). The plain
+// STEPControl_Writer used by the other fixtures writes geometry only, so
+// this fixture is what makes the colour path testable at all.
+std::string write_colored_box_step(const std::string& name) {
+  const std::string path = temp_step_path(name);
+  occ::handle<TDocStd_Document> document;
+  const occ::handle<XCAFApp_Application> application =
+      XCAFApp_Application::GetApplication();
+  if (application.IsNull()) {
+    return path;
+  }
+  application->NewDocument("MDTV-XCAF", document);
+  const occ::handle<XCAFDoc_ShapeTool> shape_tool =
+      XCAFDoc_DocumentTool::ShapeTool(document->Main());
+  const occ::handle<XCAFDoc_ColorTool> color_tool =
+      XCAFDoc_DocumentTool::ColorTool(document->Main());
+  const TDF_Label shape_label = shape_tool->AddShape(
+      BRepPrimAPI_MakeBox(gp_Pnt(0.0, 0.0, 0.0), 10.0, 10.0, 10.0).Shape());
+  // Red surface style, the type the reader looks for first.
+  color_tool->SetColor(shape_label, Quantity_Color(Quantity_NOC_RED),
+                       XCAFDoc_ColorSurf);
+
+  STEPCAFControl_Writer writer;
+  writer.SetColorMode(true);
+  writer.Transfer(document);
+  writer.Write(path.c_str());
+  return path;
+}
+
 // --- tests -------------------------------------------------------------
 
 bool test_box_import_creates_body() {
@@ -633,6 +674,101 @@ bool test_serialization_round_trip() {
       "payloads must keep it");
 }
 
+// The file's own presentation colours are read at import, persisted with the
+// B-rep snapshot, and applied to the viewport faces — the difference between
+// an imported board showing its silkscreen and component colours and the same
+// board rendering as one flat body colour. Precedent 2026-11-17: a STEP PCB
+// carrier lost 15 colours (63 % of its 24 375 faces) and every marking with
+// it, because the importer used the geometry-only STEP reader.
+bool test_import_reads_face_colors_and_persists_them() {
+  const std::string path = write_colored_box_step("colored_box");
+
+  const polysmith::core::StepImportResult parsed =
+      polysmith::core::read_step_file(path);
+  if (!expect(!parsed.face_colors.empty(),
+              "colours: the file's presentation style is read")) {
+    return false;
+  }
+  if (!expect(parsed.face_colors.size() ==
+                  static_cast<std::size_t>(parsed.face_count),
+              "colours: one entry per face, indexed like the face ids")) {
+    return false;
+  }
+  // Red = 0xFFFF0000 and the high byte marks "styled" so pure black stays
+  // distinguishable from "no style".
+  bool all_red = true;
+  for (const std::uint32_t packed : parsed.face_colors) {
+    if (packed != 0xFFFF0000u) {
+      all_red = false;
+      break;
+    }
+  }
+  if (!expect(all_red, "colours: every face carries the file's red")) {
+    return false;
+  }
+
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.import_step(path);
+  if (!expect(!document.feature_history.back()
+                   .step_import_parameters->face_colors.empty(),
+              "colours: import stores them with the feature")) {
+    return false;
+  }
+
+  // The viewport is what the user sees: each face must come out styled.
+  const auto viewport = polysmith::core::build_viewport_state(document);
+  if (!expect(!viewport.solid_faces.empty(),
+              "colours: viewport emits the imported faces")) {
+    return false;
+  }
+  bool every_face_styled = true;
+  for (const auto& face : viewport.solid_faces) {
+    if (!face.appearance_color.has_value() ||
+        face.appearance_color.value() != "#FF0000") {
+      every_face_styled = false;
+      break;
+    }
+  }
+  if (!expect(every_face_styled,
+              "colours: every viewport face takes the imported colour")) {
+    return false;
+  }
+
+  // Saving and reloading must keep them: the B-rep snapshot is geometry
+  // only, so a save that drops the colour table silently undoes the import.
+  const auto file_path = std::filesystem::temp_directory_path() /
+                         "polysmith_step_face_colors_test.polysmith";
+  manager.save_document_to_path(file_path.string());
+
+  DocumentManager loaded_manager;
+  loaded_manager.create_document();
+  const DocumentState loaded =
+      loaded_manager.load_document_from_path(file_path.string());
+  const auto step_it = std::find_if(
+      loaded.feature_history.begin(), loaded.feature_history.end(),
+      [](const auto& feature) { return feature.kind == "step_import"; });
+  if (!expect(step_it != loaded.feature_history.end() &&
+                  step_it->step_import_parameters.has_value() &&
+                  step_it->step_import_parameters->face_colors ==
+                      parsed.face_colors,
+              "colours: the colour table survives save + load")) {
+    return false;
+  }
+  const auto reloaded_viewport =
+      polysmith::core::build_viewport_state(loaded);
+  bool reloaded_styled = !reloaded_viewport.solid_faces.empty();
+  for (const auto& face : reloaded_viewport.solid_faces) {
+    if (!face.appearance_color.has_value() ||
+        face.appearance_color.value() != "#FF0000") {
+      reloaded_styled = false;
+      break;
+    }
+  }
+  return expect(reloaded_styled,
+                "colours: a reloaded board is still styled, not flat");
+}
+
 bool test_undo_redo_after_import() {
   const std::string path = write_box_step("undo");
 
@@ -807,6 +943,8 @@ int main() {
   if (!test_cylinder_curved_faces()) return 1;
   std::cerr << "[step_import_test] test 6: serialization round-trip\n";
   if (!test_serialization_round_trip()) return 1;
+  std::cerr << "[step_import_test] test 6b: face colours import + persist\n";
+  if (!test_import_reads_face_colors_and_persists_them()) return 1;
   std::cerr << "[step_import_test] test 7: undo/redo\n";
   if (!test_undo_redo_after_import()) return 1;
   std::cerr << "[step_import_test] test 8: missing file\n";

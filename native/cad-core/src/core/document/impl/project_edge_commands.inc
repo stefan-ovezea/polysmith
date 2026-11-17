@@ -37,7 +37,7 @@ DocumentState DocumentManager::project_edge_into_sketch(
         edge_id);
   }
 
-  const auto& frame = sketch_it->sketch_parameters->plane_frame.value();
+  const auto frame = projection_frame(*sketch_it->sketch_parameters).value();
 
   push_undo_state();
   clear_redo_stack();

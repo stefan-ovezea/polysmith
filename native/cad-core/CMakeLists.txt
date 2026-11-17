@@ -315,6 +315,7 @@ set(CAD_CORE_SOURCES
   src/core/geometry/import_sew_helpers.cpp
   src/core/geometry/mesh_import_helpers.cpp
   src/core/geometry/mesh_projection.cpp
+  src/core/geometry/plane_frame_derivation.cpp
   src/core/geometry/refresh_dependents.cpp
   src/core/geometry/step_import_helpers.cpp
   src/core/geometry/iges_import_helpers.cpp
@@ -656,6 +657,7 @@ polysmith_add_core_test(cad_core_stl_import_test tests/stl_import_test.cpp)
 polysmith_add_core_test(cad_core_dxf_import_export_test tests/dxf_import_export_test.cpp)
 
 polysmith_add_core_test(cad_core_step_import_test tests/step_import_test.cpp)
+polysmith_add_core_test(cad_core_face_frame_derivation_test tests/face_frame_derivation_test.cpp)
 polysmith_add_core_test(cad_core_pcb_gerber_test tests/pcb_gerber_test.cpp)
 polysmith_add_core_test(cad_core_pcb_polygonize_test tests/pcb_polygonize_test.cpp)
 polysmith_add_core_test(cad_core_pcb_excellon_test tests/pcb_excellon_test.cpp)

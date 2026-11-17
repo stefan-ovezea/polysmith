@@ -39,6 +39,7 @@
 #include "core/geometry/feature_shape.h"
 #include "core/geometry/mesh_import_helpers.h"
 #include "core/geometry/mesh_projection.h"
+#include "core/geometry/plane_frame_derivation.h"
 #include "core/document/feature.h"
 #include "core/sketch/sketch_feature.h"
 

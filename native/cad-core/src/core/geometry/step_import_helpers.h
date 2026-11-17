@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include <TopoDS_Shape.hxx>
 
@@ -17,6 +19,11 @@ struct StepImportResult {
   std::string source_units;
   int solid_count = 0;
   int face_count = 0;
+  // Display colours read from the file's presentation styles, one per face
+  // in TopExp::MapShapes(..., TopAbs_FACE) order, packed 0xFFRRGGBB
+  // (0 = no style on that face). Empty when the file carries no styles or
+  // when the styled and geometric shapes could not be kept in step.
+  std::vector<std::uint32_t> face_colors;
 };
 
 // Reads a STEP file and returns the translated shape in millimeters.

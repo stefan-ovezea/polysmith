@@ -32,48 +32,15 @@ std::optional<ParsedFaceTarget> parse_face_target(const std::string &plane_id) {
   }
 }
 
-// Build a PlaneFrame from a planar OCCT face. Mirrors the planar
-// branch of `derive_face_frame` in viewport.cpp, kept inline here so
-// the dependency walker doesn't reach across translation units. If
-// the face isn't planar we return nullopt — sketches require a planar
-// face by construction, so a non-planar resolution is treated the
-// same as a missing face (broken dependency).
+// Build a PlaneFrame from a planar OCCT face. The roll comes from the
+// face normal, never from the surface's own plane placement — that
+// placement is an import artifact (see plane_frame_derivation.h) and
+// reading it verbatim rolled sketches on imported bodies by up to 180
+// degrees. If the face isn't planar we return nullopt — sketches
+// require a planar face by construction, so a non-planar resolution is
+// treated the same as a missing face (broken dependency).
 std::optional<PlaneFrame> frame_from_planar_face(const TopoDS_Face &face) {
-  try {
-    BRepAdaptor_Surface surface(face);
-    if (surface.GetType() != GeomAbs_Plane) {
-      return std::nullopt;
-    }
-    const gp_Pln plane = surface.Plane();
-    const gp_Ax3 ax = plane.Position();
-    const gp_Pnt origin = ax.Location();
-    gp_Dir x_axis = ax.XDirection();
-    gp_Dir y_axis = ax.YDirection();
-    gp_Dir z_axis = ax.Direction();
-    if (face.Orientation() == TopAbs_REVERSED) {
-      // Same handed-frame convention as viewport.cpp: flip both the
-      // normal and the y-axis on a reversed face so the resulting
-      // basis stays right-handed and the normal points outward.
-      z_axis.Reverse();
-      y_axis.Reverse();
-    }
-    return PlaneFrame{
-        .origin_x = origin.X(),
-        .origin_y = origin.Y(),
-        .origin_z = origin.Z(),
-        .x_axis_x = x_axis.X(),
-        .x_axis_y = x_axis.Y(),
-        .x_axis_z = x_axis.Z(),
-        .y_axis_x = y_axis.X(),
-        .y_axis_y = y_axis.Y(),
-        .y_axis_z = y_axis.Z(),
-        .normal_x = z_axis.X(),
-        .normal_y = z_axis.Y(),
-        .normal_z = z_axis.Z(),
-    };
-  } catch (const std::exception &) {
-    return std::nullopt;
-  }
+  return canonical_planar_face_frame(face);
 }
 
 // Resolve the world-space frame of face `index` on body `body_id` in

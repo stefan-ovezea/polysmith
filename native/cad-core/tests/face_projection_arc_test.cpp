@@ -10,6 +10,8 @@
 // lists were never subset to the kept corners), flagging "vertex count
 // changed" on every reload even though the body never changed.
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -873,6 +875,169 @@ bool test_extrude_refused_on_broken_sketch() {
 // the chord samples: the UI builds the surface fills from them, so a
 // projected fillet-arc profile would otherwise render as a visible
 // polygon.  Pins the payload contract end-to-end.
+// Projecting into a sketch that sits on an ORIGIN reference plane used to be
+// refused with "Active sketch does not have a plane frame for projection":
+// those sketches store no frame (the legacy hardcoded axis mapping IS their
+// placement), and the face / edge / vertex / profile tools demanded one.
+// Body projection already resolved the legacy frame; the others now do too.
+// Reported 2026-11-17 while re-parenting a body-face sketch to XY.
+bool test_projection_into_origin_plane_sketch() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const std::string profile_id =
+      document.feature_history.back().sketch_parameters->profiles.front().id;
+  document = manager.extrude_profiles({profile_id}, 10.0, "new_body");
+
+  const auto top = top_face(document);
+  if (!expect(top.has_value(), "xy projection: top face found")) {
+    return false;
+  }
+
+  // A fresh sketch on XY — origin-plane sketches carry no stored frame.
+  document = manager.start_sketch_on_plane("ref-plane-xy");
+  if (!expect(
+          !document.feature_history.back()
+               .sketch_parameters->plane_frame.has_value(),
+          "xy projection: origin-plane sketch stores no frame")) {
+    return false;
+  }
+
+  bool refused = false;
+  try {
+    document = manager.project_face_into_sketch(top->face_id);
+  } catch (const std::exception& error) {
+    refused = true;
+    std::cerr << "  projection refused: " << error.what() << "\n";
+  }
+  if (!expect(!refused, "xy projection: projecting a face is accepted")) {
+    return false;
+  }
+
+  const auto& sketch =
+      document.feature_history.back().sketch_parameters.value();
+  if (!expect(sketch.lines.size() == 4,
+              "xy projection: the 40x20 outline projects as 4 lines")) {
+    return false;
+  }
+  // The legacy XY mapping is origin (0,0,0) with world +X/+Y, so the
+  // outline must land on (0,0)-(40,20).
+  double min_x = 1e9;
+  double max_x = -1e9;
+  double min_y = 1e9;
+  double max_y = -1e9;
+  for (const auto& line : sketch.lines) {
+    min_x = std::min({min_x, line.start_x, line.end_x});
+    max_x = std::max({max_x, line.start_x, line.end_x});
+    min_y = std::min({min_y, line.start_y, line.end_y});
+    max_y = std::max({max_y, line.start_y, line.end_y});
+  }
+  if (!expect(std::abs(min_x) < 1e-6 && std::abs(max_x - 40.0) < 1e-6 &&
+                  std::abs(min_y) < 1e-6 && std::abs(max_y - 20.0) < 1e-6,
+              "xy projection: projected coordinates match the XY mapping")) {
+    std::cerr << "  bbox x " << min_x << ".." << max_x << " y " << min_y
+              << ".." << max_y << "\n";
+    return false;
+  }
+  return true;
+}
+
+// Re-parenting a face sketch onto an origin reference plane must not drag the
+// sketch. The two frames are anchored differently — a body face's plane sits
+// wherever the modeler put it (an imported body's plane is usually at the part
+// centre), while XY is anchored at the model origin — so adopting XY's frame
+// verbatim moved a board outline half the board ("the whole sketch origin is
+// shifted in the global origin ... now they do not match", 2026-11-17).
+bool test_redefine_origin_plane_keeps_sketch_placement() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  DocumentState document = manager.add_sketch_rectangle(0.0, 0.0, 40.0, 20.0);
+  const std::string profile_id =
+      document.feature_history.back().sketch_parameters->profiles.front().id;
+  document = manager.extrude_profiles({profile_id}, 10.0, "new_body");
+
+  const auto top = top_face(document);
+  if (!expect(top.has_value(), "redefine placement: top face found")) {
+    return false;
+  }
+
+  // Stand in for a face on an imported body: the plane is anchored at the
+  // part centre (20, 10, 10) instead of the model origin, with world-aligned
+  // axes. That is the frame the STEP face in the report produced.
+  auto face_frame = frame_of(*top);
+  face_frame.origin_x = 20.0;
+  face_frame.origin_y = 10.0;
+  face_frame.origin_z = 10.0;
+  document = manager.start_sketch_on_face(top->face_id, face_frame);
+  document = manager.add_sketch_rectangle(0.0, 0.0, 10.0, 10.0);
+  const std::string sketch_id = document.feature_history.back().id;
+
+  const auto sketch_of = [&](const DocumentState& state)
+      -> const polysmith::core::SketchFeatureParameters& {
+    return state.feature_history.back().sketch_parameters.value();
+  };
+  const auto corner_world = [&](const DocumentState& state, double local_x,
+                                double local_y) {
+    const auto& frame = sketch_of(state).plane_frame.value();
+    return std::array<double, 3>{
+        frame.origin_x + frame.x_axis_x * local_x + frame.y_axis_x * local_y,
+        frame.origin_y + frame.x_axis_y * local_x + frame.y_axis_y * local_y,
+        frame.origin_z + frame.x_axis_z * local_x + frame.y_axis_z * local_y};
+  };
+  const auto before = corner_world(document, 0.0, 0.0);
+  if (!expect(std::abs(before[0] - 20.0) < 1e-6 &&
+                  std::abs(before[1] - 10.0) < 1e-6 &&
+                  std::abs(before[2] - 10.0) < 1e-6,
+              "redefine placement: sketch starts on the face frame")) {
+    return false;
+  }
+
+  document = manager.redefine_sketch_plane(sketch_id, "ref-plane-xy");
+  const auto& parameters = sketch_of(document);
+  if (!expect(parameters.plane_id == "ref-plane-xy",
+              "redefine placement: plane identity updated")) {
+    return false;
+  }
+  if (!expect(parameters.plane_frame.has_value(),
+              "redefine placement: placement carried by an explicit frame")) {
+    return false;
+  }
+  const auto& frame = parameters.plane_frame.value();
+  if (!expect(std::abs(frame.origin_x - 20.0) < 1e-6 &&
+                  std::abs(frame.origin_y - 10.0) < 1e-6 &&
+                  std::abs(frame.origin_z) < 1e-6,
+              "redefine placement: origin stays over the part, slid onto XY")) {
+    std::cerr << "  frame origin " << frame.origin_x << ", " << frame.origin_y
+              << ", " << frame.origin_z << "\n";
+    return false;
+  }
+  const auto after = corner_world(document, 0.0, 0.0);
+  if (!expect(std::abs(after[0] - before[0]) < 1e-6 &&
+                  std::abs(after[1] - before[1]) < 1e-6,
+              "redefine placement: sketch does not move inside the plane")) {
+    std::cerr << "  corner moved to " << after[0] << ", " << after[1] << "\n";
+    return false;
+  }
+  if (!expect(std::abs(parameters.lines.front().start_x) < 1e-6 &&
+                  std::abs(parameters.lines.front().start_y) < 1e-6,
+              "redefine placement: local coordinates are untouched")) {
+    return false;
+  }
+
+  // The redefined sketch now carries a frame although its plane is an origin
+  // plane — it must still extrude and still report its profiles.
+  if (!expect(!parameters.profiles.empty(),
+              "redefine placement: profiles survive the re-parent")) {
+    return false;
+  }
+  document =
+      manager.extrude_profiles({parameters.profiles.front().id}, 5.0, "new_body");
+  return expect(document.feature_history.back().kind == "extrude",
+                "redefine placement: the re-parented sketch still extrudes");
+}
+
 bool test_viewport_profiles_carry_exact_boundary_edges() {
   ProjectionHealFixture fixture;
 
@@ -928,6 +1093,8 @@ int main() {
   RUN_TEST(test_unlink_projections_keeps_geometry_and_clears_alarm);
   RUN_TEST(test_body_projection_refused_over_targeted_projection);
   RUN_TEST(test_redefine_sketch_plane_reparents_and_clears_alarm);
+  RUN_TEST(test_projection_into_origin_plane_sketch);
+  RUN_TEST(test_redefine_origin_plane_keeps_sketch_placement);
   RUN_TEST(test_construction_plane_shields_sketch_from_body_deletion);
   RUN_TEST(test_extrude_refused_on_broken_sketch);
   RUN_TEST(test_viewport_profiles_carry_exact_boundary_edges);

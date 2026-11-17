@@ -33,7 +33,10 @@ const GRID_STEPS_MM = [
 const GRID_MIN_HALF_LINE_COUNT = 80;
 const GRID_MAJOR_EVERY = 10;
 const GRID_CAMERA_SCALE = 40;
-const SKETCH_GRID_BACK_OFFSET = 0.015;
+// The grid shares the sketch plane exactly; layering against the sketch
+// entities and the body fills is done by renderOrder + depthTest:false, so
+// no geometric offset is needed.
+const SKETCH_GRID_BACK_OFFSET = 0.0;
 const CARDINAL_VIEW_DOT_THRESHOLD = 0.985;
 
 export const GRID_SKETCH_PADDING_MULTIPLIER = 2;

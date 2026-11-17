@@ -2,23 +2,7 @@ DocumentState DocumentManager::project_face_into_sketch(
     const std::string& face_id) {
   require_document();
 
-  if (!document_->active_sketch_feature_id.has_value()) {
-    throw std::runtime_error("No active sketch");
-  }
-
-  const auto sketch_it = std::find_if(
-      document_->feature_history.begin(),
-      document_->feature_history.end(),
-      [&](const FeatureEntry& feature) {
-        return feature.id == document_->active_sketch_feature_id.value();
-      });
-
-  if (sketch_it == document_->feature_history.end() ||
-      !sketch_it->sketch_parameters.has_value() ||
-      !sketch_it->sketch_parameters->plane_frame.has_value()) {
-    throw std::runtime_error(
-        "Active sketch does not have a plane frame for projection");
-  }
+  const auto sketch_it = require_projection_target(*document_);
 
   // Don't project a face onto its own owning sketch — the sketch is on the
   // base plane of the extrude, so projecting the base back onto it would
@@ -85,7 +69,11 @@ DocumentState DocumentManager::project_face_into_sketch(
         "). Pick a simpler face or a reference plane.");
   }
 
-  const auto& sketch_frame = sketch_it->sketch_parameters->plane_frame.value();
+  // Origin-plane sketches carry no stored frame; projection_frame()
+  // supplies the legacy mapping so projecting onto an XY/XZ/YZ sketch
+  // works like it does on a face or construction-plane sketch.
+  const auto sketch_frame =
+      projection_frame(*sketch_it->sketch_parameters).value();
 
   auto project_to_sketch_local =
       [&sketch_frame](const FaceOutlinePoint& world) -> std::pair<double, double> {

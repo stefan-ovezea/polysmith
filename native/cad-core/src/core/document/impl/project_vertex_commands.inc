@@ -18,7 +18,7 @@ DocumentState DocumentManager::project_vertex_into_sketch(
         vertex_id);
   }
 
-  const auto& frame = sketch_it->sketch_parameters->plane_frame.value();
+  const auto frame = projection_frame(*sketch_it->sketch_parameters).value();
   const auto local = world_to_sketch_local(frame,
                                            position->x,
                                            position->y,

@@ -32,6 +32,10 @@ DocumentState DocumentManager::import_step(const std::string& file_path) {
   params.serialized_shape = serialize_shape_snapshot(parsed.shape);
   params.solid_count = parsed.solid_count;
   params.face_count = parsed.face_count;
+  // Keep the file's own presentation colours with the snapshot: the B-rep
+  // is geometry only, so without this a reloaded board falls back to one
+  // flat body colour.
+  params.face_colors = parsed.face_colors;
 
   const std::string file_name =
       std::filesystem::path(file_path).filename().string();

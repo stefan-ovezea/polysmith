@@ -1,6 +1,11 @@
 constexpr double kBoxSpacing = 10.0;
 constexpr double kReferencePlaneSize = 120.0;
-constexpr double kSketchPlaneOffset = 0.2;
+// Display-only lift of sketch geometry off its plane, along the plane
+// normal. Sketch overlays already render with depth testing disabled and
+// layering is done by renderOrder, so no lift is needed; it stays a named
+// constant (rather than scattering zeros) so a future consumer that does
+// depth-test can raise it. Modelling coordinates never include it.
+constexpr double kSketchPlaneOffset = 0.0;
 constexpr double kLineDimensionOffset = 12.0;
 constexpr double kCircleDimensionOffset = 8.0;
 // Minimum clearance between an arc and its arc-length extension arc, so

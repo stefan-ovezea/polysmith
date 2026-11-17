@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -172,6 +173,16 @@ struct StepImportFeatureParameters {
   std::string serialized_shape;  // B-rep snapshot for persistence
   int solid_count = 0;           // for the feature summary
   int face_count = 0;            // for the feature summary
+  // Display colours the file itself carried (STEP presentation styles), one
+  // entry per face in TopExp::MapShapes(..., TopAbs_FACE) order — the same
+  // order the viewport and face ids use. Packed as 0xFFRRGGBB (the high byte
+  // marks "this face has a colour", so pure black is distinguishable from
+  // "no style"); 0 = the face carried no style. Empty = the file had none.
+  //
+  // Persisted with the B-rep snapshot because the snapshot is geometry-only:
+  // without this the board loses its silkscreen and component colours on
+  // reload and every imported part comes back as one flat body colour.
+  std::vector<std::uint32_t> face_colors;
 };
 
 // Imported IGES body — identical storage model to step_import (parse
