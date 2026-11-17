@@ -296,11 +296,81 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
       new THREE.BufferAttribute(primitive.positions, 3),
     );
     meshGeometry.setIndex(new THREE.BufferAttribute(primitive.indices, 1));
-    meshGeometry.computeVertexNormals();
+    // Use the core's normals. They come from OCCT's own surface normals
+    // (with seams split), so a box keeps crisp edges and a castellation keeps
+    // its curvature. Recomputing them here averaged every triangle around a
+    // vertex, which smooths across sharp edges: thin features such as the
+    // gold half-cylinders of a stamp module collapse into a single shaded
+    // ribbon, and hard edges get a soft gradient they should not have.
+    if (
+      primitive.normals.length === primitive.positions.length &&
+      primitive.normals.length > 0
+    ) {
+      meshGeometry.setAttribute(
+        "normal",
+        new THREE.BufferAttribute(primitive.normals, 3),
+      );
+    } else {
+      // Old payloads (or a degenerate body) fall back to the previous
+      // behaviour rather than rendering unlit.
+      meshGeometry.computeVertexNormals();
+    }
     geometry = meshGeometry;
   }
 
+  // Imported bodies can carry per-face paint in the vertex colours (gold
+  // contacts on a black connector body, a white legend on a grey shield).
+  // Without this the body renders in one material colour and every marking
+  // on it disappears into the part.
+  if (
+    primitive.kind === "mesh" &&
+    primitive.colors.length > 0 &&
+    primitive.colors.length === primitive.positions.length
+  ) {
+    geometry.setAttribute(
+      "color",
+      new THREE.BufferAttribute(primitive.colors, 3),
+    );
+    baseMaterial.vertexColors = true;
+    // The vertex colours ARE the paint; a tinted material would multiply them.
+    baseMaterial.color.set(0xffffff);
+    // The file's colours are diffuse paint (soldermask, silkscreen, plated
+    // pads), not metalness data we actually have. At metalness 0.1 the
+    // diffuse term loses 10 % on every imported surface — which is what dimmed
+    // the USB pins once the studio rig replaced the environment map — so take
+    // it to zero and let the three directionals do the shading.
+    baseMaterial.metalness = 0.0;
+    baseMaterial.roughness = 0.65;
+    baseMaterial.needsUpdate = true;
+  }
+
   const mesh = new THREE.Mesh(geometry, baseMaterial);
+  // Coplanar decals. Printed markings, silkscreen and pad plating sit exactly
+  // ON the surface of the part they decorate, with no thickness to separate
+  // them in depth. At equal depth the winner is decided per pixel by rounding,
+  // which is why a legend came out as chopped glyphs at one angle and missing
+  // at another. A flat body therefore gets a small polygon offset toward the
+  // camera and draws after the solids, so a decal always wins the tie it sits
+  // in — deterministic, and without moving any geometry.
+  if (primitive.kind === "mesh" && geometry.getAttribute("position")) {
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (box && !box.isEmpty()) {
+      const size = box.getSize(new THREE.Vector3());
+      const thickness = Math.min(size.x, size.y, size.z);
+      if (thickness < 0.2) {
+        baseMaterial.polygonOffset = true;
+        baseMaterial.polygonOffsetFactor = -2;
+        baseMaterial.polygonOffsetUnits = -8;
+        mesh.renderOrder = 2;
+      }
+    }
+  }
+  // Bodies shadow each other: the contact darkening between an assembly's
+  // parts is what makes them read as separate solids. The per-face pick
+  // proxies never do this (they are invisible and one per face).
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   if (primitive.kind === "box" || primitive.kind === "cylinder") {
     mesh.position.set(...primitive.position);
   }

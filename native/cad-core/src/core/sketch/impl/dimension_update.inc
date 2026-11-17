@@ -509,7 +509,28 @@ void update_sketch_dimension(FeatureEntry& feature,
     }
     dimension.value = value;
     dimension.driven = false;  // reset — may be set below
+    // Fusion's rule 1 (user, 2026-11-04): "Fusion gives 'fix' privilege to the
+    // vertex from the beginning of the line … and changes the position of the
+    // last vertex if dimension changes." The placement above already moves only
+    // the SECONDARY point, but the solver then spread the change over every free
+    // variable — measured on the user's `test2.polysmith`, an 80 -> 90 edit moved
+    // the free end 7.3 mm, the bound point 2.7 mm and the circle centre 2.7 mm
+    // (the circle translated with its point), accumulating on every edit. Freeze
+    // the primary vertex for the refresh so the edit lands on the other point and
+    // the circle, never on the point the user drew first.
+    const std::string primary_vertex_id = dimension.entity_id;
+    const bool primary_was_fixed = vertex_is_fixed(parameters, primary_vertex_id);
+    if (!primary_was_fixed) {
+      for (auto& v : parameters.vertices) {
+        if (v.id == primary_vertex_id) { v.is_fixed = true; break; }
+      }
+    }
     refresh_sketch_derived_state(feature);
+    if (!primary_was_fixed) {
+      for (auto& v : parameters.vertices) {
+        if (v.id == primary_vertex_id) { v.is_fixed = false; break; }
+      }
+    }
     fallback_to_driven();
     sync_all_labels();
     return;

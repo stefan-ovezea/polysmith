@@ -642,6 +642,9 @@ export const viewportStateSchema = z.object({
         positions: z.string(),
         normals: z.string(),
         indices: z.string(),
+        // Per-vertex linear RGB for bodies whose faces carry their own styles.
+        // Absent/empty on single-colour bodies (older cores send nothing).
+        colors: z.string().default(""),
         is_selected: z.boolean(),
         appearance_color: z.string().nullable().default(null),
       }),

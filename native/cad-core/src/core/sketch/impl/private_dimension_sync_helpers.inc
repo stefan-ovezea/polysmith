@@ -1,5 +1,6 @@
 void sync_line_dimension(SketchFeatureParameters& parameters,
-                         const SketchLine& line) {
+                         const SketchLine& line,
+                         bool auto_only = false) {
   const auto dimension_it = std::find_if(
       parameters.dimensions.begin(),
       parameters.dimensions.end(),
@@ -7,9 +8,25 @@ void sync_line_dimension(SketchFeatureParameters& parameters,
         return dimension.kind == "line_length" && dimension.entity_id == line.id;
       });
 
-  if (dimension_it != parameters.dimensions.end()) {
+  // `auto_only` is set by the DRAG path (see update_sketch_vertex): re-measuring an
+  // explicit dimension there rewrites the user's value to whatever the drag
+  // produced, and the solver then "enforces" that — which is how a fully
+  // constrained sketch ended up with 223.0224 mm lines becoming 233.158 mm on a
+  // drag. With this, the drag cannot rewrite the user's dimension and the solver
+  // has to respect it. Trim, transform and the rectangle tool keep the old
+  // behaviour (they legitimately change geometry whose dimension must follow).
+  if (dimension_it != parameters.dimensions.end() &&
+      !(auto_only && !dimension_it->is_auto)) {
     dimension_it->value = measure_line_length(line);
   }
+
+  // NOTE: a `point_distance` dimension between this line's own endpoints is
+  // deliberately NOT re-measured here. A drag on a dimensioned line moves the
+  // whole line (see update_sketch_vertex), so the distance never changes and
+  // there is nothing to follow; re-measuring would silently rewrite the user's
+  // dimension if anything ever moved one endpoint alone. Re-measuring is what a
+  // drag-overrides-the-dimension model would need — the user chose Fusion's
+  // parametric model instead (2026-11-04).
 }
 
 void sync_circle_dimension(SketchFeatureParameters& parameters,

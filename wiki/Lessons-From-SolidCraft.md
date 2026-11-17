@@ -246,3 +246,158 @@ guard.
 - The viewport snapshot is rebuilt per document change (11 ms build). Is it
   built on a worker thread today, and does a stale revision ever reach the
   renderer?
+---
+
+## STEP import — how SolidCraft models it (studied 2026-11-10, not adopted)
+
+Read from its docs (`C:\\SRC\\solidcraft\\docs\\step-import.md`), the document
+model (`crates/doc/src/document.rs`, `Feature::Import`) and the import planner
+(`crates/engine/src/cmd/file_import.rs`).
+
+**They do:** one `Import` *base feature* on the timeline that **holds the STEP
+text itself** as the design's B-rep (so the design reopens without the file),
+and that feature builds **one body per solid** in the file:
+
+- every import becomes a **component named after the file** (`bracket.step` →
+  `bracket`), and the feature belongs to it, so imported bodies never land
+  loose among the design's own;
+- a STEP **assembly keeps its structure**: each product under the file's root
+  becomes a nested component named after the product, at the file's placement;
+- a part the file places **more than once becomes one component with an
+  occurrence per placement** — the feature builds the part once and `skip`s the
+  file's later copies (format 22, issue #1386), so repeats are instances, not
+  duplicated geometry;
+- bodies are named after the solid / product / instance (`names` option) and
+  keep their body and face colours; `up` ("stand it up") turns the import;
+- imported contents are **rigid** by default (assembly joints), released one by
+  one with "Unlock Contents"; one import is **one undo step**.
+
+**We do:** one `step_import` feature → **one body holding a compound of every
+solid** (`core/geometry/import_commands.cpp`); `solid_count` is parsed and put
+in the summary but never used to split. No components, no product tree, and
+because a body's id IS its feature id, a single solid cannot be addressed
+(no fillet on "the second solid", and `feature-N:face:M` may pick either lump).
+
+**Two ways to match it here:**
+
+1. *SolidCraft-shaped, for imports only* — keep one `step_import` feature
+   holding the B-rep once and let the compiler emit one body per solid with ids
+   `feature-12:solid-0`, `feature-12:solid-1`, … The `:face:` / `:edge:` owner
+   parsers strip at the **last** known separator, and `body_feature_id()` maps
+   back to the feature, so fillet / CAM / sketch-on-face keep working. Extrudes
+   and fillets keep the plain `feature-N` contract, so the blast radius is the
+   import path plus the owner-id parsers. Needs a multi-solid STEP fixture.
+2. *Reuse operation grouping* — one feature per solid stamped with the same
+   `operation_id` (one timeline row, N bodies). No body-id surgery, but a
+   902-solid file becomes 902 `FeatureEntry`s each carrying a serialized shape
+   snapshot — exactly the memory model SolidCraft's single-feature design
+   avoids.
+
+**Status: not adopted.** The reporter imported a backend PCB and got a very big
+component tree plus a timeline full of the same "rigid group" feature; the
+decision is to leave imports as they are for now and revisit after the extrude
+work. Do not implement 1 or 2 without that decision.
+
+## 10. Profiles — circles are loops of their own (studied 2026-11-10, not adopted yet)
+
+Source: `C:\\SRC\\solidcraft\\crates\\sketch\\src\\profiles.rs` (2 000 lines).
+Read because PolySmith cannot select a circle that is tangent to other geometry —
+two tangent circles come out as ONE region (the union), and a circle tangent to a
+rectangle's edge stops being the rectangle's hole. Measured headlessly:
+
+| sketch | PolySmith today | expected |
+|---|---|---|
+| two circles, centre distance 20 (exact tangency) | 1 region (the union) | 2 regions |
+| two circles, distance 20.2 | 2 regions | 2 |
+| rect + circle tangent to its bottom edge | 2 regions, rect has NO hole | rect with hole + disc |
+| rect + circle 0.05 above the edge | rect WITH hole + disc | same |
+
+Their module doc states the whole design in five lines:
+
+> Non-construction lines and arcs form a planar graph (end points within a small
+> tolerance are merged). Dangling edges are pruned, then faces are traced with the
+> "first clockwise turn" rule, which yields every bounded region counter-clockwise.
+> **Circles are loops of their own.** A loop that lies inside another loop of a
+> different connected component becomes a hole of the innermost loop containing it,
+> so a circle inside a rectangle gives two profiles: the rectangle with a hole, and
+> the disc.
+
+So tangency is a non-problem for them because a circle is **never fed into the
+traced graph**: it cannot be merged with anything, and its role (region or hole) is
+decided by pure CONTAINMENT against the traced faces (`fn assemble`, nesting:
+"parent = smallest containing loop from another component").
+
+They also fuse hand-drawn geometry by tolerance before any topology runs:
+
+```rust
+const MERGE_TOL: f64 = 1e-6;            // endpoints closer than this are one node
+const ENDPOINT_JOIN_TOL: f64 = MERGE_TOL * 100.0;   // 1e-4 mm
+```
+
+plus `merge_nearby_endpoints`, `join_point(a, b, tol)`, `same_circle(c, r, c2, r2, tol)`
+and `overlapping(x, y, tol)` — every comparison is tolerant, so a circle drawn a few
+microns off tangency behaves exactly like a tangent one instead of producing slivers
+(PolySmith: a 0.04 mm overlap produced 3 sliver regions and >180° arcs).
+
+**Why we differ.** Our detector (`core/sketch/impl/sketch_profile_exact.inc`) puts
+every curve, circles included, through one exact arrangement: curves are split at
+their real intersections and faces are walked with two tangent tie-break rules added
+for the trim tool. That is strictly more general — a circle that CROSSES a rectangle
+must be split at the crossings — but it makes a tangency (a touch with no crossing)
+degenerate: the walk continues around the union, and a loop touching the outer loop
+is discarded as a hole.
+
+**Adaptation, not a port** (keeps the exact arrangement for crossing geometry):
+
+1. **Islands.** Split the curve set into components by *transverse* crossings. A
+   closed curve whose intersections are all non-crossing (tangency, endpoint touch)
+   is its own island loop and never enters the walk — SolidCraft's "circles are
+   loops of their own", but decided per curve instead of per kind.
+2. **Containment across islands.** Assign region/hole by the innermost containing
+   loop from a different island, as `fn assemble` does. A tangent circle inside a
+   rectangle is then both a region and that rectangle's hole; two tangent circles are
+   two regions.
+3. **Tolerance join.** Snap endpoints within ~1e-4 mm before topology, so
+   hand-drawn near-tangency behaves like tangency and near-overlaps stop producing
+   slivers.
+
+Steps 1-2 alone fix both measured failures. Step 3 changes what the user sees for
+sloppily drawn geometry, so it needs its own decision and its own tests (both signs
+of the deviation).
+
+### Decision (2026-11-10): fix the PAIRING at the tangency vertex, not the model
+
+A vertex at the touch point is the correct model — and the detector already
+creates one: the two-tangent-circles case emits ONE region whose id contains both
+circles, so both curves were split at the tangency and share a degree-4 node. The
+walk simply switches onto the other curve there instead of finishing its own loop.
+
+That makes the fix one pairing rule, because hole assignment by CONTAINMENT already
+works for loops that do not touch (a circle inside a rectangle already yields
+"rectangle with hole" + "disc"). If each loop closes at the node:
+
+- two tangent circles -> two regions;
+- circle tangent to a rectangle edge -> the disc, plus the rectangle whose hole
+  comes from containment -> two correct regions.
+
+Scope predicate: apply the same-curve pairing only when the node is INTERIOR to
+both curves, i.e. neither curve has a sketch endpoint at the node. That excludes
+every trim case by construction — a trim always leaves a curve ENDING at the cut
+point, which is what the trim tool's rule #1 ("a LINE arriving at a tangent point
+must switch onto the tangent curve, otherwise the wedged face can never close")
+depends on. Confirmed by the user: with trim working today, the line is snapped to
+the circle and stops at the tangency, so its endpoint is at the node.
+
+Work plan (next session):
+
+1. Rule #3 in the node walk (`sketch_profile_exact.inc`, beside the existing
+   `kTangentTieBreak` rules): if the node is interior to the incoming curve and the
+   candidate is the opposite half of the SAME curve, prefer it over the other
+   curve's half-edge when the two directions are tangent (within the existing 5deg
+   tie-break).
+2. Tests in `sketch_profile_test.cpp` with `profiles_match`, complete region sets,
+   both deviations: exactly tangent, +0.001 (separate), -0.001 (overlapping), for
+   (a) two circles, (b) circle tangent to a rectangle edge.
+3. Full `pnpm test:core` — mandatory for `sketch_profile_exact.inc`.
+4. If a trim suite objects, narrow the predicate (closed curves only) rather than
+   weakening the rule.

@@ -30,6 +30,7 @@
 
 #include "core/geometry/body_compiler.h"
 #include "core/document/document.h"
+#include "core/geometry/plane_frame_derivation.h"
 
 namespace polysmith::core {
 namespace {

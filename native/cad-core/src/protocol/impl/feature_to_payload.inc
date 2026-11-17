@@ -17,6 +17,9 @@ json to_payload(const polysmith::core::FeatureEntry& feature,
       {"dependency_ambiguous", feature.dependency_ambiguous},
       {"dependency_ambiguous_warning", feature.dependency_ambiguous_warning},
       {"parameters_summary", feature.parameters_summary},
+      // Empty for a standalone feature. The timeline groups the features that
+      // share one id into a single operation block.
+      {"operation_id", feature.operation_id},
 #include "protocol/impl/feature_to_payload_primitive_entries.inc"
 #include "protocol/impl/feature_to_payload_extrude_entries.inc"
 #include "protocol/impl/feature_to_payload_profile_feature_entries.inc"

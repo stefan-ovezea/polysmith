@@ -7,7 +7,7 @@
 #include "libdxfrw.h"
 
 // The sketch spline's knot convention (clamped open-uniform, parameter range
-// normalised to [0, 1]) — shared so the importer can decide EXACTLY whether a
+// normalised to [0, 1]) â€” shared so the importer can decide EXACTLY whether a
 // DXF spline is representable as a sketch spline instead of tessellating it.
 #include "core/sketch/spline_math.h"
 

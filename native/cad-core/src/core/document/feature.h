@@ -23,6 +23,15 @@ struct FeatureEntry {
   std::string name;
   std::string status;
   std::string parameters_summary;
+  // Groups the features one user action created. An extrude of several
+  // disconnected surfaces legitimately produces one BODY per surface, and in
+  // this codebase a body's id IS its feature id — so the operation cannot be a
+  // single feature without changing body identity everywhere (fillet targets,
+  // CAM references, `feature-N:face:M`). Instead every feature from one commit
+  // carries the same `operation_id` (the first member's feature id), and the
+  // timeline presents the group as ONE block, which is what the user sees in
+  // Fusion: "one extrude, N bodies". Empty means "standalone feature".
+  std::string operation_id;
   // When true, the feature is excluded from body compilation and from
   // legacy primitive emission. The feature still appears in the
   // timeline / hierarchy (rendered dimmed by the UI) and can be

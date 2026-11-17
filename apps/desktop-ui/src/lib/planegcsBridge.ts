@@ -389,13 +389,16 @@ export class PlanegcsBridge {
       });
     }
 
-    // 4f. Dimensional constraints (dimensions with user-set expressions)
+    // 4f. Dimensional constraints (dimensions the user created or edited)
     for (const dim of params.dimensions) {
       if (dim.driven) continue;
-      // Skip auto-dimensions that are display-only (no user expression).
-      // The TS type doesn't carry is_auto; we use empty expression as a
-      // proxy — manual dims always have a value.
-      if (dim.expression.length === 0) continue;
+      // Skip AUTO dimensions: the core maintains one per line/circle as
+      // bookkeeping, and treating a plain line as dimensioned makes every drag
+      // stretch-free. The old test used an empty `expression` as the proxy, which
+      // is also empty on a TOOL-CREATED dimension — so the preview ignored every
+      // user dimension and a dimensioned line stretched while dragging, then
+      // jumped to the translated position on commit ("stretch, then snaps").
+      if (dim.is_auto) continue;
 
       switch (dim.kind) {
         case "line_length": {

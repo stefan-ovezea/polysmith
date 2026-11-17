@@ -27,7 +27,15 @@ export function pendingExtrudeActionFromSelection({
     featureId: null,
     featureIds: [],
     profileIds: [...selectedSketchProfileIds],
-    automaticMode: true,
+    // The panel SHOWS `initialMode` ("New body" / "Join" — resolved from the
+    // selection by resolveDefaultExtrudeSettings) and must SEND it. This used to
+    // be `true`, so the create path passed `null` and the core ran its automatic
+    // mode: with any body in the way, each disconnected profile group was
+    // silently promoted to join/cut. Selecting 56 faces then produced 20+
+    // extrude blocks and NO new bodies — the prisms were cut into the plate
+    // instead of becoming solids, which reads as "more extrusions than bodies".
+    // Fusion's rule is the honest one: what the dropdown says is what happens.
+    automaticMode: false,
     initialDepth: DEFAULT_EXTRUDE_DEPTH,
     initialMode: defaultSettings.mode,
     initialParameters: null,

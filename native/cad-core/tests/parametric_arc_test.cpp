@@ -240,12 +240,18 @@ bool test_endpoint_drag_pivots_arc_with_radius_dim() {
 
   document = manager.add_sketch_arc_radius_dimension(arc_id);
 
-  // add_sketch_line infers an H constraint for the horizontal line, so
-  // the dragged shared endpoint first clamps to y=10 (the propagate
-  // clamp).  With the radius dimension driving, the endpoint must ALSO
-  // lie on the r=10 circle about (20,0) — the enforcement pass slides it
-  // along the constraint axis to the circle∩line intersection: the only
-  // circle point at y=10 is (20,10).  Both constraints are honored.
+  // `add_sketch_line` infers an H constraint for the horizontal line. The H
+  // constraint is now honoured by moving the WHOLE line (the far end carries the
+  // dragged point's y), not by clamping the dragged point onto the old axis — the
+  // user's Fusion rule: "H and V constrained lines can also move x and y direction
+  // at the same time, same like a line with dimension" (2026-11-04). The endpoint
+  // is also on the arc's radius dimension (r = 10 about (20,0)), so it lands on the
+  // circle at the line's new height: (20 + sqrt(100 - 25), 5) = (28.660254, 5).
+  //
+  // Previously this asserted (20,10): the clamp pinned the point at y = 10 and the
+  // radius pass slid it to the only circle point at that height. That honoured
+  // both constraints too, but it lost the drag's vertical motion (the line never
+  // moved) and left the point 7.07 mm from the cursor instead of 3.66 mm.
   document = manager.update_sketch_vertex(shared_vertex_id, 25.0, 5.0);
 
   {
@@ -255,8 +261,12 @@ bool test_endpoint_drag_pivots_arc_with_radius_dim() {
     if (!expect(near(arc->radius, 10.0), "drag: radius stays 10.0 (H case)")) {
       return false;
     }
-    if (!expect(near(arc->start_x, 20.0) && near(arc->start_y, 10.0),
-                "drag: endpoint snaps to the circle∩H-line intersection")) {
+    if (!expect(near(arc->start_x, 20.0 + std::sqrt(100.0 - 25.0)) &&
+                    near(arc->start_y, 5.0),
+                ("drag: endpoint on the circle at the line's new height - got (" +
+                 std::to_string(arc->start_x) + ", " +
+                 std::to_string(arc->start_y) + ")")
+                    .c_str())) {
       return false;
     }
     const double start_dist =

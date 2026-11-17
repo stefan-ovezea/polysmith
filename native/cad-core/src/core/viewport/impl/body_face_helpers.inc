@@ -129,38 +129,35 @@ FaceFrameInfo derive_face_frame(const TopoDS_Face& face) {
     info.normal_z = normal.Z();
 
     if (type == GeomAbs_Plane) {
-      info.is_planar = true;
-      const gp_Pln plane = surface.Plane();
-      const gp_Ax3 ax = plane.Position();
-      const gp_Pnt origin = ax.Location();
-      gp_Dir x_axis = ax.XDirection();
-      gp_Dir y_axis = ax.YDirection();
-      gp_Dir z_axis = ax.Direction();
-      // Mirror the orientation flag onto the plane axes too — a reversed
-      // face has its "outward" normal flipped, and the y-axis is flipped
-      // to keep the frame right-handed.
-      if (face.Orientation() == TopAbs_REVERSED) {
-        z_axis.Reverse();
-        y_axis.Reverse();
+      // Canonical axes (see plane_frame_derivation.h): the surface's own
+      // plane placement is an import artifact — a STEP face lying flat in
+      // XY can carry a plane rotated 180 degrees about Z — and reading it
+      // verbatim rolled the sketch on imported bodies. The UI sends this
+      // frame straight back with `start_sketch_on_face`, so it must match
+      // what the dependency walker resolves for the same face.
+      const std::optional<PlaneFrame> canonical =
+          canonical_planar_face_frame(face);
+      if (canonical.has_value()) {
+        info.is_planar = true;
+        info.frame = ViewportSolidFace::PlaneFrame{
+            .origin_x = canonical->origin_x,
+            .origin_y = canonical->origin_y,
+            .origin_z = canonical->origin_z,
+            .x_axis_x = canonical->x_axis_x,
+            .x_axis_y = canonical->x_axis_y,
+            .x_axis_z = canonical->x_axis_z,
+            .y_axis_x = canonical->y_axis_x,
+            .y_axis_y = canonical->y_axis_y,
+            .y_axis_z = canonical->y_axis_z,
+            .normal_x = canonical->normal_x,
+            .normal_y = canonical->normal_y,
+            .normal_z = canonical->normal_z,
+        };
+        // Override center/normal with the frame normal for consistency.
+        info.normal_x = canonical->normal_x;
+        info.normal_y = canonical->normal_y;
+        info.normal_z = canonical->normal_z;
       }
-      info.frame = ViewportSolidFace::PlaneFrame{
-          .origin_x = origin.X(),
-          .origin_y = origin.Y(),
-          .origin_z = origin.Z(),
-          .x_axis_x = x_axis.X(),
-          .x_axis_y = x_axis.Y(),
-          .x_axis_z = x_axis.Z(),
-          .y_axis_x = y_axis.X(),
-          .y_axis_y = y_axis.Y(),
-          .y_axis_z = y_axis.Z(),
-          .normal_x = z_axis.X(),
-          .normal_y = z_axis.Y(),
-          .normal_z = z_axis.Z(),
-      };
-      // Override center/normal with the plane axes for consistency.
-      info.normal_x = z_axis.X();
-      info.normal_y = z_axis.Y();
-      info.normal_z = z_axis.Z();
     } else {
       // Non-planar face: synthesize a frame at the sampled center with
       // the sampled normal so the UI can still place a label / preview

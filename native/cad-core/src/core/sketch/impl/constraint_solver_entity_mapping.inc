@@ -59,6 +59,8 @@
     gcs_circles_.clear();
     gcs_circles_.reserve(params.circles.size());
     circle_id_to_index_.clear();
+    circle_radius_idx_.clear();
+    circle_radius_idx_.reserve(params.circles.size());
     for (size_t i = 0; i < params.circles.size(); ++i) {
         const auto& sc = params.circles[i];
         // Compute the radius from the stored value.
@@ -91,6 +93,7 @@
             gc.center = anon_center;
         }
         gc.rad = &param_storage_[radius_idx];
+        circle_radius_idx_.push_back(radius_idx);
         gcs_circles_.push_back(gc);
         circle_id_to_index_[sc.id] = gcs_circles_.size() - 1;
     }

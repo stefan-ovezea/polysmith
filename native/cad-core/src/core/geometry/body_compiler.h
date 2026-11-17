@@ -43,6 +43,11 @@ struct BodyMesh {
   std::vector<double> vertices;  // x0, y0, z0, x1, y1, z1, ...
   std::vector<int> indices;      // triangle vertex indices into `vertices`
   std::vector<double> normals;   // matching `vertices` layout
+  // Face ordinal (TopExp::MapShapes order) owning each vertex. The tessellator
+  // emits each face's triangles contiguously, so this maps every vertex to the
+  // face whose style it carries — which is what lets the viewport paint an
+  // engraved legend or a gold contact differently from the part around it.
+  std::vector<int> vertex_faces;
 };
 
 struct CompiledBodies {

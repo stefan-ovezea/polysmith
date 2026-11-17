@@ -95,6 +95,12 @@ export interface SketchDimensionEntry {
   secondary_entity_id: string;
   value: number;
   expression: string;
+  /**
+   * True for the automatic dimensions the core maintains on every line/circle
+   * (display-only, NOT constraints). A dimension the user creates or edits has
+   * this false. The drag preview and the speculative solve skip auto ones.
+   */
+  is_auto?: boolean;
   /** When true, this is a reference-only (driven) dimension. */
   driven?: boolean;
   /** For circle_radius: "" = diameter display (default), "radius" = radius display. */
@@ -619,6 +625,10 @@ export interface FeatureEntry {
   // Human-readable explanation of the uncertain re-bind.
   dependency_ambiguous_warning?: string;
   parameters_summary: string;
+  // Groups the features one user action created: a multi-surface extrude makes
+  // one body per disconnected group, and the timeline shows all of them as ONE
+  // operation block. Empty/absent means "standalone feature" (older saves).
+  operation_id?: string;
   box_parameters: BoxFeatureParameters | null;
   cylinder_parameters: CylinderFeatureParameters | null;
   extrude_parameters: ExtrudeFeatureParameters | null;

@@ -1,5 +1,26 @@
+// Tessellation tolerances for every body mesh the viewport draws.
+//
+// The angular one is what makes small round features readable: at 0.5 rad
+// (28.6 deg) a 0.5 mm pin leg becomes a ~6-sided prism whose silhouette is
+// visibly polygonal, and every hole rim is a hexagon. The export path hit
+// this first (0.1 rad there, with a comment about "missing facets on
+// fillets"); the viewport kept the coarse value, which is why imported
+// parts looked deformed while their STEP data was fine.
+//
+// 0.25 rad is ~14 deg: a 0.6 mm pin leg gets ~25 segments, which is smooth
+// at the size these parts are drawn, while 0.5 rad gave it six. Linear stays
+// at 0.1 mm — flat faces cost two triangles at any tolerance, so tightening
+// it only buys curved-surface quality the angular term already covers.
 constexpr double kLinearDeflection = 0.1;
-constexpr double kAngularDeflection = 0.5;
+constexpr double kAngularDeflection = 0.25;
+// Linear tolerance as a fraction of a body's bounding-box diagonal, clamped
+// to [kMinLinearDeflection, kLinearDeflection] in tessellate_shape. A fixed
+// absolute value is what flattened the castellations: 0.1 mm of deviation on
+// a 0.4 mm feature. 1 % of the diagonal is ~0.02 mm on a 2 mm part, enough to
+// carry a half-cylinder, and the floor keeps a pin from being meshed finer
+// than its own drawing tolerance (which tripled the viewport payload).
+constexpr double kRelativeLinearDeflection = 0.01;
+constexpr double kMinLinearDeflection = 0.02;
 constexpr double kPi = 3.14159265358979323846;
 
 struct ParsedEdgeId {

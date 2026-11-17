@@ -74,20 +74,48 @@ DocumentState DocumentManager::redefine_sketch_plane(
         "redefine_sketch_plane requires a sketch feature");
   }
 
-  // Origin reference planes keep the legacy no-frame convention
-  // (hardcoded mappings); construction planes and face targets
-  // resolve their frame from the current document — the same sources
-  // start_sketch_on_plane / start_sketch_on_face accept. A plane
-  // that cannot be resolved (e.g. a face on a deleted body) is
+  // Resolve the target plane. Origin reference planes resolve to their
+  // hardcoded frame as well, so the placement check below has something to
+  // compare against even though those sketches normally store no frame.
+  const bool target_is_origin_plane = is_origin_plane_reference(new_plane_id);
+  const auto resolved_frame =
+      resolve_plane_source_frame(*document_, new_plane_id);
+
+  // Re-parenting: two different intents (see
+  // private_sketch_plane_placement_helpers.inc).
+  //
+  //  * A different plane — the sketch moves onto it, keeping its local
+  //    coordinates. Construction planes and faces store their resolved
+  //    frame; origin planes keep the legacy no-frame convention.
+  //  * An origin plane the sketch already lies in (typically a face
+  //    re-parented to XY so the body can be deleted). Adopting XY's frame
+  //    would drag the sketch to the model origin, because the face plane is
+  //    anchored wherever the exporter put it. Keep the sketch's placement
+  //    instead and only slide it onto the target plane.
+  //
+  // A plane that cannot be resolved (e.g. a face on a deleted body) is
   // rejected up front.
   std::optional<SketchFeatureParameters::SketchPlaneFrame> sketch_frame;
-  if (!is_origin_plane_reference(new_plane_id)) {
-    const auto frame = resolve_plane_source_frame(*document_, new_plane_id);
-    if (!frame.has_value()) {
+  if (!target_is_origin_plane) {
+    if (!resolved_frame.has_value()) {
       throw std::runtime_error(
           "Sketch plane source could not be resolved: " + new_plane_id);
     }
-    sketch_frame = to_sketch_plane_frame(frame.value());
+    sketch_frame = to_sketch_plane_frame(resolved_frame.value());
+  } else if (resolved_frame.has_value()) {
+    // Only a plane the sketch is NOT already attached to can be a
+    // re-parent worth preserving placement across; re-selecting the same
+    // origin plane stays the legacy no-frame sketch it already is.
+    const bool plane_changes =
+        feature_it->sketch_parameters->plane_id != new_plane_id;
+    const auto current_frame =
+        projection_frame(*feature_it->sketch_parameters);
+    const auto target_frame = to_sketch_plane_frame(resolved_frame.value());
+    if (plane_changes && current_frame.has_value() &&
+        planes_are_parallel_same_facing(*current_frame, target_frame)) {
+      sketch_frame =
+          keep_sketch_placement_on_plane(*current_frame, target_frame);
+    }
   }
 
   push_undo_state();

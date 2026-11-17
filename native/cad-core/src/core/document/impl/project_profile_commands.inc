@@ -24,7 +24,8 @@ DocumentState DocumentManager::project_profile_into_sketch(
     throw std::runtime_error("Sketch profile not found: " + profile_id);
   }
   const SketchProfileRegion source_profile = *profile_it;
-  const auto target_frame = sketch_it->sketch_parameters->plane_frame.value();
+  const auto target_frame =
+      projection_frame(*sketch_it->sketch_parameters).value();
 
   auto project_source_point =
       [&](const SketchProfilePoint& point) -> std::pair<double, double> {

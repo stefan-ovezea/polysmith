@@ -37,8 +37,17 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <IFSelect_ReturnStatus.hxx>
+#include <Quantity_Color.hxx>
+#include <STEPCAFControl_Writer.hxx>
 #include <STEPControl_StepModelType.hxx>
 #include <STEPControl_Writer.hxx>
+#include <TDF_Label.hxx>
+#include <TDocStd_Document.hxx>
+#include <XCAFApp_Application.hxx>
+#include <XCAFDoc_ColorTool.hxx>
+#include <XCAFDoc_ColorType.hxx>
+#include <XCAFDoc_DocumentTool.hxx>
+#include <XCAFDoc_ShapeTool.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
@@ -50,6 +59,7 @@
 #include "core/export/export.h"
 #include "core/geometry/body_compiler.h"
 #include "core/geometry/import_runtime.h"
+#include "core/geometry/step_import_helpers.h"
 #include "core/viewport/viewport.h"
 #include "protocol/serialization.h"
 
@@ -391,6 +401,37 @@ std::string make_inch_box_step() {
   return os.str();
 }
 
+// A STEP file that carries a presentation style: a red box written through
+// the XCAF writer, which is how real exporters attach colours (a PCB's
+// soldermask, pad plating and white silkscreen). The plain
+// STEPControl_Writer used by the other fixtures writes geometry only, so
+// this fixture is what makes the colour path testable at all.
+std::string write_colored_box_step(const std::string& name) {
+  const std::string path = temp_step_path(name);
+  occ::handle<TDocStd_Document> document;
+  const occ::handle<XCAFApp_Application> application =
+      XCAFApp_Application::GetApplication();
+  if (application.IsNull()) {
+    return path;
+  }
+  application->NewDocument("MDTV-XCAF", document);
+  const occ::handle<XCAFDoc_ShapeTool> shape_tool =
+      XCAFDoc_DocumentTool::ShapeTool(document->Main());
+  const occ::handle<XCAFDoc_ColorTool> color_tool =
+      XCAFDoc_DocumentTool::ColorTool(document->Main());
+  const TDF_Label shape_label = shape_tool->AddShape(
+      BRepPrimAPI_MakeBox(gp_Pnt(0.0, 0.0, 0.0), 10.0, 10.0, 10.0).Shape());
+  // Red surface style, the type the reader looks for first.
+  color_tool->SetColor(shape_label, Quantity_Color(Quantity_NOC_RED),
+                       XCAFDoc_ColorSurf);
+
+  STEPCAFControl_Writer writer;
+  writer.SetColorMode(true);
+  writer.Transfer(document);
+  writer.Write(path.c_str());
+  return path;
+}
+
 // --- tests -------------------------------------------------------------
 
 bool test_box_import_creates_body() {
@@ -487,22 +528,42 @@ bool test_multi_solid_stays_one_body() {
   manager.create_document();
   const DocumentState document = manager.import_step(path);
 
-  const auto& feature = document.feature_history.back();
   const auto compiled = compile_bodies(document);
-  if (!expect(compiled.bodies.size() == 1,
-              "multi: two solids must stay ONE body (one feature)")) {
+  if (!expect(compiled.bodies.size() == 2,
+              "multi: two solids become TWO bodies (one feature each)")) {
     return false;
   }
-  if (!expect(compiled.bodies.front().id == feature.id,
-              "multi: body id must match the feature id")) {
+  if (!expect(compiled.bodies[0].id != compiled.bodies[1].id,
+              "multi: each body keeps its own id")) {
     return false;
   }
-  const TopoDS_Shape shape = compiled.bodies.front().shape;
-  return expect(count_faces(shape) == 12,
-                "multi: two boxes must have 12 faces") &&
-         expect(shape_has_solid(shape), "multi: shape must contain solids") &&
-         near(shape_volume(shape), 2000.0, 2000.0 * 0.02,
-              "multi: total volume");
+  bool ids_are_features = true;
+  for (const auto& body : compiled.bodies) {
+    const bool matched =
+        std::any_of(document.feature_history.begin(),
+                    document.feature_history.end(),
+                    [&body](const auto& feature) {
+                      return feature.id == body.id;
+                    });
+    if (!matched) {
+      ids_are_features = false;
+    }
+  }
+  if (!expect(ids_are_features,
+              "multi: every body id must belong to an import feature")) {
+    return false;
+  }
+
+  int faces = 0;
+  double volume = 0.0;
+  for (const auto& body : compiled.bodies) {
+    faces += count_faces(body.shape);
+    volume += shape_volume(body.shape);
+  }
+  return expect(faces == 12, "multi: the split keeps all 12 faces") &&
+         expect(shape_has_solid(compiled.bodies.front().shape),
+                "multi: shape must contain solids") &&
+         near(volume, 2000.0, 2000.0 * 0.02, "multi: total volume");
 }
 
 bool test_downstream_cut_extrude() {
@@ -631,6 +692,184 @@ bool test_serialization_round_trip() {
                .empty(),
       "roundtrip: event payloads must strip the snapshot; saved "
       "payloads must keep it");
+}
+
+// The file's own presentation colours are read at import, persisted with the
+// B-rep snapshot, and applied to the viewport faces — the difference between
+// an imported board showing its silkscreen and component colours and the same
+// board rendering as one flat body colour. Precedent 2026-11-17: a STEP PCB
+// carrier lost 15 colours (63 % of its 24 375 faces) and every marking with
+// it, because the importer used the geometry-only STEP reader.
+bool test_import_reads_face_colors_and_persists_them() {
+  const std::string path = write_colored_box_step("colored_box");
+
+  const polysmith::core::StepImportResult parsed =
+      polysmith::core::read_step_file(path);
+  if (!expect(parsed.solids.size() == 1,
+              "colours: the fixture imports as one solid")) {
+    return false;
+  }
+  // Colours are carried per SOLID now, one entry per face of that solid.
+  const std::vector<std::uint32_t> expected_colors =
+      parsed.solids.front().face_colors;
+  if (!expect(!expected_colors.empty(),
+              "colours: the file's presentation style is read")) {
+    return false;
+  }
+  if (!expect(parsed.solids.front().face_count == parsed.face_count &&
+                  expected_colors.size() ==
+                      static_cast<std::size_t>(parsed.face_count),
+              "colours: one entry per face, indexed like the face ids")) {
+    return false;
+  }
+  // Red = 0xFFFF0000 and the high byte marks "styled" so pure black stays
+  // distinguishable from "no style".
+  bool all_red = true;
+  for (const std::uint32_t packed : expected_colors) {
+    if (packed != 0xFFFF0000u) {
+      all_red = false;
+      break;
+    }
+  }
+  if (!expect(all_red, "colours: every face carries the file's red")) {
+    return false;
+  }
+
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.import_step(path);
+  if (!expect(!document.feature_history.back()
+                   .step_import_parameters->face_colors.empty(),
+              "colours: import stores them with the feature")) {
+    return false;
+  }
+
+  // The viewport is what the user sees: each face must come out styled.
+  const auto viewport = polysmith::core::build_viewport_state(document);
+  if (!expect(!viewport.solid_faces.empty(),
+              "colours: viewport emits the imported faces")) {
+    return false;
+  }
+  bool every_face_styled = true;
+  for (const auto& face : viewport.solid_faces) {
+    if (!face.appearance_color.has_value() ||
+        face.appearance_color.value() != "#FF0000") {
+      every_face_styled = false;
+      break;
+    }
+  }
+  if (!expect(every_face_styled,
+              "colours: every viewport face takes the imported colour")) {
+    return false;
+  }
+
+  // Saving and reloading must keep them: the B-rep snapshot is geometry
+  // only, so a save that drops the colour table silently undoes the import.
+  const auto file_path = std::filesystem::temp_directory_path() /
+                         "polysmith_step_face_colors_test.polysmith";
+  manager.save_document_to_path(file_path.string());
+
+  DocumentManager loaded_manager;
+  loaded_manager.create_document();
+  const DocumentState loaded =
+      loaded_manager.load_document_from_path(file_path.string());
+  const auto step_it = std::find_if(
+      loaded.feature_history.begin(), loaded.feature_history.end(),
+      [](const auto& feature) { return feature.kind == "step_import"; });
+  if (!expect(step_it != loaded.feature_history.end() &&
+                  step_it->step_import_parameters.has_value() &&
+                  step_it->step_import_parameters->face_colors ==
+                      expected_colors,
+              "colours: the colour table survives save + load")) {
+    return false;
+  }
+  const auto reloaded_viewport =
+      polysmith::core::build_viewport_state(loaded);
+  bool reloaded_styled = !reloaded_viewport.solid_faces.empty();
+  for (const auto& face : reloaded_viewport.solid_faces) {
+    if (!face.appearance_color.has_value() ||
+        face.appearance_color.value() != "#FF0000") {
+      reloaded_styled = false;
+      break;
+    }
+  }
+  return expect(reloaded_styled,
+                "colours: a reloaded board is still styled, not flat");
+}
+
+// An assembly is a set of parts, and one body for the whole file makes it an
+// undifferentiated lump: no per-part hiding, renaming, colouring or export.
+// The import splits it, one body per solid, each named from the file's
+// product structure (or positionally when the file names nothing).
+bool test_multi_solid_import_splits_into_one_body_per_solid() {
+  const std::string path = write_two_solid_step("two_solid_split");
+
+  const polysmith::core::StepImportResult parsed =
+      polysmith::core::read_step_file(path);
+  if (!expect(parsed.solids.size() == 2,
+              "split: the reader returns one entry per solid")) {
+    return false;
+  }
+  if (!expect(!parsed.solids.front().name.empty(),
+              "split: solids carry a name (the file's, or positional)")) {
+    return false;
+  }
+
+  DocumentManager manager;
+  manager.create_document();
+  const DocumentState document = manager.import_step(path);
+
+  std::vector<std::size_t> imports;
+  for (std::size_t i = 0; i < document.feature_history.size(); ++i) {
+    if (document.feature_history[i].kind == "step_import") {
+      imports.push_back(i);
+    }
+  }
+  if (!expect(imports.size() == 2, "split: two bodies, one feature each")) {
+    return false;
+  }
+  bool one_solid_each = true;
+  for (const std::size_t index : imports) {
+    const auto& params =
+        document.feature_history[index].step_import_parameters;
+    if (!params.has_value() || params->solid_count != 1 ||
+        params->face_count <= 0 || params->serialized_shape.empty()) {
+      one_solid_each = false;
+    }
+  }
+  if (!expect(one_solid_each, "split: each feature owns exactly one solid")) {
+    return false;
+  }
+  if (!expect(document.feature_history[imports[0]].name !=
+                  document.feature_history[imports[1]].name,
+              "split: the bodies stay distinguishable in the tree")) {
+    return false;
+  }
+
+  const auto compiled = compile_bodies(document);
+  if (!expect(compiled.bodies.size() == 2,
+              "split: the compiler sees two bodies")) {
+    return false;
+  }
+  const auto viewport = polysmith::core::build_viewport_state(document);
+  if (!expect(!viewport.solid_faces.empty(),
+              "split: the viewport emits their faces")) {
+    return false;
+  }
+
+  // The split must stay one undo step: the import was one user action, so a
+  // single undo has to take back all of its bodies, not just the last one.
+  const DocumentState undone = manager.undo();
+  const std::size_t expected_remaining =
+      document.feature_history.size() - imports.size();
+  const bool no_imports_left =
+      std::none_of(undone.feature_history.begin(), undone.feature_history.end(),
+                   [](const auto& feature) {
+                     return feature.kind == "step_import";
+                   });
+  return expect(undone.feature_history.size() == expected_remaining &&
+                    no_imports_left,
+                "split: undo removes the import in one step");
 }
 
 bool test_undo_redo_after_import() {
@@ -799,14 +1038,18 @@ int main() {
   if (!test_box_import_creates_body()) return 1;
   std::cerr << "[step_import_test] test 2: inch fixture converts to mm\n";
   if (!test_inch_fixture_converts_to_mm()) return 1;
-  std::cerr << "[step_import_test] test 3: multi-solid stays one body\n";
+  std::cerr << "[step_import_test] test 3: multi-solid splits per solid\n";
   if (!test_multi_solid_stays_one_body()) return 1;
+  std::cerr << "[step_import_test] test 3b: split bodies are named + atomic\n";
+  if (!test_multi_solid_import_splits_into_one_body_per_solid()) return 1;
   std::cerr << "[step_import_test] test 4: downstream cut extrude\n";
   if (!test_downstream_cut_extrude()) return 1;
   std::cerr << "[step_import_test] test 5: cylinder curved faces\n";
   if (!test_cylinder_curved_faces()) return 1;
   std::cerr << "[step_import_test] test 6: serialization round-trip\n";
   if (!test_serialization_round_trip()) return 1;
+  std::cerr << "[step_import_test] test 6b: face colours import + persist\n";
+  if (!test_import_reads_face_colors_and_persists_them()) return 1;
   std::cerr << "[step_import_test] test 7: undo/redo\n";
   if (!test_undo_redo_after_import()) return 1;
   std::cerr << "[step_import_test] test 8: missing file\n";

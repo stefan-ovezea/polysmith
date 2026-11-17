@@ -2,7 +2,11 @@ import type { SketchPlaneFrame } from "@/types";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-export const SKETCH_PLANE_OFFSET = 0.2;
+// Display-only lift of sketch geometry off its plane, along the normal.
+// Must match kSketchPlaneOffset in the core viewport emit. Sketch overlays
+// render without depth testing and are layered by renderOrder, so no lift
+// is needed: the sketch now sits exactly on its plane.
+export const SKETCH_PLANE_OFFSET = 0.0;
 export const SKETCH_SNAP_DISTANCE = 2.5;
 export const SKETCH_SNAP_DISTANCE_PX = 20;
 
@@ -56,6 +60,34 @@ export function frameCamera(
   controls.update();
 }
 
+// Up vector for a sketch framed on its own plane.
+//
+// The sketch's own +Y is the only correct "up" for this view: the grid,
+// the sketch axes and the camera must agree, or the model reads mirrored
+// on screen. This used to fall back to world -Y whenever the face normal
+// was close to vertical, which rolled EVERY face-sketch view by 180
+// degrees: the ViewCube drew its "Top" label upside down and the sketch's
+// axes pointed the wrong way (precedent 2026-11-17).
+//
+// The core now derives face frames with world-up as the sketch +Y
+// (plane_frame_derivation.h), so following the frame matches the
+// orientation the ViewCube itself uses when its Top face is clicked.
+export function sketchCameraUp(planeFrame: SketchPlaneFrame): THREE.Vector3 {
+  const normal = frameVector(planeFrame.normal).normalize();
+  const frameUp = frameVector(planeFrame.y_axis);
+  // A frame whose +Y is not in the plane cannot orient the view; fall
+  // back to the ViewCube's own rule for the same view direction
+  // (getDefaultUpForDirection): world +Z, or +Y for a vertical view.
+  const fallbackUp =
+    Math.abs(normal.dot(new THREE.Vector3(0, 0, 1))) > 0.99
+      ? new THREE.Vector3(0, 1, 0)
+      : new THREE.Vector3(0, 0, 1);
+  return frameUp.lengthSq() > 1e-12 &&
+    Math.abs(frameUp.normalize().dot(normal)) < 0.999
+    ? frameUp
+    : fallbackUp;
+}
+
 export function frameCameraToSketchPlane(
   camera: THREE.OrthographicCamera,
   controls: OrbitControls,
@@ -72,13 +104,8 @@ export function frameCameraToSketchPlane(
     const origin = frameVector(planeFrame.origin);
     const normal = frameVector(planeFrame.normal).normalize();
 
-    // CAD-style up: prefer world Z; if the face normal is nearly vertical,
-    // fall back to world -Y so the sketch reads top-down without rolling.
-    const worldUp = new THREE.Vector3(0, 0, 1);
-    const up =
-      Math.abs(normal.dot(worldUp)) > 0.95
-        ? new THREE.Vector3(0, -1, 0)
-        : worldUp.clone();
+    // Follow the sketch's own basis; see sketchCameraUp for why.
+    const up = sketchCameraUp(planeFrame);
 
     camera.position.copy(origin.clone().add(normal.multiplyScalar(distance)));
     camera.up.copy(up);

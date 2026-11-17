@@ -1,3 +1,22 @@
+// True when the vertex carries an attachment to a curve (`point_on_circle` /
+// `point_on_arc`), so it can only exist ON that curve. `target_ids` is
+// {vertex, circle-or-arc} for both kinds. Kept here rather than with the other
+// drag-policy helpers because this file sits inside the sketch's anonymous
+// namespace, where the only caller (`propagate_connected_point_move`) lives.
+bool vertex_is_bound_to_curve(const SketchFeatureParameters& parameters,
+                              const std::string& vertex_id) {
+  for (const auto& constraint : parameters.constraints) {
+    if (constraint.kind != "point_on_circle" &&
+        constraint.kind != "point_on_arc") {
+      continue;
+    }
+    if (!constraint.target_ids.empty() && constraint.target_ids[0] == vertex_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void propagate_connected_point_move(SketchFeatureParameters& parameters,
                                     const std::string& point_id,
                                     double target_x,
@@ -81,11 +100,22 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
       set_endpoint(line, endpoint_ref.is_start, move.to_x, move.to_y);
 
       // For a bare endpoint drag, keep the opposite endpoint anchored
-      // and clamp the moved endpoint along the H/V axis. When the
-      // moved endpoint is a shared corner or an anchor target, it is
-      // authoritative: carry the opposite endpoint across the same
-      // axis so rectangles and anchored construction lines follow the
-      // driving geometry instead of snapping back to stale coordinates.
+      // and clamp the moved endpoint along the H/V axis. A shared corner is
+      // authoritative: carry the opposite endpoint across the same axis so a
+      // rectangle follows the corner instead of snapping back to stale
+      // coordinates.
+      //
+      // A point ANCHORED to another line is a different thing: it belongs to
+      // its host, not to this line, and it is expected to ride the host. The
+      // far end is not the geometry being edited, so it stays where it is and
+      // the line rotates. Carrying it (the old behaviour) dragged the free end
+      // of a T-junction's stem along when the HOST was stretched — measured:
+      // host (0,0)-(100,0) -> (0,0)-(160,0) with the stem anchored at t=0.3
+      // moved the stem's free end from (30,40) to (48,40) instead of leaving
+      // it and letting the stem pivot on its anchored point. The axis
+      // constraint cannot survive that rotation, so it is dropped rather than
+      // clamping the anchored point back off its host (a badge must never
+      // outlive the geometry it claims).
       const std::string other_endpoint_point_id =
           endpoint_vertex_id(line, !endpoint_ref.is_start);
       const std::string moved_endpoint_point_id =
@@ -99,27 +129,60 @@ void propagate_connected_point_move(SketchFeatureParameters& parameters,
           vertex_is_anchored_to_line(parameters, other_endpoint_point_id);
 
       if (line.constraint == "horizontal") {
-        if ((moved_endpoint_anchored || moved_point_shared) &&
-            !other_endpoint_fixed &&
-            !other_endpoint_anchored) {
+        if (moved_endpoint_anchored) {
+          if (std::abs(move.to_y - previous_other_y) > kCoincidentTolerance) {
+            line.constraint = std::nullopt;
+          }
+        } else if (moved_point_shared && !other_endpoint_fixed &&
+                   !other_endpoint_anchored) {
           if (moved_start) {
             line.end_y = line.start_y;
           } else if (moved_end) {
             line.start_y = line.end_y;
           }
+        } else if (!other_endpoint_fixed && !other_endpoint_anchored) {
+          // The axis is an INVARIANT, so it is honoured by moving the whole line
+          // rather than by clamping the dragged point: the far end takes the
+          // moved point's y, which keeps the line horizontal AND lets the drag
+          // work in both directions at once — down (the line travels) and along
+          // (it stretches). Fusion behaves this way, which the user compared
+          // directly to dragging a dimensioned line (2026-11-04).
+          //
+          // The old code clamped the DRAGGED point onto the far end's y instead,
+          // so a diagonal drag silently lost its vertical part; and for a point
+          // bound to a circle the clamp pushed it off the curve, which made the
+          // sketch unsatisfiable (that is the status=2 failure measured on a
+          // horizontal line on a circle).
+          if (moved_start) {
+            line.end_y = move.to_y;
+          } else if (moved_end) {
+            line.start_y = move.to_y;
+          }
         } else if (!other_endpoint_anchored && moved_start) {
+          // The far end cannot move (fixed): fall back to clamping.
           line.start_y = line.end_y;
         } else if (!other_endpoint_anchored && moved_end) {
           line.end_y = line.start_y;
         }
       } else if (line.constraint == "vertical") {
-        if ((moved_endpoint_anchored || moved_point_shared) &&
-            !other_endpoint_fixed &&
-            !other_endpoint_anchored) {
+        if (moved_endpoint_anchored) {
+          if (std::abs(move.to_x - previous_other_x) > kCoincidentTolerance) {
+            line.constraint = std::nullopt;
+          }
+        } else if (moved_point_shared && !other_endpoint_fixed &&
+                   !other_endpoint_anchored) {
           if (moved_start) {
             line.end_x = line.start_x;
           } else if (moved_end) {
             line.start_x = line.end_x;
+          }
+        } else if (!other_endpoint_fixed && !other_endpoint_anchored) {
+          // See the horizontal branch: the line travels along the constrained
+          // axis instead of the dragged point being clamped.
+          if (moved_start) {
+            line.end_x = move.to_x;
+          } else if (moved_end) {
+            line.start_x = move.to_x;
           }
         } else if (!other_endpoint_anchored && moved_start) {
           line.start_x = line.end_x;

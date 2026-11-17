@@ -29,6 +29,45 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
     return;
   }
 
+  // Heal a sketch saved with the SAME statement twice: a line whose contact end is
+  // both point-on-circle AND the tangency's contact point. The two gradients are
+  // parallel at the solution, so the Jacobian is singular and the solver reports a
+  // conflicting system (`status=2` on every edit). Files written before the guard
+  // in set_sketch_tangent_constraint exist in the field, so the repair runs here,
+  // before the solve, and logs what it dropped.
+  {
+    auto& params = *feature.sketch_parameters;
+    for (const auto& relation : params.line_relations) {
+      if (relation.kind != "tangent_line_circle") continue;
+      const auto tangent_line = std::find_if(
+          params.lines.begin(), params.lines.end(),
+          [&](const SketchLine& line) {
+            return line.id == relation.first_line_id;
+          });
+      if (tangent_line == params.lines.end()) continue;
+      const auto dropped = std::remove_if(
+          params.constraints.begin(), params.constraints.end(),
+          [&](const SketchConstraint& constraint) {
+            if (constraint.kind != "point_on_circle" &&
+                constraint.kind != "point_on_arc") {
+              return false;
+            }
+            if (constraint.target_ids.size() < 2) return false;
+            return constraint.target_ids[0] == tangent_line->end_vertex_id &&
+                   constraint.target_ids[1] == relation.second_line_id;
+          });
+      if (dropped != params.constraints.end()) {
+        params.constraints.erase(dropped, params.constraints.end());
+        polysmith::core::log_info(
+            "sketch",
+            "repaired " + tangent_line->id +
+                ": its contact end was bound to " + relation.second_line_id +
+                " as well as tangent to it (the pair is singular) - binding "
+                "dropped");
+      }
+    }
+  }
+
   // Drop anchors whose host line has been deleted.  Anchors whose
   // anchored point is no longer referenced by any live entity are
   // harmless (they are a no‑op during enforcement and the point is
@@ -492,11 +531,44 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
             result.status == GCS::SuccessfulSolutionInvalid
                 ? "solution invalid (redundant/conflicting constraints)"
                 : "unknown error";
+        // Name what the sketch was made of when it failed. A failing solve is
+        // otherwise a bare "status=2" with no way to tell which constraint
+        // combination caused it, and the report usually arrives as a log line
+        // without the document (2026-11-06). One line, only on failure.
+        std::string inventory;
+        for (const auto& constraint : feature.sketch_parameters->constraints) {
+          inventory += " " + constraint.kind + "[";
+          for (size_t i = 0; i < constraint.target_ids.size(); ++i) {
+            if (i != 0) inventory += ",";
+            inventory += constraint.target_ids[i];
+          }
+          inventory += "]";
+        }
+        for (const auto& dimension : feature.sketch_parameters->dimensions) {
+          inventory += " " + dimension.kind +
+                       (dimension.driven      ? "(driven)"
+                        : dimension.is_auto   ? "(auto)"
+                                              : "(driving)") +
+                       "[" + dimension.entity_id + "]";
+        }
+        for (const auto& line : feature.sketch_parameters->lines) {
+          if (line.constraint.has_value()) {
+            inventory += " " + line.id + ":" + line.constraint.value();
+          }
+        }
+        for (const auto& relation : feature.sketch_parameters->line_relations) {
+          inventory += " relation:" + relation.kind + "[" +
+                       relation.first_line_id + "," + relation.second_line_id +
+                       "]";
+        }
         polysmith::core::log_error(
             "sketch",
             std::string("sketch solver failed - ") + reason + " (status=" +
                 std::to_string(static_cast<int>(result.status)) +
-                ", dofs=" + std::to_string(result.dofs) + ")");
+                ", dofs=" + std::to_string(result.dofs) +
+                ", conflicting=" + std::to_string(result.conflicting.size()) +
+                ", redundant=" + std::to_string(result.redundant.size()) +
+                ") with:" + inventory);
       }
 
       // Redundant constraint detection is handled by each dimension/
@@ -550,6 +622,7 @@ void refresh_sketch_derived_state(FeatureEntry& feature) {
   enforce_midpoint_anchors(*feature.sketch_parameters);
   enforce_point_line_anchors(*feature.sketch_parameters);
   enforce_point_on_arc_constraints(*feature.sketch_parameters);
+  enforce_point_on_circle_constraints(*feature.sketch_parameters);
   enforce_tangent_line_circle_relations(*feature.sketch_parameters);
   enforce_tangent_circle_line_relations(*feature.sketch_parameters);
   enforce_constraint_completion(*feature.sketch_parameters);

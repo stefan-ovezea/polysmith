@@ -1,4 +1,5 @@
 #include "core/geometry/body_compiler.h"
+#include "core/diagnostics/logger.h"
 #include "core/geometry/import_runtime.h"
 
 #include <algorithm>

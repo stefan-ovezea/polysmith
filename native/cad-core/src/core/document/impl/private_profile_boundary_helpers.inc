@@ -320,3 +320,69 @@ const SketchProfileRegion* resolve_sketch_profile(
   }
   return tied ? nullptr : best;
 }
+
+// Which selected regions become ONE feature (and therefore one body).
+//
+// Both extrude entry points MUST use this: the creation path
+// (`extrude_profiles`) and the live re-bind path (`update_extrude_profiles`,
+// which runs when the user arms Extrude first and picks surfaces afterwards).
+// They used to disagree — creation split disconnected regions into one body per
+// group, while the live path put the whole selection into ONE feature, i.e. one
+// body holding two disconnected cylinders — so the same selection produced a
+// different model depending on the order of the clicks.
+//
+// cut/intersect/join-with-target stay one group: they are one boolean against
+// one target body, and splitting them would apply the boolean per group.
+std::vector<std::vector<SketchProfileRegion>> extrude_profile_groups(
+    const std::vector<SketchProfileRegion>& selected_profiles,
+    const std::string& mode,
+    const std::optional<std::string>& target_body_id) {
+  if (selected_profiles.size() == 1 || mode == "cut" || mode == "intersect" ||
+      (mode == "join" && target_body_id.has_value())) {
+    return {selected_profiles};
+  }
+  if (mode.empty() || mode == "join" || mode == "new_body") {
+    return group_touching_profiles(selected_profiles);
+  }
+  std::vector<std::vector<SketchProfileRegion>> per_profile;
+  per_profile.reserve(selected_profiles.size());
+  for (const auto& profile : selected_profiles) {
+    per_profile.push_back({profile});
+  }
+  return per_profile;
+}
+
+// Resolve a STORED profile id for the REFRESH paths, which re-derive a
+// feature's geometry after a sketch edit.
+//
+// A stored id is a reference, not the geometry. `find_equivalent_profile`
+// decides by whether the id still names the region's entities: right for an
+// unchanged sketch, too brittle for a refresh. Adding ONE circle that crosses
+// the plate outline turns its 4-line loop into 4 lines + 1 arc, so the stored id
+// stops naming it. The refresh then found no profile, flagged the feature
+// `Source profile unavailable`, and — because the body compiler skips a
+// `dependency_broken` feature — the extruded solid vanished while the region was
+// still there. Nothing re-bound it afterwards (the stored id never changes on
+// its own), so the loss survived every later edit and a save/load.
+//
+// Falling back to the overlap resolution the creation path already uses lets the
+// refresh re-bind; `preserve_extrude_source_geometry` then rewrites the stored
+// id, so the feature heals instead of staying broken.
+const SketchProfileRegion* resolve_stored_profile(
+    const std::vector<SketchProfileRegion>& profiles,
+    const std::string& profile_id) {
+  if (const SketchProfileRegion* strict =
+          find_equivalent_profile(profiles, profile_id)) {
+    return strict;
+  }
+  // Text glyphs are the exception: their contour ids are reused deterministically
+  // across strings ("O" and "AB" both have a c0 contour), so an entity-overlap
+  // fallback would happily re-bind a stored id to a DIFFERENT glyph. Their id
+  // SET is the only identity they have (see find_equivalent_profile), so a failed
+  // strict match means the glyph really changed — report it broken, which is what
+  // text_test's tnp matrix asserts.
+  if (profile_id.find("-line-text-") != std::string::npos) {
+    return nullptr;
+  }
+  return resolve_sketch_profile(profiles, profile_id);
+}

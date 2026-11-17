@@ -34,6 +34,7 @@ import {
   FeatureTimeline,
   LogsWindow,
   MessageLog,
+  OperationOverlay,
   SettingsModal,
   ToastViewport,
   ViewportPanel,
@@ -3133,6 +3134,7 @@ function App() {
       updateExtrudeMode,
       updateExtrudeTargetBody,
       updateExtrudeParameters,
+      updateExtrudeProfiles,
       updateLoftProfiles,
       updateLoftRuled,
       updateRevolveProfile,
@@ -7337,6 +7339,9 @@ function App() {
           onCancel={() => setPendingFinishOffer(null)}
         />
       ) : null}
+      {/* Covers the window while a long core command runs (a STEP assembly
+          import takes ~16 s); harmless when nothing is running. */}
+      <OperationOverlay />
     </main>
   );
 }

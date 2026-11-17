@@ -1,16 +1,24 @@
 json to_payload(const polysmith::core::DocumentState& document,
-                bool include_opaque) {
+                bool include_opaque, bool include_all_sketch_vertices) {
   json feature_history = json::array();
   for (const auto& feature : document.feature_history) {
     // Derived caches (serialization.h).  The vertex table stays for the sketch
     // the user has open: hover, picking and drag read it synchronously.  The
     // detected profiles are never persisted — they are recomputed on load from
     // the sketch entities (deterministic ids), so save/load both strip them.
+    //
+    // `include_all_sketch_vertices` is for SAVING: the vertex table is NOT
+    // re-derived on load, so a file written without it comes back with sketches
+    // whose circles reference vertices that do not exist.  The solver then
+    // registers no points, falls back to anonymous centres and reads the wrong
+    // radius slots — reported as "circle circle-104 collapsed from 7.758893 mm
+    // to -8.132016 mm" on every load of the saved file.
     const bool is_active_sketch =
         document.active_sketch_feature_id.has_value() &&
         *document.active_sketch_feature_id == feature.id;
     feature_history.push_back(
-        to_payload(feature, include_opaque, is_active_sketch,
+        to_payload(feature, include_opaque,
+                   is_active_sketch || include_all_sketch_vertices,
                    /*include_profiles=*/false));
   }
 

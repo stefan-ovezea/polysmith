@@ -6,11 +6,29 @@
 // and are far below this ceiling.
 constexpr int kMaxProjectionOutlineCorners = 5000;
 
+// Effective world placement of a sketch's plane for projection.
+//
+// A sketch on an origin reference plane stores no `plane_frame` — its
+// placement is the legacy hardcoded axis mapping, which
+// `resolve_sketch_projection_frame` reconstructs (the same fallback body
+// projection and the live-projection refresher already use). The face /
+// edge / profile / vertex tools used to demand a stored frame, so every
+// sketch on XY, XZ or YZ refused to accept projected geometry with
+// "Active sketch does not have a plane frame for projection".
+std::optional<SketchFeatureParameters::SketchPlaneFrame> projection_frame(
+    const SketchFeatureParameters& sketch) {
+  const auto frame = resolve_sketch_projection_frame(sketch);
+  if (!frame.has_value()) {
+    return std::nullopt;
+  }
+  return to_sketch_plane_frame(frame.value());
+}
+
 // Validate that the active sketch in `document` is set up to receive
-// projected geometry: there must be an active sketch with a plane
-// frame. Returns the matching FeatureEntry iterator on success and
-// throws a runtime_error on every failure path so all three
-// project_*_into_sketch methods share the same diagnostics.
+// projected geometry: there must be an active sketch with a resolvable
+// plane frame. Returns the matching FeatureEntry iterator on success and
+// throws a runtime_error on every failure path so all project_*_into_sketch
+// methods share the same diagnostics.
 std::vector<FeatureEntry>::iterator require_projection_target(
     DocumentState& document) {
   if (!document.active_sketch_feature_id.has_value()) {
@@ -24,7 +42,7 @@ std::vector<FeatureEntry>::iterator require_projection_target(
       });
   if (sketch_it == document.feature_history.end() ||
       !sketch_it->sketch_parameters.has_value() ||
-      !sketch_it->sketch_parameters->plane_frame.has_value()) {
+      !projection_frame(*sketch_it->sketch_parameters).has_value()) {
     throw std::runtime_error(
         "Active sketch does not have a plane frame for projection");
   }

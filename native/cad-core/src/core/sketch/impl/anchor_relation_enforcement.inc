@@ -113,3 +113,106 @@ void enforce_point_on_arc_constraints(SketchFeatureParameters& parameters) {
     }
   }
 }
+
+// Pull every point_on_circle-attached point onto the rim. The solver owns this
+// constraint (P2PDistance), so this pass is normally a no-op — but it is the
+// authority for the degenerate case the solver CANNOT recover from: a point that
+// has been moved onto the circle's CENTRE, where the binding has no direction to
+// project along.
+//
+// Measured 2026-11-04 on the user's document: a point dragged onto the centre sat
+// 0.0000 from the centre with r = 38.022 (a 38 mm violation), and from then on
+// EVERY refresh failed with `sketch solver failed … status=2` (dofs 3..8, and -3)
+// — which also marked dimensions driven (so they stopped driving) and spammed the
+// Logs panel. The sketch could never recover, because no drag or dimension edit
+// can give the solver a gradient at the centre.
+//
+// The direction of the repair is the point's own offset from the centre; when the
+// point sits ON the centre that offset is undefined, so the owning line's other
+// end decides (falling back to +x). Runs after the solver, next to the arc pass.
+//
+// The position is read through `point_position_of`, NOT the vertex table: during a
+// refresh a drag has written the LINE caches and `rebuild_sketch_vertices` has not
+// run yet, so the vertex table still holds the pre-drag coordinates. Reading the
+// table made this pass a no-op on exactly the case it exists for (measured: the
+// pass saw (10,0) while the line had already moved to (0,0), and the sketch stayed
+// poisoned).
+void enforce_point_on_circle_constraints(SketchFeatureParameters& parameters) {
+  for (const auto& constraint : parameters.constraints) {
+    if (constraint.kind != "point_on_circle" ||
+        constraint.target_ids.size() < 2) {
+      continue;
+    }
+    const auto circle_it = std::find_if(
+        parameters.circles.begin(),
+        parameters.circles.end(),
+        [&](const SketchCircle& circle) {
+          return circle.id == constraint.target_ids[1];
+        });
+    if (circle_it == parameters.circles.end()) continue;
+    if (circle_it->radius <= kMinimumSketchDimensionValue) continue;
+
+    const auto vertex_it = std::find_if(
+        parameters.vertices.begin(),
+        parameters.vertices.end(),
+        [&](const SketchVertex& vertex) {
+          return vertex.id == constraint.target_ids[0];
+        });
+    if (vertex_it == parameters.vertices.end()) continue;
+    // The circle's own centre vertex is not on the rim by definition.
+    if (circle_center_vertex_id(*circle_it) == vertex_it->id) continue;
+
+    // Read from the LINE caches first: mid-refresh a drag has written them and the
+    // vertex table still holds the pre-drag position (`point_position_of` lives in
+    // a file included after this one, hence the local lookup).
+    double vx = vertex_it->x;
+    double vy = vertex_it->y;
+    for (const auto& line : parameters.lines) {
+      if (line.start_vertex_id == vertex_it->id) {
+        vx = line.start_x;
+        vy = line.start_y;
+        break;
+      }
+      if (line.end_vertex_id == vertex_it->id) {
+        vx = line.end_x;
+        vy = line.end_y;
+        break;
+      }
+    }
+
+    double dx = vx - circle_it->center_x;
+    double dy = vy - circle_it->center_y;
+    const double distance = std::hypot(dx, dy);
+    if (std::abs(distance - circle_it->radius) <= kCoincidentTolerance) {
+      continue;
+    }
+    if (distance <= kMinimumSketchDimensionValue) {
+      // Degenerate: the point sits on the centre. Use the owning line's other
+      // end as the direction, so the repair lands where the line points.
+      dx = 1.0;
+      dy = 0.0;
+      for (const auto& line : parameters.lines) {
+        if (line.start_vertex_id == vertex_it->id) {
+          dx = line.end_x - circle_it->center_x;
+          dy = line.end_y - circle_it->center_y;
+          break;
+        }
+        if (line.end_vertex_id == vertex_it->id) {
+          dx = line.start_x - circle_it->center_x;
+          dy = line.start_y - circle_it->center_y;
+          break;
+        }
+      }
+      if (std::hypot(dx, dy) <= kMinimumSketchDimensionValue) {
+        dx = 1.0;
+        dy = 0.0;
+      }
+    }
+    const double length = std::hypot(dx, dy);
+    const double px = circle_it->center_x + circle_it->radius * (dx / length);
+    const double py = circle_it->center_y + circle_it->radius * (dy / length);
+    if (std::hypot(vx - px, vy - py) > 1e-9) {
+      propagate_connected_point_move(parameters, vertex_it->id, px, py);
+    }
+  }
+}

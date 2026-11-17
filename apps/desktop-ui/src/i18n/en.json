@@ -2,6 +2,17 @@
   "app": {
     "name": "Polysmith"
   },
+  "busy": {
+    "import_step": "Importing STEP model",
+    "import_iges": "Importing IGES model",
+    "import_stl": "Importing mesh",
+    "import_dxf": "Importing DXF drawing",
+    "import_pcb": "Importing fabrication layer",
+    "load_document": "Opening document",
+    "starting": "Waiting for the CAD core...",
+    "elapsed": "{{seconds}} s elapsed",
+    "patience": "Large files take a while"
+  },
   "common": {
     "action": "Action",
     "size": "Size",
@@ -1991,7 +2002,8 @@
     "planeYZ": "YZ plane",
     "redefinePlane": "Redefine sketch plane",
     "redefinePlaneArmed": "Click a face to use as the new sketch plane (Esc to cancel)",
-    "suppressed": "suppressed"
+    "suppressed": "suppressed",
+    "operationFeatures": "one operation, {{count}} bodies"
   },
   "aiAssistant": {
     "autoRunActive": "Auto-run enabled",

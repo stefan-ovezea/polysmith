@@ -680,17 +680,42 @@ DocumentState DocumentManager::delete_feature(const std::string& feature_id) {
   if (feature_it->kind == "root_part") {
     throw std::runtime_error("The root feature cannot be deleted");
   }
-  if (feature_it->kind == "sketch" &&
-      document_->active_sketch_feature_id.has_value() &&
-      document_->active_sketch_feature_id.value() == feature_id) {
+  // One gesture == one operation. A multi-surface extrude makes one body per
+  // disconnected group, all carrying the same operation_id, and Fusion treats
+  // the operation as the unit of deletion: removing one of its bodies removes
+  // ALL of them and the single timeline entry. Deleting just one member would
+  // leave a half-operation that still claims the same input surfaces, plus a
+  // timeline block whose remaining bodies nobody asked for.
+  // A standalone feature (empty operation_id) deletes exactly itself.
+  std::vector<std::string> deleted_ids{feature_id};
+  if (!feature_it->operation_id.empty()) {
+    for (const auto& feature : document_->feature_history) {
+      if (feature.operation_id == feature_it->operation_id) {
+        deleted_ids.push_back(feature.id);
+      }
+    }
+    std::sort(deleted_ids.begin(), deleted_ids.end());
+    deleted_ids.erase(std::unique(deleted_ids.begin(), deleted_ids.end()),
+                      deleted_ids.end());
+  }
+  const auto is_deleted = [&](const std::string& id) {
+    return std::find(deleted_ids.begin(), deleted_ids.end(), id) !=
+           deleted_ids.end();
+  };
+  if (document_->active_sketch_feature_id.has_value() &&
+      is_deleted(document_->active_sketch_feature_id.value())) {
     throw std::runtime_error("Finish the active sketch before deleting it");
   }
   push_undo_state();
   clear_redo_stack();
   const bool deleted_selected =
       document_->selected_feature_id.has_value() &&
-      document_->selected_feature_id.value() == feature_id;
-  document_->feature_history.erase(feature_it);
+      is_deleted(document_->selected_feature_id.value());
+  document_->feature_history.erase(
+      std::remove_if(
+          document_->feature_history.begin(), document_->feature_history.end(),
+          [&](const FeatureEntry& feature) { return is_deleted(feature.id); }),
+      document_->feature_history.end());
   if (deleted_selected) {
     document_->selected_feature_id = std::nullopt;
   }
@@ -703,7 +728,7 @@ DocumentState DocumentManager::delete_feature(const std::string& feature_id) {
   if (document_->selected_face_id.has_value()) {
     const std::string owner =
         owner_of(document_->selected_face_id.value(), "face");
-    if (owner == feature_id) {
+    if (is_deleted(owner)) {
       document_->selected_face_id = std::nullopt;
     }
   }
@@ -711,14 +736,14 @@ DocumentState DocumentManager::delete_feature(const std::string& feature_id) {
       std::remove_if(document_->selected_edge_ids.begin(),
                      document_->selected_edge_ids.end(),
                      [&](const std::string& id) {
-                       return owner_of(id, "edge") == feature_id;
+                       return is_deleted(owner_of(id, "edge"));
                      }),
       document_->selected_edge_ids.end());
   document_->selected_vertex_ids.erase(
       std::remove_if(document_->selected_vertex_ids.begin(),
                      document_->selected_vertex_ids.end(),
                      [&](const std::string& id) {
-                       return owner_of(id, "vertex") == feature_id;
+                       return is_deleted(owner_of(id, "vertex"));
                      }),
       document_->selected_vertex_ids.end());
   for (auto& remaining : document_->feature_history) {
@@ -728,8 +753,11 @@ DocumentState DocumentManager::delete_feature(const std::string& feature_id) {
     }
     auto& params = remaining.construction_plane_parameters.value();
     const auto references_deleted = [&](const std::string& source_id) {
-      return source_id == feature_id ||
-             source_id.rfind(feature_id + ":", 0) == 0;
+      return std::any_of(deleted_ids.begin(), deleted_ids.end(),
+                         [&](const std::string& deleted_id) {
+                           return source_id == deleted_id ||
+                                  source_id.rfind(deleted_id + ":", 0) == 0;
+                         });
     };
     const bool depends_on_deleted =
         references_deleted(params.source_plane_id) ||
@@ -1130,8 +1158,17 @@ void DocumentManager::save_document_to_path(const std::string& file_path) const 
   if (file_path.empty()) {
     throw std::runtime_error("Save path cannot be empty");
   }
-  const nlohmann::json document =
-      polysmith::protocol::to_payload(document_.value(), /*include_opaque=*/true);
+  // The timeline cursor is a VIEW state: it says how much of the history the
+  // viewport draws. Persisting it baked a rolled-back scrub into the file, and
+  // every load then showed fewer bodies than the hierarchy listed, with the
+  // timeline apparently stuck — nothing moves the marker unless the user drags
+  // it (reported: "loading the saved file shows 2 bodies in the hierarchy but
+  // only one visible … clicking near the extrude makes the body show up").
+  // A save stores the full history; the in-memory cursor is left alone.
+  DocumentState saved = document_.value();
+  saved.timeline_cursor = std::nullopt;
+  const nlohmann::json document = polysmith::protocol::to_payload(
+      saved, /*include_opaque=*/true, /*include_all_sketch_vertices=*/true);
   const nlohmann::json payload = {
       {"format", "polysmith/1"},
       {"document", document},
@@ -1184,6 +1221,11 @@ DocumentState DocumentManager::load_document_from_path(
   // churned) then still compiles its bodies instead of failing with an
   // empty-profile extrude. Regression: cad_core_spline_test's save/load leg
   // (S0) failed here for a spline-bounded profile.
+  // Files written before the timeline cursor stopped being persisted carry one,
+  // and it hid every feature past it: the hierarchy listed them, the viewport
+  // did not, and only dragging the marker revealed them. Treat it as what it is
+  // — a view state, not document content — so an old file opens whole.
+  loaded.timeline_cursor = std::nullopt;
   polysmith::core::refresh_linked_features_after_load(loaded);
   if (loaded.selected_sketch_profile_id.has_value() ||
       !loaded.selected_sketch_profile_ids.empty()) {

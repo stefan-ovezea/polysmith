@@ -27,6 +27,21 @@
                       : json("")},
                  {"solid_count", feature.step_import_parameters->solid_count},
                  {"face_count", feature.step_import_parameters->face_count},
+                 // The file's display colours ride with the opaque B-rep
+                 // snapshot: they are only needed when saving/loading, and
+                 // one entry per face would bloat every document_state.
+                 {"face_colors",
+                  [&]() {
+                    json colors = json::array();
+                    if (!include_opaque) {
+                      return colors;
+                    }
+                    for (const std::uint32_t packed :
+                         feature.step_import_parameters->face_colors) {
+                      colors.push_back(packed);
+                    }
+                    return colors;
+                  }()},
              }
            : json(nullptr)},
       {"iges_import_parameters",

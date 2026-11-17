@@ -233,12 +233,27 @@ BodySeamAnalysis build_seam_analysis(const TopoDS_Shape& body_shape) {
 // vector rather than a hash set because edge selections are O(N <= ~20)
 // in practice — the linear scan is cheaper than building a hash set
 // per body.
+// `min_length` > 0 keeps only edges at least that long and measures length
+// from the sampled polyline instead of BRepGProp integration (the slow path,
+// and a budgeted import has tens of thousands of edges). `max_count` > 0
+// caps the TOTAL entries in `out`, not the entries this call adds: callers
+// append many bodies into one vector, which is how an assembly that arrives
+// as a thousand bodies gets a document-wide edge budget instead of a
+// thousand per-body ones. Both default to off, so every existing caller
+// still gets the complete edge set.
 void enumerate_body_edges(const TopoDS_Shape& body_shape,
                           const std::string& body_id,
                           const std::vector<std::string>& selected_edge_ids,
                           const FacetEdgeFilter* facet_filter,
-                          std::vector<ViewportEdgePrimitive>& out) {
+                          std::vector<ViewportEdgePrimitive>& out,
+                          double min_length = 0.0,
+                          std::size_t max_count = 0) {
   if (body_shape.IsNull()) {
+    return;
+  }
+  // Budget already spent by earlier bodies: adding one more edge per body
+  // here is how a thousand-body import overshot its own cap.
+  if (max_count > 0 && out.size() >= max_count) {
     return;
   }
 
@@ -293,10 +308,10 @@ void enumerate_body_edges(const TopoDS_Shape& body_shape,
       // or rendered; skip them rather than emit dead entries.
       continue;
     }
-    if (facet_filter != nullptr) {
-      // Facet bodies: polyline length from the sampled points (exact
-      // for straight facet edges, within sampling deflection for
-      // curves). BRepGProp integration per edge is the slow path —
+    if (facet_filter != nullptr || min_length > 0.0) {
+      // Facet bodies and budgeted imports: polyline length from the sampled
+      // points (exact for straight facet edges, within sampling deflection
+      // for curves). BRepGProp integration per edge is the slow path —
       // measured seconds across a few thousand facet edges.
       for (size_t k = 0; k + 3 < primitive.points.size(); k += 3) {
         const double dx = primitive.points[k + 3] - primitive.points[k];
@@ -317,11 +332,17 @@ void enumerate_body_edges(const TopoDS_Shape& body_shape,
         primitive.length = 0.0;
       }
     }
+    if (min_length > 0.0 && primitive.length < min_length) {
+      continue;
+    }
     primitive.is_selected =
         std::find(selected_edge_ids.begin(),
                   selected_edge_ids.end(),
                   primitive.id) != selected_edge_ids.end();
     out.push_back(std::move(primitive));
+    if (max_count > 0 && out.size() >= max_count) {
+      break;
+    }
   }
 }
 

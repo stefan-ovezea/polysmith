@@ -1,12 +1,31 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include <TopoDS_Shape.hxx>
 
 #include "core/document/body_feature_types.h"
 
 namespace polysmith::core {
+
+// One solid of the imported file, with the identity the file gives it: the
+// part name from the product structure and the display colour from its
+// presentation style. Each becomes its own body, so a PCB assembly arrives
+// as its parts instead of one undifferentiated lump.
+struct StepImportedSolid {
+  TopoDS_Shape shape;
+  // Faces in this solid (the length `face_colors` takes when styled).
+  int face_count = 0;
+  // Part name from the file (e.g. "FPC0.5-30P"). Empty when the file names
+  // nothing; callers fall back to a positional name.
+  std::string name;
+  // One entry per face of `shape` in TopExp::MapShapes(..., TopAbs_FACE)
+  // order, packed 0xFFRRGGBB (0 = no style on that face). Empty when the
+  // file styles nothing for this solid.
+  std::vector<std::uint32_t> face_colors;
+};
 
 // Result of reading a STEP file: the translated shape (a compound for
 // multi-solid files), the original file units as reported by the file
@@ -17,6 +36,10 @@ struct StepImportResult {
   std::string source_units;
   int solid_count = 0;
   int face_count = 0;
+  // One entry per solid in `shape`, in TopExp::MapShapes(..., TopAbs_SOLID)
+  // order — the same solids, split apart, carrying their names and colours.
+  // Empty only when the file has no solids at all (surface models).
+  std::vector<StepImportedSolid> solids;
 };
 
 // Reads a STEP file and returns the translated shape in millimeters.

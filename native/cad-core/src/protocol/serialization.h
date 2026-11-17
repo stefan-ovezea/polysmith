@@ -33,8 +33,12 @@ json to_payload(const polysmith::core::FeatureEntry& feature,
                 bool include_opaque = false,
                 bool include_vertices = false,
                 bool include_profiles = false);
+// `include_all_sketch_vertices` keeps every sketch's vertex table, not just the
+// open sketch's: the table is NOT re-derived on load, so a SAVE must use it or
+// the file comes back with dangling vertex references (see the .inc).
 json to_payload(const polysmith::core::DocumentState& document,
-                bool include_opaque = false);
+                bool include_opaque = false,
+                bool include_all_sketch_vertices = false);
 // Just the selection fields (see impl/selection_to_payload.inc): the payload a
 // select_* command replies with instead of the whole document.
 json to_selection_payload(const polysmith::core::DocumentState& document);

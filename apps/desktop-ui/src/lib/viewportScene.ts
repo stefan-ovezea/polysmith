@@ -131,6 +131,7 @@ function makeMeshPrimitive(
     positions: decodeF32(primitive.positions),
     normals: decodeF32(primitive.normals),
     indices: decodeU32(primitive.indices),
+    colors: decodeF32(primitive.colors ?? ""),
     isSelected: primitive.is_selected,
     appearanceColor: primitive.appearance_color ?? null,
   };

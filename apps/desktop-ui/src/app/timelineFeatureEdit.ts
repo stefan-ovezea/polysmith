@@ -152,6 +152,17 @@ function editExtrudeFeature(
       mode: params.mode,
       targetBodyId: params.target_body_id ?? null,
       parameters: params,
+      // Restoring the surfaces is what restores the BODY: every update
+      // re-derives the scope's geometry from the profile ids, so a cancel that
+      // restores only the extent and operation leaves the edited selection in
+      // place ("cancel does not restore the original selection and the refresh
+      // creates a body from all selected surfaces during edit").
+      profileIds:
+        params.profile_ids && params.profile_ids.length > 0
+          ? [...params.profile_ids]
+          : params.profile_id
+            ? [params.profile_id]
+            : [],
     },
   });
 }

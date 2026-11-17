@@ -305,18 +305,40 @@ bool test_oversized_import_decimated_face_proxies(DocumentManager& manager) {
 
   const ViewportState viewport = import_and_build_viewport(manager, path);
 
-  if (!expect(viewport.meshes.size() == 1 &&
+  // One body (and one mesh) per solid: the fixture is a compound of 900
+  // boxes plus a cylinder and a 100-gon prism, so the import splits it into
+  // 902 bodies instead of one lump.
+  constexpr std::size_t kExpectedBodies =
+      static_cast<std::size_t>(kBoxCount) + 2;
+  if (!expect(viewport.meshes.size() == kExpectedBodies &&
                   !viewport.meshes.front().indices.empty(),
-              "oversized: the body mesh must still be emitted")) {
+              "oversized: every body must still emit a renderable mesh")) {
     return false;
   }
-  if (!expect(viewport.edges.empty(),
-              "oversized: per-edge pick entries must be skipped") ||
+  // The budgeted edge pass: structural edges (at least 1 mm long), capped at
+  // the budget, and no per-vertex entries. This used to emit no edges at all,
+  // which left a large imported assembly as a flat silhouette: a 24k-face PCB
+  // carrier had nothing outlining its board, parts or holes.
+  constexpr double kTestMinEdgeLength = 1.0;
+  constexpr std::size_t kTestMaxEdges = 8000;
+  if (!expect(!viewport.edges.empty(),
+              "oversized: structural edges must still be emitted") ||
+      !expect(viewport.edges.size() <= kTestMaxEdges,
+              ("oversized: the edge budget must cap the emitted edges, got " +
+               std::to_string(viewport.edges.size()))
+                  .c_str()) ||
       !expect(viewport.vertices.empty(),
               "oversized: per-vertex pick entries must be skipped") ||
-      !expect(viewport.bodies.size() == 1,
-              "oversized: the body summary must still be emitted")) {
+      !expect(viewport.bodies.size() == kExpectedBodies,
+              "oversized: one body summary per solid must be emitted")) {
     return false;
+  }
+  for (const auto& edge : viewport.edges) {
+    if (edge.length < kTestMinEdgeLength - 1e-9) {
+      std::cerr << "oversized: edge " << edge.id << " is " << edge.length
+                << " mm, below the structural threshold\n";
+      return false;
+    }
   }
 
   // 900 boxes (6 faces) + cylinder (2 rims + 1 wall) + 100-gon prism

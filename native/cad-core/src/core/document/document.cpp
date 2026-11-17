@@ -67,6 +67,7 @@ namespace {
 #include "core/document/impl/private_linked_feature_refresh.inc"
 #include "core/document/impl/private_selection_projection_helpers.inc"
 #include "core/document/impl/private_projection_command_helpers.inc"
+#include "core/document/impl/private_sketch_plane_placement_helpers.inc"
 #include "core/document/impl/private_threaded_feature_helpers.inc"
 }  // namespace
 

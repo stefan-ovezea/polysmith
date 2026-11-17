@@ -61,17 +61,10 @@ DocumentState DocumentManager::extrude_profiles(
   }
 
   const bool automatic_mode = mode.empty();
-  std::vector<std::vector<SketchProfileRegion>> profile_groups;
-  if (selected_profiles.size() == 1 || mode == "cut" || mode == "intersect" ||
-      (mode == "join" && target_body_id.has_value())) {
-    profile_groups.push_back(selected_profiles);
-  } else if (automatic_mode || mode == "join" || mode == "new_body") {
-    profile_groups = group_touching_profiles(selected_profiles);
-  } else {
-    for (const auto& profile : selected_profiles) {
-      profile_groups.push_back({profile});
-    }
-  }
+  // One shared rule with the live re-bind path, so picking surfaces before or
+  // after arming Extrude builds the same model (see extrude_profile_groups).
+  std::vector<std::vector<SketchProfileRegion>> profile_groups =
+      extrude_profile_groups(selected_profiles, mode, target_body_id);
 
   std::vector<ExtrudeFeatureParameters> extrude_parameter_groups;
   extrude_parameter_groups.reserve(profile_groups.size());
@@ -109,9 +102,34 @@ DocumentState DocumentManager::extrude_profiles(
 
   push_undo_state();
   clear_redo_stack();
+  const size_t first_new_feature = document_->feature_history.size();
   for (const auto& extrude_parameters : extrude_parameter_groups) {
     document_->feature_history.push_back(
         create_extrude_feature(next_feature_id_++, extrude_parameters));
+  }
+  // One gesture, one timeline operation. A multi-surface extrude makes one
+  // feature (and therefore one body) per disconnected group, which used to
+  // read as N unrelated operations the user could not connect to the single
+  // Extrude they performed. Stamping them with a shared id lets the timeline
+  // show ONE block — "Extrude · ×4" — while each body keeps its own feature
+  // (and so its own fillet/CAM/face targets). The first member's id names the
+  // group: no extra counter, and deleting a member leaves the rest grouped.
+  if (document_->feature_history.size() > first_new_feature) {
+    const std::string operation_id =
+        document_->feature_history[first_new_feature].id;
+    for (size_t i = first_new_feature; i < document_->feature_history.size();
+         ++i) {
+      document_->feature_history[i].operation_id = operation_id;
+    }
+    // New geometry must be visible. Creation appends at the END of the history,
+    // so with the timeline rolled back the new feature sits BEYOND
+    // `timeline_cursor`; compile_bodies stops at the cursor, so the feature
+    // shows in the timeline, reports healthy, and produces no body at all —
+    // and the cursor never recovers, because every later edit session records
+    // "the cursor is set" and leaves it alone. Measured on the reporter's file:
+    // cursor 2, three features, the third body missing. The marker moves to the
+    // end, as Fusion's does when a feature is created while rolled back.
+    document_->timeline_cursor = std::nullopt;
   }
   document_->selected_feature_id = document_->feature_history.back().id;
   document_->selected_reference_id = std::nullopt;

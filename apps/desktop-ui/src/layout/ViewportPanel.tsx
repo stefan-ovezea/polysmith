@@ -8,6 +8,7 @@ import {
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { sheetSceneOffsetX } from "@/lib/drawingViewMath";
 import { getShowHiddenEdges } from "@/utils/viewport/primitiveObjects";
 import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
@@ -3280,15 +3281,71 @@ export function ViewportPanel({
     // + rim lights were leaking cyan into the body fill, which made
     // the new gray material look like the old translucent cyan even
     // after the material itself was switched to opaque.
-    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+    //
+    // The ambient term used to be 0.85, which flattened every surface to the
+    // same brightness: an imported assembly read as one silhouette. A small
+    // ambient, a dominant key and a dim fill give the form back, and the PMREM
+    // room environment supplies the soft directional variation and
+    // reflections that make shaded parts look like parts (the "studio" look
+    // SolidCraft's renderer has). The environment is lighting only — it is
+    // never set as scene.background, so the transparent canvas is unchanged.
+    // No environment map and no ambient term: the studio rig has neither, and
+    // an ambient light was exactly what flattened every surface to the same
+    // value. (The old rig built a PMREM room here for soft fill.)
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.95);
-    keyLight.position.set(1.2, 1.8, 1.4);
-    scene.add(keyLight);
+    // Shadowing gives parts contact shading against each other, which is
+    // most of what separates a flat assembly from a model you can read. It
+    // costs one shadow-map pass over the body meshes (one per body, not one
+    // per face: the per-face entries are invisible pick proxies).
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.45);
-    fillLight.position.set(-1.5, 0.8, -1.1);
-    scene.add(fillLight);
+    // SolidCraft's studio rig, adopted as-is (crates/render/src/studio.rs):
+    // three fixed neutral directionals, a BRDF, and a per-channel Reinhard
+    // tone map. No ambient term, no cast shadows, no indirect bounces, no
+    // environment map — that is the whole model, and it is what their preview
+    // looks like. Everything we had bolted on instead (ambient + key + warm
+    // fill + PMREM room + shadow maps) was a different renderer, and no
+    // amount of tuning it was going to converge on theirs.
+    //
+    // Directions point TOWARDS each light in a Z-up world, intensities as in
+    // their table: (0.6, 0, 0.8) x3.0, (-0.8, 0, 0.6) x1.0, (0, -0.6, 0.8) x1.5.
+    const studioLights: Array<[number, number, number, number]> = [
+      [0.6, 0, 0.8, 3.0],
+      [-0.8, 0, 0.6, 1.0],
+      [0, -0.6, 0.8, 1.5],
+    ];
+    const studioLightObjects = studioLights.map(([x, y, z, intensity]) => {
+      const light = new THREE.DirectionalLight(0xffffff, intensity);
+      light.position.set(x * 100, y * 100, z * 100);
+      light.castShadow = false;
+      scene.add(light);
+      scene.add(light.target);
+      return light;
+    });
+    // Reinhard is c/(1+c) per channel, which is exactly their tone_map().
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.shadowMap.enabled = false;
+
+    const keyLight = studioLightObjects[0];
+    const fillLight = studioLightObjects[1];
+
+    // Shadow catcher: an invisible plane just under the model's lowest point
+    // that only shows the shadow falling on it. Self-shadowing between the
+    // 1 mm parts of a PCB is too subtle to read on its own; the soft shadow
+    // the model drops onto this plane is what gives it weight, the way a
+    // studio render does. It follows the model (see render()), so no
+    // assumption about where the geometry sits is baked in.
+    const shadowCatcher = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.ShadowMaterial({ opacity: 0.3, depthWrite: false }),
+    );
+    shadowCatcher.rotation.x = -Math.PI / 2;
+    shadowCatcher.receiveShadow = true;
+    shadowCatcher.renderOrder = 0;
+    shadowCatcher.visible = false;
+    scene.add(shadowCatcher);
 
     setupViewportSnapshotCapture({
       host,
@@ -3530,8 +3587,58 @@ export function ViewportPanel({
       previewInferenceRef.current = rebuilt;
     }
 
+    // Last scene-bounds key the key light's shadow volume was fitted to.
+    let shadowFitKey = "";
+
     function render() {
       controls.update();
+      // Fit the key light's shadow volume to the model once per scene-bounds
+      // change. A directional light's shadow camera is an orthographic box:
+      // if it does not follow the model it either clips every shadow or
+      // spreads the map over empty space and the parts lose their contact
+      // shading.
+      {
+        const bounds = sceneDataRef.current?.bounds;
+        const fitKey = bounds
+          ? `${bounds.maxDimension}|${bounds.center.join(",")}`
+          : "";
+        if (bounds && shadowFitKey !== fitKey) {
+          shadowFitKey = fitKey;
+          const radius = Math.max(bounds.maxDimension * 0.75, 10);
+          const center = new THREE.Vector3(
+            bounds.center[0],
+            bounds.center[1],
+            bounds.center[2],
+          );
+          keyLight.position
+            .copy(center)
+            .addScaledVector(new THREE.Vector3(1.2, 1.8, 1.4).normalize(),
+                             radius * 4);
+          keyLight.target.position.copy(center);
+          keyLight.target.updateMatrixWorld();
+          const shadowCamera =
+            keyLight.shadow.camera as THREE.OrthographicCamera;
+          shadowCamera.left = -radius;
+          shadowCamera.right = radius;
+          shadowCamera.top = radius;
+          shadowCamera.bottom = -radius;
+          shadowCamera.near = 1;
+          shadowCamera.far = radius * 8;
+          shadowCamera.updateProjectionMatrix();
+
+          // Put the catcher just under the lowest point of the model and size
+          // it well past the model so the shadow has room to fall.
+          const baseZ = bounds.center[2] - bounds.size[2] * 0.5;
+          const span = Math.max(bounds.maxDimension * 3, 60);
+          shadowCatcher.visible = true;
+          shadowCatcher.position.set(
+            bounds.center[0],
+            bounds.center[1],
+            baseZ - Math.max(bounds.size[2] * 0.02, 0.05),
+          );
+          shadowCatcher.scale.set(span, span, 1);
+        }
+      }
       updateDynamicGrids({
         scene,
         sceneData: sceneDataRef.current,
@@ -5813,6 +5920,10 @@ export function ViewportPanel({
         cubeRenderTargetRef.current = null;
       }
       renderer.dispose();
+      // The studio environment is a PMREM render target owned by this
+      // renderer; drop its GPU texture with it.
+      scene.environment?.dispose();
+      scene.environment = null;
       disposeDynamicGrid(worldGridRef.current);
       disposeDynamicGrid(sketchGridRef.current);
       rendererRef.current = null;
