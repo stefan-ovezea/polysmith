@@ -116,11 +116,21 @@ CompiledBodies compile_bodies_for_viewport(const DocumentState& document) {
   return compiled;
 }
 
-// Imported (STEP/IGES) bodies above this edge count emit ONLY their
-// body mesh primitive — no per-edge/per-vertex/per-face pick entries.
-// See the comment in append_cached_body_topology for the payload and
-// scene-object budget this protects.
+// Imported (STEP/IGES) bodies above this edge count switch to the budgeted
+// edge pass below: no per-vertex pick entries, and only the longest edges up
+// to kOversizedImportMaxEdges. See the comment in
+// append_cached_body_topology for the payload and scene-object budget this
+// protects.
 constexpr int kMaxImportPickEdgeCount = 8000;
+
+// Budget for an oversized import's structural edges. A real STEP PCB carries
+// ~78k edges (a 47.5 MB event with ~250k pick objects when every one was
+// emitted), yet what the eye needs is the board outline, the part outlines and
+// the step edges — all of them long. Keeping the edges at or above 1 mm up to
+// this count turns a flat silhouette back into a readable model while staying
+// inside a few MB.
+constexpr double kOversizedImportMinEdgeLength = 1.0;
+constexpr std::size_t kOversizedImportMaxEdges = 8000;
 
 void append_cached_body_topology(
     const DocumentState& document,
@@ -245,6 +255,20 @@ void append_cached_body_topology(
                               document.selected_vertex_ids,
                               facet_filter.get(),
                               next.vertices);
+    } else if (oversized_import) {
+      // An oversized import still gets its STRUCTURAL edges. Dropping them
+      // entirely (the old behaviour) left a 24k-face board as one flat
+      // silhouette with nothing to read: no part outlines, no board edge.
+      // The long edges are exactly the ones that carry that structure, so
+      // keep those and stop at a budget that keeps the payload small — the
+      // 78k-edge event that motivated the cap was 47.5 MB.
+      enumerate_body_edges(edge_pick_shape,
+                           body.id,
+                           document.selected_edge_ids,
+                           /*facet_filter=*/nullptr,
+                           next.edges,
+                           /*min_length=*/kOversizedImportMinEdgeLength,
+                           /*max_count=*/kOversizedImportMaxEdges);
     }
 
     if (body_kind != "box" && body_kind != "cylinder" &&
