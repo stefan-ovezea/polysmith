@@ -96,6 +96,13 @@
 | ⚙️ **[Parameters](help/parameters.md)** | How to use the parameter system |
 | 🧱 **[Gridfinity Plugin](Gridfinity-Plugin)** | Gridfinity bin and baseplate generator plugin |
 
+### Import and Rendering
+
+| | |
+|---|---|
+| **[STEP Import and Viewport Rendering](STEP-Import-And-Viewport-Rendering)** | Per-part bodies, real face colours, engraved ink, studio shading, and the open items |
+
+
 ### 🏛️ Decision Records
 
 | | |

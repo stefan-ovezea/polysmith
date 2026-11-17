@@ -5319,3 +5319,28 @@ Co-Authored-By trailer), pushed, squash-merged as PR #89 → dev
 sketch/dimmensions still exists on disk (user is on it) — delete it
 after switching. Untracked user data left alone: projects/laser
 board/, projects/part-stefan-new.polysmith, tmp-camschema.cjs.
+
+## STEP import fidelity + viewport rendering (2026-11-18, merged to dev)
+
+Merged as `221aef65` on `dev` (from `fix/tangent-drag-and-t-junction`):
+per-part STEP bodies, per-face colours, the studio shading rig, and the ink
+lift. Full findings and the open list are in
+`wiki/STEP-Import-And-Viewport-Rendering.md`.
+
+Done: one body per solid named from XCAF; face/solid/part colour resolution
+(24,375 of 24,375 faces, 50 colours); `Surfaces` body for faces outside solids;
+renormalized core normals; per-body adaptive tessellation (0.25 rad, linear 1 %
+of the diagonal clamped to 0.02-0.1 mm); per-vertex colours (metalness 0);
+SolidCraft's three-light + Reinhard studio rig, no ambient/env/shadows; engraved
+ink lifted per body by measured recess + 30 um; black-dominant bodies treated as
+unstyled; import busy overlay.
+
+Open, in order: (1) USB-A/USB-C stamped detail still does not read - isolate one
+housing and dump its faces rather than another global shading change; (2)
+per-material PBR (conductor brass, clear coat) is the last structural gap vs
+SolidCraft; (3) compress the B-rep snapshot on save (project is 34.6 MB, 99.5 %
+snapshot, zlib already vendored) once the document format is final; (4) keep both
+the snapshot and the original STEP for provenance - do not switch to a file
+reference; (5) cut extrude does not make a hole on an imported body (cylinder
+body can be added) - modelling bug, needs its own round; (6) perspective camera
+last.
