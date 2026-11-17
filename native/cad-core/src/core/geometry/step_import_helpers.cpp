@@ -16,12 +16,16 @@
 #include <NCollection_Sequence.hxx>
 #include <Quantity_Color.hxx>
 #include <Standard_Failure.hxx>
+#include <Standard_PCharacter.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <TCollection_AsciiString.hxx>
+#include <TCollection_ExtendedString.hxx>
+#include <TDataStd_Name.hxx>
 #include <TDF_Label.hxx>
 #include <TDocStd_Document.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopLoc_Location.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
@@ -50,6 +54,39 @@ int count_subshapes(const TopoDS_Shape& shape, TopAbs_ShapeEnum kind) {
 // One byte marks "this face was styled": pure black (0x000000) is a real
 // colour and must not collide with "no style".
 constexpr std::uint32_t kColorValidMask = 0xFF000000u;
+
+// OCCT keeps names as UTF-16; the rest of the core speaks UTF-8 (the names
+// travel to the UI inside JSON, which rejects malformed UTF-8).
+std::string to_utf8(const TCollection_ExtendedString& text) {
+  if (text.IsEmpty()) {
+    return {};
+  }
+  const int length = text.LengthOfCString();
+  if (length <= 0) {
+    return {};
+  }
+  // ToUTF8CString writes a terminator, so the buffer needs one extra byte
+  // and must be handed over as a pointer variable (the parameter is a
+  // reference to the pointer).
+  std::string buffer(static_cast<std::size_t>(length) + 1, '\0');
+  Standard_PCharacter cursor = buffer.data();
+  const int written = text.ToUTF8CString(cursor);
+  if (written <= 0) {
+    return {};
+  }
+  buffer.resize(static_cast<std::size_t>(written));
+  return buffer;
+}
+
+std::string label_name(const TDF_Label& label) {
+  occ::handle<TDataStd_Name> attribute;
+  if (label.IsNull() ||
+      !label.FindAttribute(TDataStd_Name::GetID(), attribute) ||
+      attribute.IsNull()) {
+    return {};
+  }
+  return to_utf8(attribute->Get());
+}
 
 std::uint32_t pack_display_color(const Quantity_Color& color) {
   const auto channel = [](double value) -> std::uint32_t {
@@ -121,74 +158,96 @@ TopoDS_Shape shape_from_xcaf_document(
   return compound;
 }
 
-// Per-face display colours in TopExp::MapShapes(..., TopAbs_FACE) order.
-//
-// XCAF attaches a style to a labelled shape and `GetColor(shape)` finds it
-// by walking UP the assembly, so a solid inherits its part's colour. One
-// lookup per SOLID is enough for these files (styles are per part/solid;
-// the silkscreen lettering is its own solids) and it costs ~300 searches
-// instead of one per face � the per-face walk took 44 s on this board.
-//
-// Returns an empty vector when the file styles nothing.
-std::vector<std::uint32_t> face_colors_from_xcaf(
-    const occ::handle<TDocStd_Document>& document,
-    const TopoDS_Shape& shape) {
-  std::vector<std::uint32_t> colors;
+// The solids of `shape`, geometry only — used when the XCAF document is not
+// available (plain-reader fallback, sewn surface models) so the import still
+// arrives as separate bodies, just without names or styles.
+std::vector<StepImportedSolid> solids_from_shape(const TopoDS_Shape& shape) {
+  std::vector<StepImportedSolid> solids;
   if (shape.IsNull()) {
-    return colors;
-  }
-  const occ::handle<XCAFDoc_ColorTool> color_tool =
-      XCAFDoc_DocumentTool::ColorTool(document->Main());
-  if (color_tool.IsNull()) {
-    return colors;
-  }
-
-  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
-  TopExp::MapShapes(shape, TopAbs_FACE, face_map);
-  if (face_map.Extent() == 0) {
-    return colors;
+    return solids;
   }
   NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> solid_map;
   TopExp::MapShapes(shape, TopAbs_SOLID, solid_map);
+  solids.reserve(static_cast<std::size_t>(solid_map.Extent()));
+  for (Standard_Integer i = 1; i <= solid_map.Extent(); ++i) {
+    StepImportedSolid entry;
+    entry.shape = solid_map(i);
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
+    TopExp::MapShapes(entry.shape, TopAbs_FACE, face_map);
+    entry.face_count = face_map.Extent();
+    solids.push_back(std::move(entry));
+  }
+  return solids;
+}
 
-  // One colour per solid, and the face -> owning-solid table in a single
-  // walk of the solids.
-  NCollection_DataMap<TopoDS_Shape, std::uint32_t, TopTools_ShapeMapHasher>
-      solid_colors;
-  std::vector<TopoDS_Shape> owner_solids(
-      static_cast<std::size_t>(face_map.Extent()), TopoDS_Shape{});
-  for (Standard_Integer s = 1; s <= solid_map.Extent(); ++s) {
-    const TopoDS_Shape& solid = solid_map(s);
-    Quantity_Color color;
-    const bool styled = lookup_color(color_tool, solid, color);
-    if (styled) {
-      solid_colors.Bind(solid, pack_display_color(color));
-    }
-    for (TopExp_Explorer exp(solid, TopAbs_FACE); exp.More(); exp.Next()) {
-      const Standard_Integer index = face_map.FindIndex(exp.Current());
-      if (index >= 1) {
-        owner_solids[static_cast<std::size_t>(index - 1)] = solid;
+// Split the transferred XCAF document into its solids, each with the part
+// name and display colour the file gives it.
+//
+// Names come from the product structure: a part label names the whole part,
+// so every solid under it inherits that name. The lookup is keyed by the
+// UNLOCATED solid, because the same part is often placed several times and
+// each placement must resolve to the same name.
+//
+// XCAF attaches a style to a labelled shape and `GetColor(shape)` finds it by
+// walking UP the assembly, so a solid inherits its part's colour. One lookup
+// per SOLID is enough for these files (styles are per part; the silkscreen
+// lettering is its own solids) and it costs ~1k searches instead of one per
+// face — the per-face walk took 44 s on this board.
+std::vector<StepImportedSolid> solids_from_xcaf(
+    const occ::handle<TDocStd_Document>& document,
+    const TopoDS_Shape& shape) {
+  std::vector<StepImportedSolid> solids = solids_from_shape(shape);
+  if (solids.empty()) {
+    return solids;
+  }
+  const occ::handle<XCAFDoc_ShapeTool> shape_tool =
+      XCAFDoc_DocumentTool::ShapeTool(document->Main());
+  const occ::handle<XCAFDoc_ColorTool> color_tool =
+      XCAFDoc_DocumentTool::ColorTool(document->Main());
+
+  NCollection_DataMap<TopoDS_Shape, std::string, TopTools_ShapeMapHasher>
+      part_names;
+  if (!shape_tool.IsNull()) {
+    NCollection_Sequence<TDF_Label> labels;
+    shape_tool->GetShapes(labels);
+    for (Standard_Integer i = 1; i <= labels.Length(); ++i) {
+      const TDF_Label& label = labels.Value(i);
+      // An assembly label names a grouping, not a part; the parts under it
+      // carry the names worth showing.
+      if (XCAFDoc_ShapeTool::IsAssembly(label)) {
+        continue;
+      }
+      const std::string name = label_name(label);
+      if (name.empty()) {
+        continue;
+      }
+      const TopoDS_Shape part = XCAFDoc_ShapeTool::GetShape(label);
+      if (part.IsNull()) {
+        continue;
+      }
+      for (TopExp_Explorer exp(part.Located(TopLoc_Location()), TopAbs_SOLID);
+           exp.More(); exp.Next()) {
+        const TopoDS_Shape solid = exp.Current().Located(TopLoc_Location());
+        if (!part_names.IsBound(solid)) {
+          part_names.Bind(solid, name);
+        }
       }
     }
   }
-  if (solid_colors.IsEmpty()) {
-    return colors;
-  }
 
-  colors.assign(static_cast<std::size_t>(face_map.Extent()), 0u);
-  bool any = false;
-  for (Standard_Integer i = 1; i <= face_map.Extent(); ++i) {
-    const TopoDS_Shape& solid = owner_solids[static_cast<std::size_t>(i - 1)];
-    if (solid.IsNull() || !solid_colors.IsBound(solid)) {
-      continue;
+  for (StepImportedSolid& entry : solids) {
+    const TopoDS_Shape key = entry.shape.Located(TopLoc_Location());
+    if (part_names.IsBound(key)) {
+      entry.name = part_names.Find(key);
     }
-    colors[static_cast<std::size_t>(i - 1)] = solid_colors.Find(solid);
-    any = true;
+    Quantity_Color color;
+    if (!color_tool.IsNull() && lookup_color(color_tool, entry.shape, color)) {
+      // The style is per part/solid, so every face of the solid shares it.
+      entry.face_colors.assign(static_cast<std::size_t>(entry.face_count),
+                               pack_display_color(color));
+    }
   }
-  if (!any) {
-    colors.clear();
-  }
-  return colors;
+  return solids;
 }
 }  // namespace
 
@@ -196,6 +255,11 @@ StepImportResult read_step_file(const std::string& file_path) {
   if (file_path.empty() || !std::filesystem::exists(file_path)) {
     throw std::runtime_error("STEP file not found: " + file_path);
   }
+  // First line of a multi-second operation: the UI shows it in its busy
+  // overlay so a 16 s import does not look like a frozen window.
+  log_info("step_import",
+           "Reading '" + std::filesystem::path(file_path).filename().string() +
+               "' ...");
 
   try {
     // Transfer the file's units to mm (the standard xstep.cascade.unit
@@ -206,8 +270,8 @@ StepImportResult read_step_file(const std::string& file_path) {
     // Read through the XCAF reader: STEPControl_Reader would give the
     // geometry only, dropping the file's presentation styles (the colours
     // that make a PCB's silkscreen and component markings visible) and the
-    // product structure. Colour mode is what we need here; names and layers
-    // are not used yet and only cost transfer time.
+    // product structure that names the parts. Layers carry nothing we show,
+    // so they stay off.
     occ::handle<TDocStd_Document> document;
     const occ::handle<XCAFApp_Application> application =
         XCAFApp_Application::GetApplication();
@@ -217,7 +281,7 @@ StepImportResult read_step_file(const std::string& file_path) {
 
     STEPCAFControl_Reader reader;
     reader.SetColorMode(true);
-    reader.SetNameMode(false);
+    reader.SetNameMode(true);
     reader.SetLayerMode(false);
 
     if (reader.ReadFile(file_path.c_str()) != IFSelect_RetDone) {
@@ -228,9 +292,6 @@ StepImportResult read_step_file(const std::string& file_path) {
     StepImportResult result;
     if (!document.IsNull() && reader.Transfer(document)) {
       result.shape = shape_from_xcaf_document(document);
-      if (!result.shape.IsNull()) {
-        result.face_colors = face_colors_from_xcaf(document, result.shape);
-      }
     }
     if (result.shape.IsNull()) {
       // XCAF transfer unavailable — fall back to the plain reader so the
@@ -260,6 +321,7 @@ StepImportResult read_step_file(const std::string& file_path) {
     result.solid_count = count_subshapes(result.shape, TopAbs_SOLID);
     result.face_count = count_subshapes(result.shape, TopAbs_FACE);
 
+    bool topology_rebuilt = false;
     if (result.solid_count == 0) {
       // Faces/shells-only surface model: try to sew it into solids so
       // the solid-only modifiers work (same class of files the IGES
@@ -274,9 +336,9 @@ StepImportResult read_step_file(const std::string& file_path) {
         result.shape = sewn;
         result.solid_count = count_subshapes(sewn, TopAbs_SOLID);
         result.face_count = count_subshapes(sewn, TopAbs_FACE);
-        // Sewing rebuilds the topology, so the face order the colours were
-        // indexed by no longer exists.
-        result.face_colors.clear();
+        // Sewing rebuilds the topology, so the shapes the file's styles and
+        // names were attached to no longer exist.
+        topology_rebuilt = true;
         log_info("step_import",
                  "Sewed " + std::to_string(result.face_count) +
                      " faces into " + std::to_string(result.solid_count) +
@@ -285,16 +347,42 @@ StepImportResult read_step_file(const std::string& file_path) {
       }
     }
 
-    if (!result.face_colors.empty()) {
+    // Split the file's solids apart: each becomes its own body, so an
+    // assembly arrives as its named, coloured parts instead of one lump.
+    if (!topology_rebuilt && !document.IsNull()) {
+      result.solids = solids_from_xcaf(document, result.shape);
+    }
+    if (result.solids.empty()) {
+      result.solids = solids_from_shape(result.shape);
+    }
+
+    if (!result.solids.empty()) {
       int colored = 0;
-      for (const std::uint32_t packed : result.face_colors) {
-        if ((packed & kColorValidMask) != 0u) {
+      int named = 0;
+      int solid_faces = 0;
+      for (const StepImportedSolid& solid : result.solids) {
+        solid_faces += solid.face_count;
+        if (!solid.face_colors.empty()) {
           ++colored;
         }
+        if (!solid.name.empty()) {
+          ++named;
+        }
       }
-      log_info("step_import", "Read " + std::to_string(colored) + " of " +
-                                  std::to_string(result.face_count) +
-                                  " face colour(s) from the file");
+      if (colored > 0 || named > 0) {
+        log_info("step_import",
+                 "Read " + std::to_string(result.solids.size()) +
+                     " solid(s): " + std::to_string(named) + " named, " +
+                     std::to_string(colored) + " coloured");
+      }
+      // Bodies are built from the solids, so anything the file keeps as a
+      // loose face or sheet is not part of any body. Say so instead of
+      // dropping it silently.
+      if (solid_faces < result.face_count) {
+        log_warn("step_import",
+                 std::to_string(result.face_count - solid_faces) +
+                     " face(s) outside any solid were not imported");
+      }
     }
 
     // Guarantee every face carries a triangulation. The STEP reader

@@ -16,6 +16,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -167,6 +168,35 @@ void append_cached_body_topology(
   next.selected_edge_ids = document.selected_edge_ids;
   next.selected_vertex_ids = document.selected_vertex_ids;
 
+  // Body kind and label by id. The loop below used to scan the whole feature
+  // history once per body, which is quadratic now that an imported assembly
+  // arrives as one body per part (1 091 of them on the ESP32-P4C5 carrier).
+  std::unordered_map<std::string, const FeatureEntry*> features_by_id;
+  features_by_id.reserve(document.feature_history.size() * 2);
+  for (const auto& feature : document.feature_history) {
+    features_by_id.emplace(feature.id, &feature);
+  }
+
+  // Edge budget for imported bodies is a DOCUMENT budget, not a per-body one.
+  // An assembly split into a thousand parts has ~50 edges per body — nothing
+  // trips a per-body limit — while the total is what floods the payload.
+  int total_import_edges = 0;
+  for (const auto& body : compiled_bodies.bodies) {
+    const auto feature_it = features_by_id.find(body.id);
+    if (feature_it == features_by_id.end()) {
+      continue;
+    }
+    const std::string& kind = feature_it->second->kind;
+    if (kind != "step_import" && kind != "iges_import") {
+      continue;
+    }
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edge_map;
+    TopExp::MapShapes(body.shape, TopAbs_EDGE, edge_map);
+    total_import_edges += edge_map.Extent();
+  }
+  const bool oversized_import_document =
+      total_import_edges > kMaxImportPickEdgeCount;
+
   // mesh_import bodies emit NO per-face pick entries: their rendered
   // body mesh primitive (in `meshes`) already carries the body id for
   // the raycaster, and emitting one face entry per triangle cost ~3.5MB
@@ -189,14 +219,12 @@ void append_cached_body_topology(
   for (const auto& body : compiled_bodies.bodies) {
     std::string label = body.id;
     std::string body_kind;
-    for (const auto& feature : document.feature_history) {
-      if (feature.id == body.id) {
-        if (!feature.name.empty()) {
-          label = feature.name;
-        }
-        body_kind = feature.kind;
-        break;
+    const auto feature_it = features_by_id.find(body.id);
+    if (feature_it != features_by_id.end()) {
+      if (!feature_it->second->name.empty()) {
+        label = feature_it->second->name;
       }
+      body_kind = feature_it->second->kind;
     }
 
     const BodyBounds bounds = bounds_for_shape(body.shape);
@@ -226,7 +254,8 @@ void append_cached_body_topology(
       import_edge_count = edge_map.Extent();
     }
     const bool oversized_import =
-        import_edge_count > kMaxImportPickEdgeCount;
+        import_edge_count > kMaxImportPickEdgeCount ||
+        oversized_import_document;
 
     // Imported meshes emit NO per-edge/per-vertex pick entries: their
     // raw triangle soup carries ~10k facet edges + ~4.7k facet
@@ -260,8 +289,13 @@ void append_cached_body_topology(
       // entirely (the old behaviour) left a 24k-face board as one flat
       // silhouette with nothing to read: no part outlines, no board edge.
       // The long edges are exactly the ones that carry that structure, so
-      // keep those and stop at a budget that keeps the payload small — the
-      // 78k-edge event that motivated the cap was 47.5 MB.
+      // keep those up to the document budget — the 78k-edge event that
+      // motivated the cap was 47.5 MB.
+      //
+      // `max_count` is compared against the ACCUMULATED output, and `next`
+      // is shared by every body in this pass, so this one constant is
+      // already the document-wide cap. Decrementing it per body would halve
+      // the budget on every call.
       enumerate_body_edges(edge_pick_shape,
                            body.id,
                            document.selected_edge_ids,

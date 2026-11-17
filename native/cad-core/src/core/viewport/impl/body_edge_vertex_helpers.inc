@@ -236,8 +236,11 @@ BodySeamAnalysis build_seam_analysis(const TopoDS_Shape& body_shape) {
 // `min_length` > 0 keeps only edges at least that long and measures length
 // from the sampled polyline instead of BRepGProp integration (the slow path,
 // and a budgeted import has tens of thousands of edges). `max_count` > 0
-// stops once that many edges were emitted. Both default to off, so every
-// existing caller still gets the complete edge set.
+// caps the TOTAL entries in `out`, not the entries this call adds: callers
+// append many bodies into one vector, which is how an assembly that arrives
+// as a thousand bodies gets a document-wide edge budget instead of a
+// thousand per-body ones. Both default to off, so every existing caller
+// still gets the complete edge set.
 void enumerate_body_edges(const TopoDS_Shape& body_shape,
                           const std::string& body_id,
                           const std::vector<std::string>& selected_edge_ids,
@@ -246,6 +249,11 @@ void enumerate_body_edges(const TopoDS_Shape& body_shape,
                           double min_length = 0.0,
                           std::size_t max_count = 0) {
   if (body_shape.IsNull()) {
+    return;
+  }
+  // Budget already spent by earlier bodies: adding one more edge per body
+  // here is how a thousand-body import overshot its own cap.
+  if (max_count > 0 && out.size() >= max_count) {
     return;
   }
 

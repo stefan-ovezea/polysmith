@@ -305,9 +305,14 @@ bool test_oversized_import_decimated_face_proxies(DocumentManager& manager) {
 
   const ViewportState viewport = import_and_build_viewport(manager, path);
 
-  if (!expect(viewport.meshes.size() == 1 &&
+  // One body (and one mesh) per solid: the fixture is a compound of 900
+  // boxes plus a cylinder and a 100-gon prism, so the import splits it into
+  // 902 bodies instead of one lump.
+  constexpr std::size_t kExpectedBodies =
+      static_cast<std::size_t>(kBoxCount) + 2;
+  if (!expect(viewport.meshes.size() == kExpectedBodies &&
                   !viewport.meshes.front().indices.empty(),
-              "oversized: the body mesh must still be emitted")) {
+              "oversized: every body must still emit a renderable mesh")) {
     return false;
   }
   // The budgeted edge pass: structural edges (at least 1 mm long), capped at
@@ -319,11 +324,13 @@ bool test_oversized_import_decimated_face_proxies(DocumentManager& manager) {
   if (!expect(!viewport.edges.empty(),
               "oversized: structural edges must still be emitted") ||
       !expect(viewport.edges.size() <= kTestMaxEdges,
-              "oversized: the edge budget must cap the emitted edges") ||
+              ("oversized: the edge budget must cap the emitted edges, got " +
+               std::to_string(viewport.edges.size()))
+                  .c_str()) ||
       !expect(viewport.vertices.empty(),
               "oversized: per-vertex pick entries must be skipped") ||
-      !expect(viewport.bodies.size() == 1,
-              "oversized: the body summary must still be emitted")) {
+      !expect(viewport.bodies.size() == kExpectedBodies,
+              "oversized: one body summary per solid must be emitted")) {
     return false;
   }
   for (const auto& edge : viewport.edges) {
