@@ -3297,13 +3297,44 @@ export function ViewportPanel({
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.2));
 
+    // Shadowing gives parts contact shading against each other, which is
+    // most of what separates a flat assembly from a model you can read. It
+    // costs one shadow-map pass over the body meshes (one per body, not one
+    // per face: the per-face entries are invisible pick proxies).
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
     keyLight.position.set(1.2, 1.8, 1.4);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    // Bias/normalBias are in world units; this model is a few tens of mm and
+    // the assembly's parts are ~1 mm, so keep the offsets small or the small
+    // parts lose their shadow entirely (peter-panning).
+    keyLight.shadow.bias = -0.0004;
+    keyLight.shadow.normalBias = 0.02;
     scene.add(keyLight);
+    scene.add(keyLight.target);
 
     const fillLight = new THREE.DirectionalLight(0xfff2e0, 0.25);
     fillLight.position.set(-1.5, 0.8, -1.1);
     scene.add(fillLight);
+
+    // Shadow catcher: an invisible plane just under the model's lowest point
+    // that only shows the shadow falling on it. Self-shadowing between the
+    // 1 mm parts of a PCB is too subtle to read on its own; the soft shadow
+    // the model drops onto this plane is what gives it weight, the way a
+    // studio render does. It follows the model (see render()), so no
+    // assumption about where the geometry sits is baked in.
+    const shadowCatcher = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.ShadowMaterial({ opacity: 0.3, depthWrite: false }),
+    );
+    shadowCatcher.rotation.x = -Math.PI / 2;
+    shadowCatcher.receiveShadow = true;
+    shadowCatcher.renderOrder = 0;
+    shadowCatcher.visible = false;
+    scene.add(shadowCatcher);
 
     setupViewportSnapshotCapture({
       host,
@@ -3545,8 +3576,58 @@ export function ViewportPanel({
       previewInferenceRef.current = rebuilt;
     }
 
+    // Last scene-bounds key the key light's shadow volume was fitted to.
+    let shadowFitKey = "";
+
     function render() {
       controls.update();
+      // Fit the key light's shadow volume to the model once per scene-bounds
+      // change. A directional light's shadow camera is an orthographic box:
+      // if it does not follow the model it either clips every shadow or
+      // spreads the map over empty space and the parts lose their contact
+      // shading.
+      {
+        const bounds = sceneDataRef.current?.bounds;
+        const fitKey = bounds
+          ? `${bounds.maxDimension}|${bounds.center.join(",")}`
+          : "";
+        if (bounds && shadowFitKey !== fitKey) {
+          shadowFitKey = fitKey;
+          const radius = Math.max(bounds.maxDimension * 0.75, 10);
+          const center = new THREE.Vector3(
+            bounds.center[0],
+            bounds.center[1],
+            bounds.center[2],
+          );
+          keyLight.position
+            .copy(center)
+            .addScaledVector(new THREE.Vector3(1.2, 1.8, 1.4).normalize(),
+                             radius * 4);
+          keyLight.target.position.copy(center);
+          keyLight.target.updateMatrixWorld();
+          const shadowCamera =
+            keyLight.shadow.camera as THREE.OrthographicCamera;
+          shadowCamera.left = -radius;
+          shadowCamera.right = radius;
+          shadowCamera.top = radius;
+          shadowCamera.bottom = -radius;
+          shadowCamera.near = 1;
+          shadowCamera.far = radius * 8;
+          shadowCamera.updateProjectionMatrix();
+
+          // Put the catcher just under the lowest point of the model and size
+          // it well past the model so the shadow has room to fall.
+          const baseZ = bounds.center[2] - bounds.size[2] * 0.5;
+          const span = Math.max(bounds.maxDimension * 3, 60);
+          shadowCatcher.visible = true;
+          shadowCatcher.position.set(
+            bounds.center[0],
+            bounds.center[1],
+            baseZ - Math.max(bounds.size[2] * 0.02, 0.05),
+          );
+          shadowCatcher.scale.set(span, span, 1);
+        }
+      }
       updateDynamicGrids({
         scene,
         sceneData: sceneDataRef.current,

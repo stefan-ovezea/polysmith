@@ -301,6 +301,11 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
   }
 
   const mesh = new THREE.Mesh(geometry, baseMaterial);
+  // Bodies shadow each other: the contact darkening between an assembly's
+  // parts is what makes them read as separate solids. The per-face pick
+  // proxies never do this (they are invisible and one per face).
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   if (primitive.kind === "box" || primitive.kind === "cylinder") {
     mesh.position.set(...primitive.position);
   }
