@@ -86,6 +86,9 @@ export interface MeshScenePrimitive {
   positions: Float32Array;
   normals: Float32Array;
   indices: Uint32Array;
+  // Per-vertex linear RGB, empty for single-colour bodies. Imported parts
+  // carry the file's face styles (gold contacts, black body, white legend).
+  colors: Float32Array;
   isSelected: boolean;
   appearanceColor: string | null;
 }

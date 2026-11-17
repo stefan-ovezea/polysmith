@@ -21,6 +21,7 @@
 #include <TCollection_AsciiString.hxx>
 #include <TCollection_ExtendedString.hxx>
 #include <TDataStd_Name.hxx>
+#include <TDF_ChildIterator.hxx>
 #include <TDF_Label.hxx>
 #include <TDocStd_Document.hxx>
 #include <TopExp.hxx>
@@ -207,6 +208,14 @@ std::vector<StepImportedSolid> solids_from_xcaf(
 
   NCollection_DataMap<TopoDS_Shape, std::string, TopTools_ShapeMapHasher>
       part_names;
+  // Colour of the part each solid belongs to. A part's style is attached to
+  // the part LABEL, and the small solids inside it (silkscreen dots, legend
+  // strokes, pad plating) are not labelled individually — looking them up by
+  // shape finds nothing, which is why 732 of 1,092 bodies used to come back
+  // uncoloured and rendered in the default grey. The part's colour is the
+  // right fallback for exactly those.
+  NCollection_DataMap<TopoDS_Shape, std::uint32_t, TopTools_ShapeMapHasher>
+      part_colors;
   if (!shape_tool.IsNull()) {
     NCollection_Sequence<TDF_Label> labels;
     shape_tool->GetShapes(labels);
@@ -218,19 +227,49 @@ std::vector<StepImportedSolid> solids_from_xcaf(
         continue;
       }
       const std::string name = label_name(label);
-      if (name.empty()) {
-        continue;
-      }
       const TopoDS_Shape part = XCAFDoc_ShapeTool::GetShape(label);
       if (part.IsNull()) {
         continue;
       }
+      Quantity_Color part_color;
+      const bool part_styled =
+          !color_tool.IsNull() && lookup_color(color_tool, label, part_color);
+      const std::uint32_t packed_part_color =
+          part_styled ? pack_display_color(part_color) : 0u;
       for (TopExp_Explorer exp(part.Located(TopLoc_Location()), TopAbs_SOLID);
            exp.More(); exp.Next()) {
         const TopoDS_Shape solid = exp.Current().Located(TopLoc_Location());
-        if (!part_names.IsBound(solid)) {
+        if (!name.empty() && !part_names.IsBound(solid)) {
           part_names.Bind(solid, name);
         }
+        if (packed_part_color != 0u && !part_colors.IsBound(solid)) {
+          part_colors.Bind(solid, packed_part_color);
+        }
+      }
+    }
+  }
+
+  // Styles attached to individual FACES (engraved legends, silkscreen ink)
+  // live on sub-shape labels, which GetShapes() does not return. One pass
+  // over every label collects them by shape; asking GetColor(shape) per face
+  // instead walks the whole assembly each time (44 s on this board).
+  NCollection_DataMap<TopoDS_Shape, std::uint32_t, TopTools_ShapeMapHasher>
+      styled_shapes;
+  if (!shape_tool.IsNull() && !color_tool.IsNull()) {
+    for (TDF_ChildIterator it(document->Main(), Standard_True); it.More();
+         it.Next()) {
+      const TDF_Label& label = it.Value();
+      Quantity_Color color;
+      if (!lookup_color(color_tool, label, color)) {
+        continue;
+      }
+      const TopoDS_Shape labeled = XCAFDoc_ShapeTool::GetShape(label);
+      if (labeled.IsNull()) {
+        continue;
+      }
+      const TopoDS_Shape key = labeled.Located(TopLoc_Location());
+      if (!styled_shapes.IsBound(key)) {
+        styled_shapes.Bind(key, pack_display_color(color));
       }
     }
   }
@@ -240,12 +279,88 @@ std::vector<StepImportedSolid> solids_from_xcaf(
     if (part_names.IsBound(key)) {
       entry.name = part_names.Find(key);
     }
+    // Precedence: the solid's own style, then the style the file puts on the
+    // shape itself, then the part's. The last two cover the small unlabelled
+    // solids inside a part (silkscreen dots, legend strokes).
+    std::uint32_t solid_color = 0u;
     Quantity_Color color;
     if (!color_tool.IsNull() && lookup_color(color_tool, entry.shape, color)) {
-      // The style is per part/solid, so every face of the solid shares it.
-      entry.face_colors.assign(static_cast<std::size_t>(entry.face_count),
-                               pack_display_color(color));
+      solid_color = pack_display_color(color);
     }
+    if (solid_color == 0u && styled_shapes.IsBound(key)) {
+      solid_color = styled_shapes.Find(key);
+    }
+    if (solid_color == 0u && part_colors.IsBound(key)) {
+      solid_color = part_colors.Find(key);
+    }
+
+    // Per FACE styles win over the solid's: that is how an engraved legend
+    // and silkscreen ink survive the import. Falling back to the solid colour
+    // for every face is what painted a shield and its engraving the same
+    // grey, and made the marking look missing.
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_map;
+    TopExp::MapShapes(entry.shape, TopAbs_FACE, face_map);
+    entry.face_count = face_map.Extent();
+    entry.face_colors.assign(static_cast<std::size_t>(face_map.Extent()),
+                             solid_color);
+    bool styled = solid_color != 0u;
+    for (Standard_Integer i = 1; i <= face_map.Extent(); ++i) {
+      const TopoDS_Shape face_key = face_map(i).Located(TopLoc_Location());
+      if (!styled_shapes.IsBound(face_key)) {
+        continue;
+      }
+      entry.face_colors[static_cast<std::size_t>(i - 1)] =
+          styled_shapes.Find(face_key);
+      styled = true;
+    }
+    if (!styled) {
+      entry.face_colors.clear();
+    }
+  }
+
+  // Everything the file keeps OUTSIDE a solid: silkscreen legends, part
+  // markings, and the occasional surface-modelled part that was never sewn
+  // into a solid. Importing only the solids silently drops exactly the ink
+  // that makes a board readable — 126 faces on the ESP32-P4C5 carrier — so
+  // they become one body of their own instead.
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> covered_faces;
+  for (const StepImportedSolid& entry : solids) {
+    TopExp::MapShapes(entry.shape, TopAbs_FACE, covered_faces);
+  }
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> loose_faces;
+  for (TopExp_Explorer exp(shape, TopAbs_FACE); exp.More(); exp.Next()) {
+    if (!covered_faces.Contains(exp.Current())) {
+      loose_faces.Add(exp.Current());
+    }
+  }
+  if (loose_faces.Extent() > 0) {
+    BRep_Builder builder;
+    TopoDS_Compound compound;
+    builder.MakeCompound(compound);
+    for (Standard_Integer i = 1; i <= loose_faces.Extent(); ++i) {
+      builder.Add(compound, loose_faces(i));
+    }
+    StepImportedSolid surface_body;
+    surface_body.shape = compound;
+    surface_body.name = "Surfaces";
+    // Colours are per FACE here (a legend carries its own style), and they
+    // must line up with the compound's own face order.
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> face_order;
+    TopExp::MapShapes(compound, TopAbs_FACE, face_order);
+    surface_body.face_count = face_order.Extent();
+    surface_body.face_colors.assign(
+        static_cast<std::size_t>(surface_body.face_count), 0u);
+    for (Standard_Integer i = 1; i <= face_order.Extent(); ++i) {
+      const TopoDS_Shape face_key = face_order(i).Located(TopLoc_Location());
+      if (styled_shapes.IsBound(face_key)) {
+        surface_body.face_colors[static_cast<std::size_t>(i - 1)] =
+            styled_shapes.Find(face_key);
+      }
+    }
+    log_info("step_import", "Kept " +
+                                std::to_string(surface_body.face_count) +
+                                " face(s) outside any solid as a surface body");
+    solids.push_back(std::move(surface_body));
   }
   return solids;
 }

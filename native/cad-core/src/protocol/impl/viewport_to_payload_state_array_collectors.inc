@@ -97,6 +97,9 @@
         {"positions", encode_f32(mesh.positions)},
         {"normals", encode_f32(mesh.normals)},
         {"indices", encode_u32(mesh.indices)},
+        // Empty for single-colour bodies; the UI then uses the material
+        // colour. Per-vertex colours carry the file's face styles.
+        {"colors", encode_f32(mesh.colors)},
         {"is_selected", mesh.is_selected},
         {"appearance_color",
          mesh.appearance_color.has_value()

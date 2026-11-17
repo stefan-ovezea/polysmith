@@ -3289,13 +3289,9 @@ export function ViewportPanel({
     // reflections that make shaded parts look like parts (the "studio" look
     // SolidCraft's renderer has). The environment is lighting only — it is
     // never set as scene.background, so the transparent canvas is unchanged.
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const environmentTexture = pmrem.fromScene(new RoomEnvironment(), 0.04)
-      .texture;
-    scene.environment = environmentTexture;
-    pmrem.dispose();
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+    // No environment map and no ambient term: the studio rig has neither, and
+    // an ambient light was exactly what flattened every surface to the same
+    // value. (The old rig built a PMREM room here for soft fill.)
 
     // Shadowing gives parts contact shading against each other, which is
     // most of what separates a flat assembly from a model you can read. It
@@ -3304,21 +3300,36 @@ export function ViewportPanel({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
-    keyLight.position.set(1.2, 1.8, 1.4);
-    keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(2048, 2048);
-    // Bias/normalBias are in world units; this model is a few tens of mm and
-    // the assembly's parts are ~1 mm, so keep the offsets small or the small
-    // parts lose their shadow entirely (peter-panning).
-    keyLight.shadow.bias = -0.0004;
-    keyLight.shadow.normalBias = 0.02;
-    scene.add(keyLight);
-    scene.add(keyLight.target);
+    // SolidCraft's studio rig, adopted as-is (crates/render/src/studio.rs):
+    // three fixed neutral directionals, a BRDF, and a per-channel Reinhard
+    // tone map. No ambient term, no cast shadows, no indirect bounces, no
+    // environment map — that is the whole model, and it is what their preview
+    // looks like. Everything we had bolted on instead (ambient + key + warm
+    // fill + PMREM room + shadow maps) was a different renderer, and no
+    // amount of tuning it was going to converge on theirs.
+    //
+    // Directions point TOWARDS each light in a Z-up world, intensities as in
+    // their table: (0.6, 0, 0.8) x3.0, (-0.8, 0, 0.6) x1.0, (0, -0.6, 0.8) x1.5.
+    const studioLights: Array<[number, number, number, number]> = [
+      [0.6, 0, 0.8, 3.0],
+      [-0.8, 0, 0.6, 1.0],
+      [0, -0.6, 0.8, 1.5],
+    ];
+    const studioLightObjects = studioLights.map(([x, y, z, intensity]) => {
+      const light = new THREE.DirectionalLight(0xffffff, intensity);
+      light.position.set(x * 100, y * 100, z * 100);
+      light.castShadow = false;
+      scene.add(light);
+      scene.add(light.target);
+      return light;
+    });
+    // Reinhard is c/(1+c) per channel, which is exactly their tone_map().
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.shadowMap.enabled = false;
 
-    const fillLight = new THREE.DirectionalLight(0xfff2e0, 0.25);
-    fillLight.position.set(-1.5, 0.8, -1.1);
-    scene.add(fillLight);
+    const keyLight = studioLightObjects[0];
+    const fillLight = studioLightObjects[1];
 
     // Shadow catcher: an invisible plane just under the model's lowest point
     // that only shows the shadow falling on it. Self-shadowing between the

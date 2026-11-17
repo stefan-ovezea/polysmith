@@ -77,6 +77,13 @@ struct ViewportMeshPrimitive {
   std::vector<double> positions;
   std::vector<double> normals;
   std::vector<int> indices;
+  // Optional per-vertex linear RGB (3 floats per vertex, same count as
+  // `positions`). Set for imported bodies whose faces carry their own styles:
+  // a connector is gold contacts plus a black body plus a white legend, and a
+  // single material colour per body flattens all of that into one shade.
+  // Empty when the body has one colour, in which case `appearance_color`
+  // drives the material as before.
+  std::vector<double> colors;
   bool is_selected;
   std::optional<std::string> appearance_color;
 };

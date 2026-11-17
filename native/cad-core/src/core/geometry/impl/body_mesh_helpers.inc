@@ -3,8 +3,28 @@ void tessellate_shape(const TopoDS_Shape& shape, BodyMesh& out) {
     return;
   }
 
+  // The linear tolerance is ABSOLUTE (0.1 mm), which is right for the board
+  // and ruinous for its parts: a 0.4 mm castellated castellation or a 0.6 mm
+  // pin leg may then deviate by a quarter of its own size, and the ribbon of
+  // gold half-cylinders flattens into a stepped bar. Scale the tolerance with
+  // the body, so a 1 mm feature is meshed at 10 um while the 72 mm board
+  // still gets the coarse 0.1 mm it can afford.
+  double linear_deflection = kLinearDeflection;
+  {
+    Bnd_Box bounds;
+    BRepBndLib::Add(shape, bounds);
+    if (!bounds.IsVoid()) {
+      const double diagonal = bounds.CornerMin().Distance(bounds.CornerMax());
+      if (diagonal > 0.0) {
+        linear_deflection =
+            std::clamp(diagonal * kRelativeLinearDeflection,
+                       kMinLinearDeflection, kLinearDeflection);
+      }
+    }
+  }
+
   BRepMesh_IncrementalMesh mesher(shape,
-                                  kLinearDeflection,
+                                  linear_deflection,
                                   /*isRelative=*/false,
                                   kAngularDeflection,
                                   /*isInParallel=*/false);
@@ -12,10 +32,15 @@ void tessellate_shape(const TopoDS_Shape& shape, BodyMesh& out) {
     throw std::runtime_error("BRepMesh_IncrementalMesh failed");
   }
 
+  int face_ordinal = 0;
   for (TopExp_Explorer face_explorer(shape, TopAbs_FACE);
        face_explorer.More();
        face_explorer.Next()) {
     const TopoDS_Face& face = TopoDS::Face(face_explorer.Current());
+    // Face ordinal in TopExp::MapShapes order (the id the viewport and the
+    // per-face colour table both use). Counted before the triangulation
+    // check so a skipped face does not shift the ids.
+    const int this_face = face_ordinal++;
     TopLoc_Location location;
     const occ::handle<Poly_Triangulation> triangulation =
         BRep_Tool::Triangulation(face, location);
@@ -36,6 +61,7 @@ void tessellate_shape(const TopoDS_Shape& shape, BodyMesh& out) {
       out.vertices.push_back(node.X());
       out.vertices.push_back(node.Y());
       out.vertices.push_back(node.Z());
+      out.vertex_faces.push_back(this_face);
     }
 
     // Append placeholder normals; we'll fill them in below per triangle.
@@ -95,6 +121,32 @@ void tessellate_shape(const TopoDS_Shape& shape, BodyMesh& out) {
         out.normals[3 * vi + 1] += normalized_y;
         out.normals[3 * vi + 2] += normalized_z;
       }
+    }
+  }
+
+  // Renormalize. The accumulation above sums one UNIT normal per incident
+  // triangle, so a vertex shared by six triangles comes out six times too
+  // long — and shaders do not normalize what they are handed. That produced
+  // lighting proportional to local triangle density: bright, flat, washed-out
+  // parts (the gold castellations reading as one orange ribbon) with no safe
+  // way to tell it from a colour problem. Each face's vertices are separate,
+  // so this still gives crisp per-face normals on flat faces and smooth
+  // shading across a curved one.
+  for (std::size_t i = 0; i + 2 < out.normals.size(); i += 3) {
+    const double nx = out.normals[i];
+    const double ny = out.normals[i + 1];
+    const double nz = out.normals[i + 2];
+    const double length = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (length > 1e-12) {
+      out.normals[i] = nx / length;
+      out.normals[i + 1] = ny / length;
+      out.normals[i + 2] = nz / length;
+    } else {
+      // Degenerate fan (a sliver triangle): point up rather than send a zero
+      // vector, which renders black under every light.
+      out.normals[i] = 0.0;
+      out.normals[i + 1] = 0.0;
+      out.normals[i + 2] = 1.0;
     }
   }
 }

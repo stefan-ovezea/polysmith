@@ -440,6 +440,9 @@ export interface ViewportMeshPrimitive {
   positions: string;
   normals: string;
   indices: string;
+  // Per-vertex linear RGB (float32 blob) for bodies whose faces carry their
+  // own styles; empty/absent on single-colour bodies.
+  colors?: string;
   is_selected: boolean;
   appearance_color: string | null;
 }
