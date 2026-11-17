@@ -8,6 +8,7 @@ import {
 import { useTranslation } from "react-i18next";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { sheetSceneOffsetX } from "@/lib/drawingViewMath";
 import { getShowHiddenEdges } from "@/utils/viewport/primitiveObjects";
 import { setPointerNdcFromEvent } from "@/utils/viewport/viewportMath";
@@ -3280,13 +3281,27 @@ export function ViewportPanel({
     // + rim lights were leaking cyan into the body fill, which made
     // the new gray material look like the old translucent cyan even
     // after the material itself was switched to opaque.
-    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+    //
+    // The ambient term used to be 0.85, which flattened every surface to the
+    // same brightness: an imported assembly read as one silhouette. A small
+    // ambient, a dominant key and a dim fill give the form back, and the PMREM
+    // room environment supplies the soft directional variation and
+    // reflections that make shaded parts look like parts (the "studio" look
+    // SolidCraft's renderer has). The environment is lighting only — it is
+    // never set as scene.background, so the transparent canvas is unchanged.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const environmentTexture = pmrem.fromScene(new RoomEnvironment(), 0.04)
+      .texture;
+    scene.environment = environmentTexture;
+    pmrem.dispose();
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.95);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
     keyLight.position.set(1.2, 1.8, 1.4);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.45);
+    const fillLight = new THREE.DirectionalLight(0xfff2e0, 0.25);
     fillLight.position.set(-1.5, 0.8, -1.1);
     scene.add(fillLight);
 
@@ -5813,6 +5828,10 @@ export function ViewportPanel({
         cubeRenderTargetRef.current = null;
       }
       renderer.dispose();
+      // The studio environment is a PMREM render target owned by this
+      // renderer; drop its GPU texture with it.
+      scene.environment?.dispose();
+      scene.environment = null;
       disposeDynamicGrid(worldGridRef.current);
       disposeDynamicGrid(sketchGridRef.current);
       rendererRef.current = null;
