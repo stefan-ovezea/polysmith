@@ -36,6 +36,29 @@ export function markAtomicCommand(id: string): void {
   atomicCommandIds.add(id);
 }
 
+// Kinds of long-running operation the busy overlay knows how to describe.
+// The human label lives in i18n under `busy.<kind>`, so this stays a plain
+// list of ids shared by the store, the hook and the overlay.
+export type BusyOperationKind =
+  | "import_step"
+  | "import_iges"
+  | "import_stl"
+  | "import_dxf"
+  | "import_pcb"
+  | "load_document";
+
+export interface BusyOperation {
+  kind: BusyOperationKind;
+  fileName?: string;
+  startedAt: number;
+  // Last stage line the core reported for this operation, if any.
+  detail: string;
+  // Core log sources whose messages become the stage line. An import logs
+  // "Read 1091 solid(s): 1091 named, 359 coloured" part way through, which is
+  // the difference between a frozen window and visible progress.
+  sources: string[];
+}
+
 interface CadCoreStoreState {
   status: "idle" | "starting" | "connected" | "error" | "stopped";
   messages: string[];
@@ -51,12 +74,24 @@ interface CadCoreStoreState {
   // S5: loose-end diagnostics for the sketch the UI last asked about. Derived
   // data with no home in the document, so it lives beside it.
   sketchDiagnostics: SketchDiagnosticsEvent["payload"] | null;
+  // The long-running operation the UI is waiting on, if any. A STEP import of
+  // a PCB takes ~16 s and a project load of a 24k-face board several more;
+  // without this the window looks frozen for the whole time.
+  busyOperation: BusyOperation | null;
   setStatus: (status: CadCoreStoreState["status"]) => void;
   handleCoreStopped: () => void;
   addMessage: (message: string) => void;
   addLogEntry: (entry: LogEntry) => void;
   clearLogs: () => void;
   dismissGenerationResult: () => void;
+  beginBusyOperation: (operation: {
+    kind: BusyOperationKind;
+    fileName?: string;
+    // Core log sources whose messages become the overlay's stage line.
+    sources?: string[];
+  }) => void;
+  updateBusyOperation: (detail: string) => void;
+  endBusyOperation: () => void;
   setSketchDiagnostics: (
     diagnostics: SketchDiagnosticsEvent["payload"] | null,
   ) => void;
@@ -180,6 +215,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
   lastEvent: null,
   generationResult: null,
   sketchDiagnostics: null,
+  busyOperation: null,
   setStatus: (status) => set({ status }),
   handleCoreStopped: () =>
     set({
@@ -190,7 +226,10 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
       lastExport: null,
       lastEvent: null,
       generationResult: null,
-  sketchDiagnostics: null,
+      sketchDiagnostics: null,
+      // A command interrupted by the core dying will never answer: drop the
+      // overlay instead of leaving it spinning forever.
+      busyOperation: null,
     }),
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message].slice(-500) })),
@@ -211,6 +250,23 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
     }),
   clearLogs: () => set({ logs: [] }),
   dismissGenerationResult: () => set({ generationResult: null }),
+  beginBusyOperation: ({ kind, fileName, sources }) =>
+    set({
+      busyOperation: {
+        kind,
+        fileName,
+        startedAt: Date.now(),
+        detail: "",
+        sources: sources ?? [],
+      },
+    }),
+  updateBusyOperation: (detail) =>
+    set((state) =>
+      state.busyOperation
+        ? { busyOperation: { ...state.busyOperation, detail } }
+        : {},
+    ),
+  endBusyOperation: () => set({ busyOperation: null }),
   setSketchDiagnostics: (sketchDiagnostics) => set({ sketchDiagnostics }),
   handleCoreMessage: (message) =>
     set((state) => {
@@ -347,6 +403,20 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
 
       if (message.type === "log") {
         nextState.logs = appendLogWithinWindow(state.logs, message.payload);
+        // Let the core's own stage lines drive the busy overlay: an import
+        // that takes 16 s is fine, an import that says nothing for 16 s is
+        // indistinguishable from a crash.
+        const busy = nextState.busyOperation;
+        if (
+          busy &&
+          busy.sources.includes(message.payload.source) &&
+          message.payload.message !== busy.detail
+        ) {
+          nextState.busyOperation = {
+            ...busy,
+            detail: message.payload.message,
+          };
+        }
       }
 
       if (message.type === "cam_generation_result") {

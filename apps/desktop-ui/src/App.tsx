@@ -34,6 +34,7 @@ import {
   FeatureTimeline,
   LogsWindow,
   MessageLog,
+  OperationOverlay,
   SettingsModal,
   ToastViewport,
   ViewportPanel,
@@ -7338,6 +7339,9 @@ function App() {
           onCancel={() => setPendingFinishOffer(null)}
         />
       ) : null}
+      {/* Covers the window while a long core command runs (a STEP assembly
+          import takes ~16 s); harmless when nothing is running. */}
+      <OperationOverlay />
     </main>
   );
 }

@@ -298,6 +298,7 @@ import type {
 } from "@/types";
 
 import { useCadCoreStore } from "@/state";
+import type { BusyOperationKind } from "@/state";
 import {
   readSketchSnapshot,
   summarizeAutoConstrainRun,
@@ -316,6 +317,45 @@ import {
 import { reportCoreError } from "./coreLogReporting";
 import { useCadCoreEventBridge } from "./useCadCoreEventBridge";
 import type { SketchPlaneFramePayload } from "@/lib/ipc/sketchCommands";
+import { fileNameFromPath } from "@/utils/operationProgress";
+
+// Let the browser paint the result before lifting the busy overlay: the
+// command resolves when the payload arrives, which is before the scene has
+// rebuilt, and an overlay that disappears onto a still-blank viewport reads
+// as a crash rather than a finish.
+function afterNextPaint(): Promise<void> {
+  if (typeof requestAnimationFrame !== "function") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+// Wrap a long-running command so the window shows what it is waiting for.
+// `sources` are the core log tags whose messages become the overlay's stage
+// line ("Read 1091 solid(s): 1091 named, 359 coloured") while the command is
+// still running.
+async function runBusyOperation<T>(
+  operation: {
+    kind: BusyOperationKind;
+    filePath: string;
+    sources?: string[];
+  },
+  run: () => Promise<T>,
+): Promise<T> {
+  useCadCoreStore.getState().beginBusyOperation({
+    kind: operation.kind,
+    fileName: fileNameFromPath(operation.filePath),
+    sources: operation.sources,
+  });
+  try {
+    return await run();
+  } finally {
+    await afterNextPaint();
+    useCadCoreStore.getState().endBusyOperation();
+  }
+}
 
 export function useCadCore() {
   const addMessage = useCadCoreStore((state) => state.addMessage);
@@ -378,35 +418,58 @@ export function useCadCore() {
       await sendCoreCommand(makeSaveDocumentCommand(filePath));
     },
     loadDocument: async (filePath: string) => {
-      await sendCoreCommand(makeLoadDocumentCommand(filePath));
-      // The load command replies with `document_state`. Refresh session
-      // (undo/redo flags) and viewport so the UI reflects the loaded
-      // document end-to-end.
-      await sendCoreCommand(makeGetSessionStateCommand());
-      await sendCoreCommand(makeGetViewportStateCommand());
+      await runBusyOperation(
+        { kind: "load_document", filePath },
+        async () => {
+          await sendCoreCommand(makeLoadDocumentCommand(filePath));
+          // The load command replies with `document_state`. Refresh session
+          // (undo/redo flags) and viewport so the UI reflects the loaded
+          // document end-to-end.
+          await sendCoreCommand(makeGetSessionStateCommand());
+          await sendCoreCommand(makeGetViewportStateCommand());
+        },
+      );
     },
     importStl: async (filePath: string, scale = 1.0) => {
-      await sendAndRefreshSessionViewport(
-        makeImportStlCommand(filePath, scale),
+      await runBusyOperation(
+        { kind: "import_stl", filePath, sources: ["mesh_import"] },
+        () =>
+          sendAndRefreshSessionViewport(
+            makeImportStlCommand(filePath, scale),
+          ),
       );
     },
     importDxf: async (filePath: string, planeId?: string) => {
-      await sendAndRefreshSessionViewport(
-        makeImportDxfCommand(filePath, planeId),
+      await runBusyOperation(
+        { kind: "import_dxf", filePath, sources: ["dxf_import"] },
+        () =>
+          sendAndRefreshSessionViewport(
+            makeImportDxfCommand(filePath, planeId),
+          ),
       );
     },
     importStep: async (filePath: string) => {
-      await sendAndRefreshSessionViewport(makeImportStepCommand(filePath));
+      await runBusyOperation(
+        { kind: "import_step", filePath, sources: ["step_import"] },
+        () => sendAndRefreshSessionViewport(makeImportStepCommand(filePath)),
+      );
     },
     importIges: async (filePath: string) => {
-      await sendAndRefreshSessionViewport(makeImportIgesCommand(filePath));
+      await runBusyOperation(
+        { kind: "import_iges", filePath, sources: ["iges_import"] },
+        () => sendAndRefreshSessionViewport(makeImportIgesCommand(filePath)),
+      );
     },
     // PCB fabrication layers. Imports are additive: the caller imports each
     // file of a Gerber set in turn, and the layer table reads the resulting
     // `pcb_layer` features back out of the document state.
     pcbImportLayer: async (filePath: string, role?: string) => {
-      await sendAndRefreshSessionViewport(
-        makePcbImportLayerCommand(filePath, role),
+      await runBusyOperation(
+        { kind: "import_pcb", filePath, sources: ["pcb_import"] },
+        () =>
+          sendAndRefreshSessionViewport(
+            makePcbImportLayerCommand(filePath, role),
+          ),
       );
     },
     pcbUpdateLayer: async (

@@ -2,6 +2,17 @@
   "app": {
     "name": "Polysmith"
   },
+  "busy": {
+    "import_step": "Importing STEP model",
+    "import_iges": "Importing IGES model",
+    "import_stl": "Importing mesh",
+    "import_dxf": "Importing DXF drawing",
+    "import_pcb": "Importing fabrication layer",
+    "load_document": "Opening document",
+    "starting": "Waiting for the CAD core...",
+    "elapsed": "{{seconds}} s elapsed",
+    "patience": "Large files take a while"
+  },
   "common": {
     "action": "Action",
     "size": "Size",
