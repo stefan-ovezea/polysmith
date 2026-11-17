@@ -138,14 +138,36 @@
               dominant_count = count;
             }
           }
-          // Measured, not guessed: on the ESP32-P4C5 module the shield plate
-          // tops out at z=3.25 and its engraved legend at z=3.24 — the file
-          // sinks the ink exactly 10 um. A 10 um lift therefore landed the
-          // legend back ON the plate and the tie came straight back. Lift by
-          // the recess plus a margin: 50 um still leaves the ink under every
-          // other surface on the board (a 0.05 mm trace) and is invisible at
-          // any zoom, but it wins the depth test outright.
-          constexpr double kInkLift = 0.05;
+          // How deep is this body's ink sunk? Measured per body rather than
+          // assumed: the shield's legend is 10 um below its plate, a smaller
+          // part's can be several times that, and a fixed lift either ties
+          // with the plate (10 um was exactly the shield's recess) or leaves a
+          // deeper marking buried. Take the top of the dominant faces and the
+          // top of the ink faces, and clear the difference by a margin.
+          double dominant_top = -std::numeric_limits<double>::max();
+          double ink_top = -std::numeric_limits<double>::max();
+          for (std::size_t vertex = 0;
+               vertex < body_mesh.vertex_faces.size(); ++vertex) {
+            const int face_index = body_mesh.vertex_faces[vertex];
+            if (face_index < 0 ||
+                static_cast<std::size_t>(face_index) >= face_colors.size()) {
+              continue;
+            }
+            if (vertex * 3 + 2 >= mesh.positions.size()) {
+              continue;
+            }
+            const double z = mesh.positions[vertex * 3 + 2];
+            if (face_colors[static_cast<std::size_t>(face_index)] == dominant) {
+              dominant_top = std::max(dominant_top, z);
+            } else {
+              ink_top = std::max(ink_top, z);
+            }
+          }
+          double lift = 0.03;
+          if (dominant_top > -std::numeric_limits<double>::max() &&
+              ink_top > -std::numeric_limits<double>::max()) {
+            lift = std::clamp(dominant_top - ink_top + 0.03, 0.03, 0.3);
+          }
           for (std::size_t vertex = 0;
                vertex < body_mesh.vertex_faces.size(); ++vertex) {
             const int face_index = body_mesh.vertex_faces[vertex];
@@ -161,9 +183,9 @@
             if (vertex * 3 + 2 >= mesh.positions.size()) {
               continue;
             }
-            mesh.positions[vertex * 3 + 0] += mesh.normals[vertex * 3 + 0] * kInkLift;
-            mesh.positions[vertex * 3 + 1] += mesh.normals[vertex * 3 + 1] * kInkLift;
-            mesh.positions[vertex * 3 + 2] += mesh.normals[vertex * 3 + 2] * kInkLift;
+            mesh.positions[vertex * 3 + 0] += mesh.normals[vertex * 3 + 0] * lift;
+            mesh.positions[vertex * 3 + 1] += mesh.normals[vertex * 3 + 1] * lift;
+            mesh.positions[vertex * 3 + 2] += mesh.normals[vertex * 3 + 2] * lift;
           }
         }
       }

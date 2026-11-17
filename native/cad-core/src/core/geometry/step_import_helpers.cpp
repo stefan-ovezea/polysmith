@@ -1,7 +1,9 @@
 #include "core/geometry/step_import_helpers.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -104,7 +106,7 @@ std::uint32_t pack_display_color(const Quantity_Color& color) {
 }
 
 // The file's own presentation style for `shape`, surface style first and
-// the generic style second — exporters use one or the other.
+// the generic style second â€” exporters use one or the other.
 bool lookup_color(const occ::handle<XCAFDoc_ColorTool>& color_tool,
                   const TopoDS_Shape& shape,
                   Quantity_Color& color) {
@@ -159,7 +161,7 @@ TopoDS_Shape shape_from_xcaf_document(
   return compound;
 }
 
-// The solids of `shape`, geometry only — used when the XCAF document is not
+// The solids of `shape`, geometry only â€” used when the XCAF document is not
 // available (plain-reader fallback, sewn surface models) so the import still
 // arrives as separate bodies, just without names or styles.
 std::vector<StepImportedSolid> solids_from_shape(const TopoDS_Shape& shape) {
@@ -193,7 +195,7 @@ std::vector<StepImportedSolid> solids_from_shape(const TopoDS_Shape& shape) {
 // walking UP the assembly, so a solid inherits its part's colour. One lookup
 // per SOLID is enough for these files (styles are per part; the silkscreen
 // lettering is its own solids) and it costs ~1k searches instead of one per
-// face — the per-face walk took 44 s on this board.
+// face â€” the per-face walk took 44 s on this board.
 std::vector<StepImportedSolid> solids_from_xcaf(
     const occ::handle<TDocStd_Document>& document,
     const TopoDS_Shape& shape) {
@@ -210,7 +212,7 @@ std::vector<StepImportedSolid> solids_from_xcaf(
       part_names;
   // Colour of the part each solid belongs to. A part's style is attached to
   // the part LABEL, and the small solids inside it (silkscreen dots, legend
-  // strokes, pad plating) are not labelled individually — looking them up by
+  // strokes, pad plating) are not labelled individually â€” looking them up by
   // shape finds nothing, which is why 732 of 1,092 bodies used to come back
   // uncoloured and rendered in the default grey. The part's colour is the
   // right fallback for exactly those.
@@ -290,8 +292,19 @@ std::vector<StepImportedSolid> solids_from_xcaf(
     if (solid_color == 0u && styled_shapes.IsBound(key)) {
       solid_color = styled_shapes.Find(key);
     }
-    if (solid_color == 0u && part_colors.IsBound(key)) {
-      solid_color = part_colors.Find(key);
+    // A body whose own colour is essentially black is treated as unstyled and
+    // falls back to the theme's body colour. SolidCraft's reader only takes a
+    // colour that is attached directly to the body's styled item, so the
+    // black-painted shells (USB housings, some connectors) come back grey
+    // there and stay visible; OCCT's walk-up hands us the near-black style and
+    // those parts vanish against a near-black board. Per-FACE ink is left
+    // alone below â€” that is what the legend depends on.
+    const auto max_channel = [](std::uint32_t packed) {
+      return std::max({(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu,
+                       packed & 0xFFu});
+    };
+    if (solid_color != 0u && max_channel(solid_color) <= 16u) {
+      solid_color = 0u;
     }
 
     // Per FACE styles win over the solid's: that is how an engraved legend
@@ -315,13 +328,46 @@ std::vector<StepImportedSolid> solids_from_xcaf(
     }
     if (!styled) {
       entry.face_colors.clear();
+    } else {
+      // A body painted near-black over (almost) all of its faces is treated
+      // as unstyled: black-painted shells (USB housing, some connectors) are
+      // reported by OCCT's style walk-up but not by SolidCraft's stricter
+      // styled-item lookup, and against a near-black board they vanish. The
+      // share threshold keeps the module's grey plate plus black legend out of
+      // this: there the dominant colour is the grey.
+      std::map<std::uint32_t, int> counts;
+      int styled_faces = 0;
+      for (const std::uint32_t packed : entry.face_colors) {
+        if ((packed & 0xFF000000u) == 0u) {
+          continue;
+        }
+        counts[packed] += 1;
+        styled_faces += 1;
+      }
+      if (styled_faces > 0) {
+        std::uint32_t dominant = 0u;
+        int dominant_count = 0;
+        for (const auto& [colour, count] : counts) {
+          if (count > dominant_count) {
+            dominant = colour;
+            dominant_count = count;
+          }
+        }
+        const std::uint32_t brightest =
+            std::max({(dominant >> 16) & 0xFFu, (dominant >> 8) & 0xFFu,
+                      dominant & 0xFFu});
+        if (brightest <= 16u &&
+            dominant_count * 10 >= styled_faces * 9) {
+          entry.face_colors.clear();
+        }
+      }
     }
   }
 
   // Everything the file keeps OUTSIDE a solid: silkscreen legends, part
   // markings, and the occasional surface-modelled part that was never sewn
   // into a solid. Importing only the solids silently drops exactly the ink
-  // that makes a board readable — 126 faces on the ESP32-P4C5 carrier — so
+  // that makes a board readable â€” 126 faces on the ESP32-P4C5 carrier â€” so
   // they become one body of their own instead.
   NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> covered_faces;
   for (const StepImportedSolid& entry : solids) {
@@ -401,7 +447,7 @@ StepImportResult read_step_file(const std::string& file_path) {
 
     if (reader.ReadFile(file_path.c_str()) != IFSelect_RetDone) {
       throw std::runtime_error("Failed to read STEP file '" + file_path +
-                               "' — not a valid ISO-10303-21 file");
+                               "' â€” not a valid ISO-10303-21 file");
     }
 
     StepImportResult result;
@@ -409,7 +455,7 @@ StepImportResult read_step_file(const std::string& file_path) {
       result.shape = shape_from_xcaf_document(document);
     }
     if (result.shape.IsNull()) {
-      // XCAF transfer unavailable — fall back to the plain reader so the
+      // XCAF transfer unavailable â€” fall back to the plain reader so the
       // import still happens (without colours).
       if (reader.ChangeReader().TransferRoots() <= 0) {
         throw std::runtime_error(
@@ -440,7 +486,7 @@ StepImportResult read_step_file(const std::string& file_path) {
     if (result.solid_count == 0) {
       // Faces/shells-only surface model: try to sew it into solids so
       // the solid-only modifiers work (same class of files the IGES
-      // import sews — see sew_faces_to_solids).
+      // import sews â€” see sew_faces_to_solids).
       TopoDS_Shape sewn = sew_faces_to_solids(result.shape, 1e-6);
       double used_tolerance = 1e-6;
       if (sewn.IsNull()) {
@@ -503,7 +549,7 @@ StepImportResult read_step_file(const std::string& file_path) {
     // Guarantee every face carries a triangulation. The STEP reader
     // transfers faces without triangulations, and downstream consumers
     // (viewport tessellation, exports) read face triangulations
-    // directly — an unmeshed shape silently produces empty results
+    // directly â€” an unmeshed shape silently produces empty results
     // there. Same rationale and parameters as mesh_import_helpers.
     try {
       BRepMesh_IncrementalMesh mesher(result.shape, /*linearDeflection=*/0.1,
@@ -512,7 +558,7 @@ StepImportResult read_step_file(const std::string& file_path) {
                                       /*isInParallel=*/false);
       (void)mesher;
     } catch (const Standard_Failure&) {
-      // Meshing failed — return the shape as-is and let consumers
+      // Meshing failed â€” return the shape as-is and let consumers
       // degrade instead of failing the import.
     }
     return result;
@@ -529,3 +575,4 @@ TopoDS_Shape build_step_import_shape(const std::string& feature_id) {
 }
 
 }  // namespace polysmith::core
+
