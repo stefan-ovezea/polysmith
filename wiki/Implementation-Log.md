@@ -236,6 +236,31 @@ Tests: `viewportMeshCache.test.ts` (3 cases: a payload without revisions is a fu
 snapshot, a delta merges and lands the per-body state on cached geometry, removed
 ids drop). `pnpm test:ui` 121/121, `pnpm test:core` 94/95 (orphan only).
 
+### Viewport: the scene delta (G1/G2 complete) — 20.16 MB → 0.03 MB for a click
+
+iewport.revision is the shape/overlay version: it does not change when the
+selection moves (measured: 190 before and after select_feature), which makes it
+exactly the right cache key for "the client already has this scene".
+
+- The request may carry known_revision. When it matches, the core omits the
+  face table and every overlay array (bodies, edges, vertices, sketches,
+  references, dof/snap/toolpaths/drawings) and sends scene_unchanged: true plus
+  selected_faces — the only thing that actually changed.
+- 
+eenter_sketch DOES bump the revision (5 → 6), so entering a sketch still
+  delivers the overlay; the cache never shows a stale one.
+- The UI caches the last full viewport in lib/viewportMeshCache.ts, reuses its
+  arrays when scene_unchanged, and flips is_selected from selected_faces.
+- Measured on the 28 MB board: full snapshot 20.16 MB / 284 ms → **0.03 MB /
+  85 ms** for a refetch at the same revision, aces 0, edges 0.
+
+Combined with the mesh delta, a refetch that changes nothing transfers ~30 KB
+instead of 20 MB.
+
+Tests: iewportMeshCache.test.ts (4 cases, the new one covering the
+scene_unchanged merge and the selection flip). pnpm test:ui 122/122,
+pnpm test:core 94/95 (orphan only), 	sc 0, lint 0/0.
+
 Still open: the same treatment for the face table and the overlay (sketch
 entities), which is the remaining ~4 MB of a no-geometry-change refetch.
 

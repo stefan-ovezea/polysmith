@@ -4,6 +4,16 @@
   }
   json solid_faces = to_payload(viewport.solid_faces);
 
+  // Selection moves without the revision changing, so it travels on its own: a
+  // click that changes no geometry sends three id arrays instead of the scene.
+  json selected_faces = json::array();
+  for (const auto& face : viewport.solid_faces) {
+    if (face.is_selected) {
+      selected_faces.push_back(face.face_id);
+    }
+  }
+
+
   json cylinders = json::array();
   for (const auto& cylinder : viewport.cylinders) {
     cylinders.push_back(to_payload(cylinder));

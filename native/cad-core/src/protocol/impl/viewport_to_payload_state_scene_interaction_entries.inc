@@ -18,7 +18,7 @@
             {"max_dimension", viewport.scene_bounds.max_dimension},
         }},
        {"selection_filter",
-        [&viewport]() {
+        [&viewport, scene_unchanged]() {
           const auto& sf = viewport.selection_filter;
           return json{
               {"select_curves", sf.select_curves},
@@ -42,8 +42,11 @@
           };
         }()},
        {"snap_candidates",
-        [&viewport]() {
+        [&viewport, scene_unchanged]() {
           json arr = json::array();
+         if (scene_unchanged) {
+           return json::array();  // the client already has this scene
+         }
           for (const auto& c : viewport.snap_candidates) {
             arr.push_back({
                 {"kind", c.kind},
@@ -57,7 +60,7 @@
           return arr;
         }()},
        {"dof_statuses",
-        [&viewport]() {
+        [&viewport, scene_unchanged]() {
           json statuses = json::array();
           for (const auto& e : viewport.dof_statuses) {
             std::string status_str = "under";

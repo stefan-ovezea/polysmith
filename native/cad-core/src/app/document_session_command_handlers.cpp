@@ -220,12 +220,20 @@ bool handle_document_session_command(
         }
       }
     }
+    // The scene revision the client already holds: when it matches, the face
+    // table and the overlay are omitted and only selection travels.
+    int known_revision = 0;
+    if (command.payload.contains("known_revision") &&
+        command.payload["known_revision"].is_number_integer()) {
+      known_revision = command.payload["known_revision"].get<int>();
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_viewport_state_event(
             command.id,
             polysmith::protocol::to_payload(
                 polysmith::core::build_viewport_state(manager.get_document()),
-                known_mesh_revisions)));
+                known_mesh_revisions,
+                known_revision)));
     return true;
   }
 

@@ -413,6 +413,10 @@ export interface ViewportState {
   // (selection, colour) that changes far more often than the triangles do.
   mesh_revisions?: Record<string, string>;
   removed_meshes?: string[];
+  // Scene delta: the revision the client asked from was current, so the face
+  // table and the overlay are omitted and only the selection changed.
+  scene_unchanged?: boolean;
+  selected_faces?: string[];
   body_states?: Record<
     string,
     { is_selected: boolean; appearance_color: string | null }
@@ -970,7 +974,7 @@ export interface GetViewportStateCommand {
   type: "get_viewport_state";
   // Mesh delta: the body fingerprints the client already holds. Omitted means
   // "send everything", which is what a first fetch and the test harness do.
-  payload: { known_meshes?: Record<string, string> };
+  payload: { known_meshes?: Record<string, string>; known_revision?: number };
 }
 
 export interface GetSketchProfilesCommand {

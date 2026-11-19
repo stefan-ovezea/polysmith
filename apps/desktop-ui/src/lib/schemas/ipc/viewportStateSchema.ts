@@ -634,6 +634,8 @@ export const viewportStateSchema = z.object({
   // them and every refetch would be treated as a full snapshot.
   mesh_revisions: z.record(z.string(), z.string()).optional(),
   removed_meshes: z.array(z.string()).optional(),
+  scene_unchanged: z.boolean().optional(),
+  selected_faces: z.array(z.string()).optional(),
   body_states: z
     .record(
       z.string(),

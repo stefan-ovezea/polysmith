@@ -63,7 +63,8 @@ json to_payload(const polysmith::core::ViewportState& viewport);
 // `removed_meshes` the ids the client still has but the document no longer does.
 json to_payload(
     const polysmith::core::ViewportState& viewport,
-    const std::map<std::string, std::string>& known_mesh_revisions);
+    const std::map<std::string, std::string>& known_mesh_revisions,
+    int known_revision);
 
 // ── CAM types (cam_types.h) ─────────────────────────────────────
 

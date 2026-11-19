@@ -1,5 +1,8 @@
-      {"bodies", [&viewport]() {
+      {"bodies", [&viewport, scene_unchanged]() {
          json bodies_json = json::array();
+         if (scene_unchanged) {
+           return json::array();  // the client already has this scene
+         }
          for (const auto& body : viewport.bodies) {
            bodies_json.push_back({
                {"id", body.id},
@@ -31,8 +34,11 @@
          }
          return bodies_json;
        }()},
-      {"edges", [&viewport]() {
+      {"edges", [&viewport, scene_unchanged]() {
          json edges_json = json::array();
+         if (scene_unchanged) {
+           return json::array();  // the client already has this scene
+         }
          for (const auto& edge : viewport.edges) {
            json edge_json = {
                {"id", edge.id},
@@ -58,8 +64,11 @@
          }
          return edges_json;
        }()},
-      {"vertices", [&viewport]() {
+      {"vertices", [&viewport, scene_unchanged]() {
          json vertices_json = json::array();
+         if (scene_unchanged) {
+           return json::array();  // the client already has this scene
+         }
          for (const auto& vertex : viewport.vertices) {
            vertices_json.push_back({
                {"id", vertex.id},

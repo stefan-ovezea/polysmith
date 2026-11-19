@@ -70,6 +70,43 @@ describe("viewport mesh cache", () => {
     expect(a.appearance_color).toBe("#ff0000");
   });
 
+  it("reuses the cached scene when the revision matched", () => {
+    const full = mergeViewportMeshes(
+      viewport({
+        revision: 7,
+        meshes: [mesh("a")],
+        mesh_revisions: { a: "1" },
+        removed_meshes: [],
+        body_states: { a: { is_selected: false, appearance_color: null } },
+        solid_faces: [
+          { face_id: "f:face:0", is_selected: false },
+          { face_id: "f:face:1", is_selected: false },
+        ] as never,
+        edges: [{ id: "e1" }] as never,
+      }),
+    );
+    expect(full.solid_faces).toHaveLength(2);
+
+    // Same revision: the core sent no faces and no edges, only the selection.
+    const delta = mergeViewportMeshes(
+      viewport({
+        revision: 7,
+        scene_unchanged: true,
+        selected_faces: ["f:face:1"],
+        meshes: [],
+        mesh_revisions: { a: "1" },
+        removed_meshes: [],
+        body_states: {},
+        solid_faces: [] as never,
+        edges: [] as never,
+      }),
+    );
+    expect(delta.solid_faces).toHaveLength(2);
+    expect(delta.edges).toHaveLength(1);
+    expect(delta.solid_faces[0].is_selected).toBe(false);
+    expect(delta.solid_faces[1].is_selected).toBe(true);
+  });
+
   it("drops bodies the core reports as removed", () => {
     mergeViewportMeshes(
       viewport({
