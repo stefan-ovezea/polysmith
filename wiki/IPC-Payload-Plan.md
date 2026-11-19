@@ -322,3 +322,172 @@ no architectural change.
   `update_sketch_point` also issues `get_session_state` + `get_viewport_state`
   (1.6 MB, ~11 ms build). The document payload was never the drag blocker; the
   viewport snapshot is. Client-side preview stays.
+
+## 8. Phase G — the viewport is all-or-nothing (added 2026-11-19)
+
+Phases C–F shrank the *document* payload. The **viewport** snapshot was never
+split, so every flow that touches the scene re-sends every body: on the
+1,092-body carrier that is **61.6 MB / ~6 s per fetch**, and the UI issues one
+after almost every command (`useCadCore.ts` has 210 references to
+`makeGetViewportStateCommand` / `sendAndRefresh*Viewport`).
+
+The three flows that made this visible (user report, 2026-11-19):
+
+| flow | what the UI does today | cost on the carrier |
+|---|---|---|
+| open a sketch | `reenterSketch` → `get_viewport_state` (`useCadCore.ts:1947`) | full 61.6 MB, although **no body changed** — a sketch becomes visible, nothing else |
+| extrude preview, per drag step | `updateExtrudeDepth` → `sendAndRefreshSessionViewport` (`useCadCore.ts:571`) | full 61.6 MB **per step** |
+| commit the extrude | group commit → `get_viewport_state` | full 61.6 MB for **one** changed body |
+
+### 8.0 Measured on two real projects (`.tmptest/flow-cost-probe.mjs`, 2026-11-19)
+
+`part-stefan-new.polysmith` (one sketch, no extrude) and `test2.polysmith`
+(24 features, sketch + extrude), core driven over IPC:
+
+| command | reply | core time |
+|---|---|---|
+| `load_document` (part-stefan-new) | 503 KB | 499 ms |
+| `get_viewport_state` | **3.2 MB** | 352 ms |
+| `reenter_sketch` | **2.3 MB** | 172 ms |
+| — then the UI's viewport refetch | **3.2 MB** | 338 ms |
+| `select_sketch_entity` (one click) | **0 KB** | 3 ms |
+| — then the UI's viewport refetch | **3.2 MB** | 105 ms |
+| `update_extrude_depth` (one step, test2) | 21 KB | **2,568 ms** |
+| — then the UI's viewport refetch | 303 KB | 486 ms |
+| `end_undo_group` (commit, test2) | 0 KB | 0 ms |
+| — then the UI's viewport refetch | 303 KB | 6 ms |
+
+Two separate costs, and the payload is only one of them:
+
+1. **Opening a sketch costs 5.5 MB where loading the file costs 0.5 MB**, and a
+   click that answers 0 KB is followed by a 3.2 MB refetch. That is the split
+   below (Phase G).
+2. **Dragging an extrude depth costs 1–2.6 s of CORE time per step**, while its
+   own reply is 21 KB. The core recompiles every body on every parameter change;
+   the payload refetch is only ~0.5 s of it. On the 1,092-body carrier that
+   recompute is the "you can do nothing but wait", not the transport. Phase H is
+   the fix for that and is a different change.
+
+An E2-style `geometry_revision` gate cannot fix these on its own: opening a
+sketch *does* change the payload (the active sketch's lines, profiles and
+vertices appear), so a binary gate either skips needed updates or sends the
+bodies again. The snapshot has to be **split**, not gated.
+
+### 8.1 Design
+
+Three payload parts with independent revisions, all in the core:
+
+| part | revision | changes when |
+|---|---|---|
+| **body meshes** (`meshes`, `solid_faces` triangles, `edges`, `vertices`, `bodies`) | `mesh_revision` per body id | that body recompiles or is retessellated |
+| **overlay** (`sketch_lines`, `sketch_profiles`, `sketch_arcs`, sketch vertices/points/dimensions, `reference_*`) | `overlay_revision` | the active sketch or reference geometry changes |
+| **preview** (extrude/loft/… preview mesh) | `preview_revision` | the preview parameters change |
+
+Protocol:
+
+```jsonc
+// request: what the client already has
+{ "type": "get_viewport_state",
+  "payload": { "bodies": { "feature-2": 17, "feature-3": 4 },
+               "overlay_revision": 88, "preview_revision": 3 } }
+
+// reply: only what differs
+{ "type": "viewport_state", "payload": {
+    "revision": 91,
+    "body_revisions": { "feature-2": 17, "feature-3": 18 },   // the full map
+    "body_updates": [ { "body_id": "feature-3", "mesh": { } } ],
+    "body_removals": [],
+    "overlay": { },                 // present only when overlay_revision changed
+    "overlay_revision": 88,
+    "preview": null,
+    "preview_revision": 3,
+    "unchanged": false } }
+```
+
+An omitted request field means "I have nothing", so the first fetch is exactly
+today's full snapshot and an old client keeps working.
+
+### 8.2 UI
+
+`viewportScene` keeps a `Map<bodyId, primitive set>` and `sceneSync` patches the
+scene graph for the changed bodies only (it already diffs by key — the change is
+in where the primitives come from). The sketch overlay becomes its own group so
+entering/leaving a sketch never touches body groups. `features`/`hiddenFeatureIds`
+stay client-side, as today.
+
+### 8.3 Order of work and expected results
+
+**G0 (per-face dedupe) is done — the first half of it.** The per-face pick
+triangles are gone: the body mesh carries `face_ids` (one face ordinal per
+triangle, base64 uint32) and `createViewportScene` carves each face's proxy out
+of that mesh, so the interaction code is untouched. Measured on
+`projects/laser board/LS ESP32 PRO V2.1_002.step` (292 bodies, 14,897 faces):
+
+| | before | after |
+|---|---:|---:|
+| `get_viewport_state` | 31.75 MB / 784 ms | **20.13 MB / 284 ms** |
+| `solid_faces` | 15.04 MB | 1.6 MB (packed, interned table) |
+| `meshes` | 14.95 MB | 16.21 MB (+1.25 for the pick map) |
+
+The whole pick-budget/decimation path in `enumerate_body_faces` went with it —
+it existed only to keep the duplicated copy small. The core test now asserts the
+new contract (every body mesh's pick map matches its triangle count), and
+`viewportSceneFacePick.test.ts` pins the UI derivation (3 cases).
+
+Still open in G0: packing what remains of `solid_faces` (9.54 MB here: ids,
+labels, normals, and 3.25 MB of keyed `plane_frame`) into columnar arrays with
+interned strings.
+
+
+| step | change | expected |
+|---|---|---|
+| **G0** | **per-face dedupe** (the plan's §4 item 4, still open): one `u16` face id per mesh triangle instead of per-face triangle lists, and pack the per-face metadata | `solid_faces` 30.0 MB → **~6 MB** on a full fetch; 24,373 pick objects → ~1,092 |
+| G1 | split overlay from bodies; `reenterSketch` fetches the overlay only | sketch open 61.6 MB → **< 0.2 MB** |
+| G2 | per-body `mesh_revision` + `body_updates`/`body_removals` | commit of one extrude 61.6 MB → **one body (~60 KB)** |
+| G3 | preview uses the same delta (the ADR-0002 preview payload already carries the mesh) | one extrude drag step 61.6 MB → **one body per step** |
+| G4 | binary buffers for the remaining arrays (the plan's Phase E4 had them only for meshes/faces) | another 3–5× on the full-fetch path |
+
+### 8.4 Guardrail
+
+Extend `scripts/ipc_conformance.py` (`merge_document`) with the two new merge
+rules — `body_updates`/`body_removals` patch the client's body map, overlay
+replaces the overlay — and assert sizes next to the existing DXF assertions:
+`viewport_state` full < 20 MB for the carrier, `body_updates` < 200 KB for a
+one-body edit, `overlay` < 200 KB. A delta the harness cannot merge is a
+failure, exactly as for `feature_changed`.
+
+## 9. Phase H — recompiling every body for one edit (added 2026-11-19)
+
+Measured above: `update_extrude_depth` spends **1 to 2.6 s inside the core** and
+answers 21 KB. The reply is not the problem; `compile_bodies` is.
+
+`compile_bodies` walks the whole feature history and rebuilds every body from
+its source features on every mutation that bumps the geometry revision. A
+1,092-body import plus one extrude therefore recompiles 1,093 bodies to move one
+face, and the user waits through it on every drag step, every dimension commit,
+every undo.
+
+**Design (no protocol change):**
+
+1. Derive, per feature, the set of bodies it can affect: its own body (a body id
+   is a feature id) plus, for modifier features, `target_body_id`; for a
+   profile feature, the sketch it consumes; for a boolean, its target.
+2. Cache the compiled `CompiledBody` per body id together with a **dependency
+   key** (the source features' parameter hashes + upstream shape revision).
+   `compile_bodies` recomputes only bodies whose key changed, reuses the rest.
+3. Invalidate by prefix: a change in feature `f` invalidates bodies that
+   reference `f` (directly or through a chain), everything older is reused.
+4. Undo/redo and load start with an empty cache (same as today).
+
+**Expected:** an extrude depth step on `test2` drops from 2.5 s to the cost of
+one body (tens of ms); on the carrier, editing one part of the import does not
+touch the other 1,091.
+
+**Risk:** a stale body whose inputs changed invisibly (e.g. a sketch edits a
+profile the extrude resolved by index). The mitigation is a conservative key
+(the full parameter hash of every upstream feature the body depends on) plus the
+existing dependency refresh (`refresh_history_dependencies`) as the reset path.
+`scripts/ipc_conformance.py` does not cover this: it needs a core-side
+assertion that a cached rebuild equals a cold rebuild on the same document —
+cheap to add to `pnpm test:core`, and the gate for merging Phase H.
+

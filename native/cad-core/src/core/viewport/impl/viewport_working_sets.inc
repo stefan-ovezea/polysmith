@@ -56,6 +56,24 @@
     mesh.positions = body_mesh.vertices;
     mesh.normals = body_mesh.normals;
     mesh.indices = body_mesh.indices;
+    // Pick map: one face ordinal per triangle. The tessellator emits each
+    // face's triangles contiguously and records the owning face on every
+    // vertex, so the triangle's face is simply the face of its first vertex —
+    // no second copy of the geometry is needed to know what was clicked.
+    if (body_mesh.vertex_faces.size() == body_mesh.vertices.size() / 3) {
+      mesh.face_ids.reserve(body_mesh.indices.size() / 3);
+      for (std::size_t corner = 0; corner + 2 < body_mesh.indices.size();
+           corner += 3) {
+        const int vertex_index = body_mesh.indices[corner];
+        if (vertex_index < 0 ||
+            static_cast<std::size_t>(vertex_index) >=
+                body_mesh.vertex_faces.size()) {
+          mesh.face_ids.clear();
+          break;
+        }
+        mesh.face_ids.push_back(body_mesh.vertex_faces[vertex_index]);
+      }
+    }
     mesh.is_selected =
         view->selected_feature_id.has_value() &&
         (view->selected_feature_id.value() == body_mesh.body_id ||

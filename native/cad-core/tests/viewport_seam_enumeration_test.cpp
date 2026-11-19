@@ -224,7 +224,6 @@ bool test_many_solid_compound_tripwire(DocumentManager& manager) {
 // Mirrors kMaxMeshFacePickTriangles in
 // core/viewport/impl/body_face_helpers.inc (not a header — duplicated
 // here like kMaxImportPickEdgeCount below).
-constexpr int kTestPickFaceTriangleBudget = 48;
 
 // A 100-gon prism: both end faces are planar with a 100-vertex outer
 // wire, which the mesher splits into ~98 triangles — above the pick
@@ -353,28 +352,10 @@ bool test_oversized_import_decimated_face_proxies(DocumentManager& manager) {
   }
 
   bool found_planar_face = false;
-  bool found_capped_fan_face = false;
   bool found_cylinder_face = false;
   for (const auto& face : viewport.solid_faces) {
-    if (face.triangle_indices.size() % 3 != 0 ||
-        static_cast<int>(face.triangle_indices.size() / 3) >
-            kTestPickFaceTriangleBudget) {
-      std::cerr << "oversized: face proxy " << face.face_id << " ships "
-                << face.triangle_indices.size() / 3
-                << " triangles — above the pick budget\n";
-      return false;
-    }
     if (face.sketchability == "planar") {
       found_planar_face = true;
-      // The prism end faces are planar with 100-edge outer wires: a
-      // bounded fan (~34 triangles). Without the boundary cap the fan
-      // would ship 100 triangles and trip the budget check above;
-      // without decimation the mesher's ~98 triangles would do the
-      // same. A count above 2 (a box face's full pair) pins the
-      // decimated fan specifically.
-      if (face.triangle_indices.size() / 3 > 2) {
-        found_capped_fan_face = true;
-      }
     }
     if (face.surface_kind == "cylinder" &&
         face.cylinder_radius.has_value()) {
@@ -382,12 +363,34 @@ bool test_oversized_import_decimated_face_proxies(DocumentManager& manager) {
     }
   }
 
+  // Faces no longer ship pick triangles: the BODY mesh carries one face
+  // ordinal per triangle (the pick map), which is what the UI rebuilds the
+  // proxies from. The contract this test guards is now "every triangle knows
+  // its face", not "every face ships a bounded proxy".
+  bool found_pick_map = false;
+  for (const auto& mesh : viewport.meshes) {
+    if (mesh.indices.size() % 3 != 0) {
+      std::cerr << "oversized: body " << mesh.id
+                << " has a non-triangle index count\n";
+      return false;
+    }
+    if (mesh.face_ids.size() != mesh.indices.size() / 3) {
+      std::cerr << "oversized: body " << mesh.id << " ships "
+                << mesh.face_ids.size() << " face ids for "
+                << mesh.indices.size() / 3 << " triangles\n";
+      return false;
+    }
+    if (!mesh.face_ids.empty()) {
+      found_pick_map = true;
+    }
+  }
+
   return expect(found_planar_face,
-                "oversized: planar face proxies must be emitted (sketch "
-                "on face placement)") &&
-         expect(found_capped_fan_face,
-                "oversized: a decimated planar fan proxy must exist (the "
-                "100-gon prism end faces)") &&
+                "oversized: planar faces keep their metadata (sketch on "
+                "face placement)") &&
+         expect(found_pick_map,
+                "oversized: the body mesh must carry the per-triangle pick "
+                "map (the UI's face proxies are built from it)") &&
          expect(found_cylinder_face,
                 "oversized: curved faces keep their surface kind + radius "
                 "witness (the cylinder wall)");

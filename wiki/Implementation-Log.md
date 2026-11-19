@@ -129,6 +129,94 @@ The rest of FreeCAD's navigator that we were missing, minus the menu:
 
 `pnpm test:ui` 102/102, `tsc --noEmit` clean, `pnpm lint` 0/0.
 
+### Viewport: the per-face pick triangles are no longer shipped (G0, first half)
+
+Every face used to carry its own world-space triangulation (`triangle_positions`
++ `triangle_indices`) purely so the UI could raycast it — a second copy of
+geometry the body mesh already had. The body mesh now carries **`face_ids`**, one
+face ordinal per triangle (base64 uint32), and `createViewportScene` carves each
+face's pick proxy out of the mesh the renderer already uploaded. Nothing in the
+interaction code changed: the proxies are still per-face BufferGeometries, they
+are just built locally.
+
+- Core: `ViewportMeshPrimitive::face_ids`, derived in the viewport working set
+  from the tessellator's existing `BodyMesh::vertex_faces` (no re-tessellation);
+  `ViewportSolidFace::triangle_positions/triangle_indices` deleted, along with
+  the whole pick-budget/decimation path in `enumerate_body_faces` that existed
+  only to keep the duplicated payload small.
+- UI: `MeshScenePrimitive.faceIds`, `attachFacePickGeometry()` groups a body's
+  triangles by ordinal and compacts each face's vertices so its geometry stays
+  small; the schema and IPC type accept the old fields but ignore them.
+- Measured on `projects/laser board/LS ESP32 PRO V2.1_002.step` (292 bodies,
+  14,897 faces, 246,143 triangles): `get_viewport_state` **31.75 MB / 784 ms →
+  27.50 MB / 684 ms**; `solid_faces` 15.04 → 9.54 MB; the map costs 1.25 MB.
+
+Tests: `viewport_seam_enumeration_test` now asserts every body mesh's pick map
+covers its triangles (and that no face ships a proxy); the new
+`viewportSceneFacePick.test.ts` pins the derivation (per-face triangles, local
+indices, a face with no triangle keeps an empty proxy). `pnpm test:ui` 110/110,
+`pnpm test:core` 94/95 (the only failure is the orphan
+`cad_core_scratch_load_profiles_test.exe`, exit 3221226505, which has no source
+and is not in CMake — pre-existing), `pnpm lint` 0/0.
+
+### Viewport: the face table is packed (G0, second half)
+
+`solid_faces` cost 9.54 MB for 14,897 faces because every face carried six
+strings (`face_id`, `owner_id`, `owner_kind`, `label`, `sketchability`,
+`surface_kind`), four nested objects (`center`, `normal`, `plane_frame`, `size`)
+whose KEY NAMES repeated 14,897 times, and an optional cylinder witness.
+
+It is now one packed table: five interned string tables (owners, owner kinds,
+sketchabilities, surface kinds, colours), the per-face enums as uint32 indices,
+the geometry as flat float32 blobs (centre 3, normal 3, frame 12, size 3,
+cylinder witness 7 for the few faces that have one), and a flags word for
+selection and the witness. `face_id` and `label` are not sent at all — both are
+derived from the owner and the ordinal, which is exactly what the core built.
+
+- Core: `to_payload(const std::vector<ViewportSolidFace>&)` replaces the
+  per-face object; strings are interned with a linear scan over five tiny tables.
+- UI: `decodeSolidFaces()` lives with the other binary decoders and is applied by
+  the **schema transform**, so `ViewportState.solid_faces` is still a decoded
+  array at every consumer — no call site changed.
+- Measured on `projects/laser board/LS ESP32 PRO V2.1_002.step`:
+  `get_viewport_state` **27.50 MB / 684 ms -> 20.13 MB / 284 ms**. Against the
+  start of G0 that is **31.75 MB / 784 ms -> 20.13 MB / 284 ms** for the whole
+  snapshot, pick map included.
+
+Tests: `solidFacesDecode.test.ts` (6 cases: id/label rebuilt from owner+ordinal,
+frame unpacked as vectors, interned colour vs null, selection + cylinder witness
+from the flags, sketchability/surface kind via the enum tables, empty table).
+`pnpm test:ui` 116/116, `pnpm test:core` 94/95 (orphan only), `tsc` clean,
+`pnpm lint` 0/0.
+
+### Viewport: face picking restored, camera no longer re-frames on a click
+
+Two regressions the first runtime test caught, both from the dedupe work:
+
+- **The pick map never reached the UI.** `meshes[].face_ids` was sent by the core
+  but not declared in `viewportStateSchema`, and zod strips undeclared fields.
+  `faceIds` was therefore always empty, every face fell back to the legacy proxy
+  (a flat rectangle in the face's plane frame), and clicks resolved to whichever
+  rectangle the ray crossed — often a side of the board, which is why "make
+  sketch" on the top produced a sketch on the side. `face_ids` is now declared
+  (defaulted for old cores) and `viewportStateSchema.test.ts` pins it; that test
+  guards the class of bug, a field the core sends and the parse boundary drops.
+- **The camera re-framed on every selection.** `updateInitialCameraFrame` gated
+  on `geometryKey`, which includes selection and highlight, so every face click
+  re-ran the "did the pivot leave the model?" check and snapped the view to the
+  isometric. It now gates on the model bounds: first geometry, and when the model
+  itself moves — never on a selection change.
+
+Verified at the same time on the real board (14,897 faces): the packed table is
+self-consistent — `normal` equals the frame's normal exactly, every centre
+finite, no duplicate `owner:ordinal` pairs — so the encoding was never the cause.
+
+`pnpm test:ui` 118/118, `tsc --noEmit` clean, `pnpm lint` 0/0.
+
+Remaining in G0: the UI still builds one BufferGeometry per face (14,897
+objects). That is local memory and object count, not payload — the next change is
+one pick mesh per body plus a highlight proxy for the selected/hovered face only.
+
 ### Cube: the rest of FreeCAD's navigator (arrows, backside, menu, light palette)
 
 Closing the parity list:

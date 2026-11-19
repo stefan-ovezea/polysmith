@@ -108,16 +108,11 @@ struct ViewportSolidFace {
   double width;
   double height;
   double radius;
-  // World-space triangulation of the actual face. The UI uses this to
-  // build a real BufferGeometry per face, which is both visually
-  // accurate and gives precise raycasting (the picker hits the face
-  // shape, not an analytical bounding rectangle). Empty for legacy
-  // analytical faces — those still build their pick mesh from
-  // (width, height, radius) + plane_frame on the UI side.
-  // Layout: positions are flat x0,y0,z0,x1,y1,z1,...; indices are
-  // triangle vertex indices into positions.
-  std::vector<double> triangle_positions;
-  std::vector<int> triangle_indices;
+  // A face's pick geometry is NOT shipped: the body mesh carries `face_ids`
+  // (one face ordinal per triangle) and the UI rebuilds each face's proxy from
+  // that mesh. Legacy analytical faces (box/cylinder primitives) never had a
+  // triangulation; they build their proxy from (width, height, radius) +
+  // plane_frame on the UI side, as before.
   bool is_selected;
   std::optional<std::string> appearance_color;
   // Surface classification for CAM consumers (drilling hole-wall

@@ -2,10 +2,7 @@
   for (const auto& box : viewport.boxes) {
     boxes.push_back(to_payload(box));
   }
-  json solid_faces = json::array();
-  for (const auto& face : viewport.solid_faces) {
-    solid_faces.push_back(to_payload(face));
-  }
+  json solid_faces = to_payload(viewport.solid_faces);
 
   json cylinders = json::array();
   for (const auto& cylinder : viewport.cylinders) {
@@ -97,6 +94,9 @@
         {"positions", encode_f32(mesh.positions)},
         {"normals", encode_f32(mesh.normals)},
         {"indices", encode_u32(mesh.indices)},
+        // Pick map: one face ordinal per triangle, so the UI builds its pick
+        // mesh from THIS geometry instead of a second copy of the triangles.
+        {"face_ids", encode_u32(mesh.face_ids)},
         // Empty for single-colour bodies; the UI then uses the material
         // colour. Per-vertex colours carry the file's face styles.
         {"colors", encode_f32(mesh.colors)},

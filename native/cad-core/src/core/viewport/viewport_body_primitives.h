@@ -77,6 +77,12 @@ struct ViewportMeshPrimitive {
   std::vector<double> positions;
   std::vector<double> normals;
   std::vector<int> indices;
+  // Face ordinal (TopExp::MapShapes order on this body) owning each TRIANGLE,
+  // one entry per triangle — the pick map. The viewport's pick mesh is this
+  // same geometry with this attribute, so a raycast resolves the face without a
+  // second copy of the triangles being shipped (the per-face
+  // `triangle_positions` arrays are being retired in favour of this).
+  std::vector<int> face_ids;
   // Optional per-vertex linear RGB (3 floats per vertex, same count as
   // `positions`). Set for imported bodies whose faces carry their own styles:
   // a connector is gold contacts plus a black body plus a white legend, and a

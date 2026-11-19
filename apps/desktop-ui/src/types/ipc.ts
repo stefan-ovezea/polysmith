@@ -455,6 +455,11 @@ export interface ViewportMeshPrimitive {
   positions: string;
   normals: string;
   indices: string;
+  // Pick map (uint32 blob, one entry per TRIANGLE, in `indices` order): the
+  // body-local face ordinal owning that triangle. It lets the picker use this
+  // mesh instead of a second copy of the geometry, so a raycast hit resolves the
+  // face without the per-face triangle arrays.
+  face_ids?: string;
   // Per-vertex linear RGB (float32 blob) for bodies whose faces carry their
   // own styles; empty/absent on single-colour bodies.
   colors?: string;

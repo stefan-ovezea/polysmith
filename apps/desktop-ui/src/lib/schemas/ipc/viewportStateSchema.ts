@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { decodeSolidFaces } from "@/lib/binaryDecode";
+
 import { planeFrameSchema } from "./common";
 
 // Drawing curve/text shapes — shared by the sheet payload here and
@@ -32,6 +34,26 @@ export const viewportDrawingTextShape = z.object({
   purpose: z.string().default("dimension"),
   annotation_id: z.string().optional(),
   stale: z.boolean().default(false),
+});
+
+// One body mesh. Exported so a test can pin the fields the scene depends on:
+// a field the core sends but this schema does not declare is silently stripped
+// by zod, and the UI degrades to a fallback (that is how face picking broke:
+// ace_ids was missing, so every face proxy became a flat rectangle).
+export const viewportMeshSchema = z.object({
+  primitive_id: z.string(),
+  positions: z.string(),
+  normals: z.string(),
+  indices: z.string(),
+  // Pick map: one face ordinal per TRIANGLE. Faces no longer ship their own
+  // triangles, so without this field the scene cannot rebuild a face proxy and
+  // falls back to a plane-frame rectangle - which made clicks resolve to the
+  // wrong face. Defaulted so an older core parses.
+  face_ids: z.string().default(""),
+  // Per-vertex linear RGB for bodies whose faces carry their own styles.
+  colors: z.string().default(""),
+  is_selected: z.boolean(),
+  appearance_color: z.string().nullable().default(null),
 });
 
 export const viewportStateSchema = z.object({
@@ -99,56 +121,28 @@ export const viewportStateSchema = z.object({
       appearance_color: z.string().nullable().default(null),
     }),
   ),
-  solid_faces: z.array(
-    z.object({
-      face_id: z.string(),
-      owner_id: z.string(),
-      owner_kind: z.string(),
-      label: z.string(),
-      sketchability: z.string(),
-      center: z.object({
-        x: z.number(),
-        y: z.number(),
-        z: z.number(),
-      }),
-      normal: z.object({
-        x: z.number(),
-        y: z.number(),
-        z: z.number(),
-      }),
-      plane_frame: z.object({
-        origin: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-        x_axis: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-        y_axis: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-        normal: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-      }),
-      size: z.object({
-        width: z.number(),
-        height: z.number(),
-        radius: z.number(),
-      }),
-      // Body-derived faces carry per-face triangulation; legacy
-      // analytical faces leave these empty and rely on (size, plane_frame)
-      // for the UI's pick mesh.  Binary (phase E4): base64 blobs.
-      triangle_positions: z.string().default(""),
-      triangle_indices: z.string().default(""),
-      is_selected: z.boolean(),
-      appearance_color: z.string().nullable().default(null),
-      // CAM surface classification + cylinder witness (drilling hole
-      // walls).  Defaulted so snapshots from a core that predates
-      // these fields still validate.
-      surface_kind: z.string().default("other"),
-      cylinder_axis: z
-        .tuple([z.number(), z.number(), z.number()])
-        .nullable()
-        .default(null),
-      cylinder_location: z
-        .tuple([z.number(), z.number(), z.number()])
-        .nullable()
-        .default(null),
-      cylinder_radius: z.number().nullable().default(null),
-    }),
-  ),
+  // Packed face table: strings are interned into five small tables, enums are
+  // indices, and the numbers are flat base64 float32/uint32 blobs. face_id and
+  // label are not sent; both derive from the owner and the ordinal.
+  solid_faces: z.object({
+    count: z.number(),
+    owner_ids: z.array(z.string()),
+    owner_kinds: z.array(z.string()),
+    sketchabilities: z.array(z.string()),
+    surface_kinds: z.array(z.string()),
+    colors: z.array(z.string()),
+    owner: z.string(),
+    ordinal: z.string(),
+    sketchability: z.string(),
+    surface_kind: z.string(),
+    appearance: z.string(),
+    flags: z.string(),
+    center: z.string(),
+    normal: z.string(),
+    frame: z.string(),
+    size: z.string(),
+    cylinder: z.string(),
+  }).transform(decodeSolidFaces),
   reference_planes: z.array(
     z.object({
       reference_id: z.string(),
@@ -635,21 +629,7 @@ export const viewportStateSchema = z.object({
       is_selected: z.boolean(),
     }),
   ),
-  meshes: z
-    .array(
-      z.object({
-        primitive_id: z.string(),
-        positions: z.string(),
-        normals: z.string(),
-        indices: z.string(),
-        // Per-vertex linear RGB for bodies whose faces carry their own styles.
-        // Absent/empty on single-colour bodies (older cores send nothing).
-        colors: z.string().default(""),
-        is_selected: z.boolean(),
-        appearance_color: z.string().nullable().default(null),
-      }),
-    )
-    .default([]),
+  meshes: z.array(viewportMeshSchema).default([]),
   cut_previews: z
     .array(
       z.object({

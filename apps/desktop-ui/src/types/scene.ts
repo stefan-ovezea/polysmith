@@ -86,6 +86,11 @@ export interface MeshScenePrimitive {
   positions: Float32Array;
   normals: Float32Array;
   indices: Uint32Array;
+  // Pick map: one face ordinal (this body's TopExp::MapShapes order) per
+  // TRIANGLE, in `indices` order. The face pick proxies are rebuilt from this
+  // mesh instead of shipping a second copy of the triangles, so this is the only
+  // place a face names its geometry.
+  faceIds: Uint32Array;
   // Per-vertex linear RGB, empty for single-colour bodies. Imported parts
   // carry the file's face styles (gold contacts, black body, white legend).
   colors: Float32Array;

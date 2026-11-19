@@ -327,7 +327,6 @@ void append_cached_body_topology(
                            body_kind,
                            document,
                            document.selected_face_id,
-                           /*decimate_pick_faces=*/oversized_import,
                            next.solid_faces);
     }
   }

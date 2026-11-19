@@ -838,15 +838,27 @@ function updateInitialCameraFrame({
   controls: OrbitControls;
   lastGeometryKeyRef: MutableRef<string>;
 }) {
-  if (!sceneData || sceneData.geometryKey === lastGeometryKeyRef.current) {
+  if (!sceneData) {
+    return;
+  }
+
+  // Frame only when the MODEL's bounds changed, never on an ordinary scene
+  // change. `geometryKey` also covers selection and highlight state, so
+  // selecting a face re-ran this check; with the pivot anywhere but the model's
+  // centre, `targetLeftTheModel` then fired and `frameCamera` snapped the view
+  // back to the isometric — "the model keeps resetting to iso view while I try
+  // to pick a face" (reported 2026-11-20). The ref stores the framed bounds, not
+  // the geometry key.
+  const boundsKey = `${sceneData.bounds.center.join(",")}|${sceneData.bounds.maxDimension}`;
+  if (boundsKey === lastGeometryKeyRef.current) {
     return;
   }
 
   const isFirstSceneLoad = lastGeometryKeyRef.current === "";
-  // Frame on the first geometry, and again when the content has moved out from
-  // under the camera (an import into a document that already had a model): the
-  // orbit pivot would otherwise stay at the old model's place, and every later
-  // rotation would swing the new one out of the view.
+  // Frame on the first geometry, and again when the model itself moved (an
+  // import into a document that already had one): the orbit pivot would
+  // otherwise stay at the old model's place, and every later rotation would
+  // swing the new one out of the view.
   const shouldFrame =
     !activeSketchPlaneId &&
     (isFirstSceneLoad ||
@@ -864,5 +876,5 @@ function updateInitialCameraFrame({
     );
   }
 
-  lastGeometryKeyRef.current = sceneData.geometryKey;
+  lastGeometryKeyRef.current = boundsKey;
 }

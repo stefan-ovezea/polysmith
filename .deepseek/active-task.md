@@ -1,34 +1,78 @@
-# CURRENT - 2026-11-19: view cube fixed on `fix/navigation-cube`, awaiting check
+# CURRENT - 2026-11-20: viewport payload cut in half; cube shipped
 
-Branch `fix/navigation-cube` (uncommitted): the cube's drag turned the model
-about a horizontal axis (three's Y-up `Spherical` in a Z-up world), a cube drag
-left `controls.enabled = false` for the rest of the session, and the orbit pivot
-was only derived on the first geometry. Fixed in
-`utils/viewCube.utils.ts` (`applyCubeDragOrbit` now uses OrbitControls' own
-up-axis quaternion pair, pole clamp 0.01 rad),
-`layout/viewport/viewCubePointerUp.ts` (controls restored after a drag) and
-`sceneSync.ts` + `viewportMath.targetLeftTheModel` (re-frame when the camera
-looks at empty space). Faces print their world axis under the view name
-(`TOP · Z+`) via the new `--cad-viewcube-axis-label` token in all seven themes.
+`dev` carries the FreeCAD-style navigator and the first two pieces of the
+viewport-payload work. Branch `perf/viewport-protocol` (merged into `dev`) holds
+the measurements, the plan and the code.
 
-Reference read from SolidCraft's **docs**, not just its code:
-`docs/control-protocol.md` (navigator styles, "face names follow the up-axis
-preference; the small X/Y/Z triad shows world axes", orbit about the view centre,
-Home/Fit, six faces + eight corners and **no edge targets**),
-`docs/book/src/guide/ui-tour.md` + `reference/glossary.md` (yaw/pitch/roll
-conventions), `crates/render/src/camera.rs` (`orbit()`: yaw += dx, pitch += dy,
-clamped) and `navigation_cube.rs` (the cube routes through the same orbit call as
-the background — the structural version of this fix).
+## Shipped on `dev` (2026-11-19/20)
 
-Follow-ups from the same docs: Home + Fit (we have neither), Shift-drag snapping
-to standard/diagonal views, and no edge targets on the cube.
+1. **View cube, rebuilt** (squash of `fix/navigation-cube`): chamfered solid
+   (6 faces + 12 edge strips + 8 corner triangles), light navigator palette in
+   all seven themes, drag about the camera's own up axis, quarter-turn and
+   60-degree corner snaps, Home/Fit/Backside/Menu buttons, orbit arrows, a view
+   menu (menu glyph or right-click on the cube), double-click to frame. Reference:
+   FreeCAD 1.1 `src/Gui/NaviCube.cpp` (`chamfer = 0.12`, 4/6 orientations, the
+   button set) and SolidCraft's `docs/control-protocol.md`.
+2. **G0 of the viewport-payload plan, both halves** (`IPC-Payload-Plan.md` §8):
+   - *Per-face dedupe*: the body mesh carries `face_ids` (one face ordinal per
+     triangle, base64 uint32) and the UI rebuilds each face pick proxy from it;
+     `triangle_positions` / `triangle_indices` and the whole pick-budget path in
+     `enumerate_body_faces` are gone.
+   - *Packed face table*: five interned string tables, per-face enums as uint32
+     indices, geometry as flat float32 blobs, `face_id`/`label` derived from the
+     owner and the ordinal. `decodeSolidFaces()` runs in the schema transform, so
+     every consumer still sees a decoded array.
 
-**Snap orientation fixed too:** the cube up was quantized in 45° steps, so a
-corner snap stored a diagonal camera up and a later TOP click produced a top view
-rolled 45° with no way back ("stuck in between axes at 45 degrees"). Now 90°
-("Top and bottom keep the nearest quarter-turn heading",
-`docs/control-protocol.md`), so every snap is axis-aligned; the heading is still
-preserved. Test: no diagonal up over 72 rolled cameras.
+Measured on `projects/laser board/LS ESP32 PRO V2.1_002.step` (292 bodies,
+14,897 faces, 246,143 triangles): `get_viewport_state` **31.75 MB / 784 ms ->
+20.13 MB / 284 ms**; `solid_faces` 15.04 MB -> ~1.6 MB; duplicated triangles on
+the wire 3.07 MB + indices -> 0.
+
+Two regressions found in the user's first test and fixed (`59ccf6ce`):
+- `meshes[].face_ids` was missing from `viewportStateSchema`, and zod strips
+  undeclared fields, so every face proxy fell back to a flat plane-frame
+  rectangle and clicks resolved to the wrong face ("make sketch on the top,
+  sketch on the side"). Guarded by `viewportStateSchema.test.ts`.
+- `updateInitialCameraFrame` gated on `geometryKey`, which includes selection, so
+  every face click re-framed the camera to the isometric ("the model keeps
+  resetting to iso view"). It now gates on the model bounds.
+
+User's verdict: **"it is still slow but usable for now."**
+
+## Next (in order, all measured and written down)
+
+1. **G1/G2 — split the viewport snapshot and make it incremental**: bodies (per
+   body `mesh_revision`), overlay (sketch/reference), preview; request carries
+   what the client has, reply carries only `body_updates` / `body_removals` /
+   `overlay`. Targets: sketch open 61.6 MB -> < 0.2 MB; one-extrude commit -> one
+   body. Design in `IPC-Payload-Plan.md` §8.
+2. **One pick mesh per body** (UI only): 14,897 per-face BufferGeometries ->
+   292, with a highlight proxy for the active face. Touches
+   `sceneObjectPopulation.addSolidSceneObjects`, `pickModelTarget` (faceIndex ->
+   `faceIds[faceIndex]`), `syncSolidFaceVisuals` and
+   `addCamOriginPickMarkerObjects`.
+3. **Phase H — stop recompiling every body**: `update_extrude_depth` spends 1 to
+   2.6 s INSIDE the core for a 21 KB reply; dependency keys per body, reuse
+   unchanged ones, with a cached-equals-cold rebuild assertion as the merge gate
+   (`IPC-Payload-Plan.md` §9). This is the "you can do nothing but wait" cost,
+   and no protocol change fixes it.
+4. **G3/G4**: preview deltas, then binary arrays for what is left.
+
+## Working notes
+
+- Core rebuild after C++ changes: `pnpm core:rebuild && pnpm dev`. UI-only changes
+  need `pnpm dev` but no core rebuild — except that face picking depends on fields
+  the core emits, so a stale core silently degrades the UI (that is how the
+  `face_ids` bug presented).
+- Gates: `pnpm test:ui` 118/118, `pnpm test:core` 94/95 (the only failure is the
+  orphan `cad_core_scratch_load_profiles_test.exe`, exit 3221226505, no source,
+  not in CMake), `tsc --noEmit` clean, `pnpm lint` 0/0.
+- `.tmptest/` holds the probes: `payload-fields.mjs` (per-field payload cost),
+  `check-face-ids.mjs` (pick map covers every triangle), `check-face-pack.mjs`
+  (packed table self-consistency), `flow-cost-probe.mjs` (sketch/extrude flows),
+  `cube-theme-preview.py` + `cube-preview.py` (offline cube rasteriser).
+
+# MERGED - dev @ e7324baf (view cube rebuilt on FreeCAD 1.1's navigator)
 
 # MERGED - dev @ fce27782 (STEP assembly tree, colour and encoding fixes)
 
@@ -5624,6 +5668,7 @@ fold it, its bodies listed under it (each with its own eye and context menu), on
 bulk visibility toggle
 (`onSetFeaturesVisibility` in AppSidebar), and imported bodies removed from
 Bodies. Five unit tests; 72 UI tests; lint 0/0.
+
 
 
 

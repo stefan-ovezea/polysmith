@@ -131,6 +131,7 @@ function makeMeshPrimitive(
     positions: decodeF32(primitive.positions),
     normals: decodeF32(primitive.normals),
     indices: decodeU32(primitive.indices),
+    faceIds: decodeU32(primitive.face_ids ?? ""),
     colors: decodeF32(primitive.colors ?? ""),
     isSelected: primitive.is_selected,
     appearanceColor: primitive.appearance_color ?? null,
@@ -1038,6 +1039,82 @@ function withDisplayProfileHoles(
   });
 }
 
+const EMPTY_F32 = new Float32Array(0);
+const EMPTY_U32 = new Uint32Array(0);
+const NO_APPEARANCE = 0xffffffff;
+function attachFacePickGeometry(
+  faces: SolidFaceScene[],
+  meshes: MeshScenePrimitive[],
+): void {
+  if (faces.length === 0 || meshes.length === 0) {
+    return;
+  }
+  const meshById = new Map(meshes.map((mesh) => [mesh.primitiveId, mesh]));
+
+  // Faces are grouped by owner; within a body the ordinal in the face id
+  // ("feature-12:face:37") is the face_ids value for that face's triangles.
+  const facesByOwnerId = new Map<string, Map<number, SolidFaceScene>>();
+  for (const face of faces) {
+    const ordinal = Number(face.faceId.slice(face.faceId.lastIndexOf(":") + 1));
+    if (!Number.isInteger(ordinal) || ordinal < 0) {
+      continue;
+    }
+    const byOrdinal = facesByOwnerId.get(face.ownerId) ?? new Map();
+    byOrdinal.set(ordinal, face);
+    facesByOwnerId.set(face.ownerId, byOrdinal);
+  }
+
+  for (const [ownerId, byOrdinal] of facesByOwnerId) {
+    const mesh = meshById.get(ownerId);
+    if (!mesh || mesh.faceIds.length === 0) {
+      continue;
+    }
+    // Compact each face's vertices so its BufferGeometry stays small; the
+    // global mesh would otherwise be re-uploaded per face.
+    const builders = new Map<
+      number,
+      { positions: number[]; indices: number[]; remap: Map<number, number> }
+    >();
+    const triangleCount = Math.min(
+      mesh.faceIds.length,
+      Math.floor(mesh.indices.length / 3),
+    );
+    for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+      const ordinal = mesh.faceIds[triangle];
+      if (!byOrdinal.has(ordinal)) {
+        continue;
+      }
+      let builder = builders.get(ordinal);
+      if (!builder) {
+        builder = { positions: [], indices: [], remap: new Map() };
+        builders.set(ordinal, builder);
+      }
+      for (let corner = 0; corner < 3; corner += 1) {
+        const vertex = mesh.indices[triangle * 3 + corner];
+        let local = builder.remap.get(vertex);
+        if (local === undefined) {
+          local = builder.remap.size;
+          builder.remap.set(vertex, local);
+          builder.positions.push(
+            mesh.positions[vertex * 3],
+            mesh.positions[vertex * 3 + 1],
+            mesh.positions[vertex * 3 + 2],
+          );
+        }
+        builder.indices.push(local);
+      }
+    }
+    for (const [ordinal, builder] of builders) {
+      const face = byOrdinal.get(ordinal);
+      if (!face || builder.indices.length === 0) {
+        continue;
+      }
+      face.trianglePositions = Float32Array.from(builder.positions);
+      face.triangleIndices = Uint32Array.from(builder.indices);
+    }
+  }
+}
+
 function makeSolidFace(face: ViewportSolidFace): SolidFaceScene {
   return {
     faceId: face.face_id,
@@ -1070,10 +1147,10 @@ function makeSolidFace(face: ViewportSolidFace): SolidFaceScene {
       ],
     },
     size: face.size,
-    // Materialize typed arrays up-front so the renderer hands them
-    // straight to a BufferAttribute without re-allocating per frame.
-    trianglePositions: decodeF32(face.triangle_positions ?? ""),
-    triangleIndices: decodeU32(face.triangle_indices ?? ""),
+    // Pick geometry is NOT on the wire any more: it is rebuilt from the body
+    // mesh's `face_ids` pick map in `attachFacePickGeometry` below.
+    trianglePositions: EMPTY_F32,
+    triangleIndices: EMPTY_U32,
     isSelected: face.is_selected,
     appearanceColor: face.appearance_color ?? null,
     surfaceKind: face.surface_kind,
@@ -1114,12 +1191,15 @@ export function createViewportScene(
     options.pendingEdgeOpBodyIds ?? new Set<string>();
   const document = options.document ?? null;
 
+  const meshPrimitives = viewport.meshes
+    .map(makeMeshPrimitive)
+    .filter((primitive) => !hiddenFeatureIds.has(primitive.primitiveId));
   let primitives = [
     ...viewport.boxes.map(makeBoxPrimitive),
     ...viewport.cylinders.map(makeCylinderPrimitive),
     ...viewport.polygon_extrudes.map(makePolygonExtrudePrimitive),
-    ...viewport.meshes.map(makeMeshPrimitive),
-  ].filter((primitive) => !hiddenFeatureIds.has(primitive.primitiveId));
+    ...meshPrimitives,
+  ];
   // The "Origin" hierarchy category covers the three named ref planes
   // and the XYZ axes only — *not* parametric construction planes,
   // which are a separate feature kind with their own visibility
@@ -1348,9 +1428,12 @@ export function createViewportScene(
     }
   }
   sketchProfiles = withDisplayProfileHoles(sketchProfiles);
+  // iewport.solid_faces arrives decoded: the schema's transform unpacks the
+  // packed wire table once, at the boundary, so every consumer keeps an array.
   let solidFaces = viewport.solid_faces
     .filter((face) => !hiddenFeatureIds.has(face.owner_id))
     .map(makeSolidFace);
+  attachFacePickGeometry(solidFaces, meshPrimitives);
   const edges: SceneEdge[] = viewport.edges
     .filter((edge) => !hiddenFeatureIds.has(edge.owner_body_id))
     .map((edge) => ({

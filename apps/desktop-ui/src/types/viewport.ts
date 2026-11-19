@@ -69,6 +69,7 @@ export interface ViewportPolygonExtrudePrimitive {
   appearance_color: string | null;
 }
 
+// One decoded face, as the scene and the feature actions consume it.
 export interface ViewportSolidFace {
   face_id: string;
   owner_id: string;
@@ -83,24 +84,38 @@ export interface ViewportSolidFace {
     height: number;
     radius: number;
   };
-  // Body-derived faces carry triangulation arrays; legacy analytical
-  // faces leave these empty and the UI builds a pick mesh from
-  // (size, plane_frame) instead.  Binary (phase E4): base64 float32/
-  // uint32 blobs.
-  triangle_positions: string;
-  triangle_indices: string;
   is_selected: boolean;
   appearance_color: string | null;
-  // Surface classification for CAM consumers (drilling hole-wall
-  // candidates): "planar" | "cylinder" | "cone" | "sphere" | "torus"
-  // | "spline" | "other".  Refines `sketchability`.
+  // Surface classification for CAM consumers (drilling hole-wall candidates).
   surface_kind?: string;
-  // Cylinder witness — non-null only when surface_kind === "cylinder":
-  // the hole axis (direction), a point on the axis, and the radius.
-  // `center` is a mid-UV point ON the wall — never the hole axis.
+  // Cylinder witness - non-null only when surface_kind === cylinder.
   cylinder_axis?: Vector3 | null;
   cylinder_location?: Vector3 | null;
   cylinder_radius?: number | null;
+}
+
+// Packed face table. A face used to be an object with nested centre/normal/
+// plane_frame/size objects and six strings (~670 B/face on a 14,897-face board).
+// Now the strings are interned, enums are indices and the numbers are flat
+// base64 blobs; the scene rebuilds SolidFaceScene entries from this.
+export interface ViewportSolidFaces {
+  count: number;
+  owner_ids: string[];
+  owner_kinds: string[];
+  sketchabilities: string[];
+  surface_kinds: string[];
+  colors: string[];
+  owner: string;        // uint32 blob, one per face
+  ordinal: string;      // uint32 blob, one per face
+  sketchability: string; // uint32 blob, index into sketchabilities
+  surface_kind: string;  // uint32 blob, index into surface_kinds
+  appearance: string;    // uint32 blob, 0xffffffff = no override
+  flags: string;         // uint32 blob: bit0 selected, bit1 cylinder witness
+  center: string;        // float32 blob, 3 per face
+  normal: string;        // float32 blob, 3 per face
+  frame: string;         // float32 blob, 12 per face (origin, x, y, normal)
+  size: string;          // float32 blob, 3 per face (width, height, radius)
+  cylinder: string;      // float32 blob, 7 per cylinder face (axis, point, r)
 }
 
 export interface ViewportReferencePlane {
