@@ -13,6 +13,16 @@ import type { ViewportMeshPrimitive, ViewportState } from "@/types";
 let cache = new Map<string, ViewportMeshPrimitive>();
 let revisions = new Map<string, string>();
 let lastViewport: ViewportState | null = null;
+// Whether the request in flight told the core what we hold. A request WITHOUT
+// fingerprints gets a full snapshot back, and a full snapshot must REPLACE the
+// cache - merging it would leave the bodies of a previous document behind as
+// ghost geometry (doubled outlines and floating ribbons in the viewport).
+let requestIsDelta = false;
+
+/** Call before building a `get_viewport_state`: remembers how it was asked. */
+export function beginViewportRequest(): void {
+  requestIsDelta = revisions.size > 0;
+}
 
 /** The fingerprints to send with the next `get_viewport_state`. */
 export function knownMeshRevisions(): Record<string, string> {
@@ -43,9 +53,10 @@ export function resetViewportMeshCache(): void {
  */
 export function mergeViewportMeshes(viewport: ViewportState): ViewportState {
   const incomingRevisions = viewport.mesh_revisions;
-  if (!incomingRevisions) {
+  if (!incomingRevisions || !requestIsDelta) {
+    // Full snapshot: replace, never merge.
     cache = new Map(viewport.meshes.map((mesh) => [mesh.primitive_id, mesh]));
-    revisions = new Map();
+    revisions = incomingRevisions ? new Map(Object.entries(incomingRevisions)) : new Map();
     lastViewport = viewport;
     return viewport;
   }

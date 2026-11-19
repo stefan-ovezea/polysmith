@@ -5,6 +5,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 
 import {
+  beginViewportRequest,
   knownMeshRevisions,
   mergeViewportMeshes,
   resetViewportMeshCache,
@@ -51,6 +52,7 @@ describe("viewport mesh cache", () => {
     expect(knownMeshRevisions()).toEqual({ a: "1", b: "1" });
 
     // Only `b` changed; `a` must survive from the cache.
+    beginViewportRequest();
     const delta = mergeViewportMeshes(
       viewport({
         meshes: [mesh("b")],
@@ -88,6 +90,7 @@ describe("viewport mesh cache", () => {
     expect(full.solid_faces).toHaveLength(2);
 
     // Same revision: the core sent no faces and no edges, only the selection.
+    beginViewportRequest();
     const delta = mergeViewportMeshes(
       viewport({
         revision: 7,
@@ -116,6 +119,7 @@ describe("viewport mesh cache", () => {
         body_states: {},
       }),
     );
+    beginViewportRequest();
     const delta = mergeViewportMeshes(
       viewport({
         meshes: [],
@@ -125,5 +129,35 @@ describe("viewport mesh cache", () => {
       }),
     );
     expect(delta.meshes.map((m) => m.primitive_id)).toEqual(["a"]);
+  });
+
+  it("replaces the cache when the request carried no fingerprints", () => {
+    // First fetch: no fingerprints, so a full snapshot must REPLACE the cache -
+    // merging it left the previous document's bodies behind as ghost geometry.
+    beginViewportRequest();
+    mergeViewportMeshes(
+      viewport({
+        meshes: [mesh("old-a"), mesh("old-b")],
+        mesh_revisions: { "old-a": "1", "old-b": "1" },
+        removed_meshes: [],
+        body_states: {},
+      }),
+    );
+    expect(Object.keys(knownMeshRevisions()).sort()).toEqual(["old-a", "old-b"]);
+
+    // A new document reloads with different ids; the request sends no fingerprints
+    // when the cache was reset, and the reply replaces everything.
+    resetViewportMeshCache();
+    beginViewportRequest();
+    const replaced = mergeViewportMeshes(
+      viewport({
+        meshes: [mesh("new-a")],
+        mesh_revisions: { "new-a": "1" },
+        removed_meshes: [],
+        body_states: {},
+      }),
+    );
+    expect(replaced.meshes.map((m) => m.primitive_id)).toEqual(["new-a"]);
+    expect(knownMeshRevisions()).toEqual({ "new-a": "1" });
   });
 });

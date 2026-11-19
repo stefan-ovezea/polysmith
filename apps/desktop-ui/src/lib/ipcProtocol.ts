@@ -10,7 +10,11 @@ import type {
 } from "@/types";
 
 import { coreMessageSchema } from "./schemas/ipcSchema";
-import { knownMeshRevisions, knownSceneRevision } from "./viewportMeshCache";
+import {
+  beginViewportRequest,
+  knownMeshRevisions,
+  knownSceneRevision,
+} from "./viewportMeshCache";
 
 export * from "./ipc/sketchCommands";
 export * from "./ipc/profileFeatureCommands";
@@ -57,6 +61,7 @@ export function makeGetSessionStateCommand(): CoreCommand {
 export function makeGetViewportStateCommand(): GetViewportStateCommand {
   // Mesh delta: tell the core which body geometries we already hold, so it only
   // sends the ones that changed. Worst case (empty map) is a full snapshot.
+  beginViewportRequest();
   const knownMeshes = knownMeshRevisions();
   const payload: { known_meshes?: Record<string, string>; known_revision?: number } = {};
   if (Object.keys(knownMeshes).length > 0) {
