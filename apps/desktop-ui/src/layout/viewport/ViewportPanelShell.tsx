@@ -215,7 +215,24 @@ interface ViewportPanelShellProps {
   getDraftScreenPosition: (
     field: DraftDimensionField,
   ) => { x: number; y: number } | null;
+  /** The cube's view menu, anchored under the widget in the top-right corner. */
+  cubeMenu: {
+    items: Array<{ id: CubeMenuAction; label: string }>;
+    onSelect: (action: CubeMenuAction) => void;
+    onClose: () => void;
+  } | null;
 }
+
+/** What the cube's view menu can ask for. */
+export type CubeMenuAction =
+  | "isometric"
+  | "fit"
+  | "top"
+  | "bottom"
+  | "front"
+  | "back"
+  | "left"
+  | "right";
 
 export function ViewportPanelShell({
   activeSketchPlaneId,
@@ -321,11 +338,41 @@ export function ViewportPanelShell({
   getDraftFieldInputValue,
   getDraftParameterSuggestions,
   getDraftScreenPosition,
+  cubeMenu,
 }: ViewportPanelShellProps) {
   return (
     <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
       {showViewportGrid && !activeSketchPlaneId ? (
         <div className="pointer-events-none absolute inset-0 cad-grid-stage opacity-70" />
+      ) : null}
+      {cubeMenu ? (
+        <>
+          <div
+            className="absolute inset-0 z-20"
+            onClick={cubeMenu.onClose}
+          />
+          <div className="absolute right-3 top-[196px] z-30">
+            <div
+              className="pointer-events-auto w-44 overflow-hidden rounded-md border shadow-lg"
+              style={{
+                background: "var(--cad-panel-popover-bg)",
+                borderColor: "var(--cad-panel-border)",
+                color: "var(--color-on-surface)",
+              }}
+            >
+              {cubeMenu.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="block w-full px-3 py-1.5 text-left text-xs hover:bg-[var(--cad-context-hover)]"
+                  onClick={() => cubeMenu.onSelect(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       ) : null}
       <div
         ref={hostRef}

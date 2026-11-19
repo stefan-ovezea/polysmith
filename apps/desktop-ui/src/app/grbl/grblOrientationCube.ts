@@ -85,7 +85,14 @@ export function buildGrblOrientationCube({
   const onPointerDown = (event: PointerEvent) => {
     setRaycaster(event);
     const hit = raycastViewCube(raycaster, cubeGroup);
-    if (!hit || hit.type === "rotation_arrow") {
+    // The corner buttons and orbit arrows are the main viewport's business; the
+    // GRBL preview reuses the cube for orientation only.
+    if (
+      !hit ||
+      hit.type === "rotation_arrow" ||
+      hit.type === "orbit_arrow" ||
+      hit.type === "button"
+    ) {
       return;
     }
     // Face/edge/corner → view direction in world space (the cube

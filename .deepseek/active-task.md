@@ -1,58 +1,106 @@
-# CURRENT — 2026-11-19: STEP assembly tree (done, awaiting in-app check)
+# CURRENT - 2026-11-19: view cube fixed on `fix/navigation-cube`, awaiting check
 
-`fix/face-pick-and-cut-extrude`, nothing committed this session.
+Branch `fix/navigation-cube` (uncommitted): the cube's drag turned the model
+about a horizontal axis (three's Y-up `Spherical` in a Z-up world), a cube drag
+left `controls.enabled = false` for the rest of the session, and the orbit pivot
+was only derived on the first geometry. Fixed in
+`utils/viewCube.utils.ts` (`applyCubeDragOrbit` now uses OrbitControls' own
+up-axis quaternion pair, pole clamp 0.01 rad),
+`layout/viewport/viewCubePointerUp.ts` (controls restored after a drag) and
+`sceneSync.ts` + `viewportMath.targetLeftTheModel` (re-frame when the camera
+looks at empty space). Faces print their world axis under the view name
+(`TOP · Z+`) via the new `--cad-viewcube-axis-label` token in all seven themes.
 
-**Landed this round: the Browser shows the imported file's product structure**
-instead of a 1,092-row body list.
+Reference read from SolidCraft's **docs**, not just its code:
+`docs/control-protocol.md` (navigator styles, "face names follow the up-axis
+preference; the small X/Y/Z triad shows world axes", orbit about the view centre,
+Home/Fit, six faces + eight corners and **no edge targets**),
+`docs/book/src/guide/ui-tour.md` + `reference/glossary.md` (yaw/pitch/roll
+conventions), `crates/render/src/camera.rs` (`orbit()`: yaw += dx, pitch += dy,
+clamped) and `navigation_cube.rs` (the cube routes through the same orbit call as
+the background — the structural version of this fix).
 
-- Core: `core/document/component.h` (`ComponentNode { id, name, parent_id,
-  body_ids }`) + `DocumentState::components`; `assembly_from_xcaf` in
-  `geometry/step_import_helpers.cpp` walks the XCAF occurrence tree; node ids are
-  `component-N` from `next_component_id_` (restored on load); `delete_feature`
-  prunes dead body ids and collapses empty components.
-- Payload: `components` in `document_state` (+66.9 KB on the carrier, +5 %),
-  absent from the viewport payload; save/load round-trips it.
-- UI: `componentHierarchy()` in `layout/documentHierarchyGroups.ts`, nested
-  `ComponentBranch` rows in `DocumentHierarchyPanel.tsx` (fold on click, subtree
-  eye toggles in one update, bodies no component places stay under the import).
-- Measured on `ESP32-P4C5-Module_Carrier_V1.5.step`: 536 occurrences (38 top
-  level), 1,091 of 1,092 solids placed, import 13.2 s (unchanged).
-- Gates: `pnpm core:build` clean; `pnpm test:core` 94/95 (the one failure is the
-  orphan `cad_core_scratch_load_profiles_test.exe` with no source, pre-existing);
-  `pnpm test:ui` 76/76; `tsc --noEmit` clean; `pnpm lint` 0/0.
+Follow-ups from the same docs: Home + Fit (we have neither), Shift-drag snapping
+to standard/diagonal views, and no edge targets on the cube.
 
-**Also landed this round — the timeline shows the components.** An import stays
-ONE history entry (an operation is atomic: the cursor cannot sit inside it), but
-the strip now lays out the file's component occurrences *inside* that entry:
-import block → fold chevron → one icon per top-level occurrence → nested
-occurrences open in place → bodies as leaves. Clicking a component opens it,
-clicking a body selects it, and "Find in Timeline" opens the chain holding the
-body (`componentAncestors`) before scrolling to it. Glyphs are shared with the
-Browser (`ComponentIcon`, `ImportFileIcon` in `ToolBarIcons.tsx`).
+**Snap orientation fixed too:** the cube up was quantized in 45° steps, so a
+corner snap stored a diagonal camera up and a later TOP click produced a top view
+rolled 45° with no way back ("stuck in between axes at 45 degrees"). Now 90°
+("Top and bottom keep the nearest quarter-turn heading",
+`docs/control-protocol.md`), so every snap is axis-aligned; the heading is still
+preserved. Test: no diagonal up over 72 rolled cameras.
 
-**Next, in order:** (1) the user verifies the tree and the timeline in the app;
-(2) the viewport payload work — 61.6 MB / ~6 s per event is the "not workable"
-problem: pack the per-face metadata (~19 MB), replace the per-face pick triangles
-with one `u16` face id per mesh triangle (also collapses 24,373 pick meshes into
-~1,092), then palette colours / dropped normals; (3) a real assembly model
-(component instances + OndselSolver joints) — the vendored solver is still unused,
-and the component tree above is deliberately not that.
+# MERGED - dev @ fce27782 (STEP assembly tree, colour and encoding fixes)
 
-**Colour regression fixed (2026-11-19):** imported bodies lost their paint
-because `applyPrimitiveVisualState` set `material.color` to the theme body grey
-(`#45475a` in the dark themes, linear 0.06) on top of the per-vertex colours —
-a ~16× multiply that made every imported board dark, blue-tinted and flat.
-`PrimitiveVisual.usesVertexColors` now suppresses that tint (explicit user
-colours still apply). If colours look wrong again, check who writes
-`baseMaterial.color` for a body: both the geometry builder and the visual-state
-pass do.
+The user's verdict after that merge: **the assembly tree works, the app is still
+far too slow** ("still very slow ... solidcraft is handle it without any delay
+except when first time importing").
 
-**Encoding rule, learned the expensive way:** never rewrite a source file through
-PowerShell (`Get-Content -Raw` + `Set-Content`) — it decodes UTF-8 as CP1252 and
-mangles every non-ASCII character (`U+00E2 U+2013 U+00BE` instead of the fold
-chevron), which is how the Browser's arrows reached the screen as garbage.
-`pnpm lint:architecture` now fails on re-encoded sequences in
+## TASK: make a 1,092-body import interactive (viewport payload + scene rebuild)
+
+Measured baseline (`ESP32-P4C5-Module_Carrier_V1.5.step`, 1,092 bodies, 24,373
+faces), core driven over IPC:
+
+| call | size | time |
+|---|---|---|
+| `import_step` reply | 1.33 MB | 12-13 s (one-off, acceptable) |
+| `get_document_state` | 1.33 MB | 89 ms |
+| `get_viewport_state` | **61.6 MB** | **~6 s** |
+| `select_feature` | ~0 | 35 ms |
+
+`get_viewport_state` breakdown: `meshes` 32.18 MB (positions 7.95, normals 7.95,
+vertex colours 7.95, indices 8.19); `solid_faces` 30.03 MB (per-face metadata
+**19.15 MB** = 786 B x 24,373 faces, plus 10.88 MB of its own triangles which
+duplicate the mesh geometry); `edges` 2.06; `bodies` 0.33.
+
+Steps, in order (each one measurable on its own):
+
+1. **Pack the per-face metadata.** 786 B per face of JSON (ids, plane frames,
+   colours, per-face triangle lists) is the single largest block. One flat
+   Float32/Int32 block per body plus a face-id index. Target: 19.15 MB -> 1-2 MB.
+2. **One pick mesh per body instead of one per face.** 24,373 pick objects with
+   their own geometry become ~1,092: keep one `u16` face id per mesh triangle and
+   resolve a hit through that. Removes the 10.88 MB of duplicated triangles and
+   the 24,373 scene objects (the scene-graph cost is what makes interaction
+   sluggish, not just the transfer).
+3. **Colour palette instead of per-vertex RGB.** The file uses ~50 colours; ship
+   palette + one u8 per vertex. -8 MB.
+4. **Drop normals, compute them client-side** where the core's are not needed
+   (keep them where flat shading depends on them; measure first). -8 MB.
+
+Acceptance:
+
+- `get_viewport_state` well under 20 MB and under 1 s on the carrier;
+- orbiting/panning the board does not rebuild the scene (it must not call it at
+  all while only the camera moves);
+- selecting a face/edge on the board stays under ~100 ms end to end;
+- a second import of the same file does not re-send geometry the core already
+  has (the UI keeps it; only the delta travels).
+
+Files: `core/viewport/viewport.cpp` and `core/viewport/impl/*` (payload build),
+`protocol/schema/events.schema.json` + `wiki/IPC-Protocol.md` (wire format),
+`apps/desktop-ui/src/lib/viewportScene.ts` (scene build), `primitiveObjects.ts`
+(pick meshes), `layout/viewport/sceneTargetPicking.ts` (hit resolution).
+
+## Standing lessons from this round (do not re-learn)
+
+**Colour:** imported bodies carry their paint in per-vertex colours, and a
+material colour multiplies them. `applyPrimitiveVisualState` used to stamp the
+theme body grey (`#45475a`, linear 0.06) on every body, a ~16x multiply that made
+imported boards dark and blue. `PrimitiveVisual.usesVertexColors` now suppresses
+that tint. Anything that writes `baseMaterial.color` must ask whether the body's
+paint is vertex colours - both the geometry builder and the visual-state pass do.
+
+**Encoding:** never rewrite a source file through PowerShell (`Get-Content -Raw`
++ `Set-Content`); it decodes UTF-8 as CP1252 and mangles every non-ASCII
+character. `pnpm lint:architecture` fails on re-encoded sequences in
 `apps/desktop-ui/src`, `native/cad-core/src`, `wiki` and `scripts`.
+
+**Hooks:** a React hook below an early return unmounts the whole UI; `pnpm
+lint:hooks` is the gate.
+
+**Git:** commit only what the user approved; `projects/` and `.tmptest/` never
+travel.
 
 # DRAG DESIGN — write it down before writing it again (2026-11-06, end of day)
 

@@ -46,6 +46,7 @@ export {
   axisAlignedRectangleCorners2d,
   circleFromThreePoints2d,
   distanceBetweenPoints,
+  fitCameraToBounds,
   frameCamera,
   frameCameraToSketchPlane,
   lineCircleIntersectionTrim,
@@ -55,6 +56,7 @@ export {
   rectangleFromThreePoints2d,
   resolveSketchPlanePoint,
   signedPolygonArea2d,
+  targetLeftTheModel,
   toWorldPoint,
 } from "./viewport/viewportMath";
 

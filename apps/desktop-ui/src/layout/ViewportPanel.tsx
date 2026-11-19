@@ -41,6 +41,8 @@ import {
   disposeGroup,
   disposeMaterial,
   distanceBetweenPoints,
+  fitCameraToBounds,
+  frameCamera,
   frameCameraToSketchPlane,
   projectWorldPointToViewport,
   SKETCH_PLANE_OFFSET,
@@ -49,6 +51,8 @@ import {
   createViewCubeScene,
   createViewCubeCamera,
   isPointerInCubeArea,
+  raycastViewCube,
+  setViewCubeRaycasterFromPointer,
   clearCubeHover,
   disposeViewCubeGroup,
   createCubeRenderTarget,
@@ -121,7 +125,7 @@ import {
   handleViewCubeDragPointerMove,
   handleViewCubeHoverPointerMove,
 } from "./viewport/viewCubePointerMove";
-import { finishViewCubePointerUp } from "./viewport/viewCubePointerUp";
+import { finishViewCubePointerUp, startViewCubeFaceAnimation } from "./viewport/viewCubePointerUp";
 import {
   buildSketchSnapCandidates,
   resolveSnappedSketchPoint as resolveSnappedSketchPointFromContext,
@@ -253,6 +257,7 @@ import {
 } from "./viewport/viewportPanelTypes";
 import { useViewportSceneData } from "./viewport/useViewportSceneData";
 import { ViewportPanelShell } from "./viewport/ViewportPanelShell";
+import type { CubeMenuAction } from "./viewport/ViewportPanelShell";
 import { computeViewportCrosshairState } from "./viewport/viewportCrosshairState";
 import {
   dimensionCoreValue as computeDimensionCoreValue,
@@ -727,6 +732,14 @@ export function ViewportPanel({
   const viewCubeAnimTargetUpRef = useRef(new THREE.Vector3(0, 0, 1));
   const viewCubeDraggingRef = useRef(false);
   const viewCubeDragStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Last click on a cube facet, for the double-click "frame it from here".
+  const viewCubeLastClickRef = useRef<{ key: string; at: number } | null>(null);
+  // The cube's standard-views menu (the ☰ button on its top-right corner).
+  const [cubeMenuOpen, setCubeMenuOpen] = useState(false);
+  // The menu's action handler needs the scene camera and controls, which live in
+  // the viewport-effect scope; the shell renders outside it, so it is handed over
+  // through a ref.
+  const cubeMenuSelectRef = useRef<(action: CubeMenuAction) => void>(() => {});
   const lineDraftStartRef = useRef<[number, number] | null>(null);
   // Track click timing and position for double-click detection during
   // line drafting. Two clicks <300ms apart at the same location break
@@ -4997,6 +5010,22 @@ export function ViewportPanel({
       });
     }
 
+    function fitModelFromCurrentDirection() {
+      const bounds = sceneDataRef.current?.bounds;
+      if (!bounds) {
+        return;
+      }
+      fitCameraToBounds(camera, controls, bounds.center, bounds.maxDimension);
+    }
+
+    function frameModelAtHome() {
+      const bounds = sceneDataRef.current?.bounds;
+      if (!bounds) {
+        return;
+      }
+      frameCamera(camera, controls, bounds.center, bounds.maxDimension);
+    }
+
     function finishViewCubePointerUpFromViewport(event: PointerEvent) {
       return finishViewCubePointerUp({
         event,
@@ -5015,8 +5044,43 @@ export function ViewportPanel({
         viewCubeAnimStartUpRef,
         viewCubeAnimTargetUpRef,
         rotateCameraAroundCurrentView: rotateCameraAroundCurrentViewFromViewport,
+        onViewCubeHome: frameModelAtHome,
+        onViewCubeFit: fitModelFromCurrentDirection,
+        onViewCubeMenu: () => setCubeMenuOpen(true),
+        lastClickRef: viewCubeLastClickRef,
       });
     }
+
+    function selectCubeMenuView(action: CubeMenuAction) {
+      setCubeMenuOpen(false);
+      if (action === "isometric") {
+        frameModelAtHome();
+        return;
+      }
+      if (action === "fit") {
+        fitModelFromCurrentDirection();
+        return;
+      }
+      const face = action.toUpperCase() as
+        | "TOP"
+        | "BOTTOM"
+        | "FRONT"
+        | "BACK"
+        | "LEFT"
+        | "RIGHT";
+      startViewCubeFaceAnimation({
+        hit: { type: "face", face },
+        camera,
+        controls,
+        viewCubeAnimatingRef,
+        viewCubeAnimStartRef,
+        viewCubeAnimStartPosRef,
+        viewCubeAnimTargetPosRef,
+        viewCubeAnimStartUpRef,
+        viewCubeAnimTargetUpRef,
+      });
+    }
+    cubeMenuSelectRef.current = selectCubeMenuView;
 
     function handlePointerUp(event: PointerEvent) {
       cancelPendingDraftPointerMoveFrame();
@@ -5876,6 +5940,25 @@ export function ViewportPanel({
       requestRender(viewCubeAnimatingRef.current ? 320 : 0);
     };
     const onContextMenu = (event: MouseEvent) => {
+      // A right-click ON the cube opens the cube's own menu, as FreeCAD's
+      // navigator does, instead of the body/sketch context menu.
+      const cubeGroup = viewCubeGroupRef.current;
+      const cubeCam = viewCubeCameraRef.current;
+      const cubeRaycaster = viewCubeRaycasterRef.current;
+      if (cubeGroup && cubeCam && cubeRaycaster) {
+        setViewCubeRaycasterFromPointer(
+          cubeRaycaster,
+          cubeCam,
+          event,
+          renderer.domElement,
+          renderer.getPixelRatio(),
+        );
+        if (raycastViewCube(cubeRaycaster, cubeGroup)) {
+          event.preventDefault();
+          setCubeMenuOpen(true);
+          return;
+        }
+      }
       if (draftDimensionSessionRef.current) {
         event.preventDefault();
         // Cancel the rubber band / chain break — keep tool armed
@@ -6616,6 +6699,25 @@ export function ViewportPanel({
       canvasRef={canvasRef}
       circleCount={circleCount}
       circleToolMode={circleToolMode}
+      cubeMenu={
+        cubeMenuOpen
+          ? {
+              items: [
+                { id: "isometric" as const, label: translate("viewCube.isometric") },
+                { id: "fit" as const, label: translate("viewCube.fit") },
+                { id: "top" as const, label: translate("viewCube.top") },
+                { id: "front" as const, label: translate("viewCube.front") },
+                { id: "right" as const, label: translate("viewCube.right") },
+                { id: "bottom" as const, label: translate("viewCube.bottom") },
+                { id: "back" as const, label: translate("viewCube.back") },
+                { id: "left" as const, label: translate("viewCube.left") },
+              ],
+              onSelect: (action: CubeMenuAction) =>
+                cubeMenuSelectRef.current(action),
+              onClose: () => setCubeMenuOpen(false),
+            }
+          : null
+      }
       constraintPreview={constraintPreview}
       contextMenu={contextMenu}
       currentGridSpacing={currentGridSpacing}

@@ -20,7 +20,7 @@ import type {
   ViewportScene,
   ViewportState,
 } from "@/types";
-import { disposeGroup, frameCamera } from "@/utils";
+import { disposeGroup, frameCamera, targetLeftTheModel } from "@/utils";
 import { type Point3, snapshotPointPositions } from "./dimensionFollow";
 import { followDraggedDimensions } from "./dimensionSceneFollow";
 import { updateEndpointDragSceneObjects } from "./sceneIncrementalUpdate";
@@ -843,7 +843,19 @@ function updateInitialCameraFrame({
   }
 
   const isFirstSceneLoad = lastGeometryKeyRef.current === "";
-  if (isFirstSceneLoad && !activeSketchPlaneId) {
+  // Frame on the first geometry, and again when the content has moved out from
+  // under the camera (an import into a document that already had a model): the
+  // orbit pivot would otherwise stay at the old model's place, and every later
+  // rotation would swing the new one out of the view.
+  const shouldFrame =
+    !activeSketchPlaneId &&
+    (isFirstSceneLoad ||
+      targetLeftTheModel(
+        controls.target,
+        sceneData.bounds.center,
+        sceneData.bounds.maxDimension,
+      ));
+  if (shouldFrame) {
     frameCamera(
       camera,
       controls,

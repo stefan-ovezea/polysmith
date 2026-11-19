@@ -4,7 +4,6 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { CubeBlitScene } from "@/utils";
 import {
   animateCameraTowardTarget,
-  isCardinalCubeDirection,
   resizeCubeRenderTarget,
   syncCubeCamera,
   updateCubeBlitMesh,
@@ -94,7 +93,7 @@ export function renderViewCubeFrame({
   updateSketchRotationArrows(
     cubeGroup,
     cubeCamera,
-    isFacingCardinalCubeFace(camera, controls),
+    true,
   );
   tickViewCubeCameraAnimation({
     camera,
@@ -110,16 +109,6 @@ export function renderViewCubeFrame({
   });
 }
 
-function isFacingCardinalCubeFace(
-  camera: THREE.OrthographicCamera,
-  controls: OrbitControls,
-) {
-  const viewOffset = new THREE.Vector3()
-    .copy(camera.position)
-    .sub(controls.target)
-    .normalize();
-  return isCardinalCubeDirection(viewOffset);
-}
 
 function tickViewCubeCameraAnimation({
   camera,

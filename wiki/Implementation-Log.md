@@ -4,6 +4,160 @@ This document tracks concrete implementation milestones as they land in the code
 
 ## 2026-11-19
 
+### View cube: it turns about the vertical axis now, and says which axis it means
+
+Reported as three things at once: "I grab a corner of the cube and drag it to
+right and the body starts rotating to the left", "the rotation is by a pivot and
+the object jumps out of view", and "I think is more intuitive the way SolidWorks
+named the orientations in Z, X and Y".
+
+The reference was read properly this time — SolidCraft's own documentation, not
+just its code:
+
+- `docs/control-protocol.md`: Preferences -> Navigation offers **Signed axes**
+  and **Cube**; "**face names follow the up-axis preference; the small X/Y/Z
+  triad shows world axes**"; dragging either navigator orbits **around the view
+  centre**; the Home button returns to isometric, the lower-right circle **fits
+  the model**; the cube has **six face and eight corner targets, no edge
+  targets**; inward arrows orbit 90 degrees, curved arrows roll 90 degrees.
+- `docs/book/src/guide/ui-tour.md` and `reference/glossary.md`: angles turn about
+  the **up axis** — yaw 0 is Front, 90 Left, -90 Right; pitch 90 is Top, -90
+  Bottom; a positive roll turns the picture clockwise.
+- `crates/render/src/camera.rs`: `orbit()` is `yaw += dx`, `pitch += dy`, pitch
+  clamped to `+/-(90 - 1e-4)` degrees, and `navigation_cube.rs` routes its drag
+  through the *same* call as the background (`orbit_drag`), so the two cannot
+  disagree.
+
+Fixes:
+
+- **Drag direction.** `applyCubeDragOrbit` used three's `THREE.Spherical`, which
+  measures theta about **+Y** — in a Z-up world that turned the model about a
+  **horizontal** axis. Dragging right tipped the board sideways; dragging down
+  slid the camera north instead of lifting it. It now maps the offset into a
+  frame where `camera.up` is +Y (the quaternion pair OrbitControls itself uses),
+  applies the delta there and maps back, so the cube drag matches dragging the
+  background by construction. The pole clamp is now the docs' rule (never cross
+  the up axis, `POLE_EPSILON = 0.01 rad`) instead of an arbitrary 0.05.
+- **A drag left the viewport dead.** `controls.enabled = false` on pointer-down
+  was only ever restored when an *animation* finished or a *click* hit nothing.
+  A plain drag on the cube therefore disabled orbiting for the rest of the
+  session. The drag branch now hands the controls back.
+- **Pivot on a stale target.** `controls.target` was only derived on the first
+  geometry, so importing into a document that already had a model left the pivot
+  where the old model was and orbiting swung the new one out of the frustum.
+  `targetLeftTheModel()` re-frames when the camera is looking at empty space
+  (more than a quarter of the model's size away from its centre) — it cannot
+  fire on panning, because the target travels with the view.
+- **Naming (option A).** Each face now prints the world axis it looks along under
+  its view name: `TOP · Z+`, `FRONT · Y-`, `RIGHT · X+`, with a new
+  `--cad-viewcube-axis-label` token in all seven themes. That is the cheap half of
+  SolidCraft's face-names-plus-triad convention; a clickable X/Y/Z triad is the
+  remainder.
+- **Snaps land in standard views (second round).** The up vector used to be
+  quantized in 45° steps so the roll jumped as little as possible during the
+  animation. The side effect was that a corner snap stored a DIAGONAL camera up,
+  and every later face click inherited it: clicking TOP produced a top view rolled
+  45°, with the model diagonal — "I get stuck in between axes at 45 degrees when
+  looking straight from top, and I have no means to rotate to vertical". The
+  documented rule is one quarter turn ("Top and bottom keep the nearest
+  quarter-turn heading", `docs/control-protocol.md`), so the quantization is now
+  90°: every snap is axis-aligned, and the heading is still preserved.
+
+Tests: `viewCube.utils.test.ts` (10 cases: the eye keeps the model's height on a
+horizontal drag, the model follows the pointer, a downward drag lifts the eye,
+200 drags never reach the pole, a Y-up camera orbits about its own up, the six
+axis labels, and four snap-orientation cases including "never returns a diagonal
+up" over 72 rolled cameras), `targetLeftTheModel` (3 cases) in
+`viewportMath.test.ts`. `pnpm test:ui` 94/94, `tsc` clean, `pnpm lint` 0/0.
+
+Still open from the same documentation: Home and Fit (ours has neither), Shift
+during a drag to snap to standard/diagonal views, the view-angle readout, and
+matching SolidCraft's "no edge targets" (our cube's edge strips are clickable).
+
+### The cube is a chamfered solid now (FreeCAD 1.1's shape)
+
+Our cube was 6 flat panels with 12 box edges and 8 spheres on the corners; it
+read as a box with knobs. FreeCAD 1.1's navigator (Jolbas's `NaviCube`, merged as
+[PR #9356](https://github.com/FreeCAD/FreeCAD/pull/9356)) instead **chamfers the
+cube** — `NaviCubeImplementation::chamfer`, 0.12 of the size by default — which
+turns every corner into a **triangle between three faces** and every edge into a
+narrow strip. That single change is most of why theirs looks modern.
+
+- `chamferedCubeFacets()` (pure, exported, 26 facets) builds the cantellated
+  cube: 6 face quads inset by the chamfer, 12 edge strips, 8 corner triangles,
+  with each facet carrying the 1–3 faces it lies between and, for faces, the UV
+  basis its label is drawn in. `buildViewCubeGroup` turns those into meshes with
+  the existing `userData` contract, so hover/picking/raycast needed no change.
+- FreeCAD's idle/active behaviour too: the widget sits at **0.5 opacity** until
+  the pointer is over it, then comes to full strength and the picked facet takes
+  the highlight colour. Both live in `applyCubeHover`/`clearCubeHover`.
+- Face labels keep the axis line (`TOP · Z+`), which is our addition on top of
+  the face name.
+
+Tests: 5 new cases in `viewCube.utils.test.ts` — the 26-facet decomposition, the
+inset arithmetic (0.5 − 0.12 = 0.38), each edge strip spanning two adjacent faces
+with one coordinate on the outer plane, each corner triangle touching the outer
+plane on three different axes, and the chamfer clamp. `pnpm test:ui` 99/99.
+
+Still to take from FreeCAD: the buttons around the widget (four orbit arrows,
+roll left/right, backside flip, Home, view menu), the 60° corner quantization
+(ours is 90° everywhere), double-click to re-centre, and their light palette
+(base `#E2E8EF`, highlight `#AAE2FF`) if we want the widget to stop being
+dark-on-dark.
+
+### Cube: Home and Fit buttons, 60° corners, double-click to frame
+
+The rest of FreeCAD's navigator that we were missing, minus the menu:
+
+- **Home** (top-left) frames the model from the CAD isometric, **Fit**
+  (bottom-right) frames it from wherever you are looking — the first thing we
+  have ever had for "I lost the model". Both are camera-space sprites positioned
+  by `updateSketchRotationArrows`, so they stay in the widget's corners whatever
+  the view does; they are hidden until that runs, because the GRBL preview reuses
+  the same group for orientation only.
+- `fitCameraToBounds()` (new, `viewport/viewportMath.ts`) is Fit's maths: same
+  zoom arithmetic as `frameCamera`, direction and up untouched, pivot moved to
+  the model's centre. Covered by two tests (direction preserved, zoom and
+  distance follow the rule).
+- **Double-click a facet** within 400 ms frames the model in that direction
+  instead of re-orienting — FreeCAD's "double-click also recentres".
+- **60° corner quantization**: corners are three-face directions and their
+  chamfer facet is a triangle, so the roll quantizes sixfold; faces and edges
+  stay fourfold (90°). A 90° step on a corner would leave the view rotated by
+  30°. Test asserts the residual against the 60° grid is under 1e-3° over 52
+  rolled cameras.
+
+`pnpm test:ui` 102/102, `tsc --noEmit` clean, `pnpm lint` 0/0.
+
+### Cube: the rest of FreeCAD's navigator (arrows, backside, menu, light palette)
+
+Closing the parity list:
+
+- **Four orbit arrows** around the cube (north/south/east/west). Camera-centric,
+  like FreeCAD's `ArrowNorth/South/East/West`: the glyph points the way the eye
+  will move, a click orbits a whole quarter turn about the eye's vertical or
+  horizontal axis, the pivot and the eye distance are kept, and the elevation is
+  clamped just short of the pole so `lookAt` never rolls the picture.
+  `orbitCameraQuarterTurns()` is exported and covered by five tests (east/west
+  around the vertical, north/south lift and drop, backside flip, pole clamp,
+  pivot untouched).
+- **Roll arrows** are always visible now (they used to appear only when the
+  camera faced a cardinal direction), so a rolled view can always be straightened
+  with one click.
+- **Backside** button (bottom-left): two quarter turns about the vertical, i.e.
+  look at the model from the opposite side.
+- **View menu** (☰, top-right): a small popover under the widget with
+  Isometric, Fit to model and the six standard views; the entries animate through
+  the same snap path as clicking a face, and it closes on selection or on a click
+  outside. Labels live under `viewCube.*` in `en.json`.
+- **The widget is light now**, as FreeCAD's is: pale grey-blue faces with dark
+  labels and a saturated blue highlight, replacing near-black faces with pale
+  text. All seven themes carry the new `--cad-viewcube-*` values; Catppuccin
+  keeps its own hues, only lightened for a pale widget. Verified by rasterising
+  the real facets with the theme's actual token values.
+
+`pnpm test:ui` 107/107, `tsc --noEmit` clean, `pnpm lint` 0/0.
+
 ### STEP assembly tree: the Browser now shows the file's product structure
 
 The import node from the entry below still held a flat list of 1,092 bodies,

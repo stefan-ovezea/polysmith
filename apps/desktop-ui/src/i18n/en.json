@@ -2137,6 +2137,17 @@
     "axisLockHorizontal": "Horizontal",
     "axisLockVertical": "Vertical"
   },
+  "viewCube": {
+    "menu": "Standard views",
+    "isometric": "Isometric",
+    "fit": "Fit to model",
+    "top": "Top",
+    "bottom": "Bottom",
+    "front": "Front",
+    "back": "Back",
+    "left": "Left",
+    "right": "Right"
+  },
   "viewport": {
     "clickPlaceGeometry": "Click to place geometry",
     "splineFinishHint": "Double-click or press Enter to finish",

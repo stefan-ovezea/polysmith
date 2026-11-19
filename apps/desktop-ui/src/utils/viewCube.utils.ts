@@ -12,19 +12,34 @@ export type ViewCubeHit =
   | { type: "edge"; face1: CubeFace; face2: CubeFace }
   | { type: "corner"; faces: [CubeFace, CubeFace, CubeFace] }
   | { type: "rotation_arrow"; direction: -1 | 1 }
+  | {
+      type: "orbit_arrow";
+      /** `up`: around the vertical (east/west); `right`: around the horizontal (north/south). */
+      axis: "up" | "right";
+      direction: -1 | 1;
+    }
+  | { type: "button"; action: CubeButton }
   | null;
+
+/** The corner buttons around the cube. */
+export type CubeButton = "home" | "fit" | "backside" | "menu";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const CUBE_SIZE = 1;
-const FACE_OFFSET = 0.49;
-const FACE_PANEL_SIZE = CUBE_SIZE;
-const FACE_THICKNESS = 0.02;
-const EDGE_THICKNESS = 0.04;
-const CORNER_RADIUS = 0.052;
-const CUBE_VIEWPORT_SIZE = 140;
+// FreeCAD 1.1's NaviCube chamfers the cube by 0.12 of its size
+// (`NaviCubeImplementation::chamfer`, settable 0.05-0.18). The chamfer is what
+// gives it the soft silhouette and the triangles at the corners.
+const CUBE_CHAMFER = 0.12;
+// The widget is OPAQUE. It started at FreeCAD's half opacity, but a transparent
+// cube shows the far faces' labels through the near ones (BOTTOM read backwards
+// through FRONT), which looks like a rendering fault rather than a subtle
+// control. Hover still lights the picked facet; it no longer changes the body's
+// strength.
+const INACTIVE_OPACITY = 1;
+const CUBE_VIEWPORT_SIZE = 168;
 const CUBE_VIEWPORT_MARGIN = 16;
 const ANIMATION_DURATION = 300;
 
@@ -36,6 +51,24 @@ const FACE_NORMALS: Record<CubeFace, THREE.Vector3> = {
   RIGHT: new THREE.Vector3(1, 0, 0),
   LEFT: new THREE.Vector3(-1, 0, 0),
 };
+
+// The world axis each face looks ALONG, Z-up. The face name answers "which view
+// is this", the letters answer "which way is that in the model's coordinates" —
+// the second thing SolidWorks' reference triad and SolidCraft's axis labels both
+// give, and the one a user coming from either expects to read off the cube.
+const FACE_AXIS_LABELS: Record<CubeFace, string> = {
+  TOP: "Z+",
+  BOTTOM: "Z-",
+  FRONT: "Y-",
+  BACK: "Y+",
+  RIGHT: "X+",
+  LEFT: "X-",
+};
+
+/** The axis line printed under a face's view name, e.g. "Z+" for TOP. */
+export function faceAxisLabel(face: CubeFace): string {
+  return FACE_AXIS_LABELS[face];
+}
 
 function viewCubeColor(token: string, fallback: string) {
   return themeColor(token, fallback);
@@ -58,6 +91,7 @@ function faceColors(): Record<CubeFace, string> {
 
 function createFaceLabelTexture(
   label: string,
+  axisLabel: string,
   bgColor: string,
 ): THREE.CanvasTexture {
   const size = 256;
@@ -83,7 +117,125 @@ function createFaceLabelTexture(
   ctx.font = `700 38px "Space Grotesk", "Inter", sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, size / 2, size / 2);
+  ctx.fillText(label, size / 2, size / 2 - 16);
+
+  // The world axis this face looks along, in SolidCraft's convention: face
+  // names are views, the axis letters are the world axes
+  // (docs/control-protocol.md: "Face names follow the up-axis preference; the
+  // small X/Y/Z triad shows world axes"). One line per face is the cheap half of
+  // that: the cube says WHERE "Top" is, in X/Y/Z, without adding a second widget.
+  ctx.fillStyle = viewCubeColor("--cad-viewcube-axis-label", "#9fb0b3");
+  ctx.font = `600 26px "Space Grotesk", "Inter", sans-serif`;
+  ctx.fillText(axisLabel, size / 2, size / 2 + 34);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// A button glyph for the corner controls: a house (Home = isometric + fit),
+// four brackets (Fit = frame the model without changing the direction) and a
+// double-headed flip mark (Backside = look from the other side).
+function createCubeButtonTexture(button: CubeButton): THREE.CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, size, size);
+  ctx.strokeStyle = "#ffffff";
+  ctx.fillStyle = "#ffffff";
+  ctx.lineWidth = 11;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (button === "home") {
+    ctx.beginPath();
+    ctx.moveTo(22, 62);
+    ctx.lineTo(64, 26);
+    ctx.lineTo(106, 62);
+    ctx.stroke();
+    ctx.strokeRect(38, 60, 52, 44);
+    ctx.beginPath();
+    ctx.moveTo(56, 104);
+    ctx.lineTo(56, 78);
+    ctx.lineTo(74, 78);
+    ctx.lineTo(74, 104);
+    ctx.stroke();
+  } else if (button === "fit") {
+    const arm = 30;
+    const corners: Array<[number, number, number, number]> = [
+      [26, 26, 1, 1],
+      [102, 26, -1, 1],
+      [26, 102, 1, -1],
+      [102, 102, -1, -1],
+    ];
+    for (const [x, y, dx, dy] of corners) {
+      ctx.beginPath();
+      ctx.moveTo(x + dx * arm, y);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x, y + dy * arm);
+      ctx.stroke();
+    }
+  } else if (button === "backside") {
+    // Backside: a circular flip arrow.
+    ctx.beginPath();
+    ctx.arc(64, 64, 34, Math.PI * 0.2, Math.PI * 1.55);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(30, 40);
+    ctx.lineTo(44, 62);
+    ctx.lineTo(60, 46);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    // Menu: three stacked lines.
+    for (const y of [44, 64, 84]) {
+      ctx.beginPath();
+      ctx.moveTo(30, y);
+      ctx.lineTo(98, y);
+      ctx.stroke();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// One of the four orbit arrows around the cube: a triangle pointing away from
+// the widget, i.e. in the direction the camera will move.
+function createOrbitArrowTexture(axis: "up" | "right", direction: -1 | 1): THREE.CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = "#ffffff";
+
+  // Draw pointing "up", then rotate into place: the glyph must point the way the
+  // camera will move. North is `right:-1` (a negative turn about the eye's right
+  // axis lifts it), south the opposite, east is `up:+1`, west `up:-1`.
+  const rotations: Record<string, number> = {
+    "right:-1": 0,
+    "right:1": Math.PI,
+    "up:1": Math.PI / 2,
+    "up:-1": -Math.PI / 2,
+  };
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  ctx.rotate(rotations[`${axis}:${direction}`]);
+  ctx.beginPath();
+  ctx.moveTo(0, -46);
+  ctx.lineTo(34, 10);
+  ctx.lineTo(0, -4);
+  ctx.lineTo(-34, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -131,7 +283,269 @@ function createRotationArrowTexture(direction: -1 | 1): THREE.CanvasTexture {
 }
 
 // ---------------------------------------------------------------------------
-// Build the view cube group (26 meshes)
+// Chamfered-cube facets
+// ---------------------------------------------------------------------------
+//
+// FreeCAD 1.1's NaviCube does not put a box corner on each vertex: it CHAMFERS
+// the cube (`NaviCubeImplementation::chamfer`, 0.12 of the size by default,
+// settable 0.05-0.18), which turns each of the 8 corners into a triangle and
+// each of the 12 edges into a strip. Those facets are the pick targets, so the
+// widget reads as one soft solid instead of a box with knobs on it.
+//
+// Same here: 6 face quads (inset by the chamfer), 12 edge strips, 8 corner
+// triangles = the 26 views, and the corner you grab is the triangle between
+// three faces rather than a sphere sitting on the point.
+
+export interface CubeFacet {
+  kind: "face" | "edge" | "corner";
+  /** The 1, 2 or 3 cube faces this facet lies between. */
+  faces: CubeFace[];
+  /** Quad (4) or triangle (3) in cube-local space, half size = CUBE_SIZE / 2. */
+  vertices: Array<[number, number, number]>;
+  /** Optional texture coordinates, present for face facets (labels). */
+  uvs?: Array<[number, number]>;
+}
+
+// Per face: the outward normal plus the 2D basis the label is drawn in, so the
+// text reads upright when that face looks at the viewer.
+const FACE_BASIS: Record<
+  CubeFace,
+  {
+    normal: [number, number, number];
+    right: [number, number, number];
+    up: [number, number, number];
+  }
+> = {
+  RIGHT: { normal: [1, 0, 0], right: [0, -1, 0], up: [0, 0, 1] },
+  LEFT: { normal: [-1, 0, 0], right: [0, 1, 0], up: [0, 0, 1] },
+  BACK: { normal: [0, 1, 0], right: [-1, 0, 0], up: [0, 0, 1] },
+  FRONT: { normal: [0, -1, 0], right: [1, 0, 0], up: [0, 0, 1] },
+  TOP: { normal: [0, 0, 1], right: [1, 0, 0], up: [0, 1, 0] },
+  BOTTOM: { normal: [0, 0, -1], right: [1, 0, 0], up: [0, 1, 0] },
+};
+
+const FACE_ORDER: CubeFace[] = [
+  "RIGHT",
+  "LEFT",
+  "BACK",
+  "FRONT",
+  "TOP",
+  "BOTTOM",
+];
+
+function scaled(
+  vector: [number, number, number],
+  factor: number,
+): [number, number, number] {
+  return [vector[0] * factor, vector[1] * factor, vector[2] * factor];
+}
+
+function added(
+  a: [number, number, number],
+  b: [number, number, number],
+): [number, number, number] {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+
+function cross(
+  a: [number, number, number],
+  b: [number, number, number],
+): [number, number, number] {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function dot(a: [number, number, number], b: [number, number, number]): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+/**
+ * Order a facet's vertices counter-clockwise as seen from OUTSIDE.
+ *
+ * The label basis (right, up) is chosen so text reads upright, and for four of
+ * the six faces right x up points INTO the cube — a quad authored in that order
+ * faces inward, which makes a depth-sorted render draw the back of the cube in
+ * front of the front. Reversing the list (and its UVs, so the label stays put)
+ * fixes the winding without mirroring the text.
+ */
+function oriented(
+  vertices: Array<[number, number, number]>,
+  uvs: Array<[number, number]> | undefined,
+  outward: [number, number, number],
+): { vertices: Array<[number, number, number]>; uvs?: Array<[number, number]> } {
+  const normal = cross(
+    [
+      vertices[1][0] - vertices[0][0],
+      vertices[1][1] - vertices[0][1],
+      vertices[1][2] - vertices[0][2],
+    ],
+    [
+      vertices[2][0] - vertices[0][0],
+      vertices[2][1] - vertices[0][1],
+      vertices[2][2] - vertices[0][2],
+    ],
+  );
+  if (dot(normal, outward) >= 0) {
+    return { vertices, uvs };
+  }
+  return {
+    vertices: [vertices[0], ...vertices.slice(1).reverse()],
+    uvs: uvs ? [uvs[0], ...uvs.slice(1).reverse()] : undefined,
+  };
+}
+
+/**
+ * The 26 facets of a chamfered cube, in cube-local space.
+ *
+ * `chamfer` is a fraction of the cube size (FreeCAD's default is 0.12). At 0 the
+ * faces meet at knife edges; at 0.5 the cube becomes a rhombicuboctahedron.
+ */
+export function chamferedCubeFacets(
+  chamfer: number = CUBE_CHAMFER,
+  half: number = CUBE_SIZE / 2,
+): CubeFacet[] {
+  const cut = THREE.MathUtils.clamp(chamfer, 0, 0.45) * (half * 2);
+  const inner = Math.max(half - cut, 0.02);
+  const facets: CubeFacet[] = [];
+
+  // -- 6 face quads ---------------------------------------------------------
+  for (const face of FACE_ORDER) {
+    const { normal, right, up } = FACE_BASIS[face];
+    const centre = scaled(normal, half);
+    const bl = added(added(centre, scaled(right, -inner)), scaled(up, -inner));
+    const br = added(added(centre, scaled(right, inner)), scaled(up, -inner));
+    const tr = added(added(centre, scaled(right, inner)), scaled(up, inner));
+    const tl = added(added(centre, scaled(right, -inner)), scaled(up, inner));
+    const ordered = oriented(
+      [bl, br, tr, tl],
+      [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
+      normal,
+    );
+    facets.push({
+      kind: "face",
+      faces: [face],
+      vertices: ordered.vertices,
+      uvs: ordered.uvs,
+    });
+  }
+
+  // -- 12 edge strips -------------------------------------------------------
+  // Every pair of different axes, one sign each: the strip lies between those
+  // two faces and runs along the third axis.
+  for (const faceA of FACE_ORDER) {
+    for (const faceB of FACE_ORDER) {
+      const axisA = FACE_BASIS[faceA].normal.findIndex((value) => value !== 0);
+      const axisB = FACE_BASIS[faceB].normal.findIndex((value) => value !== 0);
+      if (axisA === axisB) {
+        continue;
+      }
+      // One strip per unordered pair, and the faces must be adjacent: pick the
+      // pair whose axes differ and whose remaining axis is not shared.
+      if (fullIndex(faceA) > fullIndex(faceB)) {
+        continue;
+      }
+      const axisC = 3 - axisA - axisB;
+      const normalA = FACE_BASIS[faceA].normal;
+      const normalB = FACE_BASIS[faceB].normal;
+      const alongC: [number, number, number] = [0, 0, 0];
+      alongC[axisC] = inner;
+
+      const quad: Array<[number, number, number]> = [];
+      for (const signC of [-1, 1] as const) {
+        const cVec = scaled(alongC, signC);
+        // Edge of the A face, on the B side, at +-inner along C.
+        const onA: [number, number, number] = [0, 0, 0];
+        onA[axisA] = normalA[axisA] * half;
+        onA[axisB] = normalB[axisB] * inner;
+        const onB: [number, number, number] = [0, 0, 0];
+        onB[axisA] = normalA[axisA] * inner;
+        onB[axisB] = normalB[axisB] * half;
+        quad.push(added(added(onA, cVec), [0, 0, 0]));
+        quad.push(added(added(onB, cVec), [0, 0, 0]));
+      }
+      // Outward normal of the strip: halfway between its two face normals.
+      const outward: [number, number, number] = [
+        normalA[0] + normalB[0],
+        normalA[1] + normalB[1],
+        normalA[2] + normalB[2],
+      ];
+      const orderedEdge = oriented(
+        [quad[0], quad[1], quad[3], quad[2]],
+        undefined,
+        outward,
+      );
+      facets.push({
+        kind: "edge",
+        faces: [faceA, faceB],
+        vertices: orderedEdge.vertices,
+      });
+    }
+  }
+
+  // -- 8 corner triangles ---------------------------------------------------
+  for (const sx of [-1, 1] as const) {
+    for (const sy of [-1, 1] as const) {
+      for (const sz of [-1, 1] as const) {
+        const signs = [sx, sy, sz];
+        const faces = [
+          signs[0] > 0 ? "RIGHT" : "LEFT",
+          signs[1] > 0 ? "BACK" : "FRONT",
+          signs[2] > 0 ? "TOP" : "BOTTOM",
+        ] as CubeFace[];
+        const triangle = [0, 1, 2].map((axis) => {
+          const point: [number, number, number] = [0, 0, 0];
+          for (let index = 0; index < 3; index += 1) {
+            point[index] = signs[index] * (index === axis ? half : inner);
+          }
+          return point;
+        });
+        // Outward normal points along the cube diagonal this corner sits on.
+        const outward: [number, number, number] = [sx, sy, sz];
+        const orderedCorner = oriented(triangle, undefined, outward);
+        facets.push({
+          kind: "corner",
+          faces,
+          vertices: orderedCorner.vertices,
+        });
+      }
+    }
+  }
+
+  return facets;
+}
+
+function fullIndex(face: CubeFace): number {
+  return FACE_ORDER.indexOf(face);
+}
+
+function facetGeometry(facet: CubeFacet): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.BufferAttribute(new Float32Array(facet.vertices.flat()), 3),
+  );
+  if (facet.uvs) {
+    geometry.setAttribute(
+      "uv",
+      new THREE.BufferAttribute(new Float32Array(facet.uvs.flat()), 2),
+    );
+  }
+  geometry.setIndex(
+    facet.vertices.length === 4 ? [0, 1, 2, 0, 2, 3] : [0, 1, 2],
+  );
+  return geometry;
+}
+
+// ---------------------------------------------------------------------------
+// Build the view cube group (26 chamfer facets + roll arrows)
 // ---------------------------------------------------------------------------
 
 export function buildViewCubeGroup(): THREE.Group {
@@ -141,203 +555,43 @@ export function buildViewCubeGroup(): THREE.Group {
   const cornerColor = viewCubeColor("--cad-viewcube-corner", "#3a4143");
   const arrowMutedColor = viewCubeColor("--cad-viewcube-arrow-muted", "#5d6d70");
 
-  // -- faces ----------------------------------------------------------------
-  // Labels follow CAD convention: +Z = TOP, -Y = FRONT.
-  const faceConfigs: Array<{
-    face: CubeFace;
-    label: string;
-    position: [number, number, number];
-    rotation: [number, number, number];
-    color: string;
-  }> = [
-    {
-      face: "RIGHT",
-      label: "RIGHT",
-      position: [FACE_OFFSET, 0, 0],
-      rotation: [0, Math.PI / 2, 0],
-      color: colors.RIGHT,
-    },
-    {
-      face: "LEFT",
-      label: "LEFT",
-      position: [-FACE_OFFSET, 0, 0],
-      rotation: [0, -Math.PI / 2, 0],
-      color: colors.LEFT,
-    },
-    {
-      face: "TOP",
-      label: "TOP",
-      position: [0, 0, FACE_OFFSET],
-      rotation: [0, 0, 0],
-      color: colors.TOP,
-    },
-    {
-      face: "BOTTOM",
-      label: "BOTTOM",
-      position: [0, 0, -FACE_OFFSET],
-      rotation: [0, Math.PI, 0],
-      color: colors.BOTTOM,
-    },
-    {
-      face: "FRONT",
-      label: "FRONT",
-      position: [0, -FACE_OFFSET, 0],
-      rotation: [Math.PI / 2, 0, 0],
-      color: colors.FRONT,
-    },
-    {
-      face: "BACK",
-      label: "BACK",
-      position: [0, FACE_OFFSET, 0],
-      rotation: [-Math.PI / 2, 0, 0],
-      color: colors.BACK,
-    },
-  ];
-
-  for (const cfg of faceConfigs) {
-    const geometry = new THREE.BoxGeometry(
-      FACE_PANEL_SIZE,
-      FACE_PANEL_SIZE,
-      FACE_THICKNESS,
-    );
-    const texture = createFaceLabelTexture(cfg.label, cfg.color);
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      color: viewCubeColor("--cad-viewcube-material", "#ffffff"),
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(...cfg.position);
-    mesh.rotation.set(...cfg.rotation);
-    mesh.userData = {
+  for (const facet of chamferedCubeFacets()) {
+    let material: THREE.MeshBasicMaterial;
+    const userData: Record<string, unknown> = {
       cubePart: true,
-      cubeType: "face",
-      face: cfg.face,
-      baseColor: viewCubeColor("--cad-viewcube-material", "#ffffff"),
-    };
-    mesh.renderOrder = 0;
-    group.add(mesh);
-  }
-
-  // -- edges ----------------------------------------------------------------
-  const et = EDGE_THICKNESS;
-  const edgeConfigs: Array<{
-    faces: [CubeFace, CubeFace];
-    size: [number, number, number];
-    position: [number, number, number];
-  }> = [
-    // 4 edges along X (between Z=±0.5 and Y=±0.5)
-    {
-      faces: ["TOP", "FRONT"],       // +Z ∩ -Y
-      size: [CUBE_SIZE + et * 0.5, et, et],
-      position: [0, -0.5, 0.5],
-    },
-    {
-      faces: ["TOP", "BACK"],        // +Z ∩ +Y
-      size: [CUBE_SIZE + et * 0.5, et, et],
-      position: [0, 0.5, 0.5],
-    },
-    {
-      faces: ["BOTTOM", "FRONT"],    // -Z ∩ -Y
-      size: [CUBE_SIZE + et * 0.5, et, et],
-      position: [0, -0.5, -0.5],
-    },
-    {
-      faces: ["BOTTOM", "BACK"],     // -Z ∩ +Y
-      size: [CUBE_SIZE + et * 0.5, et, et],
-      position: [0, 0.5, -0.5],
-    },
-    // 4 edges along Z (between X=±0.5 and Y=±0.5)
-    {
-      faces: ["FRONT", "RIGHT"],      // -Y ∩ +X, edge runs along Z
-      size: [et, et, CUBE_SIZE + et * 0.5],
-      position: [0.5, -0.5, 0],
-    },
-    {
-      faces: ["FRONT", "LEFT"],       // -Y ∩ -X, edge runs along Z
-      size: [et, et, CUBE_SIZE + et * 0.5],
-      position: [-0.5, -0.5, 0],
-    },
-    {
-      faces: ["BACK", "RIGHT"],       // +Y ∩ +X, edge runs along Z
-      size: [et, et, CUBE_SIZE + et * 0.5],
-      position: [0.5, 0.5, 0],
-    },
-    {
-      faces: ["BACK", "LEFT"],        // +Y ∩ -X, edge runs along Z
-      size: [et, et, CUBE_SIZE + et * 0.5],
-      position: [-0.5, 0.5, 0],
-    },
-    // 4 edges along Y (between X=±0.5 and Z=±0.5)
-    {
-      faces: ["TOP", "RIGHT"],        // +Z ∩ +X, edge runs along Y
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [0.5, 0, 0.5],
-    },
-    {
-      faces: ["TOP", "LEFT"],         // +Z ∩ -X, edge runs along Y
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [-0.5, 0, 0.5],
-    },
-    {
-      faces: ["BOTTOM", "RIGHT"],     // -Z ∩ +X, edge runs along Y
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [0.5, 0, -0.5],
-    },
-    {
-      faces: ["BOTTOM", "LEFT"],      // -Z ∩ -X, edge runs along Y
-      size: [et, CUBE_SIZE + et * 0.5, et],
-      position: [-0.5, 0, -0.5],
-    },
-  ];
-
-  for (const cfg of edgeConfigs) {
-    const geometry = new THREE.BoxGeometry(...cfg.size);
-    const material = new THREE.MeshBasicMaterial({ color: edgeColor });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(...cfg.position);
-    mesh.userData = {
-      cubePart: true,
-      cubeType: "edge",
-      face1: cfg.faces[0],
-      face2: cfg.faces[1],
+      cubeType: facet.kind,
       baseColor: edgeColor,
     };
-    mesh.renderOrder = 1;
-    group.add(mesh);
-  }
-
-  // -- corners --------------------------------------------------------------
-  const cornerSigns: Array<[number, number, number]> = [
-    [1, 1, 1],
-    [1, 1, -1],
-    [1, -1, 1],
-    [1, -1, -1],
-    [-1, 1, 1],
-    [-1, 1, -1],
-    [-1, -1, 1],
-    [-1, -1, -1],
-  ];
-
-  for (const [sx, sy, sz] of cornerSigns) {
-    // In cube-local space: X→RIGHT/LEFT, Y→BACK/FRONT, Z→TOP/BOTTOM.
-    // The position is (sx*0.5, sy*0.5, sz*0.5) — sy is the local Y
-    // axis (BACK/FRONT), sz is the local Z axis (TOP/BOTTOM).
-    const faces: [CubeFace, CubeFace, CubeFace] = [
-      sx > 0 ? "RIGHT" : "LEFT",
-      sy > 0 ? "BACK" : "FRONT",
-      sz > 0 ? "TOP" : "BOTTOM",
-    ];
-    const geometry = new THREE.SphereGeometry(CORNER_RADIUS, 16, 12);
-    const material = new THREE.MeshBasicMaterial({ color: cornerColor });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(sx * 0.5, sy * 0.5, sz * 0.5);
-    mesh.userData = {
-      cubePart: true,
-      cubeType: "corner",
-      faces,
-      baseColor: cornerColor,
-    };
-    mesh.renderOrder = 2;
+    if (facet.kind === "face") {
+      const face = facet.faces[0];
+      material = new THREE.MeshBasicMaterial({
+        map: createFaceLabelTexture(face, faceAxisLabel(face), colors[face]),
+        color: viewCubeColor("--cad-viewcube-material", "#ffffff"),
+        transparent: true,
+        opacity: INACTIVE_OPACITY,
+        side: THREE.DoubleSide,
+      });
+      userData.face = face;
+      userData.baseColor = viewCubeColor("--cad-viewcube-material", "#ffffff");
+    } else {
+      const colour = facet.kind === "edge" ? edgeColor : cornerColor;
+      material = new THREE.MeshBasicMaterial({
+        color: colour,
+        transparent: true,
+        opacity: INACTIVE_OPACITY,
+        side: THREE.DoubleSide,
+      });
+      userData.baseColor = colour;
+      if (facet.kind === "edge") {
+        userData.face1 = facet.faces[0];
+        userData.face2 = facet.faces[1];
+      } else {
+        userData.faces = facet.faces;
+      }
+    }
+    const mesh = new THREE.Mesh(facetGeometry(facet), material);
+    mesh.userData = userData;
+    mesh.renderOrder = facet.kind === "face" ? 0 : 1;
     group.add(mesh);
   }
 
@@ -352,7 +606,7 @@ export function buildViewCubeGroup(): THREE.Group {
       depthWrite: false,
     });
     const sprite = new THREE.Sprite(material);
-    sprite.scale.set(0.5, 0.38, 1);
+    sprite.scale.set(0.62, 0.47, 1);
     sprite.visible = false;
     sprite.renderOrder = 10;
     sprite.userData = {
@@ -360,8 +614,64 @@ export function buildViewCubeGroup(): THREE.Group {
       cubeType: "rotation_arrow",
       direction,
       baseColor: arrowMutedColor,
+      baseOpacity: 0.92,
     };
     group.add(sprite);
+  }
+
+  for (const action of ["home", "fit", "backside", "menu"] as const) {
+    const material = new THREE.SpriteMaterial({
+      map: createCubeButtonTexture(action),
+      color: arrowMutedColor,
+      transparent: true,
+      opacity: 0.9,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    // Positioned in CAMERA space by updateSketchRotationArrows each frame, so the
+    // buttons stay in the widget's corners whatever the view does. Hidden until
+    // that runs: the GRBL preview reuses this group for orientation only and
+    // never places them.
+    sprite.scale.set(0.4, 0.4, 1);
+    sprite.visible = false;
+    sprite.renderOrder = 11;
+    sprite.userData = {
+      cubePart: true,
+      cubeType: "button",
+      action,
+      baseColor: arrowMutedColor,
+      baseOpacity: 0.9,
+    };
+    group.add(sprite);
+  }
+
+  // Four orbit arrows: one per screen axis, "the camera moves the way the arrow
+  // points" (FreeCAD's ArrowNorth/South/East/West).
+  for (const axis of ["up", "right"] as const) {
+    for (const direction of [-1, 1] as const) {
+      const material = new THREE.SpriteMaterial({
+        map: createOrbitArrowTexture(axis, direction),
+        color: arrowMutedColor,
+        transparent: true,
+        opacity: 0.85,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(0.32, 0.32, 1);
+      sprite.visible = false;
+      sprite.renderOrder = 11;
+      sprite.userData = {
+        cubePart: true,
+        cubeType: "orbit_arrow",
+        axis,
+        direction,
+        baseColor: arrowMutedColor,
+        baseOpacity: 0.85,
+      };
+      group.add(sprite);
+    }
   }
 
   return group;
@@ -390,7 +700,11 @@ export function createViewCubeScene(cubeGroup: THREE.Group): THREE.Scene {
 }
 
 export function createViewCubeCamera(): THREE.OrthographicCamera {
-  const frustum = 1.75;
+  // Wide enough for the ring of controls around the cube: at 1.75 the cube's own
+  // silhouette reached 81 % of the half-width and the Home/Fit/orbit buttons had
+  // nowhere to sit. At 2.2 the cube spans 45 % of the widget and the buttons get
+  // a clean ring around it.
+  const frustum = 2.2;
   const camera = new THREE.OrthographicCamera(
     -frustum / 2,
     frustum / 2,
@@ -449,7 +763,9 @@ export function isPointerInCubeArea(
 export function setViewCubeRaycasterFromPointer(
   raycaster: THREE.Raycaster,
   cubeCamera: THREE.Camera,
-  event: PointerEvent,
+  // Structural so the same helper serves pointer events and the contextmenu
+  // event (a MouseEvent) that opens the cube's menu.
+  event: { clientX: number; clientY: number },
   canvas: HTMLCanvasElement,
   dpr: number,
 ) {
@@ -511,6 +827,35 @@ export function updateSketchRotationArrows(
   up.setFromMatrixColumn(cubeCamera.matrixWorld, 1).normalize();
 
   cubeGroup.traverse((child) => {
+    if (child.userData.cubeType === "button") {
+      // Home top-left, Fit bottom-right, Backside bottom-left: FreeCAD's
+      // arrangement. Placed in camera space so they never rotate with the cube.
+      const action = child.userData.action as CubeButton;
+      const horizontal =
+        action === "fit" || action === "menu" ? 0.82 : -0.82;
+      const vertical =
+        action === "home" || action === "menu" ? 0.82 : -0.82;
+      child.visible = true;
+      child.position
+        .copy(right)
+        .multiplyScalar(horizontal)
+        .add(up.clone().multiplyScalar(vertical));
+      return;
+    }
+    if (child.userData.cubeType === "orbit_arrow") {
+      // North above, south below, east right, west left. The glyph points the
+      // way the camera moves, so north is direction -1 about the right axis.
+      const axis = child.userData.axis as "up" | "right";
+      const direction = child.userData.direction as -1 | 1;
+      const horizontal = axis === "up" ? direction * 0.82 : 0;
+      const vertical = axis === "right" ? -direction * 0.82 : 0;
+      child.visible = true;
+      child.position
+        .copy(right)
+        .multiplyScalar(horizontal)
+        .add(up.clone().multiplyScalar(vertical));
+      return;
+    }
     if (child.userData.cubeType !== "rotation_arrow") {
       return;
     }
@@ -571,6 +916,16 @@ export function raycastViewCube(
   if (ud.cubeType === "rotation_arrow") {
     return { type: "rotation_arrow", direction: ud.direction as -1 | 1 };
   }
+  if (ud.cubeType === "orbit_arrow") {
+    return {
+      type: "orbit_arrow",
+      axis: ud.axis as "up" | "right",
+      direction: ud.direction as -1 | 1,
+    };
+  }
+  if (ud.cubeType === "button") {
+    return { type: "button", action: ud.action as CubeButton };
+  }
   return null;
 }
 
@@ -579,7 +934,10 @@ export function raycastViewCube(
 // ---------------------------------------------------------------------------
 
 export function getCubeHitTargetDirection(
-  hit: Exclude<NonNullable<ViewCubeHit>, { type: "rotation_arrow" }>,
+  hit: Extract<
+    NonNullable<ViewCubeHit>,
+    { type: "face" | "edge" | "corner" }
+  >,
 ): THREE.Vector3 {
   if (hit.type === "face") {
     return FACE_NORMALS[hit.face].clone();
@@ -632,18 +990,32 @@ export function getQuantizedCubeUp(
   }
 
   projectedCurrentUp.normalize();
+  // Orientations are counted in the facet's own symmetry, never in diagonals.
+  //
+  // A corner is a three-face direction and its chamfer facet is a triangle:
+  // sixfold (60°) around the view axis, as FreeCAD's navigator does. Faces and
+  // edges are fourfold (90°), so a quarter turn keeps the view square — a 60°
+  // step there would leave the model rotated by 30°.
+  //
+  // This used 45° steps (8 candidates) for everything, to keep the quantized up
+  // close to the current one. The cost was that a corner snap stored a DIAGONAL
+  // camera up and every later face click inherited it: clicking TOP produced a
+  // top view rolled 45°, with no way back to a straight view (reported
+  // 2026-11-19, "I get stuck in between axes at 45 degrees"). Never quantize to
+  // a diagonal.
+  const isCorner =
+    [Math.abs(axis.x), Math.abs(axis.y), Math.abs(axis.z)].filter(
+      (component) => component > 0.3,
+    ).length === 3;
+  const steps = isCorner ? 6 : 4;
+  const stepAngle = (Math.PI * 2) / steps;
+
   let bestUp = baseUp.clone();
   let bestDot = -Infinity;
-  // Use 45° steps (8 candidates) instead of 90° so the quantized up
-  // stays within ~22.5° of the current projected up.  Coarse 90°
-  // quantization can pick an up nearly 45° away after a diagonal
-  // view transition, causing the camera to roll significantly during
-  // the next animation — the roll changes the effective rotation axis
-  // and makes edge clicks orbit around the wrong world axis.
-  for (let step = 0; step < 8; step += 1) {
+  for (let step = 0; step < steps; step += 1) {
     const candidate = baseUp
       .clone()
-      .applyAxisAngle(axis, step * (Math.PI / 4))
+      .applyAxisAngle(axis, step * stepAngle)
       .normalize();
     const dot = candidate.dot(projectedCurrentUp);
     if (dot > bestDot) {
@@ -707,10 +1079,33 @@ export function animateCameraTowardTarget(
 // Hover visual state
 // ---------------------------------------------------------------------------
 
+function cubeMaterial(
+  child: THREE.Object3D,
+): THREE.MeshBasicMaterial | THREE.SpriteMaterial | null {
+  if (
+    !((child as THREE.Mesh).isMesh || (child as THREE.Sprite).isSprite) ||
+    !child.userData.cubePart
+  ) {
+    return null;
+  }
+  return (child as THREE.Mesh | THREE.Sprite).material as
+    | THREE.MeshBasicMaterial
+    | THREE.SpriteMaterial;
+}
+
 export function applyCubeHover(cubeGroup: THREE.Group, hit: ViewCubeHit): void {
   clearCubeHover(cubeGroup);
 
   if (!hit) return;
+
+  // The cursor is on the widget: bring it to full strength, and paint the picked
+  // facet in the highlight colour.
+  cubeGroup.traverse((child) => {
+    const mat = cubeMaterial(child);
+    if (mat) {
+      mat.opacity = 1;
+    }
+  });
 
   let target: THREE.Object3D | null = null;
 
@@ -740,6 +1135,19 @@ export function applyCubeHover(cubeGroup: THREE.Group, hit: ViewCubeHit): void {
       ud.direction === hit.direction
     ) {
       target = child;
+    } else if (
+      hit.type === "orbit_arrow" &&
+      ud.cubeType === "orbit_arrow" &&
+      ud.axis === hit.axis &&
+      ud.direction === hit.direction
+    ) {
+      target = child;
+    } else if (
+      hit.type === "button" &&
+      ud.cubeType === "button" &&
+      ud.action === hit.action
+    ) {
+      target = child;
     }
   });
 
@@ -753,23 +1161,122 @@ export function applyCubeHover(cubeGroup: THREE.Group, hit: ViewCubeHit): void {
 
 export function clearCubeHover(cubeGroup: THREE.Group): void {
   cubeGroup.traverse((child) => {
-    if (
-      !((child as THREE.Mesh).isMesh || (child as THREE.Sprite).isSprite) ||
-      !child.userData.cubePart
-    )
+    const mat = cubeMaterial(child);
+    if (!mat) {
       return;
-    const ud = child.userData;
-    const mat = (child as THREE.Mesh | THREE.Sprite).material as
-      | THREE.MeshBasicMaterial
-      | THREE.SpriteMaterial;
-    mat.color.set(ud.baseColor as string);
+    }
+    mat.color.set(child.userData.baseColor as string);
+    // Idle again: half strength, as FreeCAD's navigator does when the cursor
+    // leaves it. Sprites keep the opacity they were built with (the roll arrows
+    // are already shown only when they apply, the buttons are always on).
+    mat.opacity =
+      (child.userData.baseOpacity as number | undefined) ?? INACTIVE_OPACITY;
   });
+}
+
+/**
+ * Orbit the camera by whole quarter turns about one of its screen axes.
+ *
+ * The cube's arrows are camera-centric: the arrow points the way the camera
+ * moves (FreeCAD's ArrowNorth/South/East/West). "up" is the vertical axis, so
+ * east/west swing around the model; "right" is the horizontal one, so
+ * north/south lift the eye over the top or drop it underneath. The pivot and the
+ * eye distance are kept; `lookAt` then re-derives the orientation, and the
+ * clamp keeps the eye off the pole where the up vector would roll.
+ */
+export function orbitCameraQuarterTurns(
+  camera: THREE.Camera,
+  controls: { target: THREE.Vector3; update?: () => void },
+  axis: "up" | "right",
+  turns: number,
+): void {
+  const up = camera.up.clone().normalize();
+  if (up.lengthSq() < 0.5) {
+    up.set(0, 0, 1);
+  }
+  const offset = new THREE.Vector3().copy(camera.position).sub(controls.target);
+  if (offset.lengthSq() < 1e-12) {
+    return;
+  }
+
+  let rotationAxis: THREE.Vector3;
+  if (axis === "up") {
+    rotationAxis = up;
+  } else {
+    // Screen-right in the eye's frame. Z-up: right = up x view, view = -offset.
+    rotationAxis = new THREE.Vector3().crossVectors(up, offset).normalize();
+    if (rotationAxis.lengthSq() < 0.5) {
+      return;
+    }
+  }
+
+  offset.applyAxisAngle(rotationAxis, turns * (Math.PI / 2));
+
+  if (axis === "right") {
+    // Never let a north/south turn carry the eye through the pole.
+    const elevation = Math.asin(
+      THREE.MathUtils.clamp(offset.clone().normalize().dot(up), -1, 1),
+    );
+    const limit = Math.PI / 2 - POLE_EPSILON;
+    if (Math.abs(elevation) > limit) {
+      const corrected = handlePoleClamp(offset, up, limit, elevation);
+      offset.copy(corrected);
+    }
+  }
+
+  camera.position.copy(controls.target).add(offset);
+  camera.lookAt(controls.target);
+  controls.update?.();
+}
+
+function handlePoleClamp(
+  offset: THREE.Vector3,
+  up: THREE.Vector3,
+  limit: number,
+  elevation: number,
+): THREE.Vector3 {
+  // Rotate the offset back towards the horizon by the excess angle.
+  const axis = new THREE.Vector3().crossVectors(offset, up);
+  if (axis.lengthSq() < 1e-12) {
+    return offset;
+  }
+  const excess = Math.abs(elevation) - limit;
+  return offset
+    .clone()
+    .applyAxisAngle(axis.normalize(), (elevation > 0 ? -1 : 1) * excess);
 }
 
 // ---------------------------------------------------------------------------
 // Drag-to-orbit: apply pointer delta as spherical rotation
 // ---------------------------------------------------------------------------
 
+const WORLD_Y = new THREE.Vector3(0, 1, 0);
+// How close to a pole the view may get before `lookAt` starts rolling the
+// picture. SolidCraft clamps pitch to +-(90 - 1e-4) degrees
+// (crates/render/src/camera.rs, Camera::orbit) so an orbit can never cross the
+// up axis upside down; 0.01 rad is the same limit with room to spare.
+const POLE_EPSILON = 0.01;
+
+/**
+ * Orbit the camera by a pointer delta, about the camera's OWN up axis.
+ *
+ * `THREE.Spherical` measures theta about +Y and phi from +Y. Our world is Z-up,
+ * so using it directly rotated the model about a HORIZONTAL axis: dragging the
+ * cube right tipped the board sideways instead of turning it, and dragging down
+ * slid the camera north instead of lifting it. Reported 2026-11-19 as "I drag to
+ * the right and the body starts rotating to the left".
+ *
+ * The fix is the quaternion pair three's OrbitControls itself uses: map the
+ * offset into a frame where `camera.up` is +Y, do the spherical delta there,
+ * map back. The cube drag therefore cannot disagree with dragging the
+ * background. SolidCraft goes one step further and routes its cube through the
+ * very same orbit call as the background (crates/ui-egui/src/navigation_cube.rs
+ * -> orbit_drag -> Camera::orbit), which is the structural version of this fix.
+ *
+ * Signs follow their convention: the model follows the pointer (drag right turns
+ * the side facing you to the right), and dragging down lifts the eye towards the
+ * top view.
+ */
 export function applyCubeDragOrbit(
   camera: THREE.Camera,
   controls: { target: THREE.Vector3; update: () => void },
@@ -777,18 +1284,25 @@ export function applyCubeDragOrbit(
   deltaY: number,
   sensitivity: number,
 ): void {
+  const up = camera.up.clone().normalize();
+  if (up.lengthSq() < 0.5) {
+    up.set(0, 0, 1);
+  }
   const offset = new THREE.Vector3().copy(camera.position).sub(controls.target);
-  const spherical = new THREE.Spherical();
-  spherical.setFromVector3(offset);
+  const toUpFrame = new THREE.Quaternion().setFromUnitVectors(up, WORLD_Y);
+  const fromUpFrame = toUpFrame.clone().invert();
+  offset.applyQuaternion(toUpFrame);
 
+  const spherical = new THREE.Spherical().setFromVector3(offset);
   spherical.theta -= deltaX * sensitivity;
   spherical.phi -= deltaY * sensitivity;
-  spherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, spherical.phi));
+  spherical.phi = Math.max(
+    POLE_EPSILON,
+    Math.min(Math.PI - POLE_EPSILON, spherical.phi),
+  );
 
-  const newPos = new THREE.Vector3()
-    .setFromSpherical(spherical)
-    .add(controls.target);
-  camera.position.copy(newPos);
+  offset.setFromSpherical(spherical).applyQuaternion(fromUpFrame);
+  camera.position.copy(controls.target).add(offset);
   camera.lookAt(controls.target);
   controls.update();
 }

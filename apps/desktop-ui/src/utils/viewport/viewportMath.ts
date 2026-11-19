@@ -38,6 +38,61 @@ export function setPointerNdcFromEvent(
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 }
 
+// True when the camera is looking at empty space rather than at the model.
+//
+// The orbit pivot is `controls.target`, which is only derived when the camera is
+// framed (first geometry, sketch views). Import into a document that already had
+// a model elsewhere, and the target still sits where the OLD model was: orbiting
+// then swings the board out of the frustum instead of turning it in place — the
+// "object jumps out of view" symptom. Panning cannot trigger this (the target
+// travels with the view), so re-framing here only fires when the content has
+// moved underneath the camera.
+export function targetLeftTheModel(
+  target: THREE.Vector3,
+  center: [number, number, number],
+  maxDimension: number,
+): boolean {
+  const distance = Math.hypot(
+    target.x - center[0],
+    target.y - center[1],
+    target.z - center[2],
+  );
+  // A quarter of the model's size: inside that, the camera is still looking at
+  // the model and the user owns the frame.
+  return distance > Math.max(maxDimension * 0.25, 0.5);
+}
+
+/**
+ * Frame the model from the current view direction (Fit).
+ *
+ * `frameCamera` resets the camera to the CAD isometric; Fit must not, or "fit"
+ * would silently reorient the model the user was looking at. Same zoom
+ * arithmetic, direction preserved, pivot moved to the model's centre.
+ */
+export function fitCameraToBounds(
+  camera: THREE.OrthographicCamera,
+  controls: OrbitControls,
+  center: [number, number, number],
+  maxDimension: number,
+): void {
+  const direction = new THREE.Vector3()
+    .copy(camera.position)
+    .sub(controls.target);
+  if (direction.lengthSq() < 1e-9) {
+    direction.set(0.7, 0.5, 1);
+  }
+  direction.normalize();
+
+  const distance = Math.max(maxDimension * 1.8, 160);
+  const viewHeight = Math.max(maxDimension * 2.4, 120);
+  camera.zoom = Math.max((camera.top - camera.bottom) / viewHeight, 0.01);
+  camera.updateProjectionMatrix();
+
+  controls.target.set(...center);
+  camera.position.copy(controls.target).addScaledVector(direction, distance);
+  controls.update();
+}
+
 export function frameCamera(
   camera: THREE.OrthographicCamera,
   controls: OrbitControls,
