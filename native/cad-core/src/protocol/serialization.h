@@ -58,6 +58,12 @@ json to_payload(const polysmith::core::ViewportToolpathPrimitive& primitive);
 json to_payload(const polysmith::core::ViewportDrawingCurve& curve);
 json to_payload(const polysmith::core::ViewportDrawingText& text);
 json to_payload(const polysmith::core::ViewportState& viewport);
+// Delta form: bodies whose fingerprint matches `known_mesh_revisions` are not
+// re-sent; `mesh_revisions` always carries every current body's fingerprint and
+// `removed_meshes` the ids the client still has but the document no longer does.
+json to_payload(
+    const polysmith::core::ViewportState& viewport,
+    const std::map<std::string, std::string>& known_mesh_revisions);
 
 // ── CAM types (cam_types.h) ─────────────────────────────────────
 

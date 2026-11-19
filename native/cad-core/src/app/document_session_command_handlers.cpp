@@ -207,11 +207,25 @@ bool handle_document_session_command(
   }
 
   if (command.type == "get_viewport_state") {
+    // Mesh delta: the client sends the fingerprints it already holds, so the
+    // reply carries only the bodies whose triangles changed. No map means a
+    // full snapshot, which is what every other caller (and the harness) sends.
+    std::map<std::string, std::string> known_mesh_revisions;
+    if (command.payload.contains("known_meshes") &&
+        command.payload["known_meshes"].is_object()) {
+      for (const auto& [body_id, revision] :
+           command.payload["known_meshes"].items()) {
+        if (revision.is_string()) {
+          known_mesh_revisions[body_id] = revision.get<std::string>();
+        }
+      }
+    }
     polysmith::protocol::write_message(
         polysmith::protocol::make_viewport_state_event(
             command.id,
             polysmith::protocol::to_payload(
-                polysmith::core::build_viewport_state(manager.get_document()))));
+                polysmith::core::build_viewport_state(manager.get_document()),
+                known_mesh_revisions)));
     return true;
   }
 

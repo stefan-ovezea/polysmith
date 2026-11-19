@@ -213,6 +213,32 @@ finite, no duplicate `owner:ordinal` pairs — so the encoding was never the cau
 
 `pnpm test:ui` 118/118, `tsc --noEmit` clean, `pnpm lint` 0/0.
 
+### Viewport: the mesh delta (G2, first half) — 20.16 MB → 3.95 MB per refetch
+
+The snapshot re-sent every body's triangles on every refetch: ~16 MB of the
+20 MB payload on the 28 MB board, spent again for a selection click or a sketch
+edit, neither of which changes a triangle.
+
+- **Core** fingerprints each body's geometry (sizes plus every 64th coordinate,
+  which catches both a retessellation and a moved body) and reports the
+  fingerprint map (`mesh_revisions`) plus the ids that disappeared
+  (`removed_meshes`). The request may carry `known_meshes` — the fingerprints the
+  client already holds — and bodies whose fingerprint matches are not sent.
+  `body_states` carries the tiny per-body state (selection, colour) separately, so
+  a click updates the highlight without re-sending geometry.
+- **UI** keeps `lib/viewportMeshCache.ts`: every `get_viewport_state` sends what
+  it holds, the reply is merged into the cache, and the whole snapshot is what
+  React sees, so no other consumer knows about deltas.
+- Measured: full snapshot 20.16 MB → **delta 3.95 MB with `meshes: 0`** (292
+  revisions known, 292 body states, `removed_meshes` correct).
+
+Tests: `viewportMeshCache.test.ts` (3 cases: a payload without revisions is a full
+snapshot, a delta merges and lands the per-body state on cached geometry, removed
+ids drop). `pnpm test:ui` 121/121, `pnpm test:core` 94/95 (orphan only).
+
+Still open: the same treatment for the face table and the overlay (sketch
+entities), which is the remaining ~4 MB of a no-geometry-change refetch.
+
 Remaining in G0: the UI still builds one BufferGeometry per face (14,897
 objects). That is local memory and object count, not payload — the next change is
 one pick mesh per body plus a highlight proxy for the selected/hovered face only.

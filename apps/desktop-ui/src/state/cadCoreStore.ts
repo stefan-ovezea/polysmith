@@ -13,6 +13,10 @@ import type {
   ViewportState,
 } from "../types/ipc";
 import {
+  mergeViewportMeshes,
+  resetViewportMeshCache,
+} from "../lib/viewportMeshCache";
+import {
   getDocumentFromMessage,
   getDocumentExportFromMessage,
   getErrorFromMessage,
@@ -409,9 +413,17 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
         nextState.session = message.payload;
       }
 
+      // A new document invalidates every cached body id.
+      if (message.type === "document_created") {
+        resetViewportMeshCache();
+      }
       const viewport = getViewportFromMessage(message);
       if (viewport) {
-        nextState.viewport = viewport;
+        // Mesh delta: `viewport.meshes` may hold only the bodies whose geometry
+        // changed, so merge it with the cache into a complete snapshot before
+        // anything downstream sees it.
+        const mergedViewport = mergeViewportMeshes(viewport);
+        nextState.viewport = mergedViewport;
         // Atomic commit pairing: merge the document we held for this id into
         // this same set(), so the document and its geometry land together.
         if (atomicId !== null) {

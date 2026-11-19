@@ -630,6 +630,19 @@ export const viewportStateSchema = z.object({
     }),
   ),
   meshes: z.array(viewportMeshSchema).default([]),
+  // Mesh delta (see lib/viewportMeshCache): without these fields zod would strip
+  // them and every refetch would be treated as a full snapshot.
+  mesh_revisions: z.record(z.string(), z.string()).optional(),
+  removed_meshes: z.array(z.string()).optional(),
+  body_states: z
+    .record(
+      z.string(),
+      z.object({
+        is_selected: z.boolean(),
+        appearance_color: z.string().nullable().default(null),
+      }),
+    )
+    .optional(),
   cut_previews: z
     .array(
       z.object({

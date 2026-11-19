@@ -19,3 +19,6 @@
       {"sketch_constraints", sketch_constraints},
       {"sketch_profiles", sketch_profiles},
       {"meshes", meshes},
+      {"mesh_revisions", mesh_revisions},
+      {"removed_meshes", removed_meshes},
+      {"body_states", body_states},

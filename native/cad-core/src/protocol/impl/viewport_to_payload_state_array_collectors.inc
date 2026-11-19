@@ -83,8 +83,61 @@
     sketch_profiles.push_back(to_payload(profile));
   }
 
+  // Mesh delta. A body's fingerprint is a cheap sample hash of its geometry:
+  // sizes plus every 64th coordinate, which catches a retessellation and a
+  // moved body (same triangle count, different vertices). The client sends the
+  // fingerprints it holds, so a selection or a sketch edit - neither of which
+  // changes a triangle - transfers no triangles at all.
+  const auto mesh_fingerprint = [](const polysmith::core::ViewportMeshPrimitive& mesh) {
+    std::uint64_t hash = 1469598103934665603ull;
+    const auto mix = [&hash](std::uint64_t value) {
+      hash ^= value;
+      hash *= 1099511628211ull;
+    };
+    mix(mesh.positions.size());
+    mix(mesh.indices.size());
+    mix(mesh.normals.size());
+    mix(mesh.face_ids.size());
+    const auto sample = [&mix](const std::vector<double>& values) {
+      if (values.empty()) {
+        return;
+      }
+      const std::size_t step = std::max<std::size_t>(1, values.size() / 64);
+      for (std::size_t index = 0; index < values.size(); index += step) {
+        std::uint64_t bits = 0;
+        std::memcpy(&bits, &values[index], sizeof(double));
+        mix(bits);
+      }
+    };
+    sample(mesh.positions);
+    sample(mesh.normals);
+    char buffer[17];
+    std::snprintf(buffer, sizeof(buffer), "%016llx",
+                  static_cast<unsigned long long>(hash));
+    return std::string(buffer);
+  };
+
   json meshes = json::array();
+  json mesh_revisions = json::object();
+  json body_states = json::object();
+  std::set<std::string> current_mesh_ids;
   for (const auto& mesh : viewport.meshes) {
+    current_mesh_ids.insert(mesh.id);
+    // Selection and colour are tiny and change without the geometry, so they
+    // travel separately: a click updates ody_states and sends no triangles.
+    body_states[mesh.id] = {
+        {"is_selected", mesh.is_selected},
+        {"appearance_color",
+         mesh.appearance_color.has_value()
+             ? json(mesh.appearance_color.value())
+             : json(nullptr)},
+    };
+    const std::string fingerprint = mesh_fingerprint(mesh);
+    mesh_revisions[mesh.id] = fingerprint;
+    const auto known = known_mesh_revisions.find(mesh.id);
+    if (known != known_mesh_revisions.end() && known->second == fingerprint) {
+      continue;  // the client already has exactly these triangles
+    }
     meshes.push_back({
         {"primitive_id", mesh.id},
         // Binary (phase E4): float32/uint32 base64 blobs decode straight into
@@ -106,4 +159,11 @@
              ? json(mesh.appearance_color.value())
              : json(nullptr)},
     });
+  }
+  json removed_meshes = json::array();
+  for (const auto& [known_id, revision] : known_mesh_revisions) {
+    (void)revision;
+    if (current_mesh_ids.find(known_id) == current_mesh_ids.end()) {
+      removed_meshes.push_back(known_id);
+    }
   }

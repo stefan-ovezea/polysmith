@@ -408,6 +408,15 @@ export interface ViewportState {
   cylinders: ViewportCylinderPrimitive[];
   polygon_extrudes: ViewportPolygonExtrudePrimitive[];
   solid_faces: ViewportSolidFace[];
+  // Mesh delta: every current body's geometry fingerprint, the ids the client
+  // still holds but the document no longer does, and the small per-body state
+  // (selection, colour) that changes far more often than the triangles do.
+  mesh_revisions?: Record<string, string>;
+  removed_meshes?: string[];
+  body_states?: Record<
+    string,
+    { is_selected: boolean; appearance_color: string | null }
+  >;
   reference_planes: ViewportReferencePlane[];
   reference_axes: ViewportReferenceAxis[];
   reference_points: ViewportReferencePoint[];
@@ -959,7 +968,9 @@ export interface GetSessionStateCommand {
 export interface GetViewportStateCommand {
   id: string;
   type: "get_viewport_state";
-  payload: Record<string, never>;
+  // Mesh delta: the body fingerprints the client already holds. Omitted means
+  // "send everything", which is what a first fetch and the test harness do.
+  payload: { known_meshes?: Record<string, string> };
 }
 
 export interface GetSketchProfilesCommand {
