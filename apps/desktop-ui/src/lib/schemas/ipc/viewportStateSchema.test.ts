@@ -5,7 +5,10 @@
 // face (reported 2026-11-20 as "make sketch on the top, sketch on the side").
 import { describe, expect, it } from "vitest";
 
-import { viewportMeshSchema } from "./viewportStateSchema";
+import {
+  viewportMeshSchema,
+  viewportSolidFacesSchema,
+} from "./viewportStateSchema";
 
 function mesh(extra: Record<string, unknown> = {}) {
   return {
@@ -27,5 +30,10 @@ describe("viewportStateSchema mesh fields", () => {
   it("defaults the pick map to empty so an older core still parses", () => {
     const parsed = viewportMeshSchema.parse(mesh());
     expect(parsed.face_ids).toBe("");
+  });
+
+  it("parses the scene-unchanged face table that carries only a count", () => {
+    expect(() => viewportSolidFacesSchema.parse({ count: 0 })).not.toThrow();
+    expect(viewportSolidFacesSchema.parse({ count: 0 })).toEqual([]);
   });
 });

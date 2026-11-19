@@ -40,6 +40,34 @@ export const viewportDrawingTextShape = z.object({
 // a field the core sends but this schema does not declare is silently stripped
 // by zod, and the UI degrades to a fallback (that is how face picking broke:
 // ace_ids was missing, so every face proxy became a flat rectangle).
+// Packed face table (see lib/binaryDecode.decodeSolidFaces). Exported so a test
+// can pin the {count: 0} "the client already has this scene" form, which must
+// parse: when it did not, the whole viewport_state event was dropped by the
+// message union and the app logged a zod parse error after every import.
+export const viewportSolidFacesSchema = z.object({
+    count: z.number(),
+    // When the client already holds this scene the core sends {count: 0} and
+    // nothing else, so every field here is defaulted: a scene-unchanged reply
+    // must not fail validation (it did, and the whole viewport_state event was
+    // dropped by the message union).
+    owner_ids: z.array(z.string()).default([]),
+    owner_kinds: z.array(z.string()).default([]),
+    sketchabilities: z.array(z.string()).default([]),
+    surface_kinds: z.array(z.string()).default([]),
+    colors: z.array(z.string()).default([]),
+    owner: z.string().default(""),
+    ordinal: z.string().default(""),
+    sketchability: z.string().default(""),
+    surface_kind: z.string().default(""),
+    appearance: z.string().default(""),
+    flags: z.string().default(""),
+    center: z.string().default(""),
+    normal: z.string().default(""),
+    frame: z.string().default(""),
+    size: z.string().default(""),
+    cylinder: z.string().default(""),
+  }).transform(decodeSolidFaces);
+
 export const viewportMeshSchema = z.object({
   primitive_id: z.string(),
   positions: z.string(),
@@ -121,28 +149,7 @@ export const viewportStateSchema = z.object({
       appearance_color: z.string().nullable().default(null),
     }),
   ),
-  // Packed face table: strings are interned into five small tables, enums are
-  // indices, and the numbers are flat base64 float32/uint32 blobs. face_id and
-  // label are not sent; both derive from the owner and the ordinal.
-  solid_faces: z.object({
-    count: z.number(),
-    owner_ids: z.array(z.string()),
-    owner_kinds: z.array(z.string()),
-    sketchabilities: z.array(z.string()),
-    surface_kinds: z.array(z.string()),
-    colors: z.array(z.string()),
-    owner: z.string(),
-    ordinal: z.string(),
-    sketchability: z.string(),
-    surface_kind: z.string(),
-    appearance: z.string(),
-    flags: z.string(),
-    center: z.string(),
-    normal: z.string(),
-    frame: z.string(),
-    size: z.string(),
-    cylinder: z.string(),
-  }).transform(decodeSolidFaces),
+  solid_faces: viewportSolidFacesSchema,
   reference_planes: z.array(
     z.object({
       reference_id: z.string(),
