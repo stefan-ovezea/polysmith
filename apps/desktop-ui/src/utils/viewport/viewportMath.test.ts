@@ -3,7 +3,12 @@ import * as THREE from "three";
 
 import type { SketchPlaneFrame } from "@/types";
 
-import { fitCameraToBounds, sketchCameraUp, targetLeftTheModel } from "./viewportMath";
+import {
+  fitCameraToBounds,
+  fitDepthRange,
+  sketchCameraUp,
+  targetLeftTheModel,
+} from "./viewportMath";
 
 function makeFrame(
   normal: [number, number, number],
@@ -120,5 +125,31 @@ describe("fitCameraToBounds", () => {
     expect(camera.zoom).toBeCloseTo(100 / 480, 9);
     // Distance follows the same rule as frameCamera.
     expect(camera.position.distanceTo(controls.target)).toBeCloseTo(360, 6);
+  });
+});
+
+// The camera used to have a fixed 20,000 mm depth range, which on a 24-bit depth
+// buffer is ~0.0012 mm per step: the carrier has copper pads exported as 0.005 mm
+// sheets, so they fought the board surface for every pixel. The range follows the
+// model now.
+describe("fitDepthRange", () => {
+  it("scales the depth range to the model", () => {
+    const camera = new THREE.OrthographicCamera(-50, 50, 50, -50, -10000, 10000);
+    fitDepthRange(camera, 320);
+    // 4 x the largest dimension, in both directions.
+    expect(camera.near).toBeCloseTo(-1280, 6);
+    expect(camera.far).toBeCloseTo(1280, 6);
+    // 2560 mm of range over a 24-bit buffer: ~0.00015 mm per step, a 30x margin
+    // over the thinnest sheet in the file (0.005 mm).
+    expect((camera.far - camera.near) / 2 ** 24).toBeLessThan(0.005 / 20);
+  });
+
+  it("keeps a floor for tiny models and does not thrash", () => {
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10000, 10000);
+    fitDepthRange(camera, 0.1);
+    expect(camera.near).toBeCloseTo(-40, 6);
+    const before = camera.projectionMatrix.elements.slice();
+    fitDepthRange(camera, 0.1);
+    expect(camera.projectionMatrix.elements).toEqual(before);
   });
 });

@@ -87,10 +87,37 @@ export function fitCameraToBounds(
   const viewHeight = Math.max(maxDimension * 2.4, 120);
   camera.zoom = Math.max((camera.top - camera.bottom) / viewHeight, 0.01);
   camera.updateProjectionMatrix();
+  fitDepthRange(camera, maxDimension);
 
   controls.target.set(...center);
   camera.position.copy(controls.target).addScaledVector(direction, distance);
   controls.update();
+}
+
+/**
+ * Fit the camera's depth range to the model.
+ *
+ * The camera used to be built with `near = -10000, far = 10000`, i.e. a 20,000 mm
+ * range: on a 24-bit depth buffer that is ~0.0012 mm per step, and the imported
+ * carrier has copper pads exported as 0.005 mm sheets sitting on the board - four
+ * depth steps apart, so the two surfaces fought for every pixel (the stair-step
+ * bands and grey ribbons around the SOIC leads). Scaling the range to the model
+ * gives ~0.00007 mm per step on the same board.
+ */
+export function fitDepthRange(
+  camera: THREE.OrthographicCamera,
+  maxDimension: number,
+): void {
+  const halfRange = Math.max(maxDimension * 4, 40);
+  if (
+    Math.abs(camera.near + halfRange) < 1e-6 &&
+    Math.abs(camera.far - halfRange) < 1e-6
+  ) {
+    return;
+  }
+  camera.near = -halfRange;
+  camera.far = halfRange;
+  camera.updateProjectionMatrix();
 }
 
 export function frameCamera(
@@ -111,6 +138,7 @@ export function frameCamera(
   );
   camera.zoom = Math.max((camera.top - camera.bottom) / viewHeight, 0.01);
   camera.updateProjectionMatrix();
+  fitDepthRange(camera, maxDimension);
   controls.target.set(...center);
   controls.update();
 }

@@ -47,6 +47,7 @@ export {
   circleFromThreePoints2d,
   distanceBetweenPoints,
   fitCameraToBounds,
+  fitDepthRange,
   frameCamera,
   frameCameraToSketchPlane,
   lineCircleIntersectionTrim,
