@@ -296,6 +296,10 @@ export function useSlicerWorkspaceActions({
       window.removeEventListener("resize", syncBounds);
       observer.disconnect();
     };
+    // `readSlicerViewportBounds` is a per-render closure that measures the live
+    // DOM node; the observer must be rebuilt on the workspace/session change,
+    // not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView, hasOrcaEmbedSession, addMessage, slicerViewportRef]);
 
   return {

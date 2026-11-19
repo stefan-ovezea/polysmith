@@ -338,6 +338,11 @@ export function useExtrudeFeatureActions({
       setExtrudeAction,
       runAction,
     });
+    // The named callbacks are rebuilt on every render by the host component
+    // (`useCadCore` is not memoized); keying on them would re-create the live
+    // extrude preview on every render. This effect reacts to the SELECTION
+    // signature above, and reads the rest through live refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extrudeAction, document, selectedSketchProfileIdsKey, selectedExtrudableFaceId]);
 
   return {

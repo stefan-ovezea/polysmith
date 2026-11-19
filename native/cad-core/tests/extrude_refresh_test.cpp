@@ -455,6 +455,64 @@ bool test_an_outline_crossing_circle_keeps_the_extrude_body() {
                 "after edit: the stored profile id was healed to the live one");
 }
 
+// An extrude whose profile selection was emptied on purpose still has a depth.
+//
+// Reported: "OCCT failed to create an extruded shape" while dragging the depth
+// slider. `update_extrude_profiles` with an empty list empties the feature by
+// DESIGN (the panel's "0 selected" state), and the body compiler skips it — but
+// `update_extrude_depth` re-validated the shape, `build_extrude_shape` returned
+// null for the empty feature, and the validator blamed the kernel. Nothing was
+// wrong with the geometry; the error was the validator mistaking "nothing to
+// extrude yet" for an OCCT failure.
+bool test_depth_update_tolerates_an_emptied_extrude() {
+  DocumentManager manager;
+  manager.create_document();
+  manager.start_sketch_on_plane("ref-plane-xy");
+  manager.add_sketch_rectangle(-20.0, -20.0, 20.0, 20.0);
+  auto document = manager.get_document().value();
+  const std::vector<std::string> profiles = profile_ids_of(document);
+  if (!expect(profiles.size() == 1, "fixture: the rectangle profile exists")) {
+    return false;
+  }
+
+  document = manager.extrude_profiles({profiles.front()}, 8.0, "new_body");
+  const FeatureEntry* extrude = find_feature_of_kind(document, "extrude");
+  if (!expect(extrude != nullptr, "fixture: the extrude exists")) {
+    return false;
+  }
+  const std::string extrude_id = extrude->id;
+
+  document = manager.update_extrude_profiles(extrude_id, {});
+  const FeatureEntry* emptied = find_feature_of_kind(document, "extrude");
+  if (!expect(emptied != nullptr && emptied->extrude_parameters.has_value() &&
+                  emptied->extrude_parameters->profile_ids.empty(),
+              "after deselect: the feature is emptied on purpose")) {
+    return false;
+  }
+
+  // The regression: this threw "OCCT failed to create an extruded shape".
+  try {
+    document = manager.update_extrude_depth(extrude_id, 12.0);
+  } catch (const std::exception& error) {
+    std::cerr << "  update_extrude_depth threw: " << error.what() << "\n";
+    return expect(false,
+                  "depth update on an emptied extrude does not throw");
+  }
+
+  const FeatureEntry* updated = find_feature_of_kind(document, "extrude");
+  if (!expect(updated != nullptr && updated->extrude_parameters.has_value() &&
+                  std::abs(updated->extrude_parameters->depth - 12.0) < 1e-9,
+              "the new depth is stored on the emptied extrude")) {
+    return false;
+  }
+
+  // It must still compile once the profiles come back.
+  document = manager.update_extrude_profiles(extrude_id, profiles);
+  const auto compiled = compile_bodies(document);
+  return expect(compiled.bodies.size() == 1,
+                "re-selecting the profile brings the body back");
+}
+
 }  // namespace
 
 int main() {
@@ -463,6 +521,7 @@ int main() {
   if (!test_update_tolerates_stripped_profile_geometry()) return 1;
   if (!test_rebinding_profiles_heals_a_broken_extrude()) return 1;
   if (!test_an_outline_crossing_circle_keeps_the_extrude_body()) return 1;
+  if (!test_depth_update_tolerates_an_emptied_extrude()) return 1;
   std::cout << "extrude_refresh_test passed\n";
   return 0;
 }

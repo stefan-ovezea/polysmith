@@ -50,6 +50,10 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
   const [systemThemeVersion, setSystemThemeVersion] = useState(0);
   const activeTheme = useMemo(
     () => getActiveTheme(config, themes),
+    // `systemThemeVersion` is a deliberate invalidation signal: it carries no
+    // value this memo reads, it exists so a change of the OS light/dark theme
+    // re-resolves the "system" theme.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [config, themes, systemThemeVersion],
   );
 

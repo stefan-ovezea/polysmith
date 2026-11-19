@@ -1,4 +1,6 @@
 import { findDependents } from "../lib";
+import { confirmDialog } from "../lib/confirmDialog";
+import { i18n } from "../i18n";
 import type { DocumentState, FeatureEntry } from "../types";
 import type { SketchDeleteSelection } from "./appState";
 import {
@@ -36,7 +38,7 @@ interface FeatureDeleteContext {
   clearEditingFeature: (featureId: string) => void;
 }
 
-export function confirmAndDeleteFeatureFromContext({
+export async function confirmAndDeleteFeatureFromContext({
   document,
   featureId,
   activeSketchDeleteBlockedMessage,
@@ -61,7 +63,22 @@ export function confirmAndDeleteFeatureFromContext({
   }
 
   const dependents = findDependents(document, featureId);
-  if (!confirmDependentFeatureDelete(dependents)) {
+  // One delete can take a whole operation: every feature of one commit shares
+  // an `operation_id` and the core deletes them together (an imported assembly
+  // is one commit, so this is how "delete the import" works). Ask before
+  // silently removing a thousand bodies.
+  const operationMembers = groupMembers(document, featureId);
+  if (operationMembers.length > 1) {
+    const confirmed = await confirmDialog(
+      i18n.t("contextMenu.deleteBodyGroupConfirm", {
+        count: operationMembers.length,
+      }),
+    );
+    if (!confirmed) {
+      return;
+    }
+  }
+  if (!(await confirmDependentFeatureDelete(dependents))) {
     return;
   }
 
@@ -71,14 +88,35 @@ export function confirmAndDeleteFeatureFromContext({
   });
 }
 
-function confirmDependentFeatureDelete(dependents: FeatureEntry[]) {
+async function confirmDependentFeatureDelete(dependents: FeatureEntry[]) {
   if (dependents.length === 0) {
     return true;
   }
 
   const names = dependents.map((entry) => entry.name || entry.kind).join(", ");
-  return window.confirm(
+  return confirmDialog(
     `Deleting this feature will break ${dependents.length} downstream feature(s): ${names}. Delete anyway?`,
+  );
+}
+
+// Every feature that one delete would remove: the feature itself plus the rest
+// of its operation group (empty `operation_id` = standalone, so just itself).
+function groupMembers(
+  document: DocumentState,
+  featureId: string,
+): FeatureEntry[] {
+  const feature = document.feature_history.find(
+    (entry) => entry.feature_id === featureId,
+  );
+  if (!feature) {
+    return [];
+  }
+  const operationId = feature.operation_id ?? "";
+  if (operationId === "") {
+    return [feature];
+  }
+  return document.feature_history.filter(
+    (entry) => entry.operation_id === operationId,
   );
 }
 

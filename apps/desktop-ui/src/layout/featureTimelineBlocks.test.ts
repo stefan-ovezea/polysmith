@@ -53,8 +53,22 @@ describe("featureTimelineBlocks", () => {
     expect(blocks[1].primary.feature_id).toBe("feature-13");
   });
 
-  it("counts features for the history cursor, not rows", () => {
-    const blocks = featureTimelineBlocks([
+  // An imported assembly is ONE operation: all of its bodies share the id, so
+  // the timeline shows a single row instead of one per part, and the core's
+  // delete removes them together. (Measured on the ESP32 carrier: 1,092 bodies,
+  // one operation id, deleting any one body removed all 1,092 in one undo step.)
+  it("folds a whole imported assembly into one row", () => {
+    const bodies = Array.from({ length: 1092 }, (_, index) =>
+      feature(`feature-${index + 2}`, "feature-2"),
+    );
+    const blocks = featureTimelineBlocks(bodies);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].operationId).toBe("feature-2");
+    expect(blocks[0].primary.feature_id).toBe("feature-2");
+    expect(blocks[0].members).toHaveLength(1092);
+  });
+
+  it("counts features for the history cursor, not rows", () => {    const blocks = featureTimelineBlocks([
       feature("feature-1"),
       feature("feature-2", "feature-2"),
       feature("feature-3", "feature-2"),

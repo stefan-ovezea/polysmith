@@ -4,10 +4,13 @@ import { projectNameFromPath } from "../lib";
 import type { DocumentState } from "../types";
 import type { SavedDocumentBaseline } from "./appState";
 
+// Takes the operations list itself, not the document: that array is the only
+// input, so the caller's `useMemo` can depend on exactly it (and the lint stops
+// asking for the whole document, which would rebuild on every unrelated field).
 export function buildCamOperations(
-  document: DocumentState | null,
+  operations: DocumentState["cam"]["operations"] | null | undefined,
 ): CamOperation[] {
-  return (document?.cam.operations ?? []).map((operation) => ({
+  return (operations ?? []).map((operation) => ({
     id: operation.op_id,
     setupId: operation.setup_id ?? "",
     name: operation.name,

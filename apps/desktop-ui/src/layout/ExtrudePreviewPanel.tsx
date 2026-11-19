@@ -153,6 +153,9 @@ export function ExtrudePreviewPanel({
       };
       updateAdvanced(next);
     }
+    // `updateAdvanced` is a per-render closure that pushes into the live preview;
+    // the picked face target is the trigger this effect exists for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFaceTargetId]);
 
   function emitParameters(

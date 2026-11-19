@@ -412,6 +412,8 @@ export function ViewportPanel({
   onExportBodyStep,
   onSendBodyToSlicer,
   onUnlinkBodyCopy,
+  onFindInTimeline,
+  onDeleteBody,
   onRemoveSketchProjections,
   showSketchProjectionActions,
   hiddenFeatureIds,
@@ -484,6 +486,9 @@ export function ViewportPanel({
       // position would keep the snap square visible after disarm.
       setCrosshairPointer(null);
     }
+    // `setHovered*` are panel props backed by stable store setters; this effect
+    // only has to react to the pick modes being armed/disarmed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originPickPointEnabled, drillPickPointEnabled]);
   // Floating constraint-preview badge tracked relative to the
   // viewport container. Shown next to the cursor whenever the snap
@@ -859,6 +864,8 @@ export function ViewportPanel({
   const exportBodyStepRef = useRef(onExportBodyStep);
   const sendBodyToSlicerRef = useRef(onSendBodyToSlicer);
   const unlinkBodyCopyRef = useRef(onUnlinkBodyCopy);
+  const findInTimelineRef = useRef(onFindInTimeline);
+  const deleteBodyRef = useRef(onDeleteBody);
   const removeSketchProjectionsRef = useRef(onRemoveSketchProjections);
   const pendingMoveGizmoParametersRef = useRef<MoveFeatureParameters | null>(
     null,
@@ -1486,8 +1493,26 @@ export function ViewportPanel({
       pendingDraftDimensionExpressionsRef.current === null
     ) {
       draftUndoGroupOpenRef.current = false;
-      void endUndoGroupRef.current();
+      // Closing the group must not surface as an UNHANDLED rejection when the
+      // core is slow or already gone — that is how a healthy-but-busy core
+      // reported itself as "unhandled rejection: core did not respond to
+      // undo_end_group". Report it in the Logs panel instead; the group is
+      // already closed on this side, and the next sketch edit opens a new one.
+      void endUndoGroupRef.current().catch((error: unknown) => {
+        addLogEntry(
+          makeUiLogEntry(
+            "warn",
+            "desktop_ui",
+            `could not close the sketch undo group: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
+        );
+      });
     }
+    // `addMessage`/`addLogEntry` are stable store actions; the named missing
+    // dependency here is the undo-group callback, which is read live above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sketchFeature]);
   // React to view-setting-changed events dispatched by the View panel
   // so edge visibility toggles take effect immediately without waiting
@@ -1544,6 +1569,9 @@ export function ViewportPanel({
       sketchLinesRef.current,
       state.entityIds,
     );
+    // `sceneDataRef` is a ref whose identity never changes; the tool and the
+    // scene payload are the real triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchTool, sceneData]);
   const {
     selectedPrimitiveLabel,
@@ -1740,6 +1768,10 @@ export function ViewportPanel({
     // redraw NOW, not on the next pointer move (typing a value felt
     // like it "applies on the next mouse movement").
     requestViewportRenderRef.current?.();
+    // `renderDraftPreview` is a per-render closure; keying on it would redraw
+    // on every render. The draft session and the construction toggle are what
+    // this effect exists to react to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftDimensionSession, sketchToolConstruction]);
 
   function toggleGridVisibility(kind: "viewport" | "sketch") {
@@ -1819,6 +1851,10 @@ export function ViewportPanel({
     paintSketchPointMaterials();
     paintDofStatusColors();
     requestViewportRenderRef.current?.();
+    // The painters/sync helpers are closures over the live scene refs; keying on
+    // them would repaint the whole scene on every render. This effect is the
+    // theme-change repaint.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTheme.id]);
 
   // Update constraint badge highlights whenever selection changes.
@@ -2088,7 +2124,19 @@ export function ViewportPanel({
   ) => {
     if (!draftUndoGroupOpenRef.current) {
       draftUndoGroupOpenRef.current = true;
-      void beginUndoGroupRef.current("Dimension");
+      // Same reason as the close above: never let a slow core turn into an
+      // unhandled rejection.
+      void beginUndoGroupRef.current("Dimension").catch((error: unknown) => {
+        addLogEntry(
+          makeUiLogEntry(
+            "warn",
+            "desktop_ui",
+            `could not open the sketch undo group: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
+        );
+      });
     }
     scheduleDimensionDeletion(tool, preCapturedSession);
   };
@@ -3202,6 +3250,9 @@ export function ViewportPanel({
     pendingDimensionPlacementRef.current = false;
     pendingDimSourceEntityIdRef.current = null;
     beginDimensionPlacement(placementDimension);
+    // The placement helpers are per-render closures; the tool state, the
+    // displayed dimensions and the selected one are the real triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchTool, displayedSketchDimensions, selectedSketchDimension]);
 
   useEffect(() => {
@@ -5349,8 +5400,11 @@ export function ViewportPanel({
           }
 
           // 2) Edge-line raycast: a click directly on a circular rim
-          // edge reports the edge for attestation capture (the same
-          // small line threshold as the selection pick).
+          // edge reports the edge for attestation capture. This one
+          // keeps a deliberately generous WORLD tolerance (unlike the
+          // selection pick, which is screen-space — see
+          // sceneTargetPicking.ts): the goal is to catch the rim you
+          // aimed at just outside the hole, not to hit a precise line.
           const previousLineThreshold = raycaster.params.Line?.threshold ?? 1;
           if (raycaster.params.Line) {
             raycaster.params.Line.threshold = 1.2;
@@ -5938,7 +5992,12 @@ export function ViewportPanel({
       referenceGroupRef.current = null;
       sketchGroupRef.current = null;
       clearViewportSceneObjectRefs();
+      // These maps are owned by this component and only cleared on teardown;
+      // the GPU objects they refer to were already disposed by the group
+      // disposal above, so a map that was swapped in the meantime is harmless.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       sketchEntityObjectByIdRef.current.clear();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       sketchPointObjectByIdRef.current.clear();
       moveGizmoDragRef.current = null;
       worldGridRef.current = null;
@@ -5947,6 +6006,10 @@ export function ViewportPanel({
       lastGeometryKeyRef.current = "";
       lastSceneBuildKeyRef.current = "";
     };
+    // The whole pointer/keyboard wiring above is rebuilt every render by design
+    // (it closes over live scene refs), so listing it would tear down and rebind
+    // every listener on each render. The sketch plane identity is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchPlaneId]);
 
   // Latest scene-sync arguments, so imperative paths (restorePreviewScene)
@@ -6002,6 +6065,9 @@ export function ViewportPanel({
     persistentRingGroupRef.current = ring.group;
     persistentRingPickablesRef.current = ring.pickables;
     persistentRingStateRef.current = state;
+    // A ref whose identity never changes; the ring is rebuilt from live state on
+    // every call, so there is nothing to re-key on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Applies the Move/Copy dialog's pending transform to the real scene
@@ -6215,16 +6281,25 @@ export function ViewportPanel({
     // The Move/Copy dialog's preview must survive scene rebuilds
     // (the scene is built from committed state).
     applyPendingSketchMovePreview();
+    // Same pattern as the theme repaint above: the painters/sync helpers close
+    // over live scene refs, so they are not dependencies — the scene inputs are.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTheme.id, config.displayUnits, displayedSketchDimensions, moveGizmo, sceneData, showReferencePlanes, document, viewport, showStock, showCamToolpath, showDrawingSheet, drawingDimensionPreview, drawingAnnotationPreview, drawingViewPreview, drawingViewDrag, drawingDimensionTextDrag, drawingGhostFrame, drawingGhostAnchored, drawingSelectedViewId, drawingDetailDrag, wcsOrientation, activeCamSetupId, originPickPointEnabled, wcsPickPointEnabled, drillPickPointEnabled, runSceneSync, updatePersistentMoveRing, applyPendingSketchMovePreview]);
 
   // Entering the drawing workspace fits the camera to the sheet — the
   // sheet is the workspace's whole content, so the default CAD framing
   // (which ignores sheet geometry) would leave the user staring at an
   // empty corner.
+  // The sheet's identity and size as plain values: every field the effect reads
+  // is a dependency, and the lint cannot verify `?.` chains inside an array.
+  const firstDrawingSheet = viewport?.drawing_sheets?.[0];
+  const firstDrawingSheetId = firstDrawingSheet?.sheet_id;
+  const firstDrawingSheetWidth = firstDrawingSheet?.width_mm;
+  const firstDrawingSheetHeight = firstDrawingSheet?.height_mm;
   useEffect(() => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
-    const firstSheet = viewport?.drawing_sheets?.[0];
+    const firstSheet = firstDrawingSheet;
     if (!showDrawingSheet || !camera || !controls || !firstSheet) {
       return;
     }
@@ -6236,7 +6311,16 @@ export function ViewportPanel({
       heightMm: firstSheet.height_mm,
     });
     requestViewportRenderRef.current?.();
-  }, [showDrawingSheet, viewport?.drawing_sheets?.[0]?.sheet_id, viewport?.drawing_sheets?.[0]?.width_mm, viewport?.drawing_sheets?.[0]?.height_mm]);
+    // `firstDrawingSheet` is a fresh object on every viewport payload; listing it
+    // would re-fit the camera while the user is zooming in the drawing
+    // workspace. The four primitives below ARE its identity and size.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    showDrawingSheet,
+    firstDrawingSheetId,
+    firstDrawingSheetWidth,
+    firstDrawingSheetHeight,
+  ]);
 
   useEffect(() => {
     lineDraftStartRef.current = null;
@@ -6294,6 +6378,9 @@ export function ViewportPanel({
     // Show/hide the persistent manipulator ring for the new tool state.
     updatePersistentMoveRing();
     requestViewportRenderRef.current?.();
+    // The preview cleaners are per-render closures; the tool state and plane
+    // identity are the triggers this effect exists for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchPlaneId, activeSketchTool, updatePersistentMoveRing, runSceneSync]);
 
   useEffect(
@@ -6326,6 +6413,9 @@ export function ViewportPanel({
         commitSplineDraft: () => commitSplineDraftRef.current(),
         setSketchToolConstruction,
       }),
+    // The keydown handler closes over the live tool state (refs and current
+    // sketch), so it must be rebuilt only when the plane or the hotkey changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeSketchPlaneId, config.hotkeys.sketchToolbar],
   );
 
@@ -6405,6 +6495,8 @@ export function ViewportPanel({
     exportBodyStepRef,
     sendBodyToSlicerRef,
     unlinkBodyCopyRef,
+    findInTimelineRef,
+    deleteBodyRef,
     removeSketchProjectionsRef,
     deleteSketchSelectionRef,
     deleteSketchDimensionRef,

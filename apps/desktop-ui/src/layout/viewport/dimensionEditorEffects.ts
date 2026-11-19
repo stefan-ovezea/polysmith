@@ -124,6 +124,10 @@ export function useDimensionEditorEffects({
       };
       window.requestAnimationFrame(selectOnceLanded);
     }
+    // `formattedDimensionDisplayValue` is a per-render formatter; keying on it
+    // would re-seed the input on every render and steal the caret while the user
+    // types. The selected dimension's id/value/expression are the real triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedSketchDimensionValue,
     selectedSketchDimensionExpression,
@@ -159,6 +163,10 @@ export function useDimensionEditorEffects({
 
     dimensionInputSelectionLockedRef.current = true;
     setIsDimensionEditorOpen(true);
+    // Keyed on the dimension's ID, not the object: the object is replaced on
+    // every document update and this effect would then re-open/re-close the
+    // editor below the user's cursor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedSketchDimension?.dimensionId,
     dimensionInputRef,
@@ -189,6 +197,8 @@ export function useDimensionEditorEffects({
       input.select();
       dimensionInputSelectionLockedRef.current = false;
     }
+    // Same as above: the id is the identity that matters, not the object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isDimensionEditorOpen,
     selectedSketchDimension?.dimensionId,

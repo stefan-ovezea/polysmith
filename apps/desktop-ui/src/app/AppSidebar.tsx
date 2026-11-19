@@ -169,6 +169,21 @@ export function AppSidebar({
           return next;
         });
       }}
+      onSetFeaturesVisibility={(featureIds, hidden) => {
+        // One state update for a whole imported assembly (1,092 bodies): the
+        // per-feature toggle would queue a thousand of them.
+        setHiddenFeatureIds((current) => {
+          const next = new Set(current);
+          for (const featureId of featureIds) {
+            if (hidden) {
+              next.add(featureId);
+            } else {
+              next.delete(featureId);
+            }
+          }
+          return next;
+        });
+      }}
       onToggleCategoryVisibility={(category) => {
         if (category === "origin") {
           markOriginVisibilityChanged();

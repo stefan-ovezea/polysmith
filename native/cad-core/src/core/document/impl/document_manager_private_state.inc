@@ -40,6 +40,10 @@
 
   int next_document_id_ = 1;
   int next_feature_id_ = 1;
+  // Component occurrences ("component-N"). A separate namespace from features:
+  // a component groups bodies, it is never a body, and the two id spaces are
+  // scanned independently on load.
+  int next_component_id_ = 1;
   int next_sketch_line_id_ = 1;
   int next_sketch_circle_id_ = 1;
   int next_sketch_polygon_id_ = 1;

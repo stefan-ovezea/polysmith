@@ -97,6 +97,21 @@ json to_payload(const polysmith::core::DocumentState& document,
            ? json(document.timeline_cursor.value())
            : json(nullptr)},
       {"feature_history", feature_history},
+      // Component occurrences of imported assemblies. Flat, with the parent id,
+      // so the tree is assembled by the consumer in one pass.
+      {"components",
+       [&document]() {
+         json components = json::array();
+         for (const auto& component : document.components) {
+           components.push_back({
+               {"component_id", component.id},
+               {"name", component.name},
+               {"parent_id", component.parent_id},
+               {"body_ids", component.body_ids},
+           });
+         }
+         return components;
+       }()},
       {"parameters",
        [&document]() {
          json params = json::array();

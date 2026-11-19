@@ -4,6 +4,15 @@ import { useTranslation } from "react-i18next";
 import type { DocumentState, SlicerExportFormat } from "@/types";
 import { ContextMenuShell } from "./ContextMenuShell";
 import { useContextMenuDismiss } from "./hooks/useContextMenuDismiss";
+import {
+  componentBodyIds,
+  componentHierarchy,
+  importBodyGroups,
+  isImportedBody,
+  type ComponentTreeNode,
+  type HierarchyComponent,
+} from "./documentHierarchyGroups";
+import { ComponentIcon, ImportFileIcon } from "./header/ToolBarIcons";
 
 export type CategoryId =
   | "origin"
@@ -17,6 +26,12 @@ interface DocumentHierarchyPanelProps {
   hiddenFeatureIds: ReadonlySet<string>;
   hiddenCategories: ReadonlySet<CategoryId>;
   onToggleFeatureVisibility: (featureId: string) => void;
+  // Bulk visibility for a whole imported assembly (one row governs every body of
+  // one import, instead of 1,092 individual eye toggles).
+  onSetFeaturesVisibility?: (
+    featureIds: readonly string[],
+    hidden: boolean,
+  ) => void;
   onToggleCategoryVisibility: (category: CategoryId) => void;
   // Opens the imported-layer properties card for a pcb_layer feature.
   onShowLayerProperties?: (featureId: string) => void;
@@ -103,6 +118,9 @@ const BODY_KINDS = new Set([
   "iges_import",
 ]);
 
+// Bodies that came from a file import live under their import node (see
+// documentHierarchyGroups), not in the Bodies category.
+
 function EyeIcon({ open }: { open: boolean }) {
   if (open) {
     return (
@@ -186,25 +204,9 @@ function SketchIcon() {
   );
 }
 
-// Stacked sheets: an imported fabrication layer is reference art, not a body.
-function LayerIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="12"
-      height="12"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 3 21 8l-9 5-9-5Z" />
-      <path d="m3 13 9 5 9-5" />
-    </svg>
-  );
-}
+// An imported file's glyph (stacked sheets: reference geometry, not a body) is
+// the shared ImportFileIcon from ToolBarIcons, so the Browser and the timeline
+// draw an import the same way.
 
 function BodyIcon() {
   return (
@@ -226,6 +228,8 @@ function BodyIcon() {
   );
 }
 
+// A component occurrence of an imported assembly is drawn with the shared
+// ComponentIcon (ToolBarIcons) so the Browser and the timeline agree on it.
 function PlaneIcon() {
   return (
     <svg
@@ -517,6 +521,173 @@ function Category({
   );
 }
 
+type HierarchyFeature = DocumentState["feature_history"][number];
+
+interface ComponentBranchProps {
+  node: ComponentTreeNode<HierarchyComponent>;
+  depth: number;
+  features: ReadonlyMap<string, HierarchyFeature>;
+  selectedFeatureId: string | null;
+  hiddenFeatureIds: ReadonlySet<string>;
+  collapsedComponentIds: ReadonlySet<string>;
+  onToggleCollapse: (componentId: string) => void;
+  onSelectFeature: (featureId: string) => void;
+  onToggleFeatureVisibility: (featureId: string) => void;
+  onSetFeaturesVisibility?: (
+    featureIds: readonly string[],
+    hidden: boolean,
+  ) => void;
+  onBodyContextMenu: (
+    feature: HierarchyFeature,
+  ) => (event: React.MouseEvent) => void;
+  rowLabels: RowLabels;
+  /** Translated label for an occurrence the file does not name. */
+  unnamedLabel: string;
+  collapseLabel: string;
+  expandLabel: string;
+}
+
+interface RowLabels {
+  showLabel: string;
+  hideLabel: string;
+  needsAttentionLabel: string;
+}
+
+// One occurrence of an imported assembly ("U1:1") and everything inside it.
+//
+// Clicking folds the branch: a component is a grouping the file defines, not
+// something the user can select or rename, and the one action a hierarchy of
+// 400 occurrences needs is "collapse this". The eye hides every body in the
+// subtree at once, which is what makes a 1,000-body board workable.
+function ComponentBranch({
+  node,
+  depth,
+  features,
+  selectedFeatureId,
+  hiddenFeatureIds,
+  collapsedComponentIds,
+  onToggleCollapse,
+  onSelectFeature,
+  onToggleFeatureVisibility,
+  onSetFeaturesVisibility,
+  onBodyContextMenu,
+  rowLabels,
+  unnamedLabel,
+  collapseLabel,
+  expandLabel,
+}: ComponentBranchProps) {
+  const memberIds = componentBodyIds(node);
+  const isHidden =
+    memberIds.length > 0 &&
+    memberIds.every((id) => hiddenFeatureIds.has(id));
+  // A chevron is an affordance, so it is only drawn when there is something to
+  // fold: a leaf part (an occurrence that only owns bodies) gets none — its
+  // click selects the part's first body instead of toggling nothing.
+  const hasChildren = node.children.length > 0;
+  const isExpanded = hasChildren && !collapsedComponentIds.has(node.component.component_id);
+  const isSelected =
+    selectedFeatureId !== null && memberIds.includes(selectedFeatureId);
+  return (
+    <div>
+      <div style={{ paddingLeft: depth * 12 }}>
+        <Row
+          icon={<ComponentIcon className="h-3 w-3" />}
+          label={node.component.name || unnamedLabel}
+          isSelected={isSelected}
+          isHidden={isHidden}
+          onSelect={() => {
+            if (hasChildren) {
+              onToggleCollapse(node.component.component_id);
+              return;
+            }
+            const [firstBody] = node.bodyIds;
+            if (firstBody) {
+              onSelectFeature(firstBody);
+            }
+          }}
+          onToggleVisibility={() => {
+            if (onSetFeaturesVisibility) {
+              onSetFeaturesVisibility(memberIds, !isHidden);
+              return;
+            }
+            for (const id of memberIds) {
+              onToggleFeatureVisibility(id);
+            }
+          }}
+          rightContent={
+            hasChildren ? (
+              <button
+                type="button"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-on-surface-dim hover:text-on-surface"
+                aria-label={isExpanded ? collapseLabel : expandLabel}
+                title={isExpanded ? collapseLabel : expandLabel}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleCollapse(node.component.component_id);
+                }}
+              >
+                {isExpanded ? "▾" : "▸"}
+              </button>
+            ) : null
+          }
+          {...rowLabels}
+        />
+      </div>
+      {isExpanded ? (
+        <>
+          {node.children.map((child) => (
+            <ComponentBranch
+              key={child.component.component_id}
+              node={child}
+              depth={depth + 1}
+              features={features}
+              selectedFeatureId={selectedFeatureId}
+              hiddenFeatureIds={hiddenFeatureIds}
+              collapsedComponentIds={collapsedComponentIds}
+              onToggleCollapse={onToggleCollapse}
+              onSelectFeature={onSelectFeature}
+              onToggleFeatureVisibility={onToggleFeatureVisibility}
+              onSetFeaturesVisibility={onSetFeaturesVisibility}
+              onBodyContextMenu={onBodyContextMenu}
+              rowLabels={rowLabels}
+              unnamedLabel={unnamedLabel}
+              collapseLabel={collapseLabel}
+              expandLabel={expandLabel}
+            />
+          ))}
+          {node.bodyIds.map((bodyId) => {
+            const feature = features.get(bodyId);
+            if (!feature) {
+              return null;
+            }
+            const bodyHidden = hiddenFeatureIds.has(bodyId);
+            return (
+              <div key={bodyId} style={{ paddingLeft: (depth + 1) * 12 }}>
+                <Row
+                  icon={<BodyIcon />}
+                  label={feature.name}
+                  isSelected={selectedFeatureId === bodyId}
+                  isHidden={bodyHidden}
+                  hasWarning={feature.dependency_broken === true}
+                  warningText={feature.dependency_warning}
+                  onSelect={() => {
+                    onSelectFeature(bodyId);
+                  }}
+                  onToggleVisibility={() => {
+                    onToggleFeatureVisibility(bodyId);
+                  }}
+                  onContextMenu={onBodyContextMenu(feature)}
+                  {...rowLabels}
+                />
+              </div>
+            );
+          })}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 const ORIGIN_PLANES: Array<{
   id: string;
   label: string;
@@ -524,9 +695,7 @@ const ORIGIN_PLANES: Array<{
   { id: "ref-plane-xy", label: "XY" },
   { id: "ref-plane-yz", label: "YZ" },
   { id: "ref-plane-xz", label: "XZ" },
-];
-
-const ORIGIN_AXES: Array<{ id: string; label: string }> = [
+];const ORIGIN_AXES: Array<{ id: string; label: string }> = [
   { id: "ref-axis-x", label: "X" },
   { id: "ref-axis-y", label: "Y" },
   { id: "ref-axis-z", label: "Z" },
@@ -557,6 +726,7 @@ export function DocumentHierarchyPanel({
   onPickFaceForSketchPlane,
   onRemoveSketchProjections,
   onMergeCoincidentSketchPoints,
+  onSetFeaturesVisibility,
 }: DocumentHierarchyPanelProps) {
   const { t } = useTranslation();
   const [openCategories, setOpenCategories] = useState<Set<CategoryId>>(
@@ -570,13 +740,33 @@ export function DocumentHierarchyPanel({
       ]),
   );
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Imported assemblies are EXPANDED by default: the grouping is a title you can
+  // fold the bodies under, not a place bodies disappear into. Only the groups the
+  // user explicitly collapsed are tracked, so every new import shows its bodies.
+  const [collapsedImportGroups, setCollapsedImportGroups] = useState<
+    Set<string>
+  >(() => new Set());
+  // Component occurrences are expanded too: the hierarchy IS what the file
+  // brought, and folding it away on import would put the user back in front of a
+  // thousand-row list. Only what the user collapses is tracked.
+  const [collapsedComponentIds, setCollapsedComponentIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [renamingFeatureId, setRenamingFeatureId] = useState<string | null>(
     null,
   );
 
   useContextMenuDismiss(Boolean(contextMenu), () => setContextMenu(null));
 
-  const features = document?.feature_history ?? [];
+  // One stable array for the seven `useMemo`s below. `document?.feature_history
+  // ?? []` created a NEW array on every render whenever the document was null —
+  // and a fresh identity every render anyway for the memos' purposes — so each
+  // of them rebuilt during every pointer move. The document object is replaced
+  // per core event, so this memo still updates whenever the history does.
+  const features = useMemo(
+    () => document?.feature_history ?? [],
+    [document],
+  );
   // Body ids that are the source of at least one live sketch
   // projection (face / edge / vertex / body projections) — drives the
   // "Detach Projections" context-menu entry.
@@ -611,6 +801,12 @@ export function DocumentHierarchyPanel({
           feature.name || feature.kind,
         ]),
       ),
+    [features],
+  );
+  // Body rows of an imported assembly need the feature itself (name, warnings,
+  // suppressed flag), looked up by the component's body ids.
+  const featureById = useMemo(
+    () => new Map(features.map((feature) => [feature.feature_id, feature])),
     [features],
   );
   const contextFeature = contextMenu
@@ -657,6 +853,13 @@ export function DocumentHierarchyPanel({
         if (!BODY_KINDS.has(feature.kind)) {
           return false;
         }
+        // Imported bodies are listed under their import node (see
+        // documentHierarchyGroups), not as loose bodies: one STEP assembly is a
+        // thousand rows, and the entity the user selects, hides or deletes is
+        // the import, exactly as in the timeline.
+        if (isImportedBody(feature)) {
+          return false;
+        }
         // Boolean-mode extrudes (cut / join) don't produce their own
         // body — they get consumed into their target body during
         // compilation. Listing them in the Bodies category would be
@@ -687,6 +890,15 @@ export function DocumentHierarchyPanel({
     [features],
   );
 
+  // One node per imported file: every body an import creates shares one
+  // `operation_id` (the importer stamps it), so the assembly is a single entity
+  // in the tree — selectable, hideable, deletable — with its bodies as children.
+  const importGroups = useMemo(() => importBodyGroups(features), [features]);
+
+  // The imported files' product structures (component occurrences). Part files
+  // have none: their bodies are listed directly under the import.
+  const components = useMemo(() => document?.components ?? [], [document]);
+
   if (!document) {
     return (
       <section className="flex h-full flex-col overflow-hidden px-3 py-3">
@@ -705,6 +917,18 @@ export function DocumentHierarchyPanel({
         next.delete(id);
       } else {
         next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleComponentCollapse = (componentId: string) => {
+    setCollapsedComponentIds((current) => {
+      const next = new Set(current);
+      if (next.has(componentId)) {
+        next.delete(componentId);
+      } else {
+        next.add(componentId);
       }
       return next;
     });
@@ -910,15 +1134,170 @@ export function DocumentHierarchyPanel({
         onToggleOpen={() => toggleOpen("imports")}
         isHidden={hiddenCategories.has("imports")}
         onToggleVisibility={() => onToggleCategoryVisibility("imports")}
-        emptyHint={imports.length === 0 ? t("document.noImports") : undefined}
+        emptyHint={
+          imports.length === 0 && importGroups.length === 0
+            ? t("document.noImports")
+            : undefined
+        }
         {...categoryLabels}
       >
+        {importGroups.map((group) => {
+          const memberIds = group.members.map((member) => member.feature_id);
+          const isHidden = memberIds.every((id) => hiddenFeatureIds.has(id));
+          const isExpanded = !collapsedImportGroups.has(group.operationId);
+          const label = group.label ?? t("document.importedAssembly");
+          // The file's component hierarchy, plus the bodies it does not place in
+          // any component (a surface body, or a part the file keeps outside the
+          // product structure) — those stay directly under the import.
+          const hierarchy = componentHierarchy(components, memberIds);
+          return (
+            <div key={group.operationId}>
+              <Row
+                icon={<ImportFileIcon className="h-3 w-3" />}
+                label={label}
+                secondaryLabel={t("document.importedBodyCount", {
+                  count: group.members.length,
+                })}
+                isSelected={memberIds.includes(
+                  document.selected_feature_id ?? "",
+                )}
+                isHidden={isHidden}
+                hasWarning={group.primary.dependency_broken === true}
+                warningText={group.primary.dependency_warning}
+                isRenaming={renamingFeatureId === group.primary.feature_id}
+                onSelect={() => {
+                  void onSelectFeature(group.primary.feature_id);
+                }}
+                onActivate={() => {
+                  void onSelectFeature(group.primary.feature_id);
+                }}
+                onToggleVisibility={() => {
+                  // One eye for the whole import. Without a bulk setter the
+                  // fallback toggles each member, which is correct but emits a
+                  // thousand state updates.
+                  if (onSetFeaturesVisibility) {
+                    onSetFeaturesVisibility(memberIds, !isHidden);
+                  } else {
+                    for (const id of memberIds) {
+                      onToggleFeatureVisibility(id);
+                    }
+                  }
+                }}
+                onContextMenu={openContextMenu(
+                  group.primary.feature_id,
+                  label,
+                  isHidden,
+                  group.members.every((member) => member.suppressed === true),
+                  false,
+                )}
+                onRenameSubmit={(nextName) => {
+                  void submitRename(group.primary.feature_id, nextName);
+                }}
+                onRenameCancel={cancelRename}
+                rightContent={
+                  <button
+                    type="button"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] leading-none text-on-surface-dim hover:text-on-surface"
+                    aria-label={
+                      isExpanded
+                        ? t("document.collapse")
+                        : t("document.expandHierarchy")
+                    }
+                    title={
+                      isExpanded
+                        ? t("document.collapse")
+                        : t("document.expandHierarchy")
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setCollapsedImportGroups((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.operationId)) {
+                          next.delete(group.operationId);
+                        } else {
+                          next.add(group.operationId);
+                        }
+                        return next;
+                      });
+                    }}
+                  >
+                    {isExpanded ? "▾" : "▸"}
+                  </button>
+                }
+                {...rowLabels}
+              />
+              {isExpanded ? (
+                <div className="pl-5">
+                  {hierarchy.forest.map((node) => (
+                    <ComponentBranch
+                      key={node.component.component_id}
+                      node={node}
+                      depth={0}
+                      features={featureById}
+                      selectedFeatureId={document.selected_feature_id}
+                      hiddenFeatureIds={hiddenFeatureIds}
+                      collapsedComponentIds={collapsedComponentIds}
+                      onToggleCollapse={toggleComponentCollapse}
+                      onSelectFeature={(featureId) => {
+                        void onSelectFeature(featureId);
+                      }}
+                      onToggleFeatureVisibility={onToggleFeatureVisibility}
+                      onSetFeaturesVisibility={onSetFeaturesVisibility}
+                      onBodyContextMenu={(feature) =>
+                        openContextMenu(
+                          feature.feature_id,
+                          feature.name,
+                          hiddenFeatureIds.has(feature.feature_id),
+                          feature.suppressed === true,
+                          true,
+                        )
+                      }
+                      rowLabels={rowLabels}
+                      unnamedLabel={t("document.unnamedComponent")}
+                      collapseLabel={t("document.collapse")}
+                      expandLabel={t("document.expandHierarchy")}
+                    />
+                  ))}
+                  {group.members
+                    .filter((member) => !hierarchy.placed.has(member.feature_id))
+                    .map((member) => (
+                      <Row
+                        key={member.feature_id}
+                        icon={<BodyIcon />}
+                        label={member.name}
+                        isSelected={
+                          document.selected_feature_id === member.feature_id
+                        }
+                        isHidden={hiddenFeatureIds.has(member.feature_id)}
+                        hasWarning={member.dependency_broken === true}
+                        warningText={member.dependency_warning}
+                        onSelect={() => {
+                          void onSelectFeature(member.feature_id);
+                        }}
+                        onToggleVisibility={() => {
+                          onToggleFeatureVisibility(member.feature_id);
+                        }}
+                        onContextMenu={openContextMenu(
+                          member.feature_id,
+                          member.name,
+                          hiddenFeatureIds.has(member.feature_id),
+                          member.suppressed === true,
+                          true,
+                        )}
+                        {...rowLabels}
+                      />
+                    ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
         {imports.map((imported) => {
           const isHidden = hiddenFeatureIds.has(imported.feature_id);
           return (
             <Row
               key={imported.feature_id}
-              icon={<LayerIcon />}
+              icon={<ImportFileIcon className="h-3 w-3" />}
               label={imported.name}
               isSelected={document.selected_feature_id === imported.feature_id}
               isHidden={isHidden}
@@ -960,7 +1339,11 @@ export function DocumentHierarchyPanel({
         onToggleOpen={() => toggleOpen("bodies")}
         isHidden={hiddenCategories.has("bodies")}
         onToggleVisibility={() => onToggleCategoryVisibility("bodies")}
-        emptyHint={bodies.length === 0 ? t("document.noBodies") : undefined}
+        emptyHint={
+          bodies.length === 0 && importGroups.length === 0
+            ? t("document.noBodies")
+            : undefined
+        }
         {...categoryLabels}
       >
         {bodies.map((body) => {

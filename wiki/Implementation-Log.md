@@ -2,6 +2,191 @@
 
 This document tracks concrete implementation milestones as they land in the codebase.
 
+## 2026-11-19
+
+### STEP assembly tree: the Browser now shows the file's product structure
+
+The import node from the entry below still held a flat list of 1,092 bodies,
+while the file itself is a hierarchy: `Board:1`, `P2:1 > 1001-4:1`, `U1:1 >
+LLP-6_L2.0-W1.8-P0.50-BL-EP:1 > …`, `U4 (1):1 > ESP32P4…V1.2 v1:1 > U1 (1):1 >
+QFN-104_10x10mm_ESP32P4:1`. SolidCraft shows that tree; a body list cannot,
+because a board places the same part many times and only the occurrence name
+(`U1:1`) says which placement is which.
+
+- **Document structure** (`core/document/component.h`, new):
+  `ComponentNode { id, name, parent_id, body_ids }` in
+  `DocumentState::components`. It is *import provenance* — names and membership,
+  no transforms or mates — so a future real assembly model (instances posed with
+  the vendored OndselSolver) is not constrained by it.
+- **Reader** (`geometry/step_import_helpers.cpp`): `assembly_from_xcaf` walks
+  `GetComponents` / `GetReferredShape` from each free shape that `IsAssembly`,
+  names nodes from the occurrence label, and collects solids only at leaves (an
+  assembly's shape already contains its children's solids). Unusable branches are
+  pruned, so a structure we cannot read degrades to the flat list rather than
+  losing bodies. Solids are matched by **unlocated** shape: located identity
+  matches nothing, because the compound and the component labels attach the same
+  part's placement differently.
+- **Import** (`geometry/import_commands.cpp`): the nodes become document
+  components with a `component-N` id namespace, `parent_id` resolved, and
+  `body_ids` mapped from the solids' bodies; `delete_feature` prunes dead body
+  ids and collapses components left empty.
+- **UI**: `componentHierarchy()` nests the flat list per import; component rows
+  fold on click, their eye hides the whole subtree in one update, and bodies no
+  component places stay directly under the import. Palette: no new concept — it
+  is a group of existing bodies.
+
+Measured on the carrier: **536 occurrences kept** (38 top level) placing **1,091
+of 1,092 solids** (the leftover is the loose-face `Surfaces` body), `components`
+adds **66.9 KB** to the document payload (1,299 → 1,366 KB, +5 %), the viewport
+payload is unchanged, and import time is unchanged within noise (13.2 s).
+
+Tests: `cad_core_step_assembly_tree_test` (new, 4 cases: reader structure incl.
+nesting and per-occurrence ownership, document component nodes, save/load
+round-trip, delete removes the tree) plus 4 unit tests for `componentHierarchy` /
+`componentBodyIds` in `documentHierarchyGroups.test.ts`.
+
+### Timeline: one history entry, the file's component icons inside it
+
+The import was one timeline entry and nothing else, so the strip offered no way
+to reach the parts it brought. An operation has to stay atomic for HISTORY (the
+core's cursor counts features — rolling back "half an import" is not a thing),
+but the strip is a place the user works in, so the components now live **inside
+that one entry**: import block → fold chevron → one icon per top-level
+occurrence → nested occurrences open in place → bodies as leaves. Bracketed runs
+show depth; the section's chevron folds it back to the single entry.
+
+- `componentAncestors()` (new, tested) gives the occurrence chain that holds a
+  body, so "Find in Timeline" opens exactly the nodes it needs and scrolls the
+  body's icon into view — the strip's scroll target is now a `data-feature-id`
+  lookup instead of a single ref, because the row may not be rendered yet.
+- A part that is more than one body gets a chevron too, or only its first body
+  would be reachable.
+- Glyphs are shared with the Browser (`ComponentIcon`, `ImportFileIcon` in
+  `ToolBarIcons.tsx`) so a component, an import and a body look different and
+  look the same in both places.
+
+Tests: `documentHierarchyGroups.test.ts` 10 cases (nesting, import scoping,
+ancestor chain); `tsc` clean, `pnpm lint` 0/0.
+
+### Themed bodies: imported paint was being multiplied by the theme grey
+
+An imported STEP board rendered dark, blue-tinted and flat — "the module lost its
+colours and contrast". Imported bodies carry their paint in **per-vertex
+colours**, and a material colour multiplies those; `buildPrimitiveObject` set
+white for exactly that reason, then `applyPrimitiveVisualState` overwrote it with
+the theme's body grey on every hover/selection sync. In the dark themes that grey
+is `#45475a`, i.e. linear 0.06 — a ~16× multiply on every imported surface.
+
+- `PrimitiveVisual` now carries `usesVertexColors`; the visual-state pass leaves
+  such a body white (highlight stays on the edges and the per-face fill) and only
+  applies a tint when the user explicitly assigned a body colour.
+- Measured against our own offline reference render of the same viewport dump:
+  shield 0.037 → 0.44 linear, connector shells 0.036 → 0.40, the gold contacts
+  gold again instead of brown.
+- Four regression cases in `visualState.test.ts` (white when idle/hovered/
+  selected, still tinted for modelled bodies, explicit colour honoured).
+
+### The tree chevrons rendered as garbage: a re-encoded source file
+
+The Browser's fold arrows came out as three garbage characters — the CP1252
+reading of the chevron's UTF-8 bytes (`U+00E2 U+2013 U+00BE`). That was not a UI
+bug: the panel file itself had been rewritten through `Get-Content -Raw` +
+`Set-Content -Encoding utf8`, which decodes UTF-8 as CP1252 and re-encodes it, so
+**every** non-ASCII character in it became mojibake — the `▾`/`▸` chevrons and
+the em dashes in the comments. The fix is to rewrite the bytes
+(CP1252-encode → UTF-8-decode), never to retype the characters, and the same
+cleanup was applied to three other files that had been through the same mill.
+
+`pnpm lint:architecture` now fails any source file that contains a re-encoded
+sequence ("source files are UTF-8, not re-encoded text", escape-built signatures
+so the check does not match itself), scanning `apps/desktop-ui/src`,
+`native/cad-core/src`, `wiki` and `scripts`. Proven by planting a mangled em dash
+in a scratch file: FAIL with file and line, PASS once removed.
+
+The chevrons themselves also got two fixes from the same screenshot: a component
+row draws a chevron only when it has child occurrences (a leaf part used to show
+one that folded nothing — clicking it now selects the part's first body), and
+they are `text-[10px] leading-none` so the glyph cannot wrap inside its 20 px
+button.
+
+### Browser: an imported file is one node, with its bodies under it
+
+A STEP assembly arrived as 1,092 bodies and the Browser listed every one of them
+under **Bodies** — there was no entry for the import itself, so there was nothing
+to select, hide or delete as a whole. (Fusion and SolidCraft both show the import
+as a node whose children are its bodies.)
+
+The importer already stamps one `operation_id` across all bodies of one import
+(that is what folds the timeline into a single row and makes `delete_feature`
+remove the assembly as one undo step); the tree simply did not use it. Now:
+
+- the **Imports** category lists one node per import, labelled with the file name
+  (read from the feature summary: the payload does not carry the path, and the
+  first body is named after the STEP translator), with "N bodies" beside it;
+- the node is **expanded by default** — the grouping is a title you can fold the
+  bodies under, not a place bodies disappear into; the chevron collapses it and
+  the state is per import. Each body is selectable with its own eye and context
+  menu;
+- its eye toggles the whole assembly in **one** state update
+  (`onSetFeaturesVisibility`), rather than 1,092 toggles;
+- imported bodies are **no longer listed under Bodies**, which now holds only
+  modelled bodies (and mesh imports, which are a single body).
+
+Grouping rules live in `layout/documentHierarchyGroups.ts` with five unit tests
+(1,092 bodies → one node labelled with the file, two imports stay apart, a
+standalone import gets its own node, import bodies excluded from Bodies, label
+fallback when the summary names no file).
+
+### React hook order is now a build gate (`pnpm lint:hooks`)
+
+A `useRef`/`useEffect` pair added below a component's `if (!document) return
+null;` guard rendered a different number of hooks between renders. React threw
+"Rendered more hooks than during the previous render" and unmounted the entire
+UI — while `tsc --noEmit` and all 67 UI unit tests stayed green. Nothing in the
+toolchain looked at hook order.
+
+ESLint now runs over `apps/desktop-ui/src` with
+`react-hooks/rules-of-hooks` as an **error** (and `exhaustive-deps` as a
+warning — the codebase carries deliberate partial dependency lists, so it is a
+hint, not a gate). `scripts/lint-hooks.mjs` lints the tree **and self-checks**
+that a known-bad snippet (hook after an early return) is still reported, because
+a gate whose rule silently stops applying is worse than none. `pnpm lint` runs
+the architecture greps plus this; it is part of the pre-commit checklist in
+AGENTS.md.
+
+Verified end to end: reintroducing the exact regression in `FeatureTimeline.tsx`
+made `pnpm lint:hooks` exit 1 with two `rules-of-hooks` errors at the offending
+lines, and reverting it went green again.
+
+### Every exhaustive-deps warning triaged: 50 → 0
+
+Turning `exhaustive-deps` on surfaced 50 warnings. They were audited one by one
+against the code, not silenced wholesale:
+
+- **Two real defects fixed.** (1) The Insert View ghost preview captured
+  `activeDrawing` in a closure that the effect rebuilt only on tool-state
+  changes, so switching drawing or sheet mid-preview posted to the previous
+  sheet; the effect now keys on the drawing and sheet ids. (2) `buildCamOperations`
+  took the whole document and read one field — it now takes the operations list,
+  so its `useMemo` depends on exactly what it reads.
+- **Structural / performance fixes.** `finishCamProfileRepick` moved behind a ref
+  so its effect keys on the CAM operation instead of a per-render closure;
+  `DocumentHierarchyPanel`'s seven `useMemo`s rebuilt on every render because
+  `features` was an inline expression (now one `useMemo`); the drawing-sheet
+  camera fit and the plane-redefinition pick key on plain values.
+- **The rest are deliberate omissions**, and each now carries a one-line
+  `// eslint-disable-next-line react-hooks/exhaustive-deps -- <reason>`: stable
+  store setters, refs (whose identity never changes), per-render closures that
+  would re-send a request or repaint the scene on every render, effects keyed on
+  a `dimensionId` rather than the object (depending on the object steals the caret
+  while typing), and two intentional invalidation signals.
+- **Five pre-existing `eslint-disable` comments** no longer silenced anything and
+  were removed, so the curated set is honest.
+
+`pnpm lint:hooks` now reports **401 files, 0 errors, 0 warnings** with zero unused
+disable directives, so the *next* warning is a real signal instead of one of
+fifty.
+
 ## 2026-10-19
 
 ### DXF import: a dense sketch export no longer aborts the whole import

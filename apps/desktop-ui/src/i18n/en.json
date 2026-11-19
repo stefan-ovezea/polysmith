@@ -1942,6 +1942,9 @@
     "sketchPlane": "Sketch Plane",
     "sketches": "Sketches",
     "imports": "Imports",
+    "importedAssembly": "Imported assembly",
+    "importedBodyCount": "{{count}} bodies",
+    "unnamedComponent": "Unnamed component",
     "noImports": "No imported layers",
     "units": "Units"
   },
@@ -2003,7 +2006,12 @@
     "redefinePlane": "Redefine sketch plane",
     "redefinePlaneArmed": "Click a face to use as the new sketch plane (Esc to cancel)",
     "suppressed": "suppressed",
-    "operationFeatures": "one operation, {{count}} bodies"
+    "operationFeatures": "one operation, {{count}} bodies",
+    "importedAssembly": "Imported assembly ({{count}} bodies)",
+    "importedComponentCount": "{{count}} components",
+    "showComponents": "Show the file's components",
+    "hideComponents": "Hide the file's components",
+    "componentBodies": "{{count}} bodies"
   },
   "aiAssistant": {
     "autoRunActive": "Auto-run enabled",
@@ -2089,6 +2097,12 @@
       "titleError": "Toolpath generation failed",
       "okButton": "OK"
     }
+  },
+  "contextMenu": {
+    "findInTimeline": "Find in Timeline",
+    "deleteBody": "Delete Body",
+    "deleteBodyGroup": "Delete {{count}} Bodies",
+    "deleteBodyGroupConfirm": "This deletes all {{count}} bodies of this operation (an imported assembly is one operation). Continue?"
   },
   "geometry": {
     "ownerFace": "{{owner}} face",

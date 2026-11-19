@@ -223,6 +223,42 @@ function checkNoQuadrantVertices() {
   return violations;
 }
 
+// ── Check 7: source files are UTF-8, not re-encoded text ──────────────────
+// Text written through a tool that decodes UTF-8 as CP1252 (a PowerShell
+// `Get-Content -Raw` + `Set-Content -Encoding utf8` round-trip does exactly
+// that) turns every non-ASCII character into mojibake: an em dash arrives as
+// U+00E2 U+20AC U+201D and the Browser's tree chevron as U+00E2 U+2013 U+00BE,
+// which then renders as garbage in the UI. Nothing in this repo is CP1252, so
+// these sequences are always a bug and the fix is to rewrite the file as UTF-8,
+// never to translate the characters back by hand.
+//
+// The signatures are spelled with escapes on purpose: a literal here would match
+// itself. They are the CP1252 reading of UTF-8 lead/continuation bytes, which
+// correct text never contains, so a hit is unambiguous.
+const MOJIBAKE =
+  /\u00e2\u20ac|\u00e2\u2013|\u00e2\u2014|\u00e2\u20ac\u00a6|\u00e2\u201d|\u00c3[\u00a2\u00a9\u00a8\u00bc\u00b6\u00a4\u009f]|\u00c2[\u00b7\u00bb\u00ab]|\u00f0\u0178/;
+const MOJIBAKE_ROOTS = [
+  "apps/desktop-ui/src",
+  "native/cad-core/src",
+  "wiki",
+  "scripts",
+];
+const MOJIBAKE_EXTENSIONS = /\.(ts|tsx|cpp|h|hpp|inc|json|md|mjs)$/;
+function checkNoMojibake() {
+  const violations = [];
+  for (const root of MOJIBAKE_ROOTS) {
+    for (const file of walk(join(ROOT, root))) {
+      if (!MOJIBAKE_EXTENSIONS.test(file)) continue;
+      read(file).split("\n").forEach((line, i) => {
+        if (MOJIBAKE.test(line)) {
+          violations.push(`${rel(file)}:${i + 1}: ${line.trim().slice(0, 90)}`);
+        }
+      });
+    }
+  }
+  return violations;
+}
+
 const checks = [
   ["OCCT headers in protocol/ or core/document/", checkOcctHeaders],
   ["make_document_state_event from a read-only handler", checkReadOnlyEmitter],
@@ -230,6 +266,7 @@ const checks = [
   ["layout option rows are wrap-safe (i18n overflow)", checkWrappingOptionRows],
   ["no raw stdio in the sketch core (Logs panel only)", checkSketchCoreLogging],
   ["quadrant vertices stay removed", checkNoQuadrantVertices],
+  ["source files are UTF-8, not re-encoded text", checkNoMojibake],
 ];
 
 let failed = false;

@@ -131,6 +131,9 @@ export function useSketchToolLifecycleEffects({
       sketchFilletIdsRef.current = [];
       sketchChamferIdsRef.current = [];
     }
+    // The setters are stable store actions and the `*IdsRef` values are stable
+    // ref objects; leaving the sketch plane is the only trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchPlaneId]);
 
   useEffect(() => {
@@ -147,6 +150,9 @@ export function useSketchToolLifecycleEffects({
       setSketchFilletAction(null);
       sketchFilletIdsRef.current = [];
     }
+    // As above: the setter is a stable store action and the picked-id list is
+    // read from a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchTool, activeSketchPlaneId, sketchFilletAction]);
 
   useEffect(() => {
@@ -169,6 +175,9 @@ export function useSketchToolLifecycleEffects({
       setSketchChamferAction(null);
       sketchChamferIdsRef.current = [];
     }
+    // As above: the setter is a stable store action and the picked-id list is
+    // read from a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchTool, activeSketchPlaneId, sketchChamferAction, chamferToolMode]);
 
   // Retarget an open session when the toolbar mode changes, so the panel
@@ -193,6 +202,8 @@ export function useSketchToolLifecycleEffects({
     if (activeSketchTool !== "offset" && sketchOffsetAction) {
       setSketchOffsetAction(null);
     }
+    // As above: the setter is a stable store action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchTool, activeSketchPlaneId, sketchOffsetAction]);
 
   useEffect(() => {
@@ -207,5 +218,7 @@ export function useSketchToolLifecycleEffects({
     if (activeSketchTool !== "text" && sketchTextAction) {
       setSketchTextAction(null);
     }
+    // As above: the setter is a stable store action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchTool, activeSketchPlaneId, sketchTextAction]);
 }

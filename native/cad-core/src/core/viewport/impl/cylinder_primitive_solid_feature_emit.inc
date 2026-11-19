@@ -5,14 +5,23 @@
       const auto& parameters = feature.cylinder_parameters.value();
       const double diameter = parameters.radius * 2.0;
 
+      // BRepPrimAPI_MakeCylinder centres the solid on its axis, so a cylinder
+      // body occupies (-r,-r,0)..(r,r,h) — its axis is the origin. The analytic
+      // faces and the primitive below used to be authored for a corner-origin
+      // box layout (axis at (r,r)), which put every cylinder's sketch plane and
+      // pick proxy one radius away from the solid: a sketch started on the
+      // "top" face landed on the rim instead of the middle, and a cut through
+      // it removed nothing. The solid is the truth (the CAM and drawing
+      // geometry, and their golden tests, are all built around the centred
+      // placement), so the viewport follows it.
       cylinders.push_back(ViewportCylinderPrimitive{
           .id = feature.id,
           .label = feature.name,
           .radius = parameters.radius,
           .height = parameters.height,
           .x_offset = current_x_offset,
-          .center_x = current_x_offset + diameter / 2.0,
-          .center_y = diameter / 2.0,
+          .center_x = current_x_offset,
+          .center_y = 0.0,
           .center_z = parameters.height / 2.0,
           .plane_id = "ref-plane-xy",
           .plane_frame = std::nullopt,
@@ -25,14 +34,14 @@
           "top",
           "Top",
           "planar",
-          current_x_offset + diameter / 2.0,
-          diameter / 2.0,
+          current_x_offset,
+          0.0,
           parameters.height,
           0.0,
           0.0,
           1.0,
-          make_plane_frame(current_x_offset + diameter / 2.0,
-                           diameter / 2.0,
+          make_plane_frame(current_x_offset,
+                           0.0,
                            parameters.height,
                            1.0,
                            0.0,
@@ -54,14 +63,14 @@
           "bottom",
           "Bottom",
           "planar",
-          current_x_offset + diameter / 2.0,
-          diameter / 2.0,
+          current_x_offset,
+          0.0,
           0.0,
           0.0,
           0.0,
           -1.0,
-          make_plane_frame(current_x_offset + diameter / 2.0,
-                           diameter / 2.0,
+          make_plane_frame(current_x_offset,
+                           0.0,
                            0.0,
                            1.0,
                            0.0,

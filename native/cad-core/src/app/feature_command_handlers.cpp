@@ -5,6 +5,31 @@
 
 namespace polysmith {
 
+namespace {
+
+// Every command must produce exactly one reply.
+//
+// The undo-grouping handlers below can legitimately run with no active
+// document — the UI closes the group it opened even after the document it
+// belonged to is gone. Answering nothing in that case made the UI wait out its
+// whole timeout and report "core did not respond to undo_end_group" for a core
+// that was perfectly healthy; a silent success is indistinguishable from a
+// wedged process.
+void reply_with_document_or_error(
+    const std::string& command_id,
+    const std::optional<polysmith::core::DocumentState>& document) {
+  if (document.has_value()) {
+    polysmith::protocol::write_message(
+        polysmith::protocol::make_document_state_event(
+            command_id, polysmith::protocol::to_payload(document.value())));
+    return;
+  }
+  polysmith::protocol::write_message(polysmith::protocol::make_error_event(
+      command_id, "NO_ACTIVE_DOCUMENT", "No active document"));
+}
+
+}  // namespace
+
 bool handle_feature_command(const polysmith::protocol::CommandMessage& command,
                             polysmith::core::DocumentManager& manager) {
   if (command.type == "add_box_feature") {
@@ -173,56 +198,31 @@ bool handle_feature_command(const polysmith::protocol::CommandMessage& command,
 
   if (command.type == "undo_begin_group") {
     manager.begin_undo_group(read_string(command.payload, "name"));
-    const auto document = manager.get_document();
-    if (document.has_value()) {
-      polysmith::protocol::write_message(
-          polysmith::protocol::make_document_state_event(
-              command.id, polysmith::protocol::to_payload(document.value())));
-    }
+    reply_with_document_or_error(command.id, manager.get_document());
     return true;
   }
 
   if (command.type == "undo_end_group") {
     manager.end_undo_group();
-    const auto document = manager.get_document();
-    if (document.has_value()) {
-      polysmith::protocol::write_message(
-          polysmith::protocol::make_document_state_event(
-              command.id, polysmith::protocol::to_payload(document.value())));
-    }
+    reply_with_document_or_error(command.id, manager.get_document());
     return true;
   }
 
   if (command.type == "undo_abort_group") {
     manager.abort_undo_group();
-    const auto document = manager.get_document();
-    if (document.has_value()) {
-      polysmith::protocol::write_message(
-          polysmith::protocol::make_document_state_event(
-              command.id, polysmith::protocol::to_payload(document.value())));
-    }
+    reply_with_document_or_error(command.id, manager.get_document());
     return true;
   }
 
   if (command.type == "undo_abort_all_groups") {
     manager.abort_all_undo_groups();
-    const auto document = manager.get_document();
-    if (document.has_value()) {
-      polysmith::protocol::write_message(
-          polysmith::protocol::make_document_state_event(
-              command.id, polysmith::protocol::to_payload(document.value())));
-    }
+    reply_with_document_or_error(command.id, manager.get_document());
     return true;
   }
 
   if (command.type == "set_undo_limit") {
     manager.set_undo_limit(read_int(command.payload, "limit"));
-    const auto document = manager.get_document();
-    if (document.has_value()) {
-      polysmith::protocol::write_message(
-          polysmith::protocol::make_document_state_event(
-              command.id, polysmith::protocol::to_payload(document.value())));
-    }
+    reply_with_document_or_error(command.id, manager.get_document());
     return true;
   }
 

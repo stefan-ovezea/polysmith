@@ -926,6 +926,14 @@ function App() {
     });
   };
 
+  // Read through a ref by the effect below: `finishCamProfileRepick` is rebuilt
+  // on every render, and listing it in that effect's dependencies made the
+  // effect run on every render. The effect's job is to notice the armed
+  // operation going away, so it should key on the operation, not on this
+  // closure's identity.
+  const finishCamProfileRepickRef = useRef(finishCamProfileRepick);
+  finishCamProfileRepickRef.current = finishCamProfileRepick;
+
   // Closing the operation panel (Escape / close button) while the
   // re-pick is armed must disarm it — a stale arm would keep hijacking
   // sketch clicks in the CAM workspace.
@@ -942,14 +950,9 @@ function App() {
         operation.type !== "contour_2d" &&
         operation.type !== "engrave")
     ) {
-      finishCamProfileRepick();
+      finishCamProfileRepickRef.current();
     }
-  }, [
-    camProfilePickArmed,
-    selectedCamOperationId,
-    document,
-    finishCamProfileRepick,
-  ]);
+  }, [camProfilePickArmed, selectedCamOperationId, document]);
 
   const camNewSetupAction = async () => {
     await runAction(async () => {
@@ -2210,6 +2213,11 @@ function App() {
   // ghost-anchored tool is armed, a null definition means the ghost
   // merely hides (dead zone, cursor off-sheet) — the last content is
   // kept so it returns instantly; a real cancel clears it.
+  // Which drawing and sheet the preview request targets, as plain strings: the
+  // effect must re-run when the user switches either one, and the lint cannot
+  // verify `?.` chains inside a dependency array.
+  const drawingPreviewDrawingId = activeDrawing?.drawing_id;
+  const drawingPreviewSheetId = activeDrawing?.sheets[0]?.sheet_id;
   useEffect(() => {
     const definition = drawingToolApi.previewDefinition;
     const anchored =
@@ -2231,10 +2239,20 @@ function App() {
     return () => {
       clearTimeout(timer);
     };
+    // `drawingViewPreviewAction` is a per-render closure: listing it would
+    // restart the 80 ms debounce on every render and the preview would never
+    // fire. Everything it reads (the active drawing and sheet) is a dependency
+    // of this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     drawingToolApi.previewDefinition,
     drawingToolApi.previewNeeded,
     drawingToolApi.tool,
+    // The request posts the ACTIVE drawing's id and its first sheet id; keying
+    // only on the tool state meant that switching drawing or sheet mid-preview
+    // kept posting to the previous sheet, so the ghost never moved.
+    drawingPreviewDrawingId,
+    drawingPreviewSheetId,
   ]);
 
   const camDeleteSetupAction = async (setupId: string) => {
@@ -2259,8 +2277,8 @@ function App() {
   const [showStock, setShowStock] = useState(true);
   const [wcsOrientation, setWcsOrientation] = useState<string>("z_up");
   const camOperations = useMemo(
-    () => buildCamOperations(document),
-    [document?.cam?.operations],
+    () => buildCamOperations(document?.cam.operations),
+    [document?.cam.operations],
   );
   const slicerViewportRef = useRef<HTMLDivElement | null>(null);
   const errorLogCount = logs.filter((entry) => entry.level === "error").length;
@@ -2613,7 +2631,11 @@ function App() {
     void runAction(async () => {
       await redefineSketchPlane(pick.featureId, faceId);
     });
-  }, [sketchPlaneRedefinePick, document?.selected_face_id, redefineSketchPlane, runAction]);
+    // `runAction` and `redefineSketchPlane` are per-render closures; listing
+    // them would run this effect on every render. It is guarded by `pick` (and
+    // clears it before dispatching), so an extra run is a no-op.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sketchPlaneRedefinePick, document?.selected_face_id]);
 
   // Escape cancels an armed face pick for the plane redefinition.
   useEffect(() => {
@@ -3983,7 +4005,6 @@ function App() {
     if (workspaceView !== "cad") {
       setWorkspaceView("cad");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSketchPlaneId, workspaceView]);
 
   // CAM → CAD transition cleanup: floating panels and armed picks are
@@ -4023,7 +4044,6 @@ function App() {
     drawingToolApiRef.current?.reset();
     closeDimensionTool();
     setIsTitleBlockPanelOpen(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView]);
 
   // The armed tool must not outlive its drawing: deleting the drawing
@@ -4033,7 +4053,6 @@ function App() {
     if (workspaceView === "drawing" && !activeDrawing) {
       drawingToolApiRef.current?.reset();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView, activeDrawing]);
 
   // Post-processor management: the list refreshes when entering the CAM
@@ -4076,6 +4095,10 @@ function App() {
           error instanceof Error ? error.message : String(error);
         addMessage(`${t("cam.setup.postListFailed")} (${detail})`);
       });
+    // `addMessage` is a stable store action and `t` only shapes the error text;
+    // listing `t` would refetch the whole post library on a language switch,
+    // which the armed-ref guard above exists to prevent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView]);
 
   const importCamPostAction = async () => {
@@ -4144,6 +4167,9 @@ function App() {
           error instanceof Error ? error.message : String(error);
         addMessage(`${t("cam.setup.machineListFailed")} (${detail})`);
       });
+    // Same reason as the post list above: a language switch must not refetch the
+    // machine library (the armed-ref guard makes that a one-shot per entry).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceView]);
 
   const saveCamMachineAction = (machine: MachineDefinition) =>
@@ -4217,6 +4243,16 @@ function App() {
           current === deletedFeatureId ? null : current,
         );
       },
+    });
+  }
+
+  // Fusion's "Find in Timeline": the viewport hands over the feature that owns
+  // the clicked body and the timeline reveals it. Selecting the feature is what
+  // the timeline's own click does, so the highlight, the properties panel and
+  // any timeline scroll all follow from the same path.
+  async function findFeatureInTimeline(featureId: string) {
+    await runAction(async () => {
+      await selectFeature(featureId);
     });
   }
 
@@ -4860,6 +4896,12 @@ function App() {
               status={status}
               document={document}
               viewport={viewport}
+              onFindInTimeline={findFeatureInTimeline}
+              // Deleting one body of an operation deletes the whole operation
+              // in the core (that is what makes an imported assembly deletable
+              // as one thing); the confirm in confirmAndDeleteFeature spells
+              // out the body count before anything goes.
+              onDeleteBody={confirmAndDeleteFeature}
               onRemoveSketchProjections={async (keepGeometry) => {
                 const featureId = document?.active_sketch_feature_id;
                 if (!featureId) {

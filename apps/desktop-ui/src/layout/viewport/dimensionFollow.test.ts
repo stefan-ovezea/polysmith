@@ -111,10 +111,10 @@ describe("followDimensionAnchors", () => {
     ]);
 
     // Each anchor lands exactly on its own moved point, not on a shared rigid
-    // offset â€” that is the difference from translating the group.
+    // offset - that is the difference from translating the group.
     expect(followed?.anchorStart).toEqual([2, 1, 0]);
     expect(followed?.anchorEnd).toEqual([10, -1, 0]);
-    // â€¦and the leader spans them, parallel, with both offsets intact.
+    // ...and the leader spans them, parallel, with both offsets intact.
     expect(length(followed!.dimensionStart, followed!.anchorStart)).toBeCloseTo(5, 6);
     expect(length(followed!.dimensionEnd, followed!.anchorEnd)).toBeCloseTo(5, 6);
     expect(

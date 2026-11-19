@@ -108,10 +108,27 @@ void validate_parameters(const ExtrudeFeatureParameters& parameters) {
   throw std::runtime_error("Unsupported extrude profile kind: " + parameters.profile_kind);
 }
 
+// Does this feature have anything to extrude yet?
+//
+// An extrude whose profile selection was emptied on purpose (the panel's "0
+// selected" state, or every surface deselected) has no shape BY DESIGN — the
+// body compiler skips it. Re-validation must not treat that as a kernel failure,
+// which is what produced "OCCT failed to create an extruded shape" while the
+// user was only dragging the depth slider on an emptied feature.
+bool has_extrude_profile(const ExtrudeFeatureParameters& parameters) {
+  return !parameters.profile_ids.empty() ||
+         parameters.profile_kind == "open_chain";
+}
+
 void validate_occt_shape(const ExtrudeFeatureParameters& parameters) {
+  if (!has_extrude_profile(parameters)) {
+    return;
+  }
   const TopoDS_Shape shape = build_extrude_shape(parameters);
   if (shape.IsNull()) {
-    throw std::runtime_error("OCCT failed to create an extruded shape");
+    throw std::runtime_error(
+        "Extrude produced no solid. The profile may be degenerate or "
+        "self-intersecting; try a simpler outline or a different depth");
   }
 }
 
@@ -158,8 +175,15 @@ void update_extrude_depth(FeatureEntry& feature, double depth) {
   ExtrudeFeatureParameters next = feature.extrude_parameters.value();
   next.depth = depth;
 
-  validate_parameters(next);
-  validate_occt_shape(next);
+  // An apparently emptied extrude has nothing to validate — see
+  // has_extrude_profile. Running either validator on it is the bug: the depth
+  // slider of a feature whose profiles were all deselected used to fail with
+  // "Polygon extrude requires at least three profile points" or "OCCT failed to
+  // create an extruded shape", neither of which is about the depth.
+  if (has_extrude_profile(next)) {
+    validate_parameters(next);
+    validate_occt_shape(next);
+  }
 
   feature.parameters_summary = make_parameters_summary(next);
   feature.extrude_parameters = next;

@@ -31,6 +31,8 @@ export function createViewportContextMenuActions({
   exportBodyStepRef,
   sendBodyToSlicerRef,
   unlinkBodyCopyRef,
+  findInTimelineRef,
+  deleteBodyRef,
   removeSketchProjectionsRef,
   deleteSketchSelectionRef,
   deleteSketchDimensionRef,
@@ -80,6 +82,12 @@ export function createViewportContextMenuActions({
     | undefined
   >;
   unlinkBodyCopyRef: MutableRef<
+    ((featureId: string) => Promise<void> | void) | undefined
+  >;
+  findInTimelineRef: MutableRef<
+    ((featureId: string) => Promise<void> | void) | undefined
+  >;
+  deleteBodyRef: MutableRef<
     ((featureId: string) => Promise<void> | void) | undefined
   >;
   removeSketchProjectionsRef: MutableRef<
@@ -206,6 +214,29 @@ export function createViewportContextMenuActions({
     }
     setContextMenu(null);
     await unlinkBodyCopyRef.current?.(bodyId);
+  }
+
+  // Fusion's "Find in Timeline" — the viewport tells the timeline which feature
+  // the clicked body belongs to.
+  async function findInTimeline() {
+    const bodyId = contextMenu?.bodyId;
+    if (!bodyId) {
+      return;
+    }
+    setContextMenu(null);
+    await findInTimelineRef.current?.(bodyId);
+  }
+
+  // Deleting one body of a multi-body operation deletes the whole operation
+  // (the core's delete_feature works that way, which is what makes an imported
+  // assembly deletable as one thing), so the confirm comes from there.
+  async function deleteBody() {
+    const bodyId = contextMenu?.bodyId;
+    if (!bodyId) {
+      return;
+    }
+    setContextMenu(null);
+    await deleteBodyRef.current?.(bodyId);
   }
 
   async function removeSketchProjections() {
@@ -442,6 +473,8 @@ export function createViewportContextMenuActions({
     exportBodyStep,
     sendBodyToSlicer,
     unlinkBodyCopy,
+    findInTimeline,
+    deleteBody,
     removeSketchProjections,
     unlinkSketchProjections,
     deleteSketchSelection,

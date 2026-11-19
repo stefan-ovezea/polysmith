@@ -151,6 +151,9 @@ export function useProfileFeatureActions({
     void runAction(async () => {
       await updateLoftProfiles(loftAction.featureId!, loftAction.profileIds);
     });
+    // The update callbacks are per-render closures; keying on them would re-push
+    // the loft preview on every render. The action object is the real trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loftAction, updateLoftProfiles]);
 
   async function createRevolveFromInputs(
@@ -213,6 +216,8 @@ export function useProfileFeatureActions({
       updateRevolveProfile,
       updateRevolveAxis,
     });
+    // Same as the loft above: the callbacks are per-render closures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revolveAction, updateRevolveAxis, updateRevolveProfile]);
 
   async function createSweepFromInputs(
@@ -270,6 +275,8 @@ export function useProfileFeatureActions({
       updateSweepProfile,
       updateSweepPath,
     });
+    // Same as the loft above: the callbacks are per-render closures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sweepAction, updateSweepPath, updateSweepProfile]);
 
   return {

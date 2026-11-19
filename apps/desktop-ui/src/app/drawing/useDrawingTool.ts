@@ -692,6 +692,10 @@ export function useDrawingTool(inputs: UseDrawingToolInputs): DrawingToolApi {
       label,
       ghost,
     };
+    // `correctionTick` is a deliberate invalidation signal, not an input: it
+    // carries no value the memo reads, it exists so a "correct the orientation"
+    // gesture forces this projection to be rebuilt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     tool,
     base,

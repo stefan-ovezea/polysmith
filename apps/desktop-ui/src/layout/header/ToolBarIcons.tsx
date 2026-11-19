@@ -1104,6 +1104,28 @@ export const MoveIcon = () => (
 
 // Generic fallback used by the feature timeline for the synthetic
 // "root" entry and any future feature kinds we haven't drawn yet.
+// Imported reference geometry: an imported file (the operation that brought it
+// in) and an imported PCB fabrication layer. Stacked sheets, deliberately not a
+// solid — an import is not a body, and its components (ComponentIcon) are not
+// the file either.
+export const ImportFileIcon = ({
+  className = "h-7 w-7",
+}: { className?: string } = {}) => (
+  <svg
+    viewBox="0 0 24 24"
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M12 3 21 8l-9 5-9-5Z" />
+    <path d="m3 13 9 5 9-5" />
+  </svg>
+);
+
 const FeatureGenericIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -1116,6 +1138,30 @@ const FeatureGenericIcon = () => (
     aria-hidden="true"
   >
     <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+// A component occurrence: one part placed inside another, i.e. a node of an
+// imported assembly's hierarchy — not a body (BoxIcon) and not the file itself
+// (LayerIcon in the Browser). `className` lets the compact rows (Browser at 12
+// px, timeline at 28 px) share the same glyph instead of copying the paths.
+export const ComponentIcon = ({
+  className = "h-7 w-7",
+}: { className?: string } = {}) => (
+  <svg
+    viewBox="0 0 24 24"
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M9 3 16 6.5v8L9 18 2 14.5v-8Z" />
+    <path d="m2 6.5 7 3.5 7-3.5" />
+    <path d="M9 10v8" />
+    <path d="M17.5 12 22 14.2v5.1L17.5 21.5 13 19.3v-5.1Z" />
   </svg>
 );
 
@@ -1174,6 +1220,11 @@ export function FeatureKindIcon({ kind }: { kind: string }) {
       return <ChamferIcon />;
     case "construction_plane":
       return <ConstructionPlaneIcon />;
+    case "step_import":
+    case "iges_import":
+    case "mesh_import":
+    case "pcb_layer":
+      return <ImportFileIcon />;
     default:
       return <FeatureGenericIcon />;
   }

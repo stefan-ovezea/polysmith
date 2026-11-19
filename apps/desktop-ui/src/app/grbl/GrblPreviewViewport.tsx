@@ -206,7 +206,6 @@ export function GrblPreviewViewport({
       markerRef.current = null;
       pointerMarkerRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Orientation cube: built once the main camera/controls exist and

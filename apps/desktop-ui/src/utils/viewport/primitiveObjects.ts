@@ -322,11 +322,11 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
   // contacts on a black connector body, a white legend on a grey shield).
   // Without this the body renders in one material colour and every marking
   // on it disappears into the part.
-  if (
+  const usesVertexColors =
     primitive.kind === "mesh" &&
     primitive.colors.length > 0 &&
-    primitive.colors.length === primitive.positions.length
-  ) {
+    primitive.colors.length === primitive.positions.length;
+  if (usesVertexColors) {
     geometry.setAttribute(
       "color",
       new THREE.BufferAttribute(primitive.colors, 3),
@@ -340,7 +340,14 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
     // the USB pins once the studio rig replaced the environment map — so take
     // it to zero and let the three directionals do the shading.
     baseMaterial.metalness = 0.0;
-    baseMaterial.roughness = 0.65;
+    // SolidCraft's default surface for a scene body is roughness 0.5 with a
+    // dielectric ior of 1.5 (crates/render/src/scene.rs). Its studio rig has no
+    // environment map, so the only specular available is the one the three
+    // directionals produce — at 0.65 the lobe is broad and dim and imported
+    // parts read flat next to a reference render. three's MeshStandardMaterial
+    // uses the same GGX/Smith/Schlick model, so matching the roughness matches
+    // the sheen.
+    baseMaterial.roughness = 0.5;
     baseMaterial.needsUpdate = true;
   }
 
@@ -392,6 +399,7 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
       baseMaterial,
       edgeMaterial,
       appearanceColor: primitive.appearanceColor,
+      usesVertexColors,
     },
   };
 }
@@ -497,10 +505,16 @@ export function buildCutPreviewObject(preview: CutPreviewScene): THREE.Mesh {
 }
 
 export function buildSolidFaceObject(face: SolidFaceScene) {
+  // A pick proxy and a highlight layer — not a surface. It must start
+  // invisible: the face's colour is already on the body (mesh vertex colours
+  // and the body material, both lit), and this material is a MeshBasicMaterial,
+  // i.e. unlit. Filling it with `appearanceColor` here painted every imported
+  // part as a flat card and hid all its shading — see
+  // applySolidFaceVisualState.
   const fillMaterial = new THREE.MeshBasicMaterial({
     color: face.appearanceColor ?? themeColor("--color-primary-fixed-dim", "#00daf3"),
     transparent: true,
-    opacity: face.appearanceColor ? 1 : 0,
+    opacity: 0,
     side: THREE.DoubleSide,
     depthWrite: false,
     polygonOffset: true,

@@ -27,6 +27,14 @@ interface ViewportContextMenuProps {
     format: SlicerExportFormat,
   ) => void | Promise<void>;
   onCreateSketch: () => void | Promise<void>;
+  // Fusion's "Find in Timeline": select the feature that owns the clicked body
+  // so the timeline reveals it. An imported assembly is one operation, so this
+  // is how you get from "that part in the viewport" to its place in history.
+  onFindInTimeline: () => void | Promise<void>;
+  // Delete the clicked body — and, when it belongs to a multi-body operation
+  // (an imported assembly), every body of that operation, which is what the
+  // core's delete does. The label carries the count.
+  onDeleteBody: () => void | Promise<void>;
 }
 
 export function ViewportContextMenu({
@@ -52,6 +60,8 @@ export function ViewportContextMenu({
   onExportBodyStep,
   onSendBodyToSlicer,
   onCreateSketch,
+  onFindInTimeline,
+  onDeleteBody,
 }: ViewportContextMenuProps) {
   const dimensionToggleLabel = contextMenu.dimensionId
     ? getCircleDimensionToggleLabel(contextMenu.dimensionId)
@@ -259,6 +269,24 @@ export function ViewportContextMenu({
                   </button>
                 </div>
               </div>
+              <button
+                type="button"
+                className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                onClick={onFindInTimeline}
+              >
+                {translate("contextMenu.findInTimeline")}
+              </button>
+              <button
+                type="button"
+                className="cad-context-menu-item flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm text-on-surface transition-colors duration-200"
+                onClick={onDeleteBody}
+              >
+                {(contextMenu.bodyGroupSize ?? 1) > 1
+                  ? translate("contextMenu.deleteBodyGroup", {
+                      count: contextMenu.bodyGroupSize ?? 1,
+                    })
+                  : translate("contextMenu.deleteBody")}
+              </button>
             </>
           ) : null}
           {contextMenu.referenceId || contextMenu.faceId ? (

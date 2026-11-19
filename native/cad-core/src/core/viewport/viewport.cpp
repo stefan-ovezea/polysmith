@@ -305,8 +305,23 @@ void append_cached_body_topology(
                            /*max_count=*/kOversizedImportMaxEdges);
     }
 
-    if (body_kind != "box" && body_kind != "cylinder" &&
-        body_kind != "mesh_import") {
+    // A box or cylinder body normally gets its faces from the legacy
+    // primitive emitter, which builds analytic "front"/"top"/... faces
+    // instead of enumerating OCCT topology. That emitter SKIPS any feature a
+    // boolean consumed (solid_feature_emit.inc), and once a cut/join/
+    // intersect — or a fillet, chamfer or shell — has replaced the primitive
+    // with a real B-rep, this is the only place left that can produce its
+    // faces. Keying this off the feature KIND alone left such a body with no
+    // faces at all: a body that still renders as a mesh, but has no pick
+    // proxy, cannot be selected, cannot host a sketch, and cannot take a
+    // second feature. That is what "I can add a cylinder body but I cannot
+    // make a hole with the extrusion" looked like — the cut ran, the body
+    // survived, and every face of it had vanished.
+    const bool faces_from_legacy_primitive =
+        (body_kind == "box" || body_kind == "cylinder") &&
+        compiled_bodies.consumed_feature_ids.find(body.id) ==
+            compiled_bodies.consumed_feature_ids.end();
+    if (!faces_from_legacy_primitive && body_kind != "mesh_import") {
       enumerate_body_faces(body.shape,
                            body.id,
                            body_kind,

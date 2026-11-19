@@ -3,6 +3,7 @@ import { ConstraintType, SketchTool, ArmedSketchConstraint, type DimensionToolMo
 import { formatHotkey, useAppConfig } from "@/config";
 import type { AppHotkeys, CrosshairMode } from "@/config";
 import { Dropdown, SplitToolButton } from "@/lib";
+import { confirmDialog } from "@/lib/confirmDialog";
 import { SketchToolIcon, RectangleIcon, ArcIcon, CircleIcon, PolygonIcon, DimensionIcon, SlotIcon, SketchChamferIcon } from "./ToolBarIcons";
 import { useTranslation } from "react-i18next";
 import { HelpPopover } from "@/layout/HelpPopover";
@@ -230,11 +231,11 @@ export function SketchToolbar({
           className="cad-tool-button"
           data-tooltip={t("toolbar.cancelSketch")}
           disabled={disabled}
-          onClick={() => {
+          onClick={async () => {
             // D4: cancel rolls the whole session back with no trace.
             // Explicit confirm — the action discards every edit since
             // the sketch was opened.
-            if (window.confirm(t("toolbar.cancelSketchConfirm"))) {
+            if (await confirmDialog(t("toolbar.cancelSketchConfirm"))) {
               void onCancelSketchSession();
             }
           }}

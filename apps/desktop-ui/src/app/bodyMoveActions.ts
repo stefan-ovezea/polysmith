@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { MoveFeatureParameters } from "../types";
 import type { DocumentState } from "../types/ipc";
 import { pickExportPath, pickExportStlPath } from "./documentDialogs";
+import { confirmDialog } from "../lib/confirmDialog";
 import {
   defaultMoveParameters,
   type ActiveMoveAction,
@@ -177,8 +178,10 @@ export function createBodyMoveActions({
     }
   }
 
-  function confirmAndUnlinkBodyCopy(featureId: string) {
-    const confirmed = window.confirm(translate("dialogs.unlinkLinkedCopyMessage"));
+  async function confirmAndUnlinkBodyCopy(featureId: string) {
+    const confirmed = await confirmDialog(
+      translate("dialogs.unlinkLinkedCopyMessage"),
+    );
     if (!confirmed) {
       return;
     }

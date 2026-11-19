@@ -251,7 +251,6 @@ export function CamGrblPanel({
   useEffect(() => {
     initGrblStreamListener();
     void refreshPorts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // The workspace/handoff program is what Cycle Start sends; keep it

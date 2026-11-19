@@ -135,6 +135,30 @@ polysmith::core::DocumentState document_from_payload(const json& payload) {
     }
   }
 
+  // Component occurrences of an imported assembly.
+  if (payload.contains("components") && payload.at("components").is_array()) {
+    for (const auto& component_payload : payload.at("components")) {
+      if (!component_payload.is_object()) {
+        continue;
+      }
+      polysmith::core::ComponentNode component;
+      component.id = read_string(component_payload, "component_id");
+      component.name = read_string(component_payload, "name");
+      component.parent_id = read_string(component_payload, "parent_id");
+      if (component_payload.contains("body_ids") &&
+          component_payload.at("body_ids").is_array()) {
+        for (const auto& body_id : component_payload.at("body_ids")) {
+          if (body_id.is_string()) {
+            component.body_ids.push_back(body_id.get<std::string>());
+          }
+        }
+      }
+      if (!component.id.empty()) {
+        document.components.push_back(std::move(component));
+      }
+    }
+  }
+
   // Parameters — absent in older saves, default to empty
   if (payload.contains("parameters") &&
       payload.at("parameters").is_array()) {

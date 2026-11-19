@@ -75,6 +75,8 @@ interface ViewportContextMenuActions {
   exportBodyStep: () => void | Promise<void>;
   sendBodyToSlicer: (format: SlicerExportFormat) => void | Promise<void>;
   createSketch: () => void | Promise<void>;
+  findInTimeline: () => void | Promise<void>;
+  deleteBody: () => void | Promise<void>;
 }
 
 interface ViewportPanelShellProps {
@@ -359,6 +361,8 @@ export function ViewportPanelShell({
             onExportBodyStep={contextMenuActions.exportBodyStep}
             onSendBodyToSlicer={contextMenuActions.sendBodyToSlicer}
             onCreateSketch={contextMenuActions.createSketch}
+            onFindInTimeline={contextMenuActions.findInTimeline}
+            onDeleteBody={contextMenuActions.deleteBody}
           />
         ) : null}
         {sketchMovePanelOpen ? (

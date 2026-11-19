@@ -108,6 +108,10 @@ pnpm test:core
 # Run the UI unit tests (vitest; the file list lives in package.json)
 pnpm test:ui
 
+# Lint: architecture rules + React hook rules (both must pass before committing)
+pnpm lint                            # lint:architecture && lint:hooks
+pnpm lint:hooks                      # eslint, react-hooks/rules-of-hooks = error
+
 # Rebuild OpenCascade (rarely needed)
 pnpm occt:rebuild
 

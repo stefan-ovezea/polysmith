@@ -13,6 +13,32 @@ import { pickSketchProfileId } from "./sketchProfilePicking";
 import { getOrthographicViewHeight } from "./grid";
 import { trimWorldPointToLocal } from "./trimHoverPreview";
 
+// How close the cursor must be to a body edge, in SCREEN pixels, for the
+// edge to win the pick over the face behind it.
+//
+// THREE.Line picking compares against `raycaster.params.Line.threshold` in
+// WORLD units, so a fixed value is a different gesture at every zoom level —
+// and the value here used to be 1.2, which on a PCB is not a line tolerance
+// but a small part.  Measured on an imported ESP32 carrier (24,373 faces,
+// 7,763 structural edges): 98 % of the 17,660 planar faces had their centre
+// within 1.2 mm of some edge, so the edge branch swallowed every click and a
+// face could not be selected at all — hover highlighted edges everywhere, and
+// the double-click that starts a sketch on a face never fired.  At 5 px the
+// same board leaves ~10,000 faces reachable at their centre; the faces that
+// stay unreachable are the sub-millimetre pads whose own outline is wider than
+// the face, which no tolerance can fix and which the selection filter serves.
+const EDGE_PICK_TOLERANCE_PX = 5;
+
+// World-space edge tolerance for a click at the given zoom.  Screen-space by
+// construction: the same 5 px at any zoom keeps the gesture constant instead
+// of growing with the model.
+export function edgePickToleranceWorld(worldUnitsPerPixel: number): number {
+  if (!Number.isFinite(worldUnitsPerPixel) || worldUnitsPerPixel <= 0) {
+    return 0;
+  }
+  return EDGE_PICK_TOLERANCE_PX * worldUnitsPerPixel;
+}
+
 // Among the threshold-filtered entity hits, pick the geometry closest
 // to the click ray. `intersectObjects` sorts line hits by along-ray
 // distance `t`, not by proximity to the cursor: for sketch entities
@@ -249,6 +275,7 @@ export function intersectViewportSceneTargets({
     edgeLineObjects,
     faceMeshes,
     meshes,
+    edgeToleranceWorld: edgePickToleranceWorld(worldUnitsPerPixel),
   });
 }
 
@@ -580,13 +607,14 @@ function pickSketchPointByRayDistance(
     : null;
 }
 
-function pickModelTarget({
+export function pickModelTarget({
   raycaster,
   referencePlaneMeshes,
   vertexObjects,
   edgeLineObjects,
   faceMeshes,
   meshes,
+  edgeToleranceWorld,
 }: {
   raycaster: THREE.Raycaster;
   referencePlaneMeshes: THREE.Mesh[];
@@ -594,6 +622,10 @@ function pickModelTarget({
   edgeLineObjects: THREE.Line[];
   faceMeshes: THREE.Mesh[];
   meshes: THREE.Mesh[];
+  // Screen-derived edge pick radius in world units (see
+  // EDGE_PICK_TOLERANCE_PX).  Passing 0 makes edges unpickable and lets every
+  // click fall through to the face.
+  edgeToleranceWorld: number;
 }): ViewportPickHit | null {
   const [referenceHit] = raycaster.intersectObjects(
     referencePlaneMeshes,
@@ -612,7 +644,7 @@ function pickModelTarget({
 
   const previousLineThreshold = raycaster.params.Line?.threshold ?? 1;
   if (raycaster.params.Line) {
-    raycaster.params.Line.threshold = 1.2;
+    raycaster.params.Line.threshold = edgeToleranceWorld;
   }
   const [edgeHit] = raycaster.intersectObjects(edgeLineObjects, false);
   if (raycaster.params.Line) {

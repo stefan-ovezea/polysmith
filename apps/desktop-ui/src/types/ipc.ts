@@ -334,10 +334,25 @@ export interface DocumentState {
   selected_sketch_profile_ids: string[];
   timeline_cursor: number | null;
   feature_history: FeatureEntry[];
+  // Component occurrences of imported assemblies, flat with a parent id (empty
+  // parent = a direct child of its import). The Browser nests them; a body
+  // belongs to at most one component.
+  components: ComponentNode[];
   parameters: ParameterEntry[];
   appearance: DocumentAppearance;
   cam: CamDocumentData;
   drawing: DrawingDocumentData;
+}
+
+// One node of an imported file's product structure: an occurrence of a part
+// ("U1:1"), not the part itself — a board places the same part many times and
+// only the occurrence tells the placements apart. Mirrors
+// polysmith::core::ComponentNode.
+export interface ComponentNode {
+  component_id: string;
+  name: string;
+  parent_id: string;
+  body_ids: string[];
 }
 
 export interface DocumentAppearance {

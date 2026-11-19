@@ -58,6 +58,10 @@ export function PrimitiveFeatureForm({
     setValues(
       fields.map((field) => String(field.initialValue ?? field.defaultValue)),
     );
+    // `initialValueKey` already encodes the values this effect reacts to; the
+    // `defaultValue` fallback is static per field. Listing `fields` (a fresh
+    // array every render) would reset the user's typing on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialValueKey]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

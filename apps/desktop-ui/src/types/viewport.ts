@@ -413,6 +413,12 @@ export interface PrimitiveVisual {
   baseMaterial: THREE.MeshStandardMaterial;
   edgeMaterial: THREE.LineBasicMaterial;
   appearanceColor: string | null;
+  // True when the body's paint lives in per-vertex colours imported from a file
+  // (STEP presentation styles). Such a body must not be tinted by the material's
+  // colour: `baseMaterial.color` multiplies the vertex colours, so the theme's
+  // body grey took a black PCB with gold contacts and rendered it as one dark
+  // grey part — the file's colours and all of their contrast gone.
+  usesVertexColors: boolean;
 }
 
 export interface ReferencePlaneVisual {
@@ -460,6 +466,11 @@ export interface ViewportContextMenuState {
   referenceId: string | null;
   faceId: string | null;
   bodyId?: string | null;
+  // How many bodies one delete takes with it: every feature of one commit
+  // shares an `operation_id`, and delete_feature removes the whole operation.
+  // An imported assembly is one commit, so this is its body count (1 for a
+  // standalone body).
+  bodyGroupSize?: number;
   sketchDeleteSelection?: {
     entityIds: string[];
     vertexIds: string[];

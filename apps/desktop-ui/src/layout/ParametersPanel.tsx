@@ -114,6 +114,9 @@ export function ParametersPanel({ onClose }: { onClose?: () => void }) {
       console.error("[ParametersPanel] commitEdit failed:", err);
     }
     setEditing(null);
+    // `PLAIN_NUMBER_RE` is a module-level constant, so it cannot be a changing
+    // dependency; the rule only sees an identifier from outside the callback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, parameters, config.displayUnits, addParameter, updateParameter]);
 
   // Auto-focus the name field only when entering edit mode (editing

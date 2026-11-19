@@ -1,3 +1,59 @@
+# CURRENT — 2026-11-19: STEP assembly tree (done, awaiting in-app check)
+
+`fix/face-pick-and-cut-extrude`, nothing committed this session.
+
+**Landed this round: the Browser shows the imported file's product structure**
+instead of a 1,092-row body list.
+
+- Core: `core/document/component.h` (`ComponentNode { id, name, parent_id,
+  body_ids }`) + `DocumentState::components`; `assembly_from_xcaf` in
+  `geometry/step_import_helpers.cpp` walks the XCAF occurrence tree; node ids are
+  `component-N` from `next_component_id_` (restored on load); `delete_feature`
+  prunes dead body ids and collapses empty components.
+- Payload: `components` in `document_state` (+66.9 KB on the carrier, +5 %),
+  absent from the viewport payload; save/load round-trips it.
+- UI: `componentHierarchy()` in `layout/documentHierarchyGroups.ts`, nested
+  `ComponentBranch` rows in `DocumentHierarchyPanel.tsx` (fold on click, subtree
+  eye toggles in one update, bodies no component places stay under the import).
+- Measured on `ESP32-P4C5-Module_Carrier_V1.5.step`: 536 occurrences (38 top
+  level), 1,091 of 1,092 solids placed, import 13.2 s (unchanged).
+- Gates: `pnpm core:build` clean; `pnpm test:core` 94/95 (the one failure is the
+  orphan `cad_core_scratch_load_profiles_test.exe` with no source, pre-existing);
+  `pnpm test:ui` 76/76; `tsc --noEmit` clean; `pnpm lint` 0/0.
+
+**Also landed this round — the timeline shows the components.** An import stays
+ONE history entry (an operation is atomic: the cursor cannot sit inside it), but
+the strip now lays out the file's component occurrences *inside* that entry:
+import block → fold chevron → one icon per top-level occurrence → nested
+occurrences open in place → bodies as leaves. Clicking a component opens it,
+clicking a body selects it, and "Find in Timeline" opens the chain holding the
+body (`componentAncestors`) before scrolling to it. Glyphs are shared with the
+Browser (`ComponentIcon`, `ImportFileIcon` in `ToolBarIcons.tsx`).
+
+**Next, in order:** (1) the user verifies the tree and the timeline in the app;
+(2) the viewport payload work — 61.6 MB / ~6 s per event is the "not workable"
+problem: pack the per-face metadata (~19 MB), replace the per-face pick triangles
+with one `u16` face id per mesh triangle (also collapses 24,373 pick meshes into
+~1,092), then palette colours / dropped normals; (3) a real assembly model
+(component instances + OndselSolver joints) — the vendored solver is still unused,
+and the component tree above is deliberately not that.
+
+**Colour regression fixed (2026-11-19):** imported bodies lost their paint
+because `applyPrimitiveVisualState` set `material.color` to the theme body grey
+(`#45475a` in the dark themes, linear 0.06) on top of the per-vertex colours —
+a ~16× multiply that made every imported board dark, blue-tinted and flat.
+`PrimitiveVisual.usesVertexColors` now suppresses that tint (explicit user
+colours still apply). If colours look wrong again, check who writes
+`baseMaterial.color` for a body: both the geometry builder and the visual-state
+pass do.
+
+**Encoding rule, learned the expensive way:** never rewrite a source file through
+PowerShell (`Get-Content -Raw` + `Set-Content`) — it decodes UTF-8 as CP1252 and
+mangles every non-ASCII character (`U+00E2 U+2013 U+00BE` instead of the fold
+chevron), which is how the Browser's arrows reached the screen as garbage.
+`pnpm lint:architecture` now fails on re-encoded sequences in
+`apps/desktop-ui/src`, `native/cad-core/src`, `wiki` and `scripts`.
+
 # DRAG DESIGN — write it down before writing it again (2026-11-06, end of day)
 
 ## Decisions taken (user, 2026-11-06)
@@ -5344,3 +5400,189 @@ the snapshot and the original STEP for provenance - do not switch to a file
 reference; (5) cut extrude does not make a hole on an imported body (cylinder
 body can be added) - modelling bug, needs its own round; (6) perspective camera
 last.
+
+## 2026-11-18 - face pick and primitive-body booleans (three defects, measured)
+
+Branch `fix/face-pick-and-cut-extrude`. Three real bugs behind "I cannot select
+this surface" and "the cut does nothing", each measured on the ESP32-P4C5
+carrier before being touched:
+
+1. **Face pick lost to a world-space edge tolerance.** `pickModelTarget` tested
+   edges before faces with `raycaster.params.Line.threshold = 1.2` - world
+   millimetres, so on a PCB it was the size of a part: 17,304 of 17,660 planar
+   faces (98 %) had their centre within 1.2 mm of an edge, on all 1,092 bodies.
+   Now `EDGE_PICK_TOLERANCE_PX = 5` screen pixels (zoom-derived,
+   `edgePickToleranceWorld`), leaving ~10,000 faces reachable, and a regression
+   test (`sceneTargetPicking.test.ts`, fails at 1.2 mm, passes at 5 px).
+2. **A boolean consumed a box/cylinder and left it with zero faces.** The legacy
+   primitive emitter skips consumed features, and `append_cached_body_topology`
+   also skipped those body kinds - so nothing published faces. Measured: cut on a
+   cylinder gave `1 body, 0 faces`. Faces are now enumerated whenever the
+   primitive emitter will not supply them.
+3. **A cylinder's faces were one radius off its solid.** The solid is centred on
+   its axis `(-r,-r)..(r,r)`, the analytic faces assumed the corner-origin box
+   layout `(r,r)`, so a sketch on the "top" face landed on the rim and a cut
+   removed nothing. The viewport was corrected to the solid's placement (no
+   geometry moved, so no CAM/drawing golden changed). Verified: cylinder + circle
+   + cut = 4 faces with an `r=2.5` hole wall.
+
+Still open: primitives after the first are laid out in a row by the viewport
+(`current_x_offset`) while their OCCT shape sits at the origin - measured one
+slot (30 mm) apart for a second box, so booleans on it still miss. Baking the
+layout into the shape was tried and reverted: it moved every multi-primitive
+document's solid and broke five CAM/drawing suites. The fix is a stored position
+in `BoxFeatureParameters`/`CylinderFeatureParameters` - a document format change,
+needs approval. Details: `wiki/STEP-Import-And-Viewport-Rendering.md`.
+
+### Follow-up the same day: "core did not respond to undo_end_group"
+
+Not a dead core - a clock. Every awaited command had a flat 10 s deadline and the
+core runs commands strictly in arrival order; importing this board's STEP takes
+11.9 s, so an `undo_end_group` queued behind it was answered at 11.9 s, 100 ms
+after the import finished, and the app had already failed it. Fire-and-forget
+call sites turned that into an unhandled rejection.
+
+- `cadCoreClient.ts`: the deadline is now core-idle based
+  (`shouldFailPendingCommand`, 10 s of silence, 300 s cap) and every core event
+  (including progress logs) resets it; `subscribeCoreActivity` shares the signal.
+- `cadCoreStore.ts`: the four `await*Change` helpers (4 s flat, same flaw) use it
+  too - 10 s of silence, 30 s cap.
+- `feature_command_handlers.cpp`: five undo-group/settings handlers could answer
+  nothing at all (they replied only when a document existed; `set_undo_limit`
+  with no document was silent even on success). They now always reply via
+  `reply_with_document_or_error` (`NO_ACTIVE_DOCUMENT` when there is none).
+- `ViewportPanel.tsx`: the two fire-and-forget undo-group calls catch and log to
+  the Logs panel instead of leaking an unhandled rejection.
+
+### And: the core was being started twice
+
+The dev log showed two "Starting cad_core from ..." lines with "cad_core already
+running - restarting with the current binary" between them. StrictMode (dev) runs
+mount effects twice, and `useAppLifecycleEffects` starts the core whenever
+`status` is idle/stopped - the status flip is asynchronous, so both invocations
+saw "idle" and each reached Rust as its own `start_cad_core`; the shell restarts
+a running core by design (dev loop picks up a rebuilt binary), so the first core
+was killed a few milliseconds after launch. Fixed with `coalesceAsync`
+(`src/lib/coalesceAsync.ts`, 3 tests): `start` is now a module-level coalesced
+function, so concurrent calls await one launch, a failed launch is retryable,
+and the guard survives the StrictMode remount.
+
+### And: imported colours were painted twice, the second time unlit
+
+`ESP32-P4C5-Module_Enclosure_4inch_Front_V1.0.step` rendered as a flat sheet
+while SolidCraft showed a shaded grey part. Cause, measured on the payload: all
+158 faces carry `appearance_color "#FFFFFF"`, and `applySolidFaceVisualState`
+filled each face with `opacity: 1` using a **MeshBasicMaterial** (unlit). The
+colour already lives on the body - bodymesh per-vertex colours from the same
+`face_colors` table, plus the lit body material - so the fill is now
+highlight-only (0 idle / 0.08 hover / 0.5 selected). 1,083 of 1,092 board bodies
+keep their paint from the mesh colours; the 9 without mesh colours have no
+coloured faces either. Regression test `visualState.test.ts`. Offline shading
+preview (numpy rasteriser reproducing the rig) lives in
+`.tmptest/shading-preview.py` - promote to `tools/` if the shading work
+continues.
+
+### Follow-up: "colours are dull" - the importer stripped the file's black
+
+Not lighting. Two rules in `step_import_helpers.cpp` (solid-level near-black, and
+>=90 % near-black faces) turned a body's black into "unstyled" so it fell back to
+the theme grey. They were added when the opaque UNLIT face fill hid black shells;
+with that fill gone the shading is real and the file's black is correct. The rule
+was hitting the PCB itself (#0D0D0D) and repainting the substrate light grey -
+which is the whole washed-out look. Removed both: the board body is `#0D0D0D`
+again and all 24,373 faces carry a style (0 colourless bodies, was 9). Verified
+with the offline renderer against the SolidCraft reference. Roughness of the
+vertex-coloured body material 0.65 -> 0.5 to match SolidCraft's default surface
+(metallic 0, roughness 0.5, ior 1.5). Core suites 93/94 (stale exe only), UI
+64/64.
+
+### The dots on an imported part were vertex pick targets
+
+264 small spheres (0.25 mm) on the enclosure - one per body vertex, so vertices
+can be picked for projection/snapping - painted at idle opacity 0.95. They are
+pick targets, not geometry: idle is now opacity 0, hover blue, selected orange.
+Still raycastable, so vertex picking / CAM origin snap / WCS pick are unchanged.
+UI 66/66.
+
+### Two more from the same session
+
+- **`window.confirm` is a broken shim.** tauri-plugin-dialog replaces it with
+  `invoke("plugin:dialog|confirm")`, a command plugin-dialog 2.7 no longer has
+  (allow-confirm/allow-ask are aliases of `message`) - so every call threw
+  "dialog.confirm not allowed. Command not found" as an unhandled rejection, and
+  because the shim returns a Promise (always truthy) the destructive branch ran
+  anyway. `lib/confirmDialog.ts` wraps `ask()` (the `message` command) and treats
+  a dialog that cannot be shown as "no"; all four call sites await it.
+- **"OCCT failed to create an extruded shape" was not OCCT.** Only
+  `validate_occt_shape` throws it, and only when the parameters have no profile
+  ids - which `update_extrude_profiles` creates on purpose when the panel
+  deselects every surface. Moving the depth slider then re-validated the emptied
+  feature and threw. `update_extrude_depth` now skips validation when there is
+  nothing to extrude (`has_extrude_profile`); polygon profiles had the same hole
+  ("requires at least three profile points"). New C++ regression test
+  `test_depth_update_tolerates_an_emptied_extrude`.
+
+### An imported file is ONE operation (higher-level entity)
+
+The provision existed and the importer did not use it: `FeatureEntry::operation_id`
+groups one commit, `featureTimelineBlocks` folds a group into one row, and
+`delete_feature` deletes the group as one undo step. `import_commands.cpp` now
+stamps every body of one import (including the loose-face surface body) with one
+operation id = the first body's feature id.
+
+Measured on the ESP32-P4C5 carrier: 1,092 bodies, 1 distinct operation id, the
+timeline shows ONE row, deleting any single body removes all 1,092 in one step,
+and one undo restores all 1,092.
+
+New UI: viewport right-click on a body offers "Find in Timeline" (selects the
+owning feature; the timeline now scrolls the active row into view) and
+"Delete Body"/"Delete N Bodies" (confirm names the body count:
+`contextMenu.deleteBodyGroupConfirm`). New i18n keys under `contextMenu`.
+Remaining, same shape, no new document concept: grouping in the hierarchy panel,
+hide/show + material at group level, export/save-copy for the group.
+
+### React hook order is a build gate now
+
+A `useRef`/`useEffect` below `FeatureTimeline`'s `if (!document) return null;`
+unmounted the whole UI ("Rendered more hooks than during the previous render")
+while tsc and 67 unit tests were green. Fixed the component, then closed the
+class: root devDeps `eslint` + `@typescript-eslint/parser` +
+`eslint-plugin-react-hooks`, `eslint.config.mjs` (rules-of-hooks = error,
+exhaustive-deps = warn, 50 warnings across 401 files), and
+`scripts/lint-hooks.mjs` which lints the tree AND self-checks that a hook after
+an early return is still reported. `pnpm lint` = architecture greps + hooks;
+documented in AGENTS.md. Proven: reintroducing the bug made `pnpm lint:hooks`
+exit 1 with two errors on the exact lines.
+
+Then all 50 `exhaustive-deps` warnings were triaged to zero: two real fixes
+(Insert View preview posted to the previous sheet when the drawing/sheet changed
+mid-preview; `buildCamOperations` now takes the operations list so its memo depends
+on what it reads), structural fixes (`finishCamProfileRepick` behind a ref,
+`DocumentHierarchyPanel`'s seven memos keyed on a memoised `features`, drawing
+sheet fit and plane-redefine pick keyed on plain values), a one-line reason on
+each deliberate omission, and five stale pre-existing disables removed. Gate is
+now 401 files / 0 errors / 0 warnings with no unused directives, so the next
+warning is a signal.
+
+### Browser: the import is now a node (not 1,092 rows under Bodies)
+
+`DocumentHierarchyPanel` grouped nothing: STEP bodies (kind `step_import`) are in
+`BODY_KINDS`, so the whole assembly landed in Bodies and the import itself had no
+entry — nothing to select/hide/delete as a whole, while the timeline and the core
+already treated it as one operation. New `layout/documentHierarchyGroups.ts`
+groups the features sharing one `operation_id` into one node: file-name label
+(from the feature summary), "N bodies", expanded by default with a chevron to
+fold it, its bodies listed under it (each with its own eye and context menu), one
+bulk visibility toggle
+(`onSetFeaturesVisibility` in AppSidebar), and imported bodies removed from
+Bodies. Five unit tests; 72 UI tests; lint 0/0.
+
+
+
+
+
+
+
+
+
+

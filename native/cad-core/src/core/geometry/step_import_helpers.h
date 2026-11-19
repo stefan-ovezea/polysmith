@@ -27,6 +27,23 @@ struct StepImportedSolid {
   std::vector<std::uint32_t> face_colors;
 };
 
+// One node of the file's product structure — a component OCCURRENCE, which is
+// the file's name for one PLACEMENT of a part ("U1:1"), not the part's own name
+// ("QFN-104"). The same part is placed many times in a board, so the occurrence
+// is the only thing that distinguishes them; the part name is the fallback when
+// the file names no occurrence.
+struct StepAssemblyNode {
+  std::string name;
+  // Index of the parent node in the same vector, -1 for a top-level node.
+  // Parents always precede their children (pre-order), so a consumer can build
+  // the tree in one pass.
+  int parent = -1;
+  // Solids this occurrence is made of, as indices into `StepImportResult::solids`.
+  // Only leaves carry solids: an assembly's own shape contains its children's
+  // solids too, so collecting at every level would duplicate every body.
+  std::vector<int> solid_indices;
+};
+
 // Result of reading a STEP file: the translated shape (a compound for
 // multi-solid files), the original file units as reported by the file
 // header (e.g. "MILLIMETRE", "INCH", or "unknown" when the header is
@@ -40,6 +57,10 @@ struct StepImportResult {
   // order — the same solids, split apart, carrying their names and colours.
   // Empty only when the file has no solids at all (surface models).
   std::vector<StepImportedSolid> solids;
+  // The file's component occurrences, pre-order, each pointing at the solids it
+  // is made of. Empty when the file has no assembly structure (a single part),
+  // or when the structure could not be matched to the solids.
+  std::vector<StepAssemblyNode> assembly;
 };
 
 // Reads a STEP file and returns the translated shape in millimeters.

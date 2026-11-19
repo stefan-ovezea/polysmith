@@ -6,6 +6,7 @@
 
 #include "core/cam/cam_operation.h"
 #include "core/document/appearance.h"
+#include "core/document/component.h"
 #include "core/document/feature.h"
 #include "core/document/parameter.h"
 #include "core/drawing/drawing_types.h"
@@ -73,6 +74,10 @@ struct DocumentState {
   // included in the viewport rollback preview.
   std::optional<int> timeline_cursor;
   std::vector<FeatureEntry> feature_history;
+  // Component occurrences of imported assemblies, by parent id. Empty for a
+  // part modelled in the app: components are a property of the FILE, not of
+  // the document, and a body belongs to at most one component.
+  std::vector<ComponentNode> components;
   std::vector<ParameterEntry> parameters;
   DocumentAppearance appearance;
   SelectionFilter selection_filter;

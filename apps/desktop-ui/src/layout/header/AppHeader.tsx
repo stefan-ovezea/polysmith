@@ -8,6 +8,7 @@ import {
   type SelectionFilterUpdate,
 } from "@/types";
 import { useAppConfig } from "@/config";
+import { confirmDialog } from "@/lib/confirmDialog";
 import { SketchToolbar } from "./SketchToolbar";
 import { SketchDofBadge } from "./SketchDofBadge";
 import { CreateToolbar } from "./CreateToolbar";
@@ -857,13 +858,13 @@ export function AppHeader({
                     },
                     ...undoStepNames.slice(1).map((name, index) => ({
                       label: name,
-                      onSelect: () => {
+                      onSelect: async () => {
                         const count = index + 2;
                         const confirmed =
                           count <= 1 ||
-                          window.confirm(
+                          (await confirmDialog(
                             t("header.undoHistoryConfirm", { count }),
-                          );
+                          ));
                         if (confirmed) {
                           void onUndoMany(count);
                         }

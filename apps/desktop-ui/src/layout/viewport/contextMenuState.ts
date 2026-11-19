@@ -284,6 +284,23 @@ export function buildViewportContextMenuState({
           ? bodyIdFromTopologyId(hit.id)
           : null;
 
+  // How many bodies one delete would take with it. Every feature of one commit
+  // shares an `operation_id` (an imported assembly is one commit, so all 1,092
+  // of its bodies do), and delete_feature deletes the whole operation — the
+  // menu must say so instead of offering "Delete" for one body of a thousand.
+  const ownerFeature = bodyId
+    ? (document?.feature_history.find(
+        (feature) => feature.feature_id === bodyId,
+      ) ?? null)
+    : null;
+  const operationId = ownerFeature?.operation_id ?? "";
+  const bodyGroupSize =
+    operationId === ""
+      ? 1
+      : (document?.feature_history ?? []).filter(
+          (feature) => feature.operation_id === operationId,
+        ).length;
+
   return {
     contextMenu: {
       x,
@@ -291,6 +308,7 @@ export function buildViewportContextMenuState({
       referenceId: hit.kind === "reference" ? hit.id : null,
       faceId: hit.kind === "face" ? hit.id : null,
       bodyId,
+      bodyGroupSize,
       sketchDeleteSelection: null,
     },
   };

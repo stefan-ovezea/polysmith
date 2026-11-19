@@ -569,6 +569,12 @@ export interface ViewportPanelProps {
     format: SlicerExportFormat,
   ) => Promise<void> | void;
   onUnlinkBodyCopy?: (featureId: string) => Promise<void> | void;
+  // Right-click on a body: reveal the feature that owns it in the timeline.
+  onFindInTimeline?: (featureId: string) => Promise<void> | void;
+  // Right-click on a body: delete it — together with the other bodies of the
+  // same operation when it belongs to one (an imported assembly is one
+  // operation), which is what the core's delete_feature does.
+  onDeleteBody?: (featureId: string) => Promise<void> | void;
   // Right-click heal for projections: false = delete all projected
   // entities, true = keep them and drop only the live links. Wired
   // from App with the active sketch's feature id.

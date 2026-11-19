@@ -317,6 +317,7 @@ import {
 import { reportCoreError } from "./coreLogReporting";
 import { useCadCoreEventBridge } from "./useCadCoreEventBridge";
 import type { SketchPlaneFramePayload } from "@/lib/ipc/sketchCommands";
+import { coalesceAsync } from "@/lib/coalesceAsync";
 import { fileNameFromPath } from "@/utils/operationProgress";
 
 // Let the browser paint the result before lifting the busy overlay: the
@@ -357,6 +358,36 @@ async function runBusyOperation<T>(
   }
 }
 
+// One core launch at a time, for the whole app.
+//
+// React 18 StrictMode mounts effects twice in development, so the auto-start in
+// useAppLifecycleEffects fires twice with a few milliseconds between the calls,
+// and the header's Start button can be clicked while a start is still in flight
+// (its own comment notes the race). Each call reached Rust as its own
+// `start_cad_core`, and the shell restarts a core that is already running — so
+// the log showed "Starting cad_core from ..." twice with "cad_core already
+// running — restarting with the current binary" between them: a wasted launch,
+// the first core killed, and any command already sent to it lost.
+//
+// Module scope (not a ref) so the guard also covers the StrictMode remount.
+const startCoreOnce = coalesceAsync(async () => {
+  const { addLogEntry, addMessage, setStatus } = useCadCoreStore.getState();
+  setStatus("starting");
+  try {
+    const result = await startCadCore();
+    const entry = makeUiLogEntry("info", "desktop_ui", `start: ${result}`);
+    writeLogToConsole(entry);
+    addLogEntry(entry);
+    addMessage(`start: ${result}`);
+  } catch (error) {
+    reportCoreError(
+      { addLogEntry, addMessage, setStatus },
+      "desktop_ui",
+      `start failed: ${String(error)}`,
+    );
+  }
+});
+
 export function useCadCore() {
   const addMessage = useCadCoreStore((state) => state.addMessage);
   const addLogEntry = useCadCoreStore((state) => state.addLogEntry);
@@ -365,22 +396,7 @@ export function useCadCore() {
   useCadCoreEventBridge();
 
   return {
-    start: async () => {
-      setStatus("starting");
-      try {
-        const result = await startCadCore();
-        const entry = makeUiLogEntry("info", "desktop_ui", `start: ${result}`);
-        writeLogToConsole(entry);
-        addLogEntry(entry);
-        addMessage(`start: ${result}`);
-      } catch (error) {
-        reportCoreError(
-          { addLogEntry, addMessage, setStatus },
-          "desktop_ui",
-          `start failed: ${String(error)}`,
-        );
-      }
-    },
+    start: startCoreOnce,
     ping: async () => {
       await sendCoreCommand(makePingCommand());
     },

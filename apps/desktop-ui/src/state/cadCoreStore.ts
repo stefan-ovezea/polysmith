@@ -18,6 +18,10 @@ import {
   getErrorFromMessage,
   getViewportFromMessage,
 } from "../lib/ipcProtocol";
+import {
+  shouldFailPendingCommand,
+  subscribeCoreActivity,
+} from "../lib/cadCoreClient";
 import { useToastStore } from "./toastStore";
 import { appendLogWithinWindow } from "../lib/logWindow";
 
@@ -104,23 +108,65 @@ interface CadCoreStoreState {
 // `cad-core-event` Tauri event). Callers that need to read post-command
 // state from the store must wait for the next event instead of reading the
 // store immediately after `await sendCoreCommand(...)`.
+//
+// The wait fails when the CORE goes quiet, not when a fixed wall clock passes:
+// the core handles commands strictly in arrival order, so a document or viewport
+// produced behind a long operation (a ~12 s STEP import, a ~6 s viewport
+// rebuild) legitimately arrives well after a flat 4 s deadline — which is how a
+// healthy core produced "awaitViewportChange: timed out" as an unhandled
+// rejection.
+const AWAIT_CORE_IDLE_TIMEOUT_MS = 10_000;
+// The wait is for a state that follows a command that has ALREADY been sent, so
+// a hard cap keeps a genuinely lost update from sitting there for minutes even
+// if the core keeps narrating unrelated work.
+const AWAIT_CORE_ABSOLUTE_TIMEOUT_MS = 30_000;
+
+// Shared deadline machinery for the await* helpers below. Returns a cleanup
+// function; `onTimeout` fires when the core has been silent for the idle window,
+// or when the absolute cap is reached.
+function armCoreQuietTimeout(onTimeout: () => void): () => void {
+  const startedAt = Date.now();
+  let lastActivityAt = startedAt;
+  const unsubscribe = subscribeCoreActivity(() => {
+    lastActivityAt = Date.now();
+  });
+  const timer = window.setInterval(() => {
+    if (
+      shouldFailPendingCommand({
+        now: Date.now(),
+        sentAt: startedAt,
+        lastActivityAt,
+        idleTimeoutMs: AWAIT_CORE_IDLE_TIMEOUT_MS,
+        absoluteTimeoutMs: AWAIT_CORE_ABSOLUTE_TIMEOUT_MS,
+      })
+    ) {
+      cleanup();
+      onTimeout();
+    }
+  }, 500);
+  const cleanup = () => {
+    window.clearInterval(timer);
+    unsubscribe();
+  };
+  return cleanup;
+}
+
 export function awaitDocumentChange(
   predicate: (next: DocumentState, previous: DocumentState | null) => boolean,
-  timeoutMs = 4000,
 ): Promise<DocumentState> {
   return new Promise((resolve, reject) => {
     const initial = useCadCoreStore.getState().document;
-    const timer = window.setTimeout(() => {
+    const cleanup = armCoreQuietTimeout(() => {
       unsubscribe();
       reject(new Error("awaitDocumentChange: timed out"));
-    }, timeoutMs);
+    });
     const unsubscribe = useCadCoreStore.subscribe((state) => {
       const doc = state.document;
       if (!doc || doc === initial) {
         return;
       }
       if (predicate(doc, initial)) {
-        window.clearTimeout(timer);
+        cleanup();
         unsubscribe();
         resolve(doc);
       }
@@ -133,21 +179,20 @@ export function awaitDocumentChange(
 // which live only in the viewport payload, not the document).
 export function awaitViewportChange(
   predicate: (next: ViewportState, previous: ViewportState | null) => boolean,
-  timeoutMs = 4000,
 ): Promise<ViewportState> {
   return new Promise((resolve, reject) => {
     const initial = useCadCoreStore.getState().viewport;
-    const timer = window.setTimeout(() => {
+    const cleanup = armCoreQuietTimeout(() => {
       unsubscribe();
       reject(new Error("awaitViewportChange: timed out"));
-    }, timeoutMs);
+    });
     const unsubscribe = useCadCoreStore.subscribe((state) => {
       const vp = state.viewport;
       if (!vp || vp === initial) {
         return;
       }
       if (predicate(vp, initial)) {
-        window.clearTimeout(timer);
+        cleanup();
         unsubscribe();
         resolve(vp);
       }
@@ -157,21 +202,20 @@ export function awaitViewportChange(
 
 export function awaitDocumentExport(
   predicate: (next: DocumentExportResult) => boolean,
-  timeoutMs = 10000,
 ): Promise<DocumentExportResult> {
   return new Promise((resolve, reject) => {
     const initial = useCadCoreStore.getState().lastExport;
-    const timer = window.setTimeout(() => {
+    const cleanup = armCoreQuietTimeout(() => {
       unsubscribe();
       reject(new Error("awaitDocumentExport: timed out"));
-    }, timeoutMs);
+    });
     const unsubscribe = useCadCoreStore.subscribe((state) => {
       const exportResult = state.lastExport;
       if (!exportResult || exportResult === initial) {
         return;
       }
       if (predicate(exportResult)) {
-        window.clearTimeout(timer);
+        cleanup();
         unsubscribe();
         resolve(exportResult);
       }
@@ -181,14 +225,13 @@ export function awaitDocumentExport(
 
 export function awaitDocumentSaved(
   predicate: (filePath: string) => boolean,
-  timeoutMs = 4000,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const initial = useCadCoreStore.getState().lastEvent;
-    const timer = window.setTimeout(() => {
+    const cleanup = armCoreQuietTimeout(() => {
       unsubscribe();
       reject(new Error("awaitDocumentSaved: timed out"));
-    }, timeoutMs);
+    });
     const unsubscribe = useCadCoreStore.subscribe((state) => {
       const event = state.lastEvent;
       if (!event || event === initial || event.type !== "document_saved") {
@@ -196,7 +239,7 @@ export function awaitDocumentSaved(
       }
       const filePath = event.payload.file_path;
       if (predicate(filePath)) {
-        window.clearTimeout(timer);
+        cleanup();
         unsubscribe();
         resolve(filePath);
       }

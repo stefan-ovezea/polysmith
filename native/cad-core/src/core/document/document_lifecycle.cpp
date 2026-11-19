@@ -719,6 +719,37 @@ DocumentState DocumentManager::delete_feature(const std::string& feature_id) {
   if (deleted_selected) {
     document_->selected_feature_id = std::nullopt;
   }
+  // A deleted body must not stay a member of a component: the Browser would
+  // list occurrences whose bodies no longer exist. Drop the dead ids, then drop
+  // every component left without bodies and without a surviving child (which is
+  // what deleting a whole import leaves behind). Children follow their parent in
+  // the list, so one reverse pass decides everything.
+  if (!document_->components.empty()) {
+    for (auto& component : document_->components) {
+      component.body_ids.erase(
+          std::remove_if(component.body_ids.begin(), component.body_ids.end(),
+                         [&](const std::string& id) { return is_deleted(id); }),
+          component.body_ids.end());
+    }
+    std::set<std::string> keep_ids;
+    for (std::size_t i = document_->components.size(); i-- > 0;) {
+      const ComponentNode& component = document_->components[i];
+      if (component.body_ids.empty() && keep_ids.count(component.id) == 0) {
+        continue;
+      }
+      keep_ids.insert(component.id);
+      if (!component.parent_id.empty()) {
+        keep_ids.insert(component.parent_id);
+      }
+    }
+    document_->components.erase(
+        std::remove_if(document_->components.begin(),
+                       document_->components.end(),
+                       [&](const ComponentNode& component) {
+                         return keep_ids.count(component.id) == 0;
+                       }),
+        document_->components.end());
+  }
   const auto owner_of = [](const std::string& id, const char* kind) {
     const std::string needle = std::string(":") + kind + ":";
     const auto separator = id.find(needle);
@@ -1259,6 +1290,10 @@ DocumentState DocumentManager::load_document_from_path(
   }
   next_document_id_ =
       std::max(next_document_id_, trailing_integer(loaded.id) + 1);
+  for (const auto& component : loaded.components) {
+    next_component_id_ =
+        std::max(next_component_id_, trailing_integer(component.id) + 1);
+  }
   for (const auto& feature : loaded.feature_history) {
     next_feature_id_ =
         std::max(next_feature_id_, trailing_integer(feature.id) + 1);

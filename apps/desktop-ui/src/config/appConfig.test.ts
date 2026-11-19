@@ -2,7 +2,7 @@
 // Config defaults that a saved file would otherwise never see.
 //
 // The constraint glyphs (H/V/âŠ¥/âˆ¥) used to ship hidden, so every existing install
-// stored `showConstraints: false` and never showed a constraint at all â€” the
+// stored `showConstraints: false` and never showed a constraint at all - the
 // sketch reported "2 DOF" with nothing on screen explaining it. The default is
 // now `true`, and the config schema version makes that reach the installs that
 // already saved the old default once, while a deliberate "off" (saved after v2)

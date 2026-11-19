@@ -42,10 +42,90 @@ export async function sendCoreCommand(
 interface PendingCommand {
   resolve: (message: Record<string, unknown>) => void;
   reject: (reason: Error) => void;
-  timeoutId: number;
+  type: string;
+  sentAt: number;
 }
 
 const pendingCommands = new Map<string, PendingCommand>();
+
+// A command is failed when the CORE goes quiet, not when the wall clock passes a
+// fixed mark. The core handles commands strictly in arrival order, so a short
+// command sent while a long one runs waits for it: importing this board's STEP
+// takes ~12 s (measured), and a sketch's `undo_end_group` sent during that
+// import was answered 11.9 s after it was sent — 100 ms after the import
+// finished. A flat 10 s timeout failed it with "core did not respond to
+// undo_end_group" while the core was perfectly healthy.
+//
+// Any inbound message proves the core is alive, so it resets the idle window.
+// The absolute cap still catches a core that keeps chatting but never answers
+// this particular command.
+const CORE_IDLE_TIMEOUT_MS = 10_000;
+const CORE_COMMAND_ABSOLUTE_TIMEOUT_MS = 300_000;
+
+let lastCoreActivityAt = Date.now();
+let watchdogId: number | null = null;
+const activityListeners = new Set<() => void>();
+
+// Pure so the timeout rule can be tested without a core process.
+export function shouldFailPendingCommand({
+  now,
+  sentAt,
+  lastActivityAt,
+  idleTimeoutMs = CORE_IDLE_TIMEOUT_MS,
+  absoluteTimeoutMs = CORE_COMMAND_ABSOLUTE_TIMEOUT_MS,
+}: {
+  now: number;
+  sentAt: number;
+  lastActivityAt: number;
+  idleTimeoutMs?: number;
+  absoluteTimeoutMs?: number;
+}): boolean {
+  // A command sent AFTER the last activity still gets a full idle window.
+  const quietSince = Math.max(lastActivityAt, sentAt);
+  return (
+    now - quietSince >= idleTimeoutMs || now - sentAt >= absoluteTimeoutMs
+  );
+}
+
+// Called for every message the core sends, including its progress logs.
+export function noteCoreActivity(): void {
+  lastCoreActivityAt = Date.now();
+  for (const listener of activityListeners) {
+    listener();
+  }
+}
+
+// Lets other waiters (the store's "wait for the next document/viewport" helpers)
+// reuse the same "the core is still working" signal instead of inventing their
+// own wall-clock timeout.
+export function subscribeCoreActivity(listener: () => void): () => void {
+  activityListeners.add(listener);
+  return () => {
+    activityListeners.delete(listener);
+  };
+}
+
+function checkPendingCommands(): void {
+  const now = Date.now();
+  for (const [id, pending] of pendingCommands) {
+    if (
+      shouldFailPendingCommand({
+        now,
+        sentAt: pending.sentAt,
+        lastActivityAt: lastCoreActivityAt,
+      })
+    ) {
+      rejectPendingCommand(
+        id,
+        new Error(`core did not respond to ${pending.type} (${id})`),
+      );
+    }
+  }
+  if (pendingCommands.size === 0 && watchdogId !== null) {
+    window.clearInterval(watchdogId);
+    watchdogId = null;
+  }
+}
 
 export function resolvePendingCommand(
   id: string,
@@ -54,7 +134,6 @@ export function resolvePendingCommand(
   const pending = pendingCommands.get(id);
   if (pending === undefined) return false;
   pendingCommands.delete(id);
-  window.clearTimeout(pending.timeoutId);
   pending.resolve(message);
   return true;
 }
@@ -63,25 +142,25 @@ export function rejectPendingCommand(id: string, reason: Error): boolean {
   const pending = pendingCommands.get(id);
   if (pending === undefined) return false;
   pendingCommands.delete(id);
-  window.clearTimeout(pending.timeoutId);
   pending.reject(reason);
   return true;
 }
 
 export async function sendCoreCommandAwaited(
   command: CoreCommand & { id: string },
-  timeoutMs = 10000,
 ): Promise<Record<string, unknown>> {
   const id = command.id;
-  const timeoutId = window.setTimeout(() => {
-    rejectPendingCommand(
-      id,
-      new Error(`core did not respond to ${command.type} (${id})`),
-    );
-  }, timeoutMs);
   const response = new Promise<Record<string, unknown>>((resolve, reject) => {
-    pendingCommands.set(id, { resolve, reject, timeoutId });
+    pendingCommands.set(id, {
+      resolve,
+      reject,
+      type: command.type,
+      sentAt: Date.now(),
+    });
   });
+  if (watchdogId === null) {
+    watchdogId = window.setInterval(checkPendingCommands, 1000);
+  }
   try {
     await sendCoreCommand(command);
   } catch (error) {
@@ -124,6 +203,10 @@ export async function onCadCoreEvent(
     eventChain = eventChain
       .then(() => decodeCoreEventPayload(event.payload))
       .then((message) => {
+        // Every event is proof of life: a long operation narrates itself with
+        // log events, and those keep the awaited commands in the queue from
+        // being failed by the clock (see CORE_IDLE_TIMEOUT_MS).
+        noteCoreActivity();
         // The core echoes the command id on every response event —
         // settle any awaited command BEFORE the handler processes the
         // message, so awaiters never race their own UI update.
@@ -146,6 +229,7 @@ export async function onCadCoreLog(
   handler: (line: string) => void,
 ): Promise<UnlistenFn> {
   return listen<string>(CadCoreCommandType.CadCoreLog, (event) => {
+    noteCoreActivity();
     handler(event.payload);
   });
 }
@@ -154,6 +238,7 @@ export async function onCadCoreError(
   handler: (message: string) => void,
 ): Promise<UnlistenFn> {
   return listen<string>(CadCoreCommandType.CadCoreError, (event) => {
+    noteCoreActivity();
     handler(event.payload);
   });
 }

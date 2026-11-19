@@ -50,6 +50,9 @@ export function useViewportGridHotkey({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
+    // `activeSketchPlaneIdRef` is a ref whose identity never changes; the hotkey
+    // and the config writer are the real triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toggleGridHotkey, updateConfig]);
 }
 
@@ -124,5 +127,8 @@ export function useGhostEdgeRevealHotkey({
       window.removeEventListener("blur", handleBlur);
       revealGhostEdgesRef.current = false;
     };
+    // The hovered-edge ref and the edge painter are stable/refreshable by
+    // themselves; the pending edge-operation body set is what arms this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingEdgeOpBodyIds]);
 }
