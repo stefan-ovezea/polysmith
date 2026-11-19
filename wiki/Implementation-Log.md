@@ -236,6 +236,33 @@ Tests: `viewportMeshCache.test.ts` (3 cases: a payload without revisions is a fu
 snapshot, a delta merges and lands the per-body state on cached geometry, removed
 ids drop). `pnpm test:ui` 121/121, `pnpm test:core` 94/95 (orphan only).
 
+### Viewport: the mesh payload narrowed (39.19 MB -> 28.39 MB on the carrier)
+
+Measured on projects/ESP32-P4C5-Module_Carrier_V1.5.step (1,092 bodies, 24,373
+faces, 2,047,956 triangles), the full snapshot was 39.19 MB and almost all of it
+was index width: 2,047,956 triangles x 3 x uint32 = 24.6 MB, plus 12 MB of
+float32 normals and 11 MB of uint32 pick map.
+
+- **uint16 indices** whenever every index of a body fits: no body on the carrier
+  exceeds 65,535 vertices (they average ~1,000), so the 24.6 MB becomes 12.3 MB
+  with no change to the geometry. indices16 + index_bits say which form
+  arrived; exactly one of indices/indices16 is filled.
+- **int8 normals** (
+ormals8, 
+ormals_quantised): unit vectors only need
+  direction for lighting, and the UI hands them to a normalised BufferAttribute.
+  12 MB -> 3 MB.
+- **uint16 pick map** (ace_ids16): the same narrowing for the per-triangle
+  face ordinal, another 5.4 MB.
+
+Result: full snapshot **39.19 MB / 541 ms -> 28.39 MB / 458 ms**; the mesh part
+alone 39.19 -> 22.51 MB. Nothing visual changes: the indices are exact and 8-bit
+normals are the standard GPU encoding.
+
+Clicking is unchanged (100 KB / 196 ms), and the import is still 18.4 s - that is
+OCCT reading a 1,092-solid STEP and tessellating it serially, which is a separate
+job (parallel meshing, streamed progress).
+
 ### Viewport: the scene delta (G1/G2 complete) — 20.16 MB → 0.03 MB for a click
 
 iewport.revision is the shape/overlay version: it does not change when the

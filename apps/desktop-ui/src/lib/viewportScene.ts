@@ -1,5 +1,5 @@
 import { splineEval, splineOpenUniformKnots } from "@/lib/splineCurve";
-import { decodeF32, decodeU32 } from "@/lib/binaryDecode";
+import { decodeF32, decodeI8, decodeU16, decodeU32 } from "@/lib/binaryDecode";
 import type {
   ViewportBoxPrimitive,
   ViewportCylinderPrimitive,
@@ -56,7 +56,9 @@ function clampDimension(value: number) {
   return Math.max(value, 1);
 }
 
-function numericBufferSignature(values: Float32Array | Uint32Array) {
+function numericBufferSignature(
+  values: Float32Array | Uint32Array | Uint16Array | Int8Array,
+) {
   let hash = 2166136261;
   for (const value of values) {
     const quantized = Math.round(value * 1000);
@@ -129,9 +131,16 @@ function makeMeshPrimitive(
     primitiveId: primitive.primitive_id,
     label: primitive.primitive_id,
     positions: decodeF32(primitive.positions),
-    normals: decodeF32(primitive.normals),
-    indices: decodeU32(primitive.indices),
-    faceIds: decodeU32(primitive.face_ids ?? ""),
+    // Narrow encodings: the core fills exactly one form of each pair.
+    normals: primitive.normals8
+      ? decodeI8(primitive.normals8)
+      : decodeF32(primitive.normals),
+    indices: primitive.indices16
+      ? decodeU16(primitive.indices16)
+      : decodeU32(primitive.indices),
+    faceIds: primitive.face_ids16
+      ? decodeU16(primitive.face_ids16)
+      : decodeU32(primitive.face_ids ?? ""),
     colors: decodeF32(primitive.colors ?? ""),
     isSelected: primitive.is_selected,
     appearanceColor: primitive.appearance_color ?? null,

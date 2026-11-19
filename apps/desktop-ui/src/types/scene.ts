@@ -84,13 +84,15 @@ export interface MeshScenePrimitive {
   label: string;
   // Flat triangle list ready for THREE.BufferGeometry, in world space.
   positions: Float32Array;
-  normals: Float32Array;
-  indices: Uint32Array;
+  // int8 when the core quantised them (normalized attribute); uint16 indices
+  // when every index fit (three.js uploads both directly).
+  normals: Float32Array | Int8Array;
+  indices: Uint32Array | Uint16Array;
   // Pick map: one face ordinal (this body's TopExp::MapShapes order) per
   // TRIANGLE, in `indices` order. The face pick proxies are rebuilt from this
   // mesh instead of shipping a second copy of the triangles, so this is the only
   // place a face names its geometry.
-  faceIds: Uint32Array;
+  faceIds: Uint32Array | Uint16Array;
   // Per-vertex linear RGB, empty for single-colour bodies. Imported parts
   // carry the file's face styles (gold contacts, black body, white legend).
   colors: Float32Array;

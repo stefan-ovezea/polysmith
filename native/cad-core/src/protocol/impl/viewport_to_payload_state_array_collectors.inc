@@ -155,11 +155,80 @@
         // arrays.  The field names are unchanged — the UI treats a string as
         // base64 and a number array as the legacy JSON form.
         {"positions", encode_f32(mesh.positions)},
-        {"normals", encode_f32(mesh.normals)},
-        {"indices", encode_u32(mesh.indices)},
-        // Pick map: one face ordinal per triangle, so the UI builds its pick
-        // mesh from THIS geometry instead of a second copy of the triangles.
-        {"face_ids", encode_u32(mesh.face_ids)},
+        // Normals are unit vectors, so 8-bit is exact enough for lighting: the
+        // `normals` field goes empty and `normals8` carries the data (12 MB -> 3 MB
+        // on the carrier). The UI reads `normals_quantised` to know which.
+        {"normals", std::string()},
+        {"normals8", encode_normals_i8(mesh.normals)},
+        {"normals_quantised", true},
+        // Index width: uint16 whenever every index fits, which is every body on
+        // the carrier (~1,000 vertices each). Exactly halves 24.6 MB of indices.
+        // Only one of the two fields is ever filled.
+        {"indices",
+         [&mesh]() {
+           int max_index = 0;
+           for (int index : mesh.indices) {
+             if (index > max_index) {
+               max_index = index;
+             }
+           }
+           if (!mesh.indices.empty() && max_index <= 65535) {
+             return std::string();
+           }
+           return encode_u32(mesh.indices);
+         }()},
+        {"indices16",
+         [&mesh]() {
+           int max_index = 0;
+           for (int index : mesh.indices) {
+             if (index > max_index) {
+               max_index = index;
+             }
+           }
+           if (mesh.indices.empty() || max_index > 65535) {
+             return std::string();
+           }
+           return encode_u16(mesh.indices);
+         }()},
+        {"index_bits",
+         [&mesh]() {
+           int max_index = 0;
+           for (int index : mesh.indices) {
+             if (index > max_index) {
+               max_index = index;
+             }
+           }
+           return (!mesh.indices.empty() && max_index <= 65535) ? 16 : 32;
+         }()},
+        // Pick map: one face ordinal per TRIANGLE. Same narrowing as the
+        // indices - a body's face ordinal fits uint16 on every board measured so
+        // far, which saves 5.4 MB on the carrier. Only one field is filled.
+        {"face_ids",
+         [&mesh]() {
+           int max_face = 0;
+           for (int face : mesh.face_ids) {
+             if (face > max_face) {
+               max_face = face;
+             }
+           }
+           if (!mesh.face_ids.empty() && max_face <= 65535) {
+             return std::string();
+           }
+           return encode_u32(mesh.face_ids);
+         }()},
+        {"face_ids16",
+         [&mesh]() {
+           int max_face = 0;
+           for (int face : mesh.face_ids) {
+             if (face > max_face) {
+               max_face = face;
+             }
+           }
+           if (mesh.face_ids.empty() || max_face > 65535) {
+             return std::string();
+           }
+           return encode_u16(mesh.face_ids);
+         }()},
         // Empty for single-colour bodies; the UI then uses the material
         // colour. Per-vertex colours carry the file's face styles.
         {"colors", encode_f32(mesh.colors)},

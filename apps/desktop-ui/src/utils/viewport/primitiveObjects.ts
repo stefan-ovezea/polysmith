@@ -306,9 +306,16 @@ export function buildPrimitiveObject(primitive: ScenePrimitive) {
       primitive.normals.length === primitive.positions.length &&
       primitive.normals.length > 0
     ) {
+      // int8 normals arrive quantised: BufferAttribute normalizes them back to
+      // [-1, 1] in the shader, so an 8-bit normal costs a quarter of the bytes
+      // with no visible difference to the lighting.
       meshGeometry.setAttribute(
         "normal",
-        new THREE.BufferAttribute(primitive.normals, 3),
+        new THREE.BufferAttribute(
+          primitive.normals,
+          3,
+          primitive.normals instanceof Int8Array,
+        ),
       );
     } else {
       // Old payloads (or a degenerate body) fall back to the previous

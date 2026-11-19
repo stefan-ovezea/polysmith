@@ -473,6 +473,14 @@ export interface ViewportMeshPrimitive {
   // mesh instead of a second copy of the geometry, so a raycast hit resolves the
   // face without the per-face triangle arrays.
   face_ids?: string;
+  // Narrow encodings: exactly one of `indices`/`indices16` and of
+  // `face_ids`/`face_ids16` is filled; `normals8` carries 8-bit normals when
+  // `normals_quantised` is set.
+  indices16?: string;
+  face_ids16?: string;
+  normals8?: string;
+  normals_quantised?: boolean;
+  index_bits?: number;
   // Per-vertex linear RGB (float32 blob) for bodies whose faces carry their
   // own styles; empty/absent on single-colour bodies.
   colors?: string;

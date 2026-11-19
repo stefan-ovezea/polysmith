@@ -78,6 +78,11 @@ export const viewportMeshSchema = z.object({
   // falls back to a plane-frame rectangle - which made clicks resolve to the
   // wrong face. Defaulted so an older core parses.
   face_ids: z.string().default(""),
+  indices16: z.string().default(""),
+  face_ids16: z.string().default(""),
+  normals8: z.string().default(""),
+  normals_quantised: z.boolean().default(false),
+  index_bits: z.number().default(32),
   // Per-vertex linear RGB for bodies whose faces carry their own styles.
   colors: z.string().default(""),
   is_selected: z.boolean(),

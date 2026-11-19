@@ -10,6 +10,7 @@
 // round-trip, so guard it.
 
 #include <cstdint>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -68,6 +69,39 @@ inline std::string encode_u32(const std::vector<int>& values) {
     bytes.push_back(static_cast<std::uint8_t>((u >> 8) & 0xff));
     bytes.push_back(static_cast<std::uint8_t>((u >> 16) & 0xff));
     bytes.push_back(static_cast<std::uint8_t>((u >> 24) & 0xff));
+  }
+  return base64_encode(bytes.data(), bytes.size());
+}
+
+// Encode a list of non-negative ints as a base64 uint16 blob. Only valid for
+// values <= 65535, which is what the mesh emitter checks before choosing it.
+inline std::string encode_u16(const std::vector<int>& values) {
+  if (values.empty()) {
+    return "";
+  }
+  std::vector<std::uint8_t> bytes;
+  bytes.reserve(values.size() * 2);
+  for (int value : values) {
+    const std::uint16_t u = static_cast<std::uint16_t>(value);
+    bytes.push_back(static_cast<std::uint8_t>(u & 0xff));
+    bytes.push_back(static_cast<std::uint8_t>((u >> 8) & 0xff));
+  }
+  return base64_encode(bytes.data(), bytes.size());
+}
+
+// Encode unit normals as base64 int8 (value * 127). 8-bit normals are the
+// standard GPU encoding: the lit result only needs the direction, and the UI
+// hands them to BufferAttribute as normalized int8.
+inline std::string encode_normals_i8(const std::vector<double>& values) {
+  if (values.empty()) {
+    return "";
+  }
+  std::vector<std::uint8_t> bytes;
+  bytes.reserve(values.size());
+  for (double value : values) {
+    const double clamped = value < -1.0 ? -1.0 : (value > 1.0 ? 1.0 : value);
+    const int quantised = static_cast<int>(std::lround(clamped * 127.0));
+    bytes.push_back(static_cast<std::uint8_t>(static_cast<std::int8_t>(quantised)));
   }
   return base64_encode(bytes.data(), bytes.size());
 }

@@ -27,6 +27,19 @@ export function decodeU32(base64: string): Uint32Array {
   return new Uint32Array(bytes.buffer, 0, Math.floor(bytes.byteLength / 4));
 }
 
+// Narrow mesh encodings (see the core's mesh emitter): uint16 indices and pick
+// map, int8 normals. Each is exact for the data it carries - a body's vertex or
+// face ordinal fits 16 bits and a unit normal only needs direction.
+export function decodeU16(base64: string): Uint16Array {
+  const bytes = decodeBase64(base64);
+  return new Uint16Array(bytes.buffer, 0, Math.floor(bytes.byteLength / 2));
+}
+
+export function decodeI8(base64: string): Int8Array {
+  const bytes = decodeBase64(base64);
+  return new Int8Array(bytes.buffer, 0, bytes.byteLength);
+}
+
 const NO_APPEARANCE = 0xffffffff;
 
 /**
