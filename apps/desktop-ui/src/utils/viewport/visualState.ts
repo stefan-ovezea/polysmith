@@ -186,10 +186,13 @@ export function applySolidFaceVisualState(
   }
 
   if (state.isHovered) {
-    visual.fillMaterial.color.set(
-      themeColor("--cad-face-hover-fill", "#ffffff"),
-    );
-    visual.fillMaterial.opacity = 0.08;
+    // No fill on hover. The face proxies are built from the body mesh triangles,
+    // so the fill lands exactly on the body - except for the legacy analytical
+    // faces, whose proxy is a flat plane-frame rectangle that sticks OUT of the
+    // part: at 0.08 opacity that read as grey slabs and ribbons around the leads
+    // (reported 2026-11-20). Face hover is conveyed by the edge highlight
+    // instead, and nothing is painted where no exact proxy exists.
+    visual.fillMaterial.opacity = 0;
     return;
   }
 
