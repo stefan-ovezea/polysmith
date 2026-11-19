@@ -37,10 +37,13 @@ describe("solid face fill", () => {
     expect(visual.fillMaterial.opacity).toBe(0);
   });
 
-  it("highlights a hovered face subtly and a selected face clearly", () => {
+  it("does not paint a hovered face, and paints a selected one clearly", () => {
+    // Hover is shown by the edge highlight: a 0.08 face fill lands exactly on a
+    // body-derived proxy (invisible) but sticks out of the part on a legacy
+    // analytical proxy, which read as grey slabs around the leads.
     const hovered = faceVisual("#FFFFFF");
     applySolidFaceVisualState(hovered, { isSelected: false, isHovered: true });
-    expect(hovered.fillMaterial.opacity).toBeCloseTo(0.08, 5);
+    expect(hovered.fillMaterial.opacity).toBe(0);
 
     const selected = faceVisual("#FFFFFF");
     applySolidFaceVisualState(selected, { isSelected: true, isHovered: false });
