@@ -18,6 +18,25 @@ let lastViewport: ViewportState | null = null;
 // cache - merging it would leave the bodies of a previous document behind as
 // ghost geometry (doubled outlines and floating ribbons in the viewport).
 let requestIsDelta = false;
+// Which document the cache belongs to. iewport.revision is document-local, so
+// two documents can share a revision number; without this a reload of a saved
+// file served the previous document's bodies and features looked lost.
+let cachedDocumentId: string | null = null;
+
+/**
+ * Note the document the next messages belong to. A different id resets the
+ * cache: body ids and revisions are only meaningful within one document.
+ */
+export function noteDocumentId(documentId: string): void {
+  if (cachedDocumentId === documentId) {
+    return;
+  }
+  cachedDocumentId = documentId;
+  cache = new Map();
+  revisions = new Map();
+  lastViewport = null;
+  requestIsDelta = false;
+}
 
 /** Call before building a `get_viewport_state`: remembers how it was asked. */
 export function beginViewportRequest(): void {

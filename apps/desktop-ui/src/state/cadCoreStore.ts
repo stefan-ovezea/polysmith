@@ -14,6 +14,7 @@ import type {
 } from "../types/ipc";
 import {
   mergeViewportMeshes,
+  noteDocumentId,
   resetViewportMeshCache,
 } from "../lib/viewportMeshCache";
 import {
@@ -413,9 +414,16 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
         nextState.session = message.payload;
       }
 
-      // A new document invalidates every cached body id.
+      // A new document invalidates every cached body id, and a LOAD of another
+      // document has to reset too: ids and revisions are document-local, so a
+      // reload used to reuse the previous document's bodies.
       if (message.type === "document_created") {
         resetViewportMeshCache();
+      }
+      const messageDocumentId = (message.payload as { document_id?: string })
+        .document_id;
+      if (typeof messageDocumentId === "string") {
+        noteDocumentId(messageDocumentId);
       }
       const viewport = getViewportFromMessage(message);
       if (viewport) {
