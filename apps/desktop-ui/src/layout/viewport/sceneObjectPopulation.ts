@@ -124,15 +124,23 @@ export function addSolidSceneObjects({
   vertexObjects: THREE.Mesh[];
   cutPreviewObjects: THREE.Mesh[];
 }) {
-  for (const face of faces) {
-    const faceObject = buildSolidFaceObject(face);
-    faceMeshes.push(faceObject.mesh);
-    solidFaceVisuals.set(face.faceId, faceObject.visual);
-    solidFaceStates.set(face.faceId, {
-      isSelected: face.isSelected,
-      isHovered: false,
-    });
-    contentGroup.add(faceObject.mesh);
+  // DIAGNOSTIC (2026-11-20): face proxies are not built at all, to settle
+  // whether the grey slabs and ribbons around the SOIC leads are the proxies or
+  // the body mesh. The body mesh was rendered offline from the same payload and
+  // is clean, so if the slabs disappear with this off they are the proxies.
+  // Only the face loop is skipped: edges, vertices and previews stay.
+  const buildFaceProxies = false;
+  if (buildFaceProxies) {
+    for (const face of faces) {
+      const faceObject = buildSolidFaceObject(face);
+      faceMeshes.push(faceObject.mesh);
+      solidFaceVisuals.set(face.faceId, faceObject.visual);
+      solidFaceStates.set(face.faceId, {
+        isSelected: face.isSelected,
+        isHovered: false,
+      });
+      contentGroup.add(faceObject.mesh);
+    }
   }
 
   for (const edge of edges) {
