@@ -50,7 +50,41 @@
       }
     }
   }
+  // Bodies that occupy exactly the same space were drawn on top of each other:
+  // two coincident surfaces fight for every pixel, which is the stair-stepped
+  // banding and the grey ribbons around a part's leads (reported 2026-11-20 on
+  // the ESP32 carrier, 66 coincident pairs). A STEP assembly can list the same
+  // shape twice or place a part and its instance at one location; rendering one
+  // copy is visually identical and removes the fight. The document keeps both
+  // body ids - this is a render-time decision, not a data change.
+  std::set<std::string> rendered_occupancy;
+  int coincident_skipped = 0;
   for (const auto& body_mesh : compiled_bodies.meshes) {
+    if (!body_mesh.vertices.empty()) {
+      double min_x = body_mesh.vertices[0];
+      double min_y = body_mesh.vertices[1];
+      double min_z = body_mesh.vertices[2];
+      double max_x = min_x;
+      double max_y = min_y;
+      double max_z = min_z;
+      for (std::size_t index = 3; index + 2 < body_mesh.vertices.size(); index += 3) {
+        min_x = std::min(min_x, body_mesh.vertices[index]);
+        min_y = std::min(min_y, body_mesh.vertices[index + 1]);
+        min_z = std::min(min_z, body_mesh.vertices[index + 2]);
+        max_x = std::max(max_x, body_mesh.vertices[index]);
+        max_y = std::max(max_y, body_mesh.vertices[index + 1]);
+        max_z = std::max(max_z, body_mesh.vertices[index + 2]);
+      }
+      char occupancy[192];
+      std::snprintf(occupancy, sizeof(occupancy),
+                    "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f|%zu",
+                    min_x, min_y, min_z, max_x, max_y, max_z,
+                    body_mesh.indices.size());
+      if (!rendered_occupancy.insert(occupancy).second) {
+        coincident_skipped += 1;
+        continue;
+      }
+    }
     ViewportMeshPrimitive mesh{};
     mesh.id = body_mesh.body_id;
     mesh.positions = body_mesh.vertices;
