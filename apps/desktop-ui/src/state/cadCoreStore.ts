@@ -28,6 +28,7 @@ import {
   subscribeCoreActivity,
 } from "../lib/cadCoreClient";
 import { useToastStore } from "./toastStore";
+import { parseOperationProgress, type OperationProgress } from "@/utils/operationProgress";
 import { appendLogWithinWindow } from "../lib/logWindow";
 
 // ── Atomic commit pairing ─────────────────────────────────────────────
@@ -60,6 +61,10 @@ export interface BusyOperation {
   kind: BusyOperationKind;
   fileName?: string;
   startedAt: number;
+  // Parsed from the core's own progress lines ("Writing part 273/1092"), so the
+  // overlay can show a determinate bar for the countable phases. Absent while
+  // the core is inside one opaque OCCT call (parse, transfer).
+  progress?: OperationProgress | null;
   // Last stage line the core reported for this operation, if any.
   detail: string;
   // Core log sources whose messages become the stage line. An import logs
@@ -478,6 +483,7 @@ export const useCadCoreStore = create<CadCoreStoreState>((set) => ({
           nextState.busyOperation = {
             ...busy,
             detail: message.payload.message,
+            progress: parseOperationProgress(message.payload.message),
           };
         }
       }

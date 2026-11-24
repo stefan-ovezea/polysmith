@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { elapsedSeconds, fileNameFromPath } from "./operationProgress";
+import {
+  elapsedSeconds,
+  fileNameFromPath,
+  parseOperationProgress,
+} from "./operationProgress";
 
 describe("fileNameFromPath", () => {
   it("takes the trailing segment of a Windows path", () => {
@@ -42,5 +46,34 @@ describe("elapsedSeconds", () => {
   it("returns zero for missing timestamps", () => {
     expect(elapsedSeconds(Number.NaN, 1_000)).toBe(0);
     expect(elapsedSeconds(1_000, Number.NaN)).toBe(0);
+  });
+});
+
+// The overlay shows a determinate bar only for the phase the core can count.
+// Everything else must stay indeterminate rather than invent a fraction.
+describe("parseOperationProgress", () => {
+  it("reads the body-build counter", () => {
+    expect(parseOperationProgress("Writing part 273/1092")).toEqual({
+      current: 273,
+      total: 1092,
+      fraction: 273 / 1092,
+    });
+  });
+
+  it("tolerates spacing and case", () => {
+    expect(parseOperationProgress("writing part 5/10")?.fraction).toBeCloseTo(0.5);
+  });
+
+  it("reports no fraction for an opaque stage", () => {
+    expect(parseOperationProgress("Reading 'board.step' ...")).toBeNull();
+    expect(parseOperationProgress("Transfer into the document in 6167 ms")).toBeNull();
+    expect(parseOperationProgress("")).toBeNull();
+  });
+
+  it("never divides by zero and clamps a runaway counter", () => {
+    expect(parseOperationProgress("Writing part 3/0")).toBeNull();
+    const clamped = parseOperationProgress("Writing part 2000/1000");
+    expect(clamped?.current).toBe(1000);
+    expect(clamped?.fraction).toBe(1);
   });
 });

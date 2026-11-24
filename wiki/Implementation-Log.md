@@ -236,6 +236,35 @@ Tests: `viewportMeshCache.test.ts` (3 cases: a payload without revisions is a fu
 snapshot, a delta merges and lands the per-body state on cached geometry, removed
 ids drop). `pnpm test:ui` 121/121, `pnpm test:core` 94/95 (orphan only).
 
+### The busy overlay never appeared, and now shows progress
+
+A 13 s import ran with no veil at all. Two causes:
+
+- **`sendCoreCommand` does not await the core.** The Tauri command writes the
+  line to the core's stdin and returns, so `runBusyOperation` around an import
+  finished in milliseconds: the operation was set and cleared before the veil's
+  350 ms show delay, while the real import ran afterwards. Import STEP, import
+  IGES and load document now await their correlated replies
+  (`sendCoreCommandAwaited`) - the document state first, then the viewport state,
+  so the busy window covers the import AND the 5.2 s first viewport build.
+- **The overlay's timers were keyed on the `busy` object**, which the store
+  replaces on every core log line, so each line cancelled and re-armed the
+  show-timer and the elapsed ticker. They are keyed to the operation's
+  `startedAt` now.
+
+With the window finally on screen, the overlay shows a real progress bar:
+
+- a **determinate** bar with `273 / 1092` while the core writes bodies
+  (`parseOperationProgress` reads the core's own "Writing part N/M" line);
+- a sliding bar during the phases that are one opaque OCCT call (parse,
+  transfer, viewport build), with the stage line saying which.
+
+The core also logs the phase boundaries now ("Parsing STEP entities ...",
+"Transferring geometry, colours and names ...") so the stage line moves during
+the two long OCCT calls. `pnpm test:ui` 130/130 (4 cases for the parser: the
+counter, spacing/case, opaque stages return null, divide-by-zero and a runaway
+counter clamp).
+
 ### Viewport: the mesh payload narrowed (39.19 MB -> 28.39 MB on the carrier)
 
 Measured on projects/ESP32-P4C5-Module_Carrier_V1.5.step (1,092 bodies, 24,373

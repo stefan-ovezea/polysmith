@@ -19,29 +19,35 @@ import { elapsedSeconds } from "@/utils/operationProgress";
 export function OperationOverlay() {
   const { t } = useTranslation();
   const busy = useCadCoreStore((state) => state.busyOperation);
+  // The store replaces `busy` on EVERY core log line (the stage text and the
+  // parsed progress live on it), so effect dependencies must be the operation's
+  // identity, not the object: keyed on the object, each incoming line cancelled
+  // and re-armed the show-timer and the elapsed ticker, and during a chatty
+  // import the veil never appeared at all.
+  const startedAt = busy?.startedAt ?? 0;
   const [seconds, setSeconds] = useState(0);
   // Most imports finish in well under a second (a bracket, an STL). Wait
   // before covering the window so a fast one never flashes a veil.
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (!busy) {
+    if (startedAt === 0) {
       setVisible(false);
       return;
     }
     const timer = window.setTimeout(() => setVisible(true), 350);
     return () => window.clearTimeout(timer);
-  }, [busy]);
+  }, [startedAt]);
 
   useEffect(() => {
-    if (!busy) {
+    if (startedAt === 0) {
       return;
     }
-    const tick = () => setSeconds(elapsedSeconds(busy.startedAt, Date.now()));
+    const tick = () => setSeconds(elapsedSeconds(startedAt, Date.now()));
     tick();
     const timer = window.setInterval(tick, 250);
     return () => window.clearInterval(timer);
-  }, [busy]);
+  }, [startedAt]);
 
   if (!busy || !visible) {
     return null;
@@ -75,6 +81,40 @@ export function OperationOverlay() {
         <p className="min-h-4 break-words text-xs leading-5 text-on-surface-muted">
           {busy.detail || t("busy.starting")}
         </p>
+        {/* A determinate bar for the phases the core can count ("Writing part
+            273/1092"); an indeterminate one while it is inside a single opaque
+            OCCT call (parse, transfer). The point is that something is visibly
+            moving during a 13 s import. */}
+        <div
+          className="h-1.5 w-full overflow-hidden rounded-full bg-subtle-surface-strong"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={
+            busy.progress
+              ? Math.round(busy.progress.fraction * 100)
+              : undefined
+          }
+          aria-valuetext={
+            busy.progress
+              ? `${busy.progress.current} / ${busy.progress.total}`
+              : undefined
+          }
+        >
+          {busy.progress ? (
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-200"
+              style={{ width: `${Math.max(2, busy.progress.fraction * 100)}%` }}
+            />
+          ) : (
+            <div className="cad-progress-indeterminate h-full w-1/3 rounded-full bg-primary" />
+          )}
+        </div>
+        {busy.progress ? (
+          <p className="text-[11px] text-on-surface-muted">
+            {busy.progress.current} / {busy.progress.total}
+          </p>
+        ) : null}
         <div className="flex items-center justify-between gap-3">
           <p className="text-[11px] text-on-surface-dim">
             {t("busy.elapsed", { seconds })}

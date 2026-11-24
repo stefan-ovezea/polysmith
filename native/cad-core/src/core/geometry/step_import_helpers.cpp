@@ -547,12 +547,14 @@ StepImportResult read_step_file(const std::string& file_path) {
     reader.SetNameMode(true);
     reader.SetLayerMode(false);
 
+    log_info("step_import", "Parsing STEP entities ...");
     if (reader.ReadFile(file_path.c_str()) != IFSelect_RetDone) {
       throw std::runtime_error("Failed to read STEP file '" + file_path +
                                "' - not a valid ISO-10303-21 file");
     }
 
     StepImportResult result;
+    log_info("step_import", "Transferring geometry, colours and names ...");
     if (!document.IsNull() && reader.Transfer(document)) {
       result.shape = shape_from_xcaf_document(document);
     }

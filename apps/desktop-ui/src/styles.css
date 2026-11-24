@@ -1694,3 +1694,26 @@ button:not(:disabled),
     transform: rotate(360deg);
   }
 }
+
+/* Long-operation overlay: the bar slides while the core is inside a single
+   opaque OCCT call (an import's parse and transfer report no fraction). */
+@keyframes cad-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.cad-progress-indeterminate {
+  animation: cad-progress-slide 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cad-progress-indeterminate {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}

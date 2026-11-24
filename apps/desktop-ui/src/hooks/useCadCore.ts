@@ -437,12 +437,16 @@ export function useCadCore() {
       await runBusyOperation(
         { kind: "load_document", filePath },
         async () => {
-          await sendCoreCommand(makeLoadDocumentCommand(filePath));
-          // The load command replies with `document_state`. Refresh session
-          // (undo/redo flags) and viewport so the UI reflects the loaded
-          // document end-to-end.
+          // Awaited so the overlay covers the load (a saved 1,092-body board is
+          // a 1 MB document plus a 28 MB viewport): `sendCoreCommand` only
+          // writes to stdin and returns, which made this a millisecond.
+          await sendCoreCommandAwaited(
+            makeLoadDocumentCommand(filePath) as CoreCommand & { id: string },
+          );
           await sendCoreCommand(makeGetSessionStateCommand());
-          await sendCoreCommand(makeGetViewportStateCommand());
+          await sendCoreCommandAwaited(
+            makeGetViewportStateCommand() as CoreCommand & { id: string },
+          );
         },
       );
     },
@@ -465,15 +469,36 @@ export function useCadCore() {
       );
     },
     importStep: async (filePath: string) => {
+      // AWAITED, not fire-and-forget. `sendCoreCommand` only writes the line to
+      // the core's stdin and resolves immediately, so a busy operation built on
+      // it lasted milliseconds and the overlay never showed: the 13 s import ran
+      // after the veil had already gone. Awaiting the correlated reply makes the
+      // overlay cover exactly the work, including the viewport build.
       await runBusyOperation(
         { kind: "import_step", filePath, sources: ["step_import"] },
-        () => sendAndRefreshSessionViewport(makeImportStepCommand(filePath)),
+        async () => {
+          await sendCoreCommandAwaited(
+            makeImportStepCommand(filePath) as CoreCommand & { id: string },
+          );
+          await sendCoreCommand(makeGetSessionStateCommand());
+          await sendCoreCommandAwaited(
+            makeGetViewportStateCommand() as CoreCommand & { id: string },
+          );
+        },
       );
     },
     importIges: async (filePath: string) => {
       await runBusyOperation(
         { kind: "import_iges", filePath, sources: ["iges_import"] },
-        () => sendAndRefreshSessionViewport(makeImportIgesCommand(filePath)),
+        async () => {
+          await sendCoreCommandAwaited(
+            makeImportIgesCommand(filePath) as CoreCommand & { id: string },
+          );
+          await sendCoreCommand(makeGetSessionStateCommand());
+          await sendCoreCommandAwaited(
+            makeGetViewportStateCommand() as CoreCommand & { id: string },
+          );
+        },
       );
     },
     // PCB fabrication layers. Imports are additive: the caller imports each
